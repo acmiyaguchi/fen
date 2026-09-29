@@ -24,7 +24,9 @@
 
 (fn file-exists? [path]
   (let [f (io.open path :r)]
-    (if f (do (f:close) true) false)))
+    (if f (do
+            (f:close)
+            true) false)))
 
 (fn command-lines [cmd]
   (let [p (assert (io.popen cmd :r))
@@ -71,8 +73,7 @@
               (set pkg-dir cur)
               (set rel (string.sub src (+ (length cur) 2) -5)))
             (set cur (dirname cur))))
-      (when (and pkg-dir rel
-                 (not (string.find rel "^src/"))
+      (when (and pkg-dir rel (not (string.find rel "^src/"))
                  (not (string.find rel "^dist/"))
                  (not (string.find rel "^tests/"))
                  (not (string.find rel "^vendor/"))
@@ -144,23 +145,17 @@
   ok?)
 
 (set M.workspace-find
-  (.. "find packages extensions -name '*.fnl' -type f"
-      " -not -path '*/dist/*'"
-      " -not -path '*/tests/*'"
-      " -not -path '*/vendor/*'"
-      " -not -path '*/.lrbuild/*'"
-      " -not -path 'packages/testing/*'"
-      " | sort"))
+     (.. "find packages extensions -name '*.fnl' -type f"
+         " -not -path '*/dist/*'" " -not -path '*/tests/*'"
+         " -not -path '*/vendor/*'" " -not -path '*/.lrbuild/*'"
+         " -not -path 'packages/testing/*'" " | sort"))
 
 ;; Lrbuild runs from a single rock package dir; layout is routed by cwd manifest.fnl.
 (set M.lrbuild-find
-  (.. "find . -type f -name '*.fnl'"
-      " -not -path './tests/*'"
-      " -not -path './vendor/*'"
-      " -not -path './.lrbuild/*'"
-      " -not -path './dist/*'"
-      " -not -path './src/fen/testing/macros.fnl'"
-      " | sort"))
+     (.. "find . -type f -name '*.fnl'" " -not -path './tests/*'"
+         " -not -path './vendor/*'" " -not -path './.lrbuild/*'"
+         " -not -path './dist/*'" " -not -path './src/fen/testing/macros.fnl'"
+         " | sort"))
 
 ;; @doc fen.core.extensions.build.generate-bundled-skills-data
 ;; kind: function
@@ -179,8 +174,9 @@
               (let [name (or (string.match dir "([^/]+)$") dir)
                     content (read-all skill-path)]
                 (table.insert lines
-                  (.. "  { dir = " (lua-quote name)
-                      ", file = \"SKILL.md\", content = " (lua-quote content) " },"))))))
+                              (.. "  { dir = " (lua-quote name)
+                                  ", file = \"SKILL.md\", content = "
+                                  (lua-quote content) " },"))))))
         (table.insert lines "}")
         (os.execute (.. "mkdir -p " (shell-quote (dirname out))))
         (write-all out (.. (table.concat lines "\n") "\n"))))))
@@ -194,7 +190,8 @@
         ok? (M.build-files files M.lrbuild-output-path)]
     (when ok?
       ;; Only the skills rock has a bundled/ tree; other rocks skip this.
-      (M.generate-bundled-skills-data ".lrbuild/extensions/skills/bundled_data.lua" "bundled"))
+      (M.generate-bundled-skills-data ".lrbuild/extensions/skills/bundled_data.lua"
+                                      "bundled"))
     ok?))
 
 M

@@ -6,7 +6,8 @@
 ;; providers declaring `"api": "openrouter-completions"` delegate here and
 ;; supply their own model list.
 
-(local openrouter-completions (require :fen.extensions.provider_openrouter.openrouter_completions))
+(local openrouter-completions
+       (require :fen.extensions.provider_openrouter.openrouter_completions))
 
 (fn provider-spec [provider name api-key-var]
   (let [spec {}]
@@ -19,14 +20,12 @@
 (local M {})
 
 (fn M.register [api]
-
-;; @doc register-site:provider:openrouter
-;; summary: OpenRouter Chat Completions provider using OPENROUTER_API_KEY and a curated tool-capable model list.
-;; tags: provider openrouter completions
-(api.register :provider
-              (provider-spec openrouter-completions :openrouter
-                             :OPENROUTER_API_KEY))
-
+  ;; @doc register-site:provider:openrouter
+  ;; summary: OpenRouter Chat Completions provider using OPENROUTER_API_KEY and a curated tool-capable model list.
+  ;; tags: provider openrouter completions
+  (api.register :provider
+                (provider-spec openrouter-completions :openrouter
+                               :OPENROUTER_API_KEY))
   true)
 
 M

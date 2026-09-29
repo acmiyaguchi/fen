@@ -5,16 +5,11 @@
 (local json (require :fen.util.json))
 (local M {})
 
-(local EXIT-CODES
-  {:done 0
-   :blocked 2
-   :cap-reached 2
-   :stopped 2
-   :error 1})
+(local EXIT-CODES {:done 0 :blocked 2 :cap-reached 2 :stopped 2 :error 1})
 
 (fn command-for [opts]
-  (.. "/goal start --max-iterations " (tostring opts.max-iterations)
-      " -- " opts.objective))
+  (.. "/goal start --max-iterations " (tostring opts.max-iterations) " -- "
+      opts.objective))
 
 (fn outcome-status [status]
   (if (= status :done) "done"
@@ -27,7 +22,8 @@
         result-status (outcome-status status)
         now-ms (* (os.time) 1000)
         reason (or ?failure goal-state.last-reason
-                   (if (= result-status "failure") "goal runtime failure" "goal finished"))]
+                   (if (= result-status "failure") "goal runtime failure"
+                       "goal finished"))]
     {:status result-status
      :reason (tostring reason)
      :iterations-used (or goal-state.iteration-count 0)
@@ -40,8 +36,7 @@
       "error"))
 
 (fn write-json-outcome! [path result value]
-  (let [(ok? encoded) (pcall json.encode {:final-text result
-                                           :goal value})]
+  (let [(ok? encoded) (pcall json.encode {:final-text result :goal value})]
     (if (not ok?)
         false
         (let [(f err) (io.open path :w)]
@@ -51,13 +46,16 @@
                     (closed? close-err) (f:close)]
                 (if (and wrote? closed?)
                     true
-                    (do (io.stderr:write
-                          (.. "goal presenter: cannot write " path ": "
-                              (tostring (or write-err close-err)) "\n"))
-                        false)))
-              (do (io.stderr:write (.. "goal presenter: cannot write " path ": "
-                                       (tostring err) "\n"))
-                  false))))))
+                    (do
+                      (io.stderr:write (.. "goal presenter: cannot write " path
+                                           ": "
+                                           (tostring (or write-err close-err))
+                                           "\n"))
+                      false)))
+              (do
+                (io.stderr:write (.. "goal presenter: cannot write " path ": "
+                                     (tostring err) "\n"))
+                false))))))
 
 (fn write-plain-outcome! [result value]
   (let [marker (.. "GOAL_STATUS: " (final-marker value.status))]
@@ -89,7 +87,9 @@
                       (os.getenv :FEN_JSON_OUTPUT_PATH))
         wrote? (if (and json-path (not= json-path ""))
                    (write-json-outcome! json-path goal-state.last-result value)
-                   (do (write-plain-outcome! goal-state.last-result value) true))]
+                   (do
+                     (write-plain-outcome! goal-state.last-result value)
+                     true))]
     (if (and ok? wrote?)
         (or code-or-error 1)
         1)))

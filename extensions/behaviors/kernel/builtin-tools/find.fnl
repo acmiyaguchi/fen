@@ -52,9 +52,9 @@
       (util.err "missing 'pattern'")
       (let [target (or path ".")
             cap (util.int-arg limit 200)
-            cmd (.. "find " (util.shellquote target)
-                    " -name " (util.shellquote pattern)
-                    " -print 2>&1 | head -n " (tostring cap))
+            cmd (.. "find " (util.shellquote target) " -name "
+                    (util.shellquote pattern) " -print 2>&1 | head -n "
+                    (tostring cap))
             pipe (io.popen cmd :r)]
         (if (not pipe) (util.err "io.popen failed")
             (let [out (read-pipe pipe ?yield-fn)

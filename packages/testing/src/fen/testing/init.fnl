@@ -44,7 +44,8 @@
   (let [snapshot {}]
     (each [_ name (ipairs (or names []))]
       (let [current (. package.loaded name)]
-        (tset snapshot name (if (= current nil) package-loaded-nil-sentinel current))))
+        (tset snapshot name (if (= current nil) package-loaded-nil-sentinel
+                                current))))
     snapshot))
 
 ;; @doc fen.testing.restore-package-loaded!
@@ -54,7 +55,8 @@
 ;; tags: testing modules stubs package-loaded
 (fn restore-package-loaded! [snapshot]
   (each [name value (pairs (or snapshot {}))]
-    (tset package.loaded name (if (= value package-loaded-nil-sentinel) nil value))))
+    (tset package.loaded name (if (= value package-loaded-nil-sentinel) nil
+                                  value))))
 
 ;; @doc fen.testing.with-package-loaded
 ;; kind: function
@@ -271,7 +273,6 @@
     (assert (os.execute (.. "rm -rf -- " (shellquote path))))
     (tset owned-temp-roots path nil)))
 
-
 ;; @doc fen.testing.write-file
 ;; kind: function
 ;; signature: (write-file path content) -> path
@@ -346,7 +347,8 @@
     (assert (. owned-temp-files path)
             (.. "refusing to remove unowned temp file: " (tostring path)))
     (let [(ok? err) (os.remove path)]
-      (assert ok? (.. "failed to remove temp file " (tostring path) ": " (tostring err))))
+      (assert ok? (.. "failed to remove temp file " (tostring path) ": "
+                      (tostring err))))
     (tset owned-temp-files path nil)))
 
 ;; @doc fen.testing.assert-no-leaks!
@@ -359,7 +361,6 @@
         file (next owned-temp-files)]
     (assert (not root) (.. "leaked temp root: " (tostring root)))
     (assert (not file) (.. "leaked temp file: " (tostring file)))))
-
 
 {: shellquote
  : stub-getenv!

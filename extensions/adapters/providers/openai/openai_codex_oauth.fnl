@@ -65,7 +65,7 @@
 ;; tags: codex auth oauth form
 (fn url-encode [s]
   (let [escaped (string.gsub (tostring s) "([^%w%-_%.~])"
-                  (fn [c] (string.format "%%%02X" (string.byte c))))]
+                             (fn [c] (string.format "%%%02X" (string.byte c))))]
     escaped))
 
 ;; @doc fen.extensions.provider_openai.openai_codex_oauth.form-encode
@@ -89,14 +89,13 @@
   (let [body (form-encode {:grant_type "refresh_token"
                            :refresh_token refresh-token
                            :client_id CLIENT-ID})
-        resp (http.request
-               {:method :POST
-                :url TOKEN-URL
-                :headers {:content-type "application/x-www-form-urlencoded"
-                          :accept "application/json"}
-                :body body
-                :timeout-ms 30000
-                :connect-timeout-ms 10000})]
+        resp (http.request {:method :POST
+                            :url TOKEN-URL
+                            :headers {:content-type "application/x-www-form-urlencoded"
+                                      :accept "application/json"}
+                            :body body
+                            :timeout-ms 30000
+                            :connect-timeout-ms 10000})]
     (when resp.error
       (error (.. "auth.openai_codex: refresh transport failed: " resp.error)))
     (when (or (< resp.status 200) (>= resp.status 300))
@@ -123,8 +122,7 @@
 ;; summary: Return true when stored Codex credentials are missing expiry or expire within the proactive refresh margin.
 ;; tags: codex auth oauth refresh
 (fn expiring-soon? [creds]
-  (or (not creds.expires)
-      (<= creds.expires (+ (now-ms) REFRESH-MARGIN-MS))))
+  (or (not creds.expires) (<= creds.expires (+ (now-ms) REFRESH-MARGIN-MS))))
 
 (fn user-error [msg]
   ;; `error(msg, 0)` suppresses the file:line: prefix Lua otherwise
@@ -134,8 +132,7 @@
 
 (fn validate-stored-creds [creds]
   (when (not creds)
-    (user-error
-      "No Codex credentials found in auth.json — run `fen --login openai-codex` first."))
+    (user-error "No Codex credentials found in auth.json — run `fen --login openai-codex` first."))
   (when (not= creds.type :oauth)
     (user-error "Stored openai-codex credentials are not OAuth."))
   (when (or (not creds.access) (= creds.access ""))
@@ -148,9 +145,7 @@
   "Return true when auth.json contains a structurally usable openai-codex
    OAuth record. This is intentionally read-only and does not refresh tokens."
   (let [creds (storage.get PROVIDER-ID ?path)]
-    (and creds
-         (= creds.type :oauth)
-         creds.access (not= creds.access "")
+    (and creds (= creds.type :oauth) creds.access (not= creds.access "")
          creds.refresh (not= creds.refresh ""))))
 
 (fn get-fresh-creds! [?path]

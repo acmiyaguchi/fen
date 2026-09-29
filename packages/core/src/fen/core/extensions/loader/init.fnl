@@ -16,14 +16,16 @@
 (local loaded {})
 
 (fn record-spec-status! [spec status extra]
-  (let [rec {:manifest spec.manifest :status status
+  (let [rec {:manifest spec.manifest
+             :status status
              :path (or spec.entry-path spec.manifest-path spec.dir)
              :source spec.source
              :version-count (or spec.version-count 1)
              :versions (or spec.versions [])
              :first-party? (or spec.first-party? false)
              :enabled-by spec.enabled-by}]
-    (each [k v (pairs (or extra {}))] (tset rec k v))
+    (each [k v (pairs (or extra {}))]
+      (tset rec k v))
     (tset state.extensions spec.name rec)))
 
 (fn actionable-error [spec err]
@@ -44,7 +46,8 @@
    a module that returned nil, so booleans read as \"returned nothing\"."
   (let [want "a register function or {:register fn}"]
     (case (type entry)
-      (where (or :nil :boolean)) (.. "entry returned nothing; it must return " want)
+      (where (or :nil :boolean)) (.. "entry returned nothing; it must return "
+                                     want)
       :table (.. "entry table has no :register function; it must return " want)
       t (.. "entry must return " want ", got " t))))
 
@@ -55,7 +58,7 @@
     (if (not (= (type register) :function))
         (values false (entry-shape-error entry))
         (let [api (ext-api.make-api spec.name spec.manifest
-                                      {:privileged? spec.first-party?})
+                                    {:privileged? spec.first-party?})
               api-with-load (doto api
                               (tset :load
                                     (fn [sibling]
@@ -73,14 +76,15 @@
    landed, leaving state.presenters / commands-extra empty."
   (let [entry-module (manifest-mod.entry-module-of spec.manifest)]
     (register-registry.unregister-by-owner spec.name)
-    (when (and (or (not opts.reload?) opts.force?) (. package.loaded entry-module))
+    (when (and (or (not opts.reload?) opts.force?)
+               (. package.loaded entry-module))
       (tset package.loaded entry-module nil))
     (let [changes (if opts.reload?
-                      (reload.clear-reload-modules! spec.manifest [entry-module]
-                                                    opts.yield
+                      (reload.clear-reload-modules! spec.manifest
+                                                    [entry-module] opts.yield
                                                     {:force? opts.force?})
-                      (reload.change-summary
-                        (manifest-mod.reload-modules spec.manifest [entry-module])))
+                      (reload.change-summary (manifest-mod.reload-modules spec.manifest
+                                                                          [entry-module])))
           (ok? entry-or-err) (pcall require entry-module)]
       (if ok?
           (let [(reg-ok? reg-err) (try-register-entry! spec entry-or-err)]
@@ -101,7 +105,8 @@
 (fn load-path-spec! [spec _opts]
   "Path-shaped extension: dofile the entry, call its register fn with the api."
   (register-registry.unregister-by-owner spec.name)
-  (let [changes (reload.change-summary (manifest-mod.reload-modules spec.manifest []))
+  (let [changes (reload.change-summary (manifest-mod.reload-modules spec.manifest
+                                                                    []))
         entry-path (or spec.entry-path
                        (let [manifest-entry (manifest-mod.entry-of spec.manifest)]
                          (if manifest-entry
@@ -124,10 +129,11 @@
                   (values false display-err changes))
                 (let [(reg-ok? reg-err) (try-register-entry! spec entry)]
                   (if reg-ok?
-                      (do (record-spec-status! spec :loaded {})
-                          (tset loaded spec.name spec)
-                          (events.emit {:type :extension-loaded :name spec.name})
-                          (values true nil changes))
+                      (do
+                        (record-spec-status! spec :loaded {})
+                        (tset loaded spec.name spec)
+                        (events.emit {:type :extension-loaded :name spec.name})
+                        (values true nil changes))
                       (let [display-err (actionable-error spec reg-err)]
                         (record-spec-error! spec reg-err)
                         (values false display-err changes))))))))))
@@ -143,8 +149,7 @@
    :disabled status; load-spec-with-status! is the one that short-circuits
    them before invoking the entry."
   (and (or (not (manifest-mod.interactive-only? spec.manifest))
-           opts.interactive?)
-       (presenter-match? spec opts)))
+           opts.interactive?) (presenter-match? spec opts)))
 
 (fn load-spec! [spec opts]
   (if (manifest-mod.entry-module-of spec.manifest)
@@ -155,23 +160,35 @@
   "Run admissibility checks, then load. Returns a summary entry suitable for
    the global summary list. A spec disabled on reload drops its prior
    owner-tagged contributions."
-  (let [(enabled? by) (manifest-mod.enabled? spec (?. ext-settings spec.name :enabled))]
+  (let [(enabled? by) (manifest-mod.enabled? spec
+                                             (?. ext-settings spec.name
+                                                 :enabled))]
     (set spec.enabled-by by)
     (if (not enabled?)
-        (do (register-registry.unregister-by-owner spec.name)
-            (tset loaded spec.name nil)
-            (record-spec-status! spec :disabled {})
-            {:name spec.name :status :disabled :checked 0 :changed 0
-             :changed-modules [] :source spec.source
-             :version-count (or spec.version-count 1)
-             :versions (or spec.versions [])
-             :first-party? spec.first-party?})
+        (do
+          (register-registry.unregister-by-owner spec.name)
+          (tset loaded spec.name nil)
+          (record-spec-status! spec :disabled {})
+          {:name spec.name
+           :status :disabled
+           :checked 0
+           :changed 0
+           :changed-modules []
+           :source spec.source
+           :version-count (or spec.version-count 1)
+           :versions (or spec.versions [])
+           :first-party? spec.first-party?})
         (let [declared-missing (manifest-mod.missing-requires-modules spec.manifest)]
           (if (> (length declared-missing) 0)
               (let [err (rocks.missing-modules-message spec declared-missing)]
                 (record-spec-error! spec err)
-                {:name spec.name :status :error :error (tostring err)
-                 :checked 0 :changed 0 :changed-modules [] :source spec.source
+                {:name spec.name
+                 :status :error
+                 :error (tostring err)
+                 :checked 0
+                 :changed 0
+                 :changed-modules []
+                 :source spec.source
                  :version-count (or spec.version-count 1)
                  :versions (or spec.versions [])
                  :first-party? spec.first-party?})
@@ -205,28 +222,29 @@
       (when (and (not found) (path-mod.file-exists? candidate))
         (set found candidate)))
     (if (not found)
-        (error (.. "extension " spec.name ": cannot load sibling " (tostring sibling)))
+        (error (.. "extension " spec.name ": cannot load sibling "
+                   (tostring sibling)))
         (let [(value err) (manifest-mod.load-file found)]
           (if err (error err) value)))))
 
 (fn skip-name? [name skip]
   (let [key (tostring name)]
-    (or (= true (. (or skip {}) name))
-        (= true (. (or skip {}) key)))))
+    (or (= true (. (or skip {}) name)) (= true (. (or skip {}) key)))))
 
 (fn include-name? [name only]
   (if (not only)
       true
       (let [key (tostring name)]
-        (or (= true (. only name))
-            (= true (. only key))))))
+        (or (= true (. only name)) (= true (. only key))))))
 
 (fn M.load! [opts ?mode]
   "Discover and load every admissible extension. First-party extensions
    fail-fast: a load error raises after the pass collecting all failures."
   (let [mode (or ?mode {})
         opts (or opts {})
-        discover-opts {:interactive? (if (= mode.interactive? nil) true mode.interactive?)
+        discover-opts {:interactive? (if (= mode.interactive? nil)
+                                         true
+                                         mode.interactive?)
                        :presenter (or opts.presenter :tui)
                        :reload? mode.reload?}
         yield! mode.yield

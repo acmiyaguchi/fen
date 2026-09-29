@@ -65,16 +65,16 @@
         (values override nil)
         (let [os-name (or (command-line "uname -s") "")]
           (if (not= os-name "Linux")
-              (values nil (.. "prebuilt binaries are Linux-only (detected: "
-                              (or-unknown os-name)
-                              "); build from source instead"))
+              (values nil
+                      (.. "prebuilt binaries are Linux-only (detected: "
+                          (or-unknown os-name) "); build from source instead"))
               (let [arch (or (command-line "uname -m") "")
                     slug (arch->slug arch)]
                 (if slug
                     (values slug nil)
-                    (values nil (.. "unsupported architecture: "
-                                    (or-unknown arch)
-                                    "; set FEN_ARCH to override")))))))))
+                    (values nil
+                            (.. "unsupported architecture: " (or-unknown arch)
+                                "; set FEN_ARCH to override")))))))))
 
 (fn http-get [url ?redirects]
   "GET `url`, following up to MAX-REDIRECTS redirects (the shared transport
@@ -86,11 +86,18 @@
         status resp.status]
     (if resp.error (values nil resp.error)
         (= status 200) (values resp.body nil)
-        (and (>= status 300) (< status 400))
-        (let [loc (header-get resp.headers :location)]
-          (if (not loc) (values nil (.. "redirect " status " without Location header"))
-              (>= redirects MAX-REDIRECTS) (values nil "too many redirects")
-              (http-get loc (+ redirects 1))))
+        (and (>= status 300) (< status 400)) (let [loc (header-get resp.headers
+                                                                   :location)]
+                                               (if (not loc)
+                                                   (values nil
+                                                           (.. "redirect "
+                                                               status
+                                                               " without Location header"))
+                                                   (>= redirects MAX-REDIRECTS)
+                                                   (values nil
+                                                           "too many redirects")
+                                                   (http-get loc
+                                                             (+ redirects 1))))
         (values nil (.. "HTTP " status)))))
 
 (fn fetch-latest-tag []
@@ -157,20 +164,28 @@
         (let [(wrote? write-err) (f:write body)
               (closed? close-err) (f:close)]
           (if (not wrote?)
-              (do (os.remove tmp)
-                  (values nil (.. "write to " tmp " failed: " (tostring write-err))))
+              (do
+                (os.remove tmp)
+                (values nil
+                        (.. "write to " tmp " failed: " (tostring write-err))))
               (not closed?)
-              (do (os.remove tmp)
-                  (values nil (.. "flush/close of " tmp " failed: " (tostring close-err))))
+              (do
+                (os.remove tmp)
+                (values nil
+                        (.. "flush/close of " tmp " failed: "
+                            (tostring close-err))))
               (not (os.execute (.. "chmod +x " (path.shell-quote tmp))))
-              (do (os.remove tmp)
-                  (values nil (.. "could not mark " tmp " executable")))
+              (do
+                (os.remove tmp)
+                (values nil (.. "could not mark " tmp " executable")))
               (let [(ok? rename-err) (os.rename tmp target)]
                 (if ok?
                     (values true nil)
-                    (do (os.remove tmp)
-                        (values nil (.. "could not replace " target ": "
-                                        (tostring rename-err)))))))))))
+                    (do
+                      (os.remove tmp)
+                      (values nil
+                              (.. "could not replace " target ": "
+                                  (tostring rename-err)))))))))))
 
 (fn download-verified [tag slug]
   "Download the release asset and verify its SHA-256 against SHA256SUMS.
@@ -179,41 +194,60 @@
         (body body-err) (http-get (.. DL-BASE "/" tag "/" asset))]
     (if (not body) (values nil (.. "download failed: " body-err))
         (let [(sums sums-err) (http-get (.. DL-BASE "/" tag "/SHA256SUMS"))]
-          (if (not sums) (values nil (.. "could not fetch checksums: " sums-err))
+          (if (not sums)
+              (values nil (.. "could not fetch checksums: " sums-err))
               (let [expected (expected-hash sums asset)]
-                (if (not expected) (values nil (.. "no checksum for " asset " in SHA256SUMS"))
+                (if (not expected)
+                    (values nil (.. "no checksum for " asset " in SHA256SUMS"))
                     (not= (sha256.hex-digest body) expected)
-                    (values nil (.. "checksum mismatch for " asset "; refusing to install"))
+                    (values nil
+                            (.. "checksum mismatch for " asset
+                                "; refusing to install"))
                     (values body nil))))))))
 
 (fn apply-update! [target tag slug]
   "Download, verify, and install the release asset. Returns an exit code."
   (let [(body err) (download-verified tag slug)]
     (if (not body)
-        (do (oops err) 1)
+        (do
+          (oops err)
+          1)
         (let [(ok? install-err) (install-binary target body)]
           (if ok?
-              (do (say (.. "updated to " tag "; restart fen to use it")) 0)
-              (do (oops install-err) 1))))))
+              (do
+                (say (.. "updated to " tag "; restart fen to use it"))
+                0)
+              (do
+                (oops install-err)
+                1))))))
 
 (fn perform-update! [current]
   "Past the release-build gate: detect arch, find the latest release, and
    update if it is newer than `current`. Returns an exit code."
   (let [(slug slug-err) (detect-slug)]
     (if (not slug)
-        (do (oops slug-err) 1)
+        (do
+          (oops slug-err)
+          1)
         (do
           (say "checking for the latest release...")
           (let [(tag tag-err) (fetch-latest-tag)]
             (if (not tag)
-                (do (oops (.. "could not check for updates: " tag-err)) 1)
+                (do
+                  (oops (.. "could not check for updates: " tag-err))
+                  1)
                 (= tag current)
-                (do (say (.. "already up to date (" current ")")) 0)
+                (do
+                  (say (.. "already up to date (" current ")"))
+                  0)
                 (let [target (resolve-self)]
                   (if (not target)
-                      (do (oops "could not locate the running fen binary") 1)
-                      (do (say (.. "updating " current " -> " tag " (" slug ")"))
-                          (apply-update! target tag slug))))))))))
+                      (do
+                        (oops "could not locate the running fen binary")
+                        1)
+                      (do
+                        (say (.. "updating " current " -> " tag " (" slug ")"))
+                        (apply-update! target tag slug))))))))))
 
 ;; @doc fen.update.run!
 ;; kind: function
@@ -225,14 +259,16 @@
         current (or info.version "unknown")
         source (or info.source "unknown")]
     (if (not (or (= source "nix") (= source "make")))
-        (do (oops (.. "fen update only manages released single-file binaries "
-                      "(this build's source is '" source "'); update with "
-                      "git pull / nix build .#fen, or reinstall via install.sh"))
-            1)
+        (do
+          (oops (.. "fen update only manages released single-file binaries "
+                    "(this build's source is '" source "'); update with "
+                    "git pull / nix build .#fen, or reinstall via install.sh"))
+          1)
         (not (string.match current "^v%d"))
-        (do (oops (.. "this looks like an unreleased local build (" current
-                      "); fen update only replaces tagged release binaries"))
-            1)
+        (do
+          (oops (.. "this looks like an unreleased local build (" current
+                    "); fen update only replaces tagged release binaries"))
+          1)
         (perform-update! current))))
 
 ;; Exposed for unit tests; not part of the stable public surface.

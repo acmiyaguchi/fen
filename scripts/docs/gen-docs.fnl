@@ -15,8 +15,7 @@
 
 (local fennel (require :fennel))
 (set fennel.path
-     (.. fennel.path
-         ";./scripts/?.fnl;./scripts/?/init.fnl"
+     (.. fennel.path ";./scripts/?.fnl;./scripts/?/init.fnl"
          ";./packages/core/src/?.fnl;./packages/core/src/?/init.fnl"
          ";./packages/util/src/?.fnl;./packages/util/src/?/init.fnl"))
 
@@ -44,7 +43,8 @@
     (p:close)
     out))
 
-(fn keyword [v] (if v (.. ":" (tostring v)) ""))
+(fn keyword [v]
+  (if v (.. ":" (tostring v)) ""))
 
 (fn slug [s]
   (let [s (string.lower (tostring s))
@@ -88,17 +88,15 @@
    that have an explicit @doc. Undocumented data exports are usually
    state-table aliases or implementation plumbing, so render them as a
    compact omitted list instead of as empty API entries."
-  (not (and (data-kind? e)
-            (not (documented-export? e)))))
+  (not (and (data-kind? e) (not (documented-export? e)))))
 
 (fn render-omitted-data-line [out omitted]
-  (when (> (# omitted) 0)
+  (when (> (length omitted) 0)
     (let [names []]
       (each [_ e (ipairs omitted)]
         (table.insert names (.. "`" e.id "`")))
-      (table.insert out
-                    (.. "_Undocumented data/state re-exports omitted from the public API listing:_ "
-                        (table.concat names ", ")))
+      (table.insert out (.. "_Undocumented data/state re-exports omitted from the public API listing:_ "
+                            (table.concat names ", ")))
       (table.insert out ""))))
 
 (fn export-anchor [e]
@@ -133,24 +131,23 @@
             visible []
             omitted-data []]
         (each [_ e (ipairs items)]
-          (if (visible-export? e)
-              (table.insert visible e)
-              (data-kind? e)
-              (table.insert omitted-data e)))
-        (when (or (> (# visible) 0) (> (# omitted-data) 0))
+          (if (visible-export? e) (table.insert visible e)
+              (data-kind? e) (table.insert omitted-data e)))
+        (when (or (> (length visible) 0) (> (length omitted-data) 0))
           (table.insert out (.. "## <a id=\"" (slug m) "\"></a>" m))
           (table.insert out "")
           (each [_ e (ipairs visible)]
             (let [sig (doc-signature e.doc nil)
                   summary (doc-summary e.doc)
                   line (or (and e.doc e.doc.line) e.line "?")]
-              (table.insert out (.. "### <a id=\"" (export-anchor e) "\"></a>`" e.id "`"))
+              (table.insert out (.. "### <a id=\"" (export-anchor e) "\"></a>`"
+                                    e.id "`"))
               (when sig
                 (table.insert out (.. "`" sig "`")))
               (when (not= summary "")
                 (table.insert out summary))
               (let [tags (doc-tags e.doc)]
-                (when (and tags (> (# tags) 0))
+                (when (and tags (> (length tags) 0))
                   (table.insert out (.. "*tags:* " (table.concat tags ", ")))))
               (table.insert out (.. "_" e.path ":" line "_"))
               (table.insert out "")))
@@ -158,23 +155,23 @@
     (table.concat out "\n")))
 
 (fn field-type [fdef]
-  (or fdef.type
-      (and fdef.const (.. ":" (tostring fdef.const)))
-      (and fdef.enum
-           (.. "enum " (table.concat
-                         (icollect [_ v (ipairs fdef.enum)]
-                           (.. ":" (tostring v)))
-                         " | ")))
-      "any"))
+  (or fdef.type (and fdef.const (.. ":" (tostring fdef.const)))
+      (and fdef.enum (.. "enum "
+                         (table.concat (icollect [_ v (ipairs fdef.enum)]
+                                         (.. ":" (tostring v)))
+                                       " | "))) "any"))
 
 (fn contract-field-anchor [prefix name field-name]
-  (slug (.. "contract-field-" (tostring prefix) "-" (tostring name) "-" (tostring field-name))))
+  (slug (.. "contract-field-" (tostring prefix) "-" (tostring name) "-"
+            (tostring field-name))))
 
 (fn contract-member-anchor [prefix name category value]
-  (slug (.. "contract-member-" (tostring prefix) "-" (tostring name) "-" category "-" (tostring value))))
+  (slug (.. "contract-member-" (tostring prefix) "-" (tostring name) "-"
+            category "-" (tostring value))))
 
 (fn contract-member-label [category value]
-  (if (or (= category "enum") (= category "method") (= category "optional-method"))
+  (if (or (= category "enum") (= category "method")
+          (= category "optional-method"))
       (.. ":" (tostring value))
       (tostring value)))
 
@@ -197,16 +194,17 @@
   (let [type (field-type fdef)
         req (if fdef.required " (required)" "")
         summary (or fdef.summary "")]
-    (.. "- <a id=\"" (contract-field-anchor prefix cname fname) "\"></a>`:" fname "` `" type "`" req
-        (if (= summary "") "" (.. " — " summary)))))
+    (.. "- <a id=\"" (contract-field-anchor prefix cname fname) "\"></a>`:"
+        fname "` `" type "`" req (if (= summary "") "" (.. " — " summary)))))
 
 (fn render-member-row [prefix cname category value]
-  (.. "- <a id=\"" (contract-member-anchor prefix cname category value) "\"></a>`"
-      (contract-member-label category value) "` `" category "` — "
+  (.. "- <a id=\"" (contract-member-anchor prefix cname category value)
+      "\"></a>`" (contract-member-label category value) "` `" category "` — "
       (contract-member-summary cname category value)))
 
 (fn render-contract-entry [prefix name body]
-  (let [out [(.. "### <a id=\"" (contract-entry-anchor prefix name) "\"></a>`" name "`")
+  (let [out [(.. "### <a id=\"" (contract-entry-anchor prefix name) "\"></a>`"
+                 name "`")
              (or body.summary "")]]
     (when body.fields
       (let [keys []]
@@ -223,8 +221,9 @@
       (each [_ m (ipairs (or body.methods []))]
         (table.insert member-rows (render-member-row prefix name "method" m)))
       (each [_ m (ipairs (or body.optional-methods []))]
-        (table.insert member-rows (render-member-row prefix name "optional-method" m)))
-      (when (> (# member-rows) 0)
+        (table.insert member-rows
+                      (render-member-row prefix name "optional-method" m)))
+      (when (> (length member-rows) 0)
         (table.insert out "")
         (each [_ row (ipairs member-rows)]
           (table.insert out row))))
@@ -238,7 +237,9 @@
              "register kinds, event-bus shapes, and provider/auth/session"
              "interfaces."
              ""]
-        sections [{:key :register-kinds :prefix :register-kind :label "Register kinds"}
+        sections [{:key :register-kinds
+                   :prefix :register-kind
+                   :label "Register kinds"}
                   {:key :events :prefix :event :label "Events"}
                   {:key :types :prefix :type :label "Canonical types"}
                   {:key :interfaces :prefix :interface :label "Interfaces"}]]
@@ -246,12 +247,16 @@
     (table.insert out "")
     (each [_ s (ipairs sections)]
       (when (. contracts s.key)
-        (table.insert out (.. "- [" s.label "](#" (slug (.. "contract-section-" s.label)) ")"))))
+        (table.insert out
+                      (.. "- [" s.label "](#"
+                          (slug (.. "contract-section-" s.label)) ")"))))
     (table.insert out "")
     (each [_ s (ipairs sections)]
       (let [bucket (. contracts s.key)]
         (when bucket
-          (table.insert out (.. "## <a id=\"" (slug (.. "contract-section-" s.label)) "\"></a>" s.label))
+          (table.insert out (.. "## <a id=\""
+                                (slug (.. "contract-section-" s.label))
+                                "\"></a>" s.label))
           (table.insert out "")
           (let [keys []]
             (each [k _ (pairs bucket)] (table.insert keys (tostring k)))
@@ -262,7 +267,7 @@
 
 (fn register-site-anchor [r name]
   (slug (.. "register-site-" (tostring (or r.kind "unknown")) "-" name "-"
-           (or r.path "unknown") "-" (or r.line 0))))
+            (or r.path "unknown") "-" (or r.line 0))))
 
 (fn register-site-summary [r name]
   (or r.description
@@ -301,6 +306,7 @@
           (table.insert order k)
           (tset groups k []))
         (table.insert (. groups k) r)))
+
     (each [_ r (ipairs register-sites)]
       (add-site! r))
     (each [_ r (ipairs (scan-extension-manifests))]
@@ -316,10 +322,12 @@
       (table.insert out "## Table of contents")
       (table.insert out "")
       (each [_ k (ipairs order)]
-        (table.insert out (.. "- [:" k "](#" (slug (.. "extension-kind-" k)) ")")))
+        (table.insert out (.. "- [:" k "](#" (slug (.. "extension-kind-" k))
+                              ")")))
       (table.insert out "")
       (each [_ k (ipairs order)]
-        (table.insert out (.. "## <a id=\"" (slug (.. "extension-kind-" k)) "\"></a>:" k))
+        (table.insert out (.. "## <a id=\"" (slug (.. "extension-kind-" k))
+                              "\"></a>:" k))
         (table.insert out "")
         (let [items (. groups k)]
           (each [_ r (ipairs items)]
@@ -328,7 +336,9 @@
                   anchor (register-site-anchor r name)
                   desc (register-site-summary r name)
                   loc (.. r.path ":" (tostring (or r.line "?")))]
-              (table.insert out (.. "- <a id=\"" anchor "\"></a>" name-str " — " desc " — _" loc "_"))))
+              (table.insert out
+                            (.. "- <a id=\"" anchor "\"></a>" name-str " — "
+                                desc " — _" loc "_"))))
           (table.insert out "")))
       (table.concat out "\n"))))
 
@@ -369,7 +379,8 @@
     (when doc
       (when doc.summary (tset rec :summary doc.summary))
       (when doc.signature (tset rec :signature doc.signature))
-      (when (and doc.tags (> (# doc.tags) 0)) (tset rec :tags doc.tags))
+      (when (and doc.tags (> (length doc.tags) 0))
+        (tset rec :tags doc.tags))
       (when doc.see-also (tset rec :see-also doc.see-also)))
     rec))
 
@@ -387,7 +398,8 @@
      :summary (or field.summary "")
      :signature (.. ":" (tostring field-name) " " ty)
      :tags (index-tags :contracts kind :field parent-name field-name ty)
-     :href (.. (contract-page prefix) "#" (contract-field-anchor prefix parent-name field-name))
+     :href (.. (contract-page prefix) "#"
+               (contract-field-anchor prefix parent-name field-name))
      :parent (.. prefix ":" parent-name)
      :field (.. ":" (tostring field-name))}))
 
@@ -398,7 +410,8 @@
    :summary (contract-member-summary parent-name category value)
    :signature (contract-member-label category value)
    :tags (index-tags :contracts kind :member category parent-name value)
-   :href (.. (contract-page prefix) "#" (contract-member-anchor prefix parent-name category value))
+   :href (.. (contract-page prefix) "#"
+             (contract-member-anchor prefix parent-name category value))
    :parent (.. prefix ":" parent-name)
    :member (contract-member-label category value)
    :category category})
@@ -416,31 +429,46 @@
                                 :kind kind
                                 :summary (or body.summary "")
                                 :tags (index-tags :contracts kind k)
-                                :href (.. (contract-page prefix) "#" (slug (.. "contract-entry-" prefix "-" k)))}]
+                                :href (.. (contract-page prefix) "#"
+                                          (slug (.. "contract-entry-" prefix
+                                                    "-" k)))}]
                        (when body.fields
                          (let [fkeys []]
-                           (each [fk _ (pairs body.fields)] (table.insert fkeys fk))
+                           (each [fk _ (pairs body.fields)]
+                             (table.insert fkeys fk))
                            (table.sort fkeys)
                            (tset rec :fields fkeys)
                            (each [_ fk (ipairs fkeys)]
                              (table.insert out
-                                           (contract-field-record prefix kind k fk (. body.fields fk))))))
+                                           (contract-field-record prefix kind k
+                                                                  fk
+                                                                  (. body.fields
+                                                                     fk))))))
                        (when body.enum
                          (tset rec :enum body.enum)
                          (each [_ v (ipairs body.enum)]
-                           (table.insert out (contract-member-record prefix kind k "enum" v))))
+                           (table.insert out
+                                         (contract-member-record prefix kind k
+                                                                 "enum" v))))
                        (when body.variants
                          (tset rec :variants body.variants)
                          (each [_ v (ipairs body.variants)]
-                           (table.insert out (contract-member-record prefix kind k "variant" v))))
+                           (table.insert out
+                                         (contract-member-record prefix kind k
+                                                                 "variant" v))))
                        (when body.methods
                          (tset rec :methods body.methods)
                          (each [_ m (ipairs body.methods)]
-                           (table.insert out (contract-member-record prefix kind k "method" m))))
+                           (table.insert out
+                                         (contract-member-record prefix kind k
+                                                                 "method" m))))
                        (when body.optional-methods
                          (tset rec :optional-methods body.optional-methods)
                          (each [_ m (ipairs body.optional-methods)]
-                           (table.insert out (contract-member-record prefix kind k "optional-method" m))))
+                           (table.insert out
+                                         (contract-member-record prefix kind k
+                                                                 "optional-method"
+                                                                 m))))
                        (table.insert out rec))))))]
     (push :register-kind :register-kind contracts.register-kinds)
     (push :event :event contracts.events)
@@ -448,22 +476,20 @@
     (push :interface :interface contracts.interfaces)
     out))
 
-(local REGISTER-KIND-PAGES
-  {:auth-backend "auth-backends.html"
-   :command "commands.html"
-   :control "controls.html"
-   :hook "contributions.html"
-   :panel "panels.html"
-   :presenter "presenters.html"
-   :prompt-fragment "prompt-fragments.html"
-   :provider "providers.html"
-   :session-backend "session-backends.html"
-   :status "status.html"
-   :tool "tools.html"})
+(local REGISTER-KIND-PAGES {:auth-backend "auth-backends.html"
+                            :command "commands.html"
+                            :control "controls.html"
+                            :hook "contributions.html"
+                            :panel "panels.html"
+                            :presenter "presenters.html"
+                            :prompt-fragment "prompt-fragments.html"
+                            :provider "providers.html"
+                            :session-backend "session-backends.html"
+                            :status "status.html"
+                            :tool "tools.html"})
 
 (fn register-kind-page [kind]
-  (or (. REGISTER-KIND-PAGES kind)
-      (.. (slug kind) ".html")))
+  (or (. REGISTER-KIND-PAGES kind) (.. (slug kind) ".html")))
 
 (fn extension-records [register-sites]
   (let [out []]
@@ -472,17 +498,17 @@
             desc (register-site-summary r name)
             source-key (slug (.. (or r.path "unknown") "-" (or r.line 0)))
             id (.. "register-site:" r.kind ":" name ":" source-key)]
-        (table.insert out
-          {:id id
-           :kind (.. "register-site:" r.kind)
-           :name name
-           :summary desc
-           :description desc
-           :tags (index-tags :extensions :register-site r.kind name)
-           :href (.. (register-kind-page r.kind) "#"
-                     (register-site-anchor r name))
-           :path r.path
-           :line (or r.line 0)})))
+        (table.insert out {:id id
+                           :kind (.. "register-site:" r.kind)
+                           :name name
+                           :summary desc
+                           :description desc
+                           :tags (index-tags :extensions :register-site r.kind
+                                             name)
+                           :href (.. (register-kind-page r.kind) "#"
+                                     (register-site-anchor r name))
+                           :path r.path
+                           :line (or r.line 0)})))
     out))
 
 (fn extension-manifest-records []
@@ -490,16 +516,16 @@
     (each [_ r (ipairs (scan-extension-manifests))]
       (let [name r.name
             desc r.description]
-        (table.insert out
-          {:id (.. "extension:" name)
-           :kind "extension"
-           :name name
-           :summary desc
-           :description desc
-           :tags (index-tags :extensions :extension name)
-           :href (.. "extensions.html#" (register-site-anchor r name))
-           :path r.path
-           :line 1})))
+        (table.insert out {:id (.. "extension:" name)
+                           :kind "extension"
+                           :name name
+                           :summary desc
+                           :description desc
+                           :tags (index-tags :extensions :extension name)
+                           :href (.. "extensions.html#"
+                                     (register-site-anchor r name))
+                           :path r.path
+                           :line 1})))
     out))
 
 (fn generated-page-records []
@@ -541,7 +567,7 @@
             (string.match line "^#+%s+")
             nil
             (string.match line "^%s*$")
-            (when (> (# summary-lines) 0)
+            (when (> (length summary-lines) 0)
               (set done? true))
             (do
               (table.insert summary-lines line)))))
@@ -555,15 +581,14 @@
             lines []]
         (each [line (string.gmatch (.. (read-file path) "\n") "([^\n]*)\n")]
           (table.insert lines line))
-        (table.insert out
-          {:id (.. "doc:" base)
-           :kind "doc-page"
-           :name base
-           :summary (doc-page-summary lines)
-           :tags (index-tags :docs base)
-           :href page
-           :path path
-           :line 1})))
+        (table.insert out {:id (.. "doc:" base)
+                           :kind "doc-page"
+                           :name base
+                           :summary (doc-page-summary lines)
+                           :tags (index-tags :docs base)
+                           :href page
+                           :path path
+                           :line 1})))
     out))
 
 (fn trim [s]
@@ -582,7 +607,7 @@
 
 (fn table-summary-fragment [line]
   (let [cells (split-table-cells line)]
-    (if (> (# cells) 0)
+    (if (> (length cells) 0)
         (.. "Reference table covering " (table.concat cells ", ") ".")
         "Reference table.")))
 
@@ -590,7 +615,7 @@
   (var in-code? false)
   (var done? false)
   (let [summary-lines []]
-    (for [i (+ start-index 1) (# lines)]
+    (for [i (+ start-index 1) (length lines)]
       (when (not done?)
         (let [line (. lines i)]
           (if (string.match line "^```")
@@ -600,7 +625,7 @@
               (string.match line "^#+%s+")
               (set done? true)
               (string.match line "^%s*$")
-              (when (> (# summary-lines) 0)
+              (when (> (length summary-lines) 0)
                 (set done? true))
               (string.match line "^%s*|")
               (do
@@ -608,11 +633,11 @@
                 (set done? true))
               (string.match line "^%s*[-*]%s+(.+)$")
               (let [item (string.match line "^%s*[-*]%s+(.+)$")]
-                (if (> (# summary-lines) 0)
+                (if (> (length summary-lines) 0)
                     (set done? true)
                     (table.insert summary-lines item)))
               (table.insert summary-lines line)))))
-    (if (> (# summary-lines) 0)
+    (if (> (length summary-lines) 0)
         (.. base " / " heading " — " (table.concat summary-lines " "))
         (.. base " / " heading))))
 
@@ -634,17 +659,19 @@
                 (when marks
                   (let [base-id (slug (.. "doc-heading-" text))
                         count (or (. seen base-id) 0)
-                        anchor (if (= count 0) base-id (.. base-id "-" (+ count 1)))]
+                        anchor (if (= count 0) base-id
+                                   (.. base-id "-" (+ count 1)))]
                     (tset seen base-id (+ count 1))
                     (table.insert out
-                      {:id (.. "doc:" base "#" anchor)
-                       :kind "doc-heading"
-                       :name text
-                       :summary (doc-heading-summary base text lines line-no)
-                       :tags (index-tags :docs base text)
-                       :href (.. page "#" anchor)
-                       :path path
-                       :line line-no}))))))))
+                                  {:id (.. "doc:" base "#" anchor)
+                                   :kind "doc-heading"
+                                   :name text
+                                   :summary (doc-heading-summary base text
+                                                                 lines line-no)
+                                   :tags (index-tags :docs base text)
+                                   :href (.. page "#" anchor)
+                                   :path path
+                                   :line line-no}))))))))
     out))
 
 (fn write-index [records]
@@ -655,8 +682,7 @@
       (table.insert all r))
     (write-file (.. OUT-DIR "/api-index.jsonl")
                 (.. (table.concat lines "\n") "\n"))
-    (write-file (.. OUT-DIR "/api-index.json")
-                (.. (json.encode all) "\n"))))
+    (write-file (.. OUT-DIR "/api-index.json") (.. (json.encode all) "\n"))))
 
 ;; ---------------------------------------------------------------------------
 ;; Main
@@ -688,7 +714,7 @@
         (table.insert records r))
       (write-index records)
       (print (.. "Wrote " OUT-DIR "/core.md, contracts.md, extensions.md"
-                 " (+ api-index.{json,jsonl}) — "
-                 (# records) " records, " (# tree.sources) " sources scanned.")))))
+                 " (+ api-index.{json,jsonl}) — " (length records)
+                 " records, " (length tree.sources) " sources scanned.")))))
 
 (main)

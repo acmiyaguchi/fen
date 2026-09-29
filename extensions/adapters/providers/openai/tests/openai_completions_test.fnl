@@ -1,776 +1,822 @@
-
 (local oc (require :fen.extensions.provider_openai.openai_completions))
 (local types (require :fen.core.types))
 (local json (require :fen.util.json))
 (local http (require :fen.util.http))
 
 (describe "providers.openai_completions.convert-tools"
-  (fn []
-    (it "wraps canonical Tool[] in {type:function, function:{...}}"
-      (fn []
-        (let [out (oc.convert-tools
-                    [{:name "ls" :description "list"
-                      :parameters {:type :object}}])]
-          (assert.are.equal 1 (length out))
-          (assert.are.equal :function (. out 1 :type))
-          (assert.are.equal "ls" (. out 1 :function :name))
-          (assert.are.equal "list" (. out 1 :function :description)))))
-
-    (it "returns an empty array for nil/empty input"
-      (fn []
-        (assert.are.equal 0 (length (oc.convert-tools nil)))
-        (assert.are.equal 0 (length (oc.convert-tools [])))))))
+          (fn []
+            (it "wraps canonical Tool[] in {type:function, function:{...}}"
+                (fn []
+                  (let [out (oc.convert-tools [{:name "ls"
+                                                :description "list"
+                                                :parameters {:type :object}}])]
+                    (assert.are.equal 1 (length out))
+                    (assert.are.equal :function (. out 1 :type))
+                    (assert.are.equal "ls" (. out 1 :function :name))
+                    (assert.are.equal "list" (. out 1 :function :description)))))
+            (it "returns an empty array for nil/empty input"
+                (fn []
+                  (assert.are.equal 0 (length (oc.convert-tools nil)))
+                  (assert.are.equal 0 (length (oc.convert-tools [])))))))
 
 (describe "providers.openai_completions.convert-messages"
-  (fn []
-    (it "prepends system prompt as a {role:system} message"
-      (fn []
-        (let [out (oc.convert-messages
-                    [(types.user-message "hi")] "be helpful")]
-          (assert.are.equal :system (. out 1 :role))
-          (assert.are.equal "be helpful" (. out 1 :content))
-          (assert.are.equal :user (. out 2 :role)))))
-
-    (it "omits system message when system-prompt is nil/empty"
-      (fn []
-        (let [out (oc.convert-messages [(types.user-message "hi")] nil)]
-          (assert.are.equal :user (. out 1 :role)))
-        (let [out (oc.convert-messages [(types.user-message "hi")] "")]
-          (assert.are.equal :user (. out 1 :role)))))
-
-    (it "concats text blocks of an assistant message into content string"
-      (fn []
-        (let [asst (types.assistant-message
-                     {:api :openai-completions :provider :openai :model "m"
-                      :content [(types.text-block "hello, ")
-                                (types.text-block "world")]
-                      :stop-reason :stop})
-              out (oc.convert-messages [asst] nil)]
-          (assert.are.equal "hello, world" (. out 1 :content)))))
-
-    (it "drops unsigned thinking blocks when sending assistant content back to OpenAI"
-      (fn []
-        (let [asst (types.assistant-message
-                     {:api :openai-completions :provider :openai :model "m"
-                      :content [(types.thinking-block {:thinking "...reasoning..."})
-                                (types.text-block "final answer")]
-                      :stop-reason :stop})
-              out (oc.convert-messages [asst] nil)]
-          (assert.are.equal "final answer" (. out 1 :content))
-          (assert.is_nil (. out 1 :reasoning_content)))))
-
-    (it "echoes signed thinking blocks under their OpenAI-compatible reasoning field"
-      (fn []
-        (let [asst (types.assistant-message
-                     {:api :openai-completions :provider :openai :model "m"
-                      :content [(types.thinking-block
-                                  {:thinking "internal reasoning"
-                                   :thinking-signature :reasoning_content})
-                                (types.text-block "final answer")]
-                      :stop-reason :stop})
-              out (oc.convert-messages [asst] nil {:thinkingFormat :zai})]
-          (assert.are.equal "final answer" (. out 1 :content))
-          (assert.are.equal "internal reasoning" (. out 1 :reasoning_content)))))
-
-    (it "lifts tool-call blocks into the tool_calls array, JSON-encoding arguments"
-      (fn []
-        (let [asst (types.assistant-message
-                     {:api :openai-completions :provider :openai :model "m"
-                      :content [(types.tool-call-block "id-1" "bash" {:cmd "ls"})]
-                      :stop-reason :tool-use})
-              out (oc.convert-messages [asst] nil)
-              tc (. out 1 :tool_calls 1)]
-          (assert.are.equal "id-1" tc.id)
-          (assert.are.equal :function tc.type)
-          (assert.are.equal "bash" tc.function.name)
-          (assert.is_string tc.function.arguments)
-          (let [parsed (json.decode tc.function.arguments)]
-            (assert.are.equal "ls" parsed.cmd)))))
-
-    (it "converts a tool-result message to {role:tool, tool_call_id, content}"
-      (fn []
-        (let [tr (types.tool-result-message
-                   {:tool-call-id "id-1" :tool-name "bash"
-                    :content [(types.text-block "stdout!")]
-                    :is-error? false})
-              out (oc.convert-messages [tr] nil)]
-          (assert.are.equal :tool (. out 1 :role))
-          (assert.are.equal "id-1" (. out 1 :tool_call_id))
-          (assert.are.equal "stdout!" (. out 1 :content)))))
-
-    (it "synthesizes missing tool messages for orphaned tool calls in replayed history"
-      (fn []
-        (let [asst (types.assistant-message
-                     {:api :openai-completions :provider :openai :model "m"
-                      :content [(types.tool-call-block "id-orphan" "bash" {})]
-                      :stop-reason :tool-use})
-              out (oc.convert-messages [asst (types.user-message "continue")] nil)]
-          (assert.are.equal 3 (length out))
-          (assert.are.equal :assistant (. out 1 :role))
-          (assert.are.equal :tool (. out 2 :role))
-          (assert.are.equal "id-orphan" (. out 2 :tool_call_id))
-          (assert.is_truthy (string.find (. out 2 :content) "missing tool output" 1 true))
-          (assert.are.equal :user (. out 3 :role)))))))
+          (fn []
+            (it "prepends system prompt as a {role:system} message"
+                (fn []
+                  (let [out (oc.convert-messages [(types.user-message "hi")]
+                                                 "be helpful")]
+                    (assert.are.equal :system (. out 1 :role))
+                    (assert.are.equal "be helpful" (. out 1 :content))
+                    (assert.are.equal :user (. out 2 :role)))))
+            (it "omits system message when system-prompt is nil/empty"
+                (fn []
+                  (let [out (oc.convert-messages [(types.user-message "hi")]
+                                                 nil)]
+                    (assert.are.equal :user (. out 1 :role)))
+                  (let [out (oc.convert-messages [(types.user-message "hi")] "")]
+                    (assert.are.equal :user (. out 1 :role)))))
+            (it "concats text blocks of an assistant message into content string"
+                (fn []
+                  (let [asst (types.assistant-message {:api :openai-completions
+                                                       :provider :openai
+                                                       :model "m"
+                                                       :content [(types.text-block "hello, ")
+                                                                 (types.text-block "world")]
+                                                       :stop-reason :stop})
+                        out (oc.convert-messages [asst] nil)]
+                    (assert.are.equal "hello, world" (. out 1 :content)))))
+            (it "drops unsigned thinking blocks when sending assistant content back to OpenAI"
+                (fn []
+                  (let [asst (types.assistant-message {:api :openai-completions
+                                                       :provider :openai
+                                                       :model "m"
+                                                       :content [(types.thinking-block {:thinking "...reasoning..."})
+                                                                 (types.text-block "final answer")]
+                                                       :stop-reason :stop})
+                        out (oc.convert-messages [asst] nil)]
+                    (assert.are.equal "final answer" (. out 1 :content))
+                    (assert.is_nil (. out 1 :reasoning_content)))))
+            (it "echoes signed thinking blocks under their OpenAI-compatible reasoning field"
+                (fn []
+                  (let [asst (types.assistant-message {:api :openai-completions
+                                                       :provider :openai
+                                                       :model "m"
+                                                       :content [(types.thinking-block {:thinking "internal reasoning"
+                                                                                        :thinking-signature :reasoning_content})
+                                                                 (types.text-block "final answer")]
+                                                       :stop-reason :stop})
+                        out (oc.convert-messages [asst] nil
+                                                 {:thinkingFormat :zai})]
+                    (assert.are.equal "final answer" (. out 1 :content))
+                    (assert.are.equal "internal reasoning"
+                                      (. out 1 :reasoning_content)))))
+            (it "lifts tool-call blocks into the tool_calls array, JSON-encoding arguments"
+                (fn []
+                  (let [asst (types.assistant-message {:api :openai-completions
+                                                       :provider :openai
+                                                       :model "m"
+                                                       :content [(types.tool-call-block "id-1"
+                                                                                        "bash"
+                                                                                        {:cmd "ls"})]
+                                                       :stop-reason :tool-use})
+                        out (oc.convert-messages [asst] nil)
+                        tc (. out 1 :tool_calls 1)]
+                    (assert.are.equal "id-1" tc.id)
+                    (assert.are.equal :function tc.type)
+                    (assert.are.equal "bash" tc.function.name)
+                    (assert.is_string tc.function.arguments)
+                    (let [parsed (json.decode tc.function.arguments)]
+                      (assert.are.equal "ls" parsed.cmd)))))
+            (it "converts a tool-result message to {role:tool, tool_call_id, content}"
+                (fn []
+                  (let [tr (types.tool-result-message {:tool-call-id "id-1"
+                                                       :tool-name "bash"
+                                                       :content [(types.text-block "stdout!")]
+                                                       :is-error? false})
+                        out (oc.convert-messages [tr] nil)]
+                    (assert.are.equal :tool (. out 1 :role))
+                    (assert.are.equal "id-1" (. out 1 :tool_call_id))
+                    (assert.are.equal "stdout!" (. out 1 :content)))))
+            (it "synthesizes missing tool messages for orphaned tool calls in replayed history"
+                (fn []
+                  (let [asst (types.assistant-message {:api :openai-completions
+                                                       :provider :openai
+                                                       :model "m"
+                                                       :content [(types.tool-call-block "id-orphan"
+                                                                                        "bash"
+                                                                                        {})]
+                                                       :stop-reason :tool-use})
+                        out (oc.convert-messages [asst
+                                                  (types.user-message "continue")]
+                                                 nil)]
+                    (assert.are.equal 3 (length out))
+                    (assert.are.equal :assistant (. out 1 :role))
+                    (assert.are.equal :tool (. out 2 :role))
+                    (assert.are.equal "id-orphan" (. out 2 :tool_call_id))
+                    (assert.is_truthy (string.find (. out 2 :content)
+                                                   "missing tool output" 1 true))
+                    (assert.are.equal :user (. out 3 :role)))))))
 
 (describe "providers.openai_completions.map-stop-reason"
-  (fn []
-    (it "maps OpenAI finish_reason values to canonical StopReason"
-      (fn []
-        (let [(s _) (oc.map-stop-reason :stop)] (assert.are.equal :stop s))
-        (let [(s _) (oc.map-stop-reason :length)] (assert.are.equal :length s))
-        (let [(s _) (oc.map-stop-reason :tool_calls)] (assert.are.equal :tool-use s))
-        (let [(s _) (oc.map-stop-reason :function_call)] (assert.are.equal :tool-use s))
-        (let [(s msg) (oc.map-stop-reason :content_filter)]
-          (assert.are.equal :error s)
-          (assert.is_truthy (string.find msg "content_filter")))
-        (let [(s _) (oc.map-stop-reason nil)] (assert.are.equal :stop s))))))
+          (fn []
+            (it "maps OpenAI finish_reason values to canonical StopReason"
+                (fn []
+                  (let [(s _) (oc.map-stop-reason :stop)]
+                    (assert.are.equal :stop s))
+                  (let [(s _) (oc.map-stop-reason :length)]
+                    (assert.are.equal :length s))
+                  (let [(s _) (oc.map-stop-reason :tool_calls)]
+                    (assert.are.equal :tool-use s))
+                  (let [(s _) (oc.map-stop-reason :function_call)]
+                    (assert.are.equal :tool-use s))
+                  (let [(s msg) (oc.map-stop-reason :content_filter)]
+                    (assert.are.equal :error s)
+                    (assert.is_truthy (string.find msg "content_filter")))
+                  (let [(s _) (oc.map-stop-reason nil)]
+                    (assert.are.equal :stop s))))))
 
 (describe "providers.openai_completions.parse-response"
-  (fn []
-    (it "produces a canonical AssistantMessage from a stop response"
-      (fn []
-        (let [resp {:choices [{:message {:role :assistant :content "yes"}
-                               :finish_reason :stop}]
-                    :usage {:prompt_tokens 10 :completion_tokens 5
-                            :total_tokens 15}}
-              asst (oc.parse-response resp "gpt-4o-mini")]
-          (assert.are.equal :assistant asst.role)
-          (assert.are.equal :stop asst.stop-reason)
-          (assert.are.equal :openai-completions asst.api)
-          (assert.are.equal :openai asst.provider)
-          (assert.are.equal "gpt-4o-mini" asst.model)
-          (assert.are.equal "yes" (. asst.content 1 :text))
-          (assert.are.equal 10 asst.usage.input)
-          (assert.are.equal 5 asst.usage.output))))
-
-    (it "separates cached tokens from gross prompt tokens"
-      (fn []
-        (let [resp {:choices [{:message {:role :assistant :content "yes"}
-                               :finish_reason :stop}]
-                    :usage {:prompt_tokens 100 :completion_tokens 5
-                            :total_tokens 105
-                            :prompt_tokens_details {:cached_tokens 80}}}
-              asst (oc.parse-response resp "m")]
-          (assert.are.equal 20 asst.usage.input)
-          (assert.are.equal 80 asst.usage.cache-read)
-          (assert.are.equal 5 asst.usage.output)
-          (assert.are.equal 105 asst.usage.total-tokens))))
-
-    (it "extracts reasoning_content as a signed thinking block before text"
-      (fn []
-        (let [resp {:choices [{:message {:role :assistant
-                                          :reasoning_content "think first"
-                                          :content "final"}
-                               :finish_reason :stop}]
-                    :usage {:prompt_tokens 0 :completion_tokens 0 :total_tokens 0}}
-              asst (oc.parse-response resp "m")
-              thinking (. asst.content 1)
-              text (. asst.content 2)]
-          (assert.are.equal :thinking thinking.type)
-          (assert.are.equal "think first" thinking.thinking)
-          (assert.are.equal :reasoning_content thinking.thinking-signature)
-          (assert.are.equal :text text.type)
-          (assert.are.equal "final" text.text))))
-
-    (it "extracts reasoning and reasoning_text fallback fields"
-      (fn []
-        (let [resp1 {:choices [{:message {:role :assistant
-                                           :reasoning "think via reasoning"
-                                           :content "final"}
-                                :finish_reason :stop}]}
-              resp2 {:choices [{:message {:role :assistant
-                                           :reasoning_text "think via reasoning_text"
-                                           :content "final"}
-                                :finish_reason :stop}]}
-              asst1 (oc.parse-response resp1 "m")
-              asst2 (oc.parse-response resp2 "m")]
-          (assert.are.equal "think via reasoning" (. asst1.content 1 :thinking))
-          (assert.are.equal :reasoning (. asst1.content 1 :thinking-signature))
-          (assert.are.equal "think via reasoning_text" (. asst2.content 1 :thinking))
-          (assert.are.equal :reasoning_text (. asst2.content 1 :thinking-signature)))))
-
-    (it "uses the first non-empty reasoning field to avoid duplicates"
-      (fn []
-        (let [resp {:choices [{:message {:role :assistant
-                                          :reasoning_content ""
-                                          :reasoning "first non-empty"
-                                          :reasoning_text "duplicate"
-                                          :content "final"}
-                               :finish_reason :stop}]}
-              asst (oc.parse-response resp "m")]
-          (assert.are.equal 2 (length asst.content))
-          (assert.are.equal "first non-empty" (. asst.content 1 :thinking))
-          (assert.are.equal :reasoning (. asst.content 1 :thinking-signature)))))
-
-    (it "produces tool-call blocks when tool_calls are present"
-      (fn []
-        (let [resp {:choices
-                    [{:message
-                      {:role :assistant
-                       :content nil
-                       :tool_calls
-                       [{:id "id-1"
-                         :type :function
-                         :function {:name "bash"
-                                    :arguments "{\"cmd\":\"ls\"}"}}]}
-                      :finish_reason :tool_calls}]
-                    :usage {:prompt_tokens 0 :completion_tokens 0 :total_tokens 0}}
-              asst (oc.parse-response resp "m")]
-          (assert.are.equal :tool-use asst.stop-reason)
-          (let [tc (. asst.content 1)]
-            (assert.are.equal :tool-call tc.type)
-            (assert.are.equal "id-1" tc.id)
-            (assert.are.equal "bash" tc.name)
-            (assert.are.equal "ls" tc.arguments.cmd)))))
-
-    (it "preserves multiple tool_calls in order"
-      (fn []
-        (let [resp {:choices
-                    [{:message
-                      {:role :assistant
-                       :content nil
-                       :tool_calls
-                       [{:id "id-1" :type :function
-                         :function {:name "read" :arguments "{\"path\":\"a\"}"}}
-                        {:id "id-2" :type :function
-                         :function {:name "grep" :arguments "{\"pattern\":\"x\"}"}}]}
-                      :finish_reason :tool_calls}]}
-              asst (oc.parse-response resp "m")]
-          (assert.are.equal 2 (length asst.content))
-          (assert.are.equal "id-1" (. asst.content 1 :id))
-          (assert.are.equal "read" (. asst.content 1 :name))
-          (assert.are.equal "a" (. asst.content 1 :arguments :path))
-          (assert.are.equal "id-2" (. asst.content 2 :id))
-          (assert.are.equal "grep" (. asst.content 2 :name))
-          (assert.are.equal "x" (. asst.content 2 :arguments :pattern)))))
-
-    (it "accepts tool-call arguments returned as a parsed object (Ollama quirk)"
-      (fn []
-        (let [resp {:choices
-                    [{:message
-                      {:role :assistant
-                       :content nil
-                       :tool_calls
-                       [{:id "id-2"
-                         :type :function
-                         :function {:name "bash"
-                                    :arguments {:cmd "pwd"}}}]}
-                      :finish_reason :tool_calls}]
-                    :usage {:prompt_tokens 0 :completion_tokens 0 :total_tokens 0}}
-              asst (oc.parse-response resp "m")
-              tc (. asst.content 1)]
-          (assert.are.equal :tool-call tc.type)
-          (assert.are.equal "pwd" tc.arguments.cmd))))
-
-    (it "falls back to {} when the arguments string is malformed JSON"
-      (fn []
-        (let [resp {:choices
-                    [{:message
-                      {:role :assistant
-                       :content nil
-                       :tool_calls
-                       [{:id "id-3"
-                         :type :function
-                         :function {:name "bash"
-                                    :arguments "{not json"}}]}
-                      :finish_reason :tool_calls}]
-                    :usage {:prompt_tokens 0 :completion_tokens 0 :total_tokens 0}}
-              asst (oc.parse-response resp "m")
-              tc (. asst.content 1)]
-          (assert.is_table tc.arguments)
-          (assert.is_nil (next tc.arguments)))))))
+          (fn []
+            (it "produces a canonical AssistantMessage from a stop response"
+                (fn []
+                  (let [resp {:choices [{:message {:role :assistant
+                                                   :content "yes"}
+                                         :finish_reason :stop}]
+                              :usage {:prompt_tokens 10
+                                      :completion_tokens 5
+                                      :total_tokens 15}}
+                        asst (oc.parse-response resp "gpt-4o-mini")]
+                    (assert.are.equal :assistant asst.role)
+                    (assert.are.equal :stop asst.stop-reason)
+                    (assert.are.equal :openai-completions asst.api)
+                    (assert.are.equal :openai asst.provider)
+                    (assert.are.equal "gpt-4o-mini" asst.model)
+                    (assert.are.equal "yes" (. asst.content 1 :text))
+                    (assert.are.equal 10 asst.usage.input)
+                    (assert.are.equal 5 asst.usage.output))))
+            (it "separates cached tokens from gross prompt tokens"
+                (fn []
+                  (let [resp {:choices [{:message {:role :assistant
+                                                   :content "yes"}
+                                         :finish_reason :stop}]
+                              :usage {:prompt_tokens 100
+                                      :completion_tokens 5
+                                      :total_tokens 105
+                                      :prompt_tokens_details {:cached_tokens 80}}}
+                        asst (oc.parse-response resp "m")]
+                    (assert.are.equal 20 asst.usage.input)
+                    (assert.are.equal 80 asst.usage.cache-read)
+                    (assert.are.equal 5 asst.usage.output)
+                    (assert.are.equal 105 asst.usage.total-tokens))))
+            (it "extracts reasoning_content as a signed thinking block before text"
+                (fn []
+                  (let [resp {:choices [{:message {:role :assistant
+                                                   :reasoning_content "think first"
+                                                   :content "final"}
+                                         :finish_reason :stop}]
+                              :usage {:prompt_tokens 0
+                                      :completion_tokens 0
+                                      :total_tokens 0}}
+                        asst (oc.parse-response resp "m")
+                        thinking (. asst.content 1)
+                        text (. asst.content 2)]
+                    (assert.are.equal :thinking thinking.type)
+                    (assert.are.equal "think first" thinking.thinking)
+                    (assert.are.equal :reasoning_content
+                                      thinking.thinking-signature)
+                    (assert.are.equal :text text.type)
+                    (assert.are.equal "final" text.text))))
+            (it "extracts reasoning and reasoning_text fallback fields"
+                (fn []
+                  (let [resp1 {:choices [{:message {:role :assistant
+                                                    :reasoning "think via reasoning"
+                                                    :content "final"}
+                                          :finish_reason :stop}]}
+                        resp2 {:choices [{:message {:role :assistant
+                                                    :reasoning_text "think via reasoning_text"
+                                                    :content "final"}
+                                          :finish_reason :stop}]}
+                        asst1 (oc.parse-response resp1 "m")
+                        asst2 (oc.parse-response resp2 "m")]
+                    (assert.are.equal "think via reasoning"
+                                      (. asst1.content 1 :thinking))
+                    (assert.are.equal :reasoning
+                                      (. asst1.content 1 :thinking-signature))
+                    (assert.are.equal "think via reasoning_text"
+                                      (. asst2.content 1 :thinking))
+                    (assert.are.equal :reasoning_text
+                                      (. asst2.content 1 :thinking-signature)))))
+            (it "uses the first non-empty reasoning field to avoid duplicates"
+                (fn []
+                  (let [resp {:choices [{:message {:role :assistant
+                                                   :reasoning_content ""
+                                                   :reasoning "first non-empty"
+                                                   :reasoning_text "duplicate"
+                                                   :content "final"}
+                                         :finish_reason :stop}]}
+                        asst (oc.parse-response resp "m")]
+                    (assert.are.equal 2 (length asst.content))
+                    (assert.are.equal "first non-empty"
+                                      (. asst.content 1 :thinking))
+                    (assert.are.equal :reasoning
+                                      (. asst.content 1 :thinking-signature)))))
+            (it "produces tool-call blocks when tool_calls are present"
+                (fn []
+                  (let [resp {:choices [{:message {:role :assistant
+                                                   :content nil
+                                                   :tool_calls [{:id "id-1"
+                                                                 :type :function
+                                                                 :function {:name "bash"
+                                                                            :arguments "{\"cmd\":\"ls\"}"}}]}
+                                         :finish_reason :tool_calls}]
+                              :usage {:prompt_tokens 0
+                                      :completion_tokens 0
+                                      :total_tokens 0}}
+                        asst (oc.parse-response resp "m")]
+                    (assert.are.equal :tool-use asst.stop-reason)
+                    (let [tc (. asst.content 1)]
+                      (assert.are.equal :tool-call tc.type)
+                      (assert.are.equal "id-1" tc.id)
+                      (assert.are.equal "bash" tc.name)
+                      (assert.are.equal "ls" tc.arguments.cmd)))))
+            (it "preserves multiple tool_calls in order"
+                (fn []
+                  (let [resp {:choices [{:message {:role :assistant
+                                                   :content nil
+                                                   :tool_calls [{:id "id-1"
+                                                                 :type :function
+                                                                 :function {:name "read"
+                                                                            :arguments "{\"path\":\"a\"}"}}
+                                                                {:id "id-2"
+                                                                 :type :function
+                                                                 :function {:name "grep"
+                                                                            :arguments "{\"pattern\":\"x\"}"}}]}
+                                         :finish_reason :tool_calls}]}
+                        asst (oc.parse-response resp "m")]
+                    (assert.are.equal 2 (length asst.content))
+                    (assert.are.equal "id-1" (. asst.content 1 :id))
+                    (assert.are.equal "read" (. asst.content 1 :name))
+                    (assert.are.equal "a" (. asst.content 1 :arguments :path))
+                    (assert.are.equal "id-2" (. asst.content 2 :id))
+                    (assert.are.equal "grep" (. asst.content 2 :name))
+                    (assert.are.equal "x"
+                                      (. asst.content 2 :arguments :pattern)))))
+            (it "accepts tool-call arguments returned as a parsed object (Ollama quirk)"
+                (fn []
+                  (let [resp {:choices [{:message {:role :assistant
+                                                   :content nil
+                                                   :tool_calls [{:id "id-2"
+                                                                 :type :function
+                                                                 :function {:name "bash"
+                                                                            :arguments {:cmd "pwd"}}}]}
+                                         :finish_reason :tool_calls}]
+                              :usage {:prompt_tokens 0
+                                      :completion_tokens 0
+                                      :total_tokens 0}}
+                        asst (oc.parse-response resp "m")
+                        tc (. asst.content 1)]
+                    (assert.are.equal :tool-call tc.type)
+                    (assert.are.equal "pwd" tc.arguments.cmd))))
+            (it "falls back to {} when the arguments string is malformed JSON"
+                (fn []
+                  (let [resp {:choices [{:message {:role :assistant
+                                                   :content nil
+                                                   :tool_calls [{:id "id-3"
+                                                                 :type :function
+                                                                 :function {:name "bash"
+                                                                            :arguments "{not json"}}]}
+                                         :finish_reason :tool_calls}]
+                              :usage {:prompt_tokens 0
+                                      :completion_tokens 0
+                                      :total_tokens 0}}
+                        asst (oc.parse-response resp "m")
+                        tc (. asst.content 1)]
+                    (assert.is_table tc.arguments)
+                    (assert.is_nil (next tc.arguments)))))))
 
 (describe "providers.openai_completions streaming reducer"
-  (fn []
-    (it "prefers a mid-stream error chunk's message over the bare finish_reason"
-      (fn []
-        (let [state (oc.new-stream-state "m")]
-          (oc.process-stream-chunk!
-            state
-            {:error {:code 502 :message "upstream went away"}
-             :choices [{:delta {:content ""} :finish_reason :error}]}
-            nil)
-          (let [asst (oc.finalize-stream-state state nil)]
-            (assert.are.equal :error asst.stop-reason)
-            (assert.are.equal "Provider error (502): upstream went away"
-                              asst.error-message)))))
-
-    (it "reports gateway cache writes separately from uncached input"
-      (fn []
-        (let [state (oc.new-stream-state "m")]
-          (oc.process-stream-chunk!
-            state
-            {:choices [{:delta {:content "ok"} :finish_reason :stop}]
-             :usage {:prompt_tokens 100 :completion_tokens 2 :total_tokens 102
-                     :prompt_tokens_details {:cached_tokens 40
-                                             :cache_write_tokens 50}}}
-            nil)
-          (assert.are.same {:input 10 :output 2 :cache-read 40 :cache-write 50
-                            :total-tokens 102}
-                           (. (oc.finalize-stream-state state nil) :usage)))))
-
-    (it "ignores reasoning_details unless the flavor opts in"
-      (fn []
-        (let [state (oc.new-stream-state "m")]
-          (oc.process-stream-chunk!
-            state
-            {:choices [{:delta {:reasoning_details [{:type "reasoning.encrypted"
-                                                     :data "x" :index 0}]}
-                        :finish_reason :stop}]}
-            nil)
-          (assert.are.equal 0 (length (types.assistant-thinking
-                                        (oc.finalize-stream-state state nil)))))))
-
-    (it "reduces text deltas into a canonical assistant message"
-      (fn []
-        (let [state {:model "m"
-                     :content []
-                     :usage {:input 0 :output 0 :cache-read 0 :cache-write 0 :total-tokens 0}
-                     :stop-reason :stop}
-              events []]
-          (oc.process-stream-chunk!
-            state
-            {:choices [{:delta {:content "he"}}]}
-            #(table.insert events $1))
-          (oc.process-stream-chunk!
-            state
-            {:choices [{:delta {:content "llo"} :finish_reason :stop}]
-             :usage {:prompt_tokens 3 :completion_tokens 2 :total_tokens 5}}
-            #(table.insert events $1))
-          (let [asst (oc.finalize-stream-state state #(table.insert events $1))]
-            (assert.are.equal :stop asst.stop-reason)
-            (assert.are.equal "hello" (. asst.content 1 :text))
-            (assert.are.equal 3 asst.usage.input)
-            (assert.are.equal :text-start (. events 1 :type))
-            (assert.are.equal :text-delta (. events 2 :type))
-            (assert.are.equal :text-delta (. events 3 :type))
-            (assert.are.equal :text-end (. events 4 :type))
-            (assert.are.equal :done (. events 5 :type))))))
-
-    (it "treats a delta finish_reason:null as non-terminal (issue #482)"
-      (fn []
-        ;; lua-cjson decodes JSON null to the truthy cjson.null sentinel, so a
-        ;; bare (when choice.finish_reason) fired on every delta frame: it flipped
-        ;; saw-terminal? and forced stop-reason :error from frame one. A genuine
-        ;; terminal chunk masked it, but a truncated stream then read as cleanly
-        ;; terminated. Feed the sentinel through the reducer and assert it is
-        ;; treated as absent.
-        (let [state (oc.new-stream-state "m")]
-          (oc.process-stream-chunk!
-            state
-            {:choices [{:delta {:content "he"} :finish_reason json.null}]}
-            nil)
-          (assert.is_false state.saw-terminal?)
-          (assert.are.equal :stop state.stop-reason)
-          (assert.is_nil state.error-message)
-          (oc.process-stream-chunk!
-            state
-            {:choices [{:delta {:content "llo"} :finish_reason :stop}]}
-            nil)
-          (assert.is_true state.saw-terminal?)
-          (assert.are.equal :stop state.stop-reason))))
-
-    (it "treats a delta finish_reason:null then truncation as incomplete (issue #482)"
-      (fn []
-        ;; The real-world consequence: a stream that only ever carried
-        ;; finish_reason:null (truncated before a genuine terminal) must finalize
-        ;; as an incomplete error, not a false clean :stop. Before the fix the
-        ;; null sentinel flipped saw-terminal? on frame one, so finalize-stream
-        ;; saw a "terminated" stream and reported a clean :stop.
-        (let [state (oc.new-stream-state "m")
-              parser {:finish (fn [] nil)}
-              resp {:status 200 :body "" :headers {}}]
-          (oc.process-stream-chunk!
-            state
-            {:choices [{:delta {:content "partial"} :finish_reason json.null}]}
-            nil)
-          (assert.is_false state.saw-terminal?)
-          (let [asst (oc.finalize-stream state parser {:message nil} "m" resp nil)]
-            (assert.are.equal :error asst.stop-reason)
-            (assert.is_truthy
-              (string.find asst.error-message "without a completion event" 1 true))))))
-
-    (it "ignores a mid-stream usage:null delta frame without crashing (issue #482)"
-      (fn []
-        ;; With stream_options.include_usage, every delta chunk before the final
-        ;; one carries usage:null (the truthy cjson.null sentinel). A bare
-        ;; (when usage) passed and then crashed indexing the userdata sentinel.
-        (let [state (oc.new-stream-state "m")]
-          (oc.process-stream-chunk!
-            state
-            {:choices [{:delta {:content "hi"}}] :usage json.null}
-            nil)
-          (assert.are.equal 0 state.usage.input)
-          (assert.are.equal 0 state.usage.output)
-          (assert.are.equal 0 state.usage.total-tokens)
-          (oc.process-stream-chunk!
-            state
-            {:choices [{:delta {} :finish_reason :stop}]
-             :usage {:prompt_tokens 3 :completion_tokens 2 :total_tokens 5}}
-            nil)
-          (assert.are.equal 3 state.usage.input)
-          (assert.are.equal 2 state.usage.output)
-          (assert.are.equal 5 state.usage.total-tokens))))
-
-    (it "ignores a delta tool_calls:null frame without crashing (issue #482)"
-      (fn []
-        ;; OpenAI-compatible servers (Ollama/vLLM/proxies) emit tool_calls:null
-        ;; (the truthy cjson.null sentinel) on plain-text deltas. A bare
-        ;; (when delta.tool_calls) passed and then crashed ipairs over the
-        ;; userdata sentinel. Feed it through the reducer and assert it is
-        ;; treated as absent while the text delta still records.
-        (let [state (oc.new-stream-state "m")]
-          (oc.process-stream-chunk!
-            state
-            {:choices [{:delta {:content "hi" :tool_calls json.null}}]}
-            nil)
-          (assert.are.equal 1 (length state.content))
-          (assert.are.equal :text (. state.content 1 :type))
-          (oc.process-stream-chunk!
-            state
-            {:choices [{:delta {} :finish_reason :stop}]}
-            nil)
-          (assert.is_true state.saw-terminal?))))
-
-    (it "ignores a delta:null housekeeping frame without crashing (issue #482)"
-      (fn []
-        ;; Some OpenAI-compatible servers emit delta:null (the truthy cjson.null
-        ;; sentinel) on housekeeping frames. A bare (when delta) passed and then
-        ;; crashed indexing the userdata sentinel. Feed it through the reducer
-        ;; and assert it is treated as absent.
-        (let [state (oc.new-stream-state "m")]
-          (oc.process-stream-chunk!
-            state
-            {:choices [{:delta json.null}]}
-            nil)
-          (assert.are.equal 0 (length state.content))
-          (assert.is_false state.saw-terminal?)
-          (oc.process-stream-chunk!
-            state
-            {:choices [{:delta {:content "hi"} :finish_reason :stop}]}
-            nil)
-          (assert.is_true state.saw-terminal?)
-          (assert.are.equal 1 (length state.content)))))
-
-    (it "separates cached tokens in streaming usage"
-      (fn []
-        (let [state (oc.new-stream-state "m")]
-          (oc.process-stream-chunk!
-            state
-            {:choices [{:delta {} :finish_reason :stop}]
-             :usage {:prompt_tokens 100 :completion_tokens 5
-                     :total_tokens 105
-                     :prompt_tokens_details {:cached_tokens 80}}}
-            nil)
-          (assert.are.equal 20 state.usage.input)
-          (assert.are.equal 80 state.usage.cache-read)
-          (assert.are.equal 5 state.usage.output)
-          (assert.are.equal 105 state.usage.total-tokens))))
-
-    (it "buffers streamed tool-call arguments until finalization"
-      (fn []
-        (let [state {:model "m"
-                     :content []
-                     :usage {:input 0 :output 0 :cache-read 0 :cache-write 0 :total-tokens 0}
-                     :stop-reason :stop}
-              events []]
-          (oc.process-stream-chunk!
-            state
-            {:choices
-             [{:delta
-               {:tool_calls
-                [{:index 0
-                  :id "call-1"
-                  :function {:name "bash"
-                             :arguments (string.sub "{\"cmd\":\"ls\"}" 1 8)}}]}}]}
-            #(table.insert events $1))
-          (oc.process-stream-chunk!
-            state
-            {:choices
-             [{:delta
-               {:tool_calls
-                [{:index 0
-                  :function {:arguments (string.sub "{\"cmd\":\"ls\"}" 9)}}]}
-               :finish_reason :tool_calls}]}
-            #(table.insert events $1))
-          (let [asst (oc.finalize-stream-state state #(table.insert events $1))
-                tc (. asst.content 1)]
-            (assert.are.equal :tool-use asst.stop-reason)
-            (assert.are.equal :tool-call tc.type)
-            (assert.are.equal "call-1" tc.id)
-            (assert.are.equal "bash" tc.name)
-            (assert.are.equal "ls" tc.arguments.cmd)
-            (assert.is_nil tc.partial-args)
-            (assert.is_nil tc.stream-index)
-            (assert.are.equal :tool-call-start (. events 1 :type))
-            (assert.are.equal :tool-call-delta (. events 2 :type))
-            (assert.are.equal :tool-call-delta (. events 3 :type))
-            (assert.are.equal :tool-call-end (. events 4 :type))
-            (assert.are.equal :done (. events 5 :type))))))))
+          (fn []
+            (it "prefers a mid-stream error chunk's message over the bare finish_reason"
+                (fn []
+                  (let [state (oc.new-stream-state "m")]
+                    (oc.process-stream-chunk! state
+                                              {:error {:code 502
+                                                       :message "upstream went away"}
+                                               :choices [{:delta {:content ""}
+                                                          :finish_reason :error}]}
+                                              nil)
+                    (let [asst (oc.finalize-stream-state state nil)]
+                      (assert.are.equal :error asst.stop-reason)
+                      (assert.are.equal "Provider error (502): upstream went away"
+                                        asst.error-message)))))
+            (it "reports gateway cache writes separately from uncached input"
+                (fn []
+                  (let [state (oc.new-stream-state "m")]
+                    (oc.process-stream-chunk! state
+                                              {:choices [{:delta {:content "ok"}
+                                                          :finish_reason :stop}]
+                                               :usage {:prompt_tokens 100
+                                                       :completion_tokens 2
+                                                       :total_tokens 102
+                                                       :prompt_tokens_details {:cached_tokens 40
+                                                                               :cache_write_tokens 50}}}
+                                              nil)
+                    (assert.are.same {:input 10
+                                      :output 2
+                                      :cache-read 40
+                                      :cache-write 50
+                                      :total-tokens 102}
+                                     (. (oc.finalize-stream-state state nil)
+                                        :usage)))))
+            (it "ignores reasoning_details unless the flavor opts in"
+                (fn []
+                  (let [state (oc.new-stream-state "m")]
+                    (oc.process-stream-chunk! state
+                                              {:choices [{:delta {:reasoning_details [{:type "reasoning.encrypted"
+                                                                                       :data "x"
+                                                                                       :index 0}]}
+                                                          :finish_reason :stop}]}
+                                              nil)
+                    (assert.are.equal 0
+                                      (length (types.assistant-thinking (oc.finalize-stream-state state
+                                                                                                  nil)))))))
+            (it "reduces text deltas into a canonical assistant message"
+                (fn []
+                  (let [state {:model "m"
+                               :content []
+                               :usage {:input 0
+                                       :output 0
+                                       :cache-read 0
+                                       :cache-write 0
+                                       :total-tokens 0}
+                               :stop-reason :stop}
+                        events []]
+                    (oc.process-stream-chunk! state
+                                              {:choices [{:delta {:content "he"}}]}
+                                              #(table.insert events $1))
+                    (oc.process-stream-chunk! state
+                                              {:choices [{:delta {:content "llo"}
+                                                          :finish_reason :stop}]
+                                               :usage {:prompt_tokens 3
+                                                       :completion_tokens 2
+                                                       :total_tokens 5}}
+                                              #(table.insert events $1))
+                    (let [asst (oc.finalize-stream-state state
+                                                         #(table.insert events
+                                                                        $1))]
+                      (assert.are.equal :stop asst.stop-reason)
+                      (assert.are.equal "hello" (. asst.content 1 :text))
+                      (assert.are.equal 3 asst.usage.input)
+                      (assert.are.equal :text-start (. events 1 :type))
+                      (assert.are.equal :text-delta (. events 2 :type))
+                      (assert.are.equal :text-delta (. events 3 :type))
+                      (assert.are.equal :text-end (. events 4 :type))
+                      (assert.are.equal :done (. events 5 :type))))))
+            (it "treats a delta finish_reason:null as non-terminal (issue #482)"
+                (fn []
+                  ;; lua-cjson decodes JSON null to the truthy cjson.null sentinel, so a
+                  ;; bare (when choice.finish_reason) fired on every delta frame: it flipped
+                  ;; saw-terminal? and forced stop-reason :error from frame one. A genuine
+                  ;; terminal chunk masked it, but a truncated stream then read as cleanly
+                  ;; terminated. Feed the sentinel through the reducer and assert it is
+                  ;; treated as absent.
+                  (let [state (oc.new-stream-state "m")]
+                    (oc.process-stream-chunk! state
+                                              {:choices [{:delta {:content "he"}
+                                                          :finish_reason json.null}]}
+                                              nil)
+                    (assert.is_false state.saw-terminal?)
+                    (assert.are.equal :stop state.stop-reason)
+                    (assert.is_nil state.error-message)
+                    (oc.process-stream-chunk! state
+                                              {:choices [{:delta {:content "llo"}
+                                                          :finish_reason :stop}]}
+                                              nil)
+                    (assert.is_true state.saw-terminal?)
+                    (assert.are.equal :stop state.stop-reason))))
+            (it "treats a delta finish_reason:null then truncation as incomplete (issue #482)"
+                (fn []
+                  ;; The real-world consequence: a stream that only ever carried
+                  ;; finish_reason:null (truncated before a genuine terminal) must finalize
+                  ;; as an incomplete error, not a false clean :stop. Before the fix the
+                  ;; null sentinel flipped saw-terminal? on frame one, so finalize-stream
+                  ;; saw a "terminated" stream and reported a clean :stop.
+                  (let [state (oc.new-stream-state "m")
+                        parser {:finish (fn [] nil)}
+                        resp {:status 200 :body "" :headers {}}]
+                    (oc.process-stream-chunk! state
+                                              {:choices [{:delta {:content "partial"}
+                                                          :finish_reason json.null}]}
+                                              nil)
+                    (assert.is_false state.saw-terminal?)
+                    (let [asst (oc.finalize-stream state parser {:message nil}
+                                                   "m" resp nil)]
+                      (assert.are.equal :error asst.stop-reason)
+                      (assert.is_truthy (string.find asst.error-message
+                                                     "without a completion event"
+                                                     1 true))))))
+            (it "ignores a mid-stream usage:null delta frame without crashing (issue #482)"
+                (fn []
+                  ;; With stream_options.include_usage, every delta chunk before the final
+                  ;; one carries usage:null (the truthy cjson.null sentinel). A bare
+                  ;; (when usage) passed and then crashed indexing the userdata sentinel.
+                  (let [state (oc.new-stream-state "m")]
+                    (oc.process-stream-chunk! state
+                                              {:choices [{:delta {:content "hi"}}]
+                                               :usage json.null}
+                                              nil)
+                    (assert.are.equal 0 state.usage.input)
+                    (assert.are.equal 0 state.usage.output)
+                    (assert.are.equal 0 state.usage.total-tokens)
+                    (oc.process-stream-chunk! state
+                                              {:choices [{:delta {}
+                                                          :finish_reason :stop}]
+                                               :usage {:prompt_tokens 3
+                                                       :completion_tokens 2
+                                                       :total_tokens 5}}
+                                              nil)
+                    (assert.are.equal 3 state.usage.input)
+                    (assert.are.equal 2 state.usage.output)
+                    (assert.are.equal 5 state.usage.total-tokens))))
+            (it "ignores a delta tool_calls:null frame without crashing (issue #482)"
+                (fn []
+                  ;; OpenAI-compatible servers (Ollama/vLLM/proxies) emit tool_calls:null
+                  ;; (the truthy cjson.null sentinel) on plain-text deltas. A bare
+                  ;; (when delta.tool_calls) passed and then crashed ipairs over the
+                  ;; userdata sentinel. Feed it through the reducer and assert it is
+                  ;; treated as absent while the text delta still records.
+                  (let [state (oc.new-stream-state "m")]
+                    (oc.process-stream-chunk! state
+                                              {:choices [{:delta {:content "hi"
+                                                                  :tool_calls json.null}}]}
+                                              nil)
+                    (assert.are.equal 1 (length state.content))
+                    (assert.are.equal :text (. state.content 1 :type))
+                    (oc.process-stream-chunk! state
+                                              {:choices [{:delta {}
+                                                          :finish_reason :stop}]}
+                                              nil)
+                    (assert.is_true state.saw-terminal?))))
+            (it "ignores a delta:null housekeeping frame without crashing (issue #482)"
+                (fn []
+                  ;; Some OpenAI-compatible servers emit delta:null (the truthy cjson.null
+                  ;; sentinel) on housekeeping frames. A bare (when delta) passed and then
+                  ;; crashed indexing the userdata sentinel. Feed it through the reducer
+                  ;; and assert it is treated as absent.
+                  (let [state (oc.new-stream-state "m")]
+                    (oc.process-stream-chunk! state
+                                              {:choices [{:delta json.null}]}
+                                              nil)
+                    (assert.are.equal 0 (length state.content))
+                    (assert.is_false state.saw-terminal?)
+                    (oc.process-stream-chunk! state
+                                              {:choices [{:delta {:content "hi"}
+                                                          :finish_reason :stop}]}
+                                              nil)
+                    (assert.is_true state.saw-terminal?)
+                    (assert.are.equal 1 (length state.content)))))
+            (it "separates cached tokens in streaming usage"
+                (fn []
+                  (let [state (oc.new-stream-state "m")]
+                    (oc.process-stream-chunk! state
+                                              {:choices [{:delta {}
+                                                          :finish_reason :stop}]
+                                               :usage {:prompt_tokens 100
+                                                       :completion_tokens 5
+                                                       :total_tokens 105
+                                                       :prompt_tokens_details {:cached_tokens 80}}}
+                                              nil)
+                    (assert.are.equal 20 state.usage.input)
+                    (assert.are.equal 80 state.usage.cache-read)
+                    (assert.are.equal 5 state.usage.output)
+                    (assert.are.equal 105 state.usage.total-tokens))))
+            (it "buffers streamed tool-call arguments until finalization"
+                (fn []
+                  (let [state {:model "m"
+                               :content []
+                               :usage {:input 0
+                                       :output 0
+                                       :cache-read 0
+                                       :cache-write 0
+                                       :total-tokens 0}
+                               :stop-reason :stop}
+                        events []]
+                    (oc.process-stream-chunk! state
+                                              {:choices [{:delta {:tool_calls [{:index 0
+                                                                                :id "call-1"
+                                                                                :function {:name "bash"
+                                                                                           :arguments (string.sub "{\"cmd\":\"ls\"}"
+                                                                                                                  1
+                                                                                                                  8)}}]}}]}
+                                              #(table.insert events $1))
+                    (oc.process-stream-chunk! state
+                                              {:choices [{:delta {:tool_calls [{:index 0
+                                                                                :function {:arguments (string.sub "{\"cmd\":\"ls\"}"
+                                                                                                                  9)}}]}
+                                                          :finish_reason :tool_calls}]}
+                                              #(table.insert events $1))
+                    (let [asst (oc.finalize-stream-state state
+                                                         #(table.insert events
+                                                                        $1))
+                          tc (. asst.content 1)]
+                      (assert.are.equal :tool-use asst.stop-reason)
+                      (assert.are.equal :tool-call tc.type)
+                      (assert.are.equal "call-1" tc.id)
+                      (assert.are.equal "bash" tc.name)
+                      (assert.are.equal "ls" tc.arguments.cmd)
+                      (assert.is_nil tc.partial-args)
+                      (assert.is_nil tc.stream-index)
+                      (assert.are.equal :tool-call-start (. events 1 :type))
+                      (assert.are.equal :tool-call-delta (. events 2 :type))
+                      (assert.are.equal :tool-call-delta (. events 3 :type))
+                      (assert.are.equal :tool-call-end (. events 4 :type))
+                      (assert.are.equal :done (. events 5 :type))))))))
 
 (describe "providers.openai_completions.build-url"
-  (fn []
-    (it "appends /chat/completions to a v1-root base URL"
-      (fn []
-        (assert.are.equal "http://localhost:11434/v1/chat/completions"
-                          (oc.build-url "http://localhost:11434/v1"))
-        (assert.are.equal "https://api.openai.com/v1/chat/completions"
-                          (oc.build-url "https://api.openai.com/v1"))))
-
-    (it "respects a fully-qualified completions URL (legacy callers)"
-      (fn []
-        (assert.are.equal "https://api.openai.com/v1/chat/completions"
-                          (oc.build-url "https://api.openai.com/v1/chat/completions"))))))
-
+          (fn []
+            (it "appends /chat/completions to a v1-root base URL"
+                (fn []
+                  (assert.are.equal "http://localhost:11434/v1/chat/completions"
+                                    (oc.build-url "http://localhost:11434/v1"))
+                  (assert.are.equal "https://api.openai.com/v1/chat/completions"
+                                    (oc.build-url "https://api.openai.com/v1"))))
+            (it "respects a fully-qualified completions URL (legacy callers)"
+                (fn []
+                  (assert.are.equal "https://api.openai.com/v1/chat/completions"
+                                    (oc.build-url "https://api.openai.com/v1/chat/completions"))))))
 
 (describe "providers.openai_completions.complete retry"
-  (fn []
-    (it "retries transient HTTP failures before parsing success"
-      (fn []
-        (let [old-request http.request]
-          (var calls 0)
-          (set http.request
-               (fn [_opts]
-                 (set calls (+ calls 1))
-                 (if (= calls 1)
-                     {:status 503 :body "busy"}
-                     {:status 200
-                      :body (json.encode
-                              {:choices [{:message {:role :assistant :content "ok"}
-                                          :finish_reason :stop}]
-                               :usage {:prompt_tokens 1
-                                       :completion_tokens 2
-                                       :total_tokens 3}})})))
-          (let [asst (oc.complete "m" {:messages [] :tools []} {:retry-base-delay-ms 0
-                                                                 :retry-max-delay-ms 0})]
-            (set http.request old-request)
-            (assert.are.equal 2 calls)
-            (assert.are.equal :stop asst.stop-reason)
-            (assert.are.equal "ok" (. asst.content 1 :text))))))
-
-    (it "does not retry terminal HTTP failures"
-      (fn []
-        (let [old-request http.request]
-          (var calls 0)
-          (set http.request
-               (fn [_opts]
-                 (set calls (+ calls 1))
-                 {:status 401 :body "{}"}))
-          (let [asst (oc.complete "m" {:messages [] :tools []} {:retry-base-delay-ms 0
-                                                                 :retry-max-delay-ms 0})]
-            (set http.request old-request)
-            (assert.are.equal 1 calls)
-            (assert.are.equal :error asst.stop-reason)
-            (assert.is_truthy (string.find asst.error-message "HTTP 401" 1 true))))))))
+          (fn []
+            (it "retries transient HTTP failures before parsing success"
+                (fn []
+                  (let [old-request http.request]
+                    (var calls 0)
+                    (set http.request
+                         (fn [_opts]
+                           (set calls (+ calls 1))
+                           (if (= calls 1)
+                               {:status 503 :body "busy"}
+                               {:status 200
+                                :body (json.encode {:choices [{:message {:role :assistant
+                                                                         :content "ok"}
+                                                               :finish_reason :stop}]
+                                                    :usage {:prompt_tokens 1
+                                                            :completion_tokens 2
+                                                            :total_tokens 3}})})))
+                    (let [asst (oc.complete "m" {:messages [] :tools []}
+                                            {:retry-base-delay-ms 0
+                                             :retry-max-delay-ms 0})]
+                      (set http.request old-request)
+                      (assert.are.equal 2 calls)
+                      (assert.are.equal :stop asst.stop-reason)
+                      (assert.are.equal "ok" (. asst.content 1 :text))))))
+            (it "does not retry terminal HTTP failures"
+                (fn []
+                  (let [old-request http.request]
+                    (var calls 0)
+                    (set http.request
+                         (fn [_opts]
+                           (set calls (+ calls 1))
+                           {:status 401 :body "{}"}))
+                    (let [asst (oc.complete "m" {:messages [] :tools []}
+                                            {:retry-base-delay-ms 0
+                                             :retry-max-delay-ms 0})]
+                      (set http.request old-request)
+                      (assert.are.equal 1 calls)
+                      (assert.are.equal :error asst.stop-reason)
+                      (assert.is_truthy (string.find asst.error-message
+                                                     "HTTP 401" 1 true))))))))
 
 (describe "providers.openai_completions.complete streaming termination"
-  (fn []
-    (it "treats a [DONE] sentinel without finish_reason as a clean stop"
-      (fn []
-        (let [old-request http.request]
-          (set http.request
-               (fn [opts]
-                 (opts.on-chunk "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
-                 (opts.on-chunk "data: [DONE]\n\n")
-                 {:status 200 :body ""}))
-          (let [events []
-                asst (oc.complete "m" {:messages [] :tools []}
-                                  {:retry-base-delay-ms 0 :retry-max-delay-ms 0}
-                                  #(table.insert events $1))]
-            (set http.request old-request)
-            (assert.are.equal :stop asst.stop-reason)
-            (assert.are.equal "hi" (. asst.content 1 :text))
-            (assert.are.equal :done (. (. events (length events)) :type))))))
-
-    (it "finalizes a terminal event lacking a trailing blank line without retrying"
-      (fn []
-        (let [old-request http.request]
-          (var calls 0)
-          (set http.request
-               (fn [opts]
-                 (set calls (+ calls 1))
-                 (opts.on-chunk
-                   "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n")
-                 {:status 200 :body ""}))
-          (let [events []
-                asst (oc.complete "m" {:messages [] :tools []}
-                                  {:retry-base-delay-ms 0 :retry-max-delay-ms 0}
-                                  #(table.insert events $1))]
-            (set http.request old-request)
-            (assert.are.equal 1 calls)
-            (assert.are.equal :stop asst.stop-reason)
-            (assert.are.equal "hi" (. asst.content 1 :text))
-            (assert.are.equal :done (. (. events (length events)) :type))))))
-
-    (it "forwards a caller-supplied idle-timeout-ms to the transport"
-      (fn []
-        (let [old-request http.request]
-          (var seen-idle :unset)
-          (set http.request
-               (fn [opts]
-                 (set seen-idle opts.idle-timeout-ms)
-                 (opts.on-chunk "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n\n")
-                 {:status 200 :body ""}))
-          (oc.complete "m" {:messages [] :tools []}
-                       {:retry-base-delay-ms 0 :retry-max-delay-ms 0
-                        :idle-timeout-ms 120000}
-                       #(do $1 nil))
-          (set http.request old-request)
-          (assert.are.equal 120000 seen-idle))))
-
-    (it "reports an incomplete stream that closes with neither finish_reason nor [DONE]"
-      (fn []
-        (let [old-request http.request]
-          (var calls 0)
-          (set http.request
-               (fn [opts]
-                 (set calls (+ calls 1))
-                 (opts.on-chunk "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
-                 {:status 200 :body ""}))
-          (let [events []
-                asst (oc.complete "m" {:messages [] :tools []}
-                                  {:retry-base-delay-ms 0 :retry-max-delay-ms 0}
-                                  #(table.insert events $1))]
-            (set http.request old-request)
-            (assert.is_true (> calls 1))
-            (assert.are.equal :error asst.stop-reason)
-            (assert.is_truthy (string.find asst.error-message
-                                           "stream ended without a completion event"
-                                           1 true))))))))
+          (fn []
+            (it "treats a [DONE] sentinel without finish_reason as a clean stop"
+                (fn []
+                  (let [old-request http.request]
+                    (set http.request
+                         (fn [opts]
+                           (opts.on-chunk "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
+                           (opts.on-chunk "data: [DONE]\n\n")
+                           {:status 200 :body ""}))
+                    (let [events []
+                          asst (oc.complete "m" {:messages [] :tools []}
+                                            {:retry-base-delay-ms 0
+                                             :retry-max-delay-ms 0}
+                                            #(table.insert events $1))]
+                      (set http.request old-request)
+                      (assert.are.equal :stop asst.stop-reason)
+                      (assert.are.equal "hi" (. asst.content 1 :text))
+                      (assert.are.equal :done
+                                        (. (. events (length events)) :type))))))
+            (it "finalizes a terminal event lacking a trailing blank line without retrying"
+                (fn []
+                  (let [old-request http.request]
+                    (var calls 0)
+                    (set http.request
+                         (fn [opts]
+                           (set calls (+ calls 1))
+                           (opts.on-chunk "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n")
+                           {:status 200 :body ""}))
+                    (let [events []
+                          asst (oc.complete "m" {:messages [] :tools []}
+                                            {:retry-base-delay-ms 0
+                                             :retry-max-delay-ms 0}
+                                            #(table.insert events $1))]
+                      (set http.request old-request)
+                      (assert.are.equal 1 calls)
+                      (assert.are.equal :stop asst.stop-reason)
+                      (assert.are.equal "hi" (. asst.content 1 :text))
+                      (assert.are.equal :done
+                                        (. (. events (length events)) :type))))))
+            (it "forwards a caller-supplied idle-timeout-ms to the transport"
+                (fn []
+                  (let [old-request http.request]
+                    (var seen-idle :unset)
+                    (set http.request
+                         (fn [opts]
+                           (set seen-idle opts.idle-timeout-ms)
+                           (opts.on-chunk "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n\n")
+                           {:status 200 :body ""}))
+                    (oc.complete "m" {:messages [] :tools []}
+                                 {:retry-base-delay-ms 0
+                                  :retry-max-delay-ms 0
+                                  :idle-timeout-ms 120000}
+                                 #(do
+                                    $1
+                                    nil))
+                    (set http.request old-request)
+                    (assert.are.equal 120000 seen-idle))))
+            (it "reports an incomplete stream that closes with neither finish_reason nor [DONE]"
+                (fn []
+                  (let [old-request http.request]
+                    (var calls 0)
+                    (set http.request
+                         (fn [opts]
+                           (set calls (+ calls 1))
+                           (opts.on-chunk "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
+                           {:status 200 :body ""}))
+                    (let [events []
+                          asst (oc.complete "m" {:messages [] :tools []}
+                                            {:retry-base-delay-ms 0
+                                             :retry-max-delay-ms 0}
+                                            #(table.insert events $1))]
+                      (set http.request old-request)
+                      (assert.is_true (> calls 1))
+                      (assert.are.equal :error asst.stop-reason)
+                      (assert.is_truthy (string.find asst.error-message
+                                                     "stream ended without a completion event"
+                                                     1 true))))))))
 
 (describe "providers.openai_completions.build-body"
-  (fn []
-    (it "omits tools and tool_choice when context.tools is nil or empty"
-      (fn []
-        (let [body (oc.build-body "gpt-4o-mini"
-                                   {:system-prompt nil :messages [] :tools []}
-                                   64)]
-          (assert.is_nil body.tools)
-          (assert.is_nil body.tool_choice)
-          (assert.are.equal 64 body.max_completion_tokens)
-          (assert.are.equal "gpt-4o-mini" body.model))
-        (let [body (oc.build-body "m" {:system-prompt nil :messages []} 1024)]
-          (assert.is_nil body.tools)
-          (assert.is_nil body.tool_choice))))
-
-    (it "sets tools, tool_choice, and parallel_tool_calls when context.tools is non-empty"
-      (fn []
-        (let [body (oc.build-body
-                     "m"
-                     {:system-prompt nil :messages []
-                      :tools [{:name "ls" :description "list"
-                               :parameters {:type :object}}]}
-                     1024)]
-          (assert.are.equal 1 (length body.tools))
-          (assert.are.equal :auto body.tool_choice)
-          (assert.is_true body.parallel_tool_calls))))
-
-    (it "honors options.parallel-tool-calls=false"
-      (fn []
-        (let [body (oc.build-body
-                     "m"
-                     {:system-prompt nil :messages []
-                      :tools [{:name "ls" :description "list"
-                               :parameters {:type :object}}]}
-                     1024 nil {:parallel-tool-calls false})]
-          (assert.is_false body.parallel_tool_calls))))
-
-    (it "maps options.tool-choice :none to tool_choice none, keeping tools"
-      (fn []
-        (let [body (oc.build-body
-                     "m"
-                     {:system-prompt nil :messages [] :tools [{:name "ls" :description "list" :parameters {:type :object}}]}
-                     1024 nil {:tool-choice :none})]
-          (assert.are.equal 1 (length body.tools))
-          (assert.are.equal :none body.tool_choice))
-        ;; No tools means no tool_choice even under :none (the API rejects it).
-        (let [body (oc.build-body "m" {:system-prompt nil :messages [] :tools []}
-                                  1024 nil {:tool-choice :none})]
-          (assert.is_nil body.tool_choice))))
-
-    (it "uses max_completion_tokens by default"
-      (fn []
-        (let [body (oc.build-body "m" {:system-prompt nil :messages []} 256)]
-          (assert.are.equal 256 body.max_completion_tokens)
-          (assert.is_nil body.max_tokens))))
-
-    (it "honors compat.maxTokensField when provided (Ollama needs max_tokens)"
-      (fn []
-        (let [body (oc.build-body
-                     "m" {:system-prompt nil :messages []} 256
-                     {:maxTokensField :max_tokens})]
-          (assert.are.equal 256 body.max_tokens)
-          (assert.is_nil body.max_completion_tokens))))
-
-    (it "enables GLM/Z.ai style thinking when compat.thinkingFormat is zai"
-      (fn []
-        (let [body (oc.build-body
-                     "m" {:system-prompt nil :messages []} 256
-                     {:thinkingFormat :zai})]
-          (assert.are.equal true body.enable_thinking))))
-
-    (it "allows compat.enableThinking=false to disable thinkingFormat knobs"
-      (fn []
-        (let [body (oc.build-body
-                     "m" {:system-prompt nil :messages []} 256
-                     {:thinkingFormat :zai :enableThinking false})]
-          (assert.are.equal false body.enable_thinking))))
-
-    (it "warns once about an unknown compat.thinkingFormat and sends no knob"
-      (fn []
-        (let [log (require :fen.util.log)
-              saved log.warn
-              warns []]
-          (set log.warn (fn [line] (table.insert warns line)))
-          (let [(ok? err)
-                (pcall #(for [_ 1 2]
-                          (let [body (oc.build-body
-                                       "m" {:system-prompt nil :messages []} 256
-                                       {:thinkingFormat :openrouter}
-                                       {:base-url "https://openrouter.ai/api/v1"})]
-                            (assert.is_nil body.enable_thinking)
-                            (assert.is_nil body.thinking)
-                            (assert.is_nil body.reasoning))))]
-            (set log.warn saved)
-            (assert.is_true ok? err))
-          (assert.are.equal 1 (length warns))
-          (assert.is_truthy (string.find (. warns 1) "\"openrouter\"" 1 true))
-          (assert.is_truthy (string.find (. warns 1) "https://openrouter.ai/api/v1" 1 true))
-          (assert.is_truthy (string.find (. warns 1) "openrouter-completions" 1 true)))))
-
-    (it "ignores unknown compat keys"
-      (fn []
-        (let [body (oc.build-body
-                     "m" {:system-prompt nil :messages []} 256
-                     {:supportsDeveloperRole false})]
-          (assert.are.equal 256 body.max_completion_tokens))))))
+          (fn []
+            (it "omits tools and tool_choice when context.tools is nil or empty"
+                (fn []
+                  (let [body (oc.build-body "gpt-4o-mini"
+                                            {:system-prompt nil
+                                             :messages []
+                                             :tools []}
+                                            64)]
+                    (assert.is_nil body.tools)
+                    (assert.is_nil body.tool_choice)
+                    (assert.are.equal 64 body.max_completion_tokens)
+                    (assert.are.equal "gpt-4o-mini" body.model))
+                  (let [body (oc.build-body "m"
+                                            {:system-prompt nil :messages []}
+                                            1024)]
+                    (assert.is_nil body.tools)
+                    (assert.is_nil body.tool_choice))))
+            (it "sets tools, tool_choice, and parallel_tool_calls when context.tools is non-empty"
+                (fn []
+                  (let [body (oc.build-body "m"
+                                            {:system-prompt nil
+                                             :messages []
+                                             :tools [{:name "ls"
+                                                      :description "list"
+                                                      :parameters {:type :object}}]}
+                                            1024)]
+                    (assert.are.equal 1 (length body.tools))
+                    (assert.are.equal :auto body.tool_choice)
+                    (assert.is_true body.parallel_tool_calls))))
+            (it "honors options.parallel-tool-calls=false"
+                (fn []
+                  (let [body (oc.build-body "m"
+                                            {:system-prompt nil
+                                             :messages []
+                                             :tools [{:name "ls"
+                                                      :description "list"
+                                                      :parameters {:type :object}}]}
+                                            1024 nil
+                                            {:parallel-tool-calls false})]
+                    (assert.is_false body.parallel_tool_calls))))
+            (it "maps options.tool-choice :none to tool_choice none, keeping tools"
+                (fn []
+                  (let [body (oc.build-body "m"
+                                            {:system-prompt nil
+                                             :messages []
+                                             :tools [{:name "ls"
+                                                      :description "list"
+                                                      :parameters {:type :object}}]}
+                                            1024 nil {:tool-choice :none})]
+                    (assert.are.equal 1 (length body.tools))
+                    (assert.are.equal :none body.tool_choice))
+                  ;; No tools means no tool_choice even under :none (the API rejects it).
+                  (let [body (oc.build-body "m"
+                                            {:system-prompt nil
+                                             :messages []
+                                             :tools []}
+                                            1024 nil {:tool-choice :none})]
+                    (assert.is_nil body.tool_choice))))
+            (it "uses max_completion_tokens by default"
+                (fn []
+                  (let [body (oc.build-body "m"
+                                            {:system-prompt nil :messages []}
+                                            256)]
+                    (assert.are.equal 256 body.max_completion_tokens)
+                    (assert.is_nil body.max_tokens))))
+            (it "honors compat.maxTokensField when provided (Ollama needs max_tokens)"
+                (fn []
+                  (let [body (oc.build-body "m"
+                                            {:system-prompt nil :messages []}
+                                            256 {:maxTokensField :max_tokens})]
+                    (assert.are.equal 256 body.max_tokens)
+                    (assert.is_nil body.max_completion_tokens))))
+            (it "enables GLM/Z.ai style thinking when compat.thinkingFormat is zai"
+                (fn []
+                  (let [body (oc.build-body "m"
+                                            {:system-prompt nil :messages []}
+                                            256 {:thinkingFormat :zai})]
+                    (assert.are.equal true body.enable_thinking))))
+            (it "allows compat.enableThinking=false to disable thinkingFormat knobs"
+                (fn []
+                  (let [body (oc.build-body "m"
+                                            {:system-prompt nil :messages []}
+                                            256
+                                            {:thinkingFormat :zai
+                                             :enableThinking false})]
+                    (assert.are.equal false body.enable_thinking))))
+            (it "warns once about an unknown compat.thinkingFormat and sends no knob"
+                (fn []
+                  (let [log (require :fen.util.log)
+                        saved log.warn
+                        warns []]
+                    (set log.warn (fn [line] (table.insert warns line)))
+                    (let [(ok? err) (pcall #(for [_ 1 2]
+                                              (let [body (oc.build-body "m"
+                                                                        {:system-prompt nil
+                                                                         :messages []}
+                                                                        256
+                                                                        {:thinkingFormat :openrouter}
+                                                                        {:base-url "https://openrouter.ai/api/v1"})]
+                                                (assert.is_nil body.enable_thinking)
+                                                (assert.is_nil body.thinking)
+                                                (assert.is_nil body.reasoning))))]
+                      (set log.warn saved)
+                      (assert.is_true ok? err))
+                    (assert.are.equal 1 (length warns))
+                    (assert.is_truthy (string.find (. warns 1) "\"openrouter\""
+                                                   1 true))
+                    (assert.is_truthy (string.find (. warns 1)
+                                                   "https://openrouter.ai/api/v1"
+                                                   1 true))
+                    (assert.is_truthy (string.find (. warns 1)
+                                                   "openrouter-completions" 1
+                                                   true)))))
+            (it "ignores unknown compat keys"
+                (fn []
+                  (let [body (oc.build-body "m"
+                                            {:system-prompt nil :messages []}
+                                            256 {:supportsDeveloperRole false})]
+                    (assert.are.equal 256 body.max_completion_tokens))))))
 
 (describe "providers.openai_completions.finalize-stream"
-  (fn []
-    (it "treats a 200 stream with no finish_reason as an incomplete error"
-      (fn []
-        (let [state (oc.new-stream-state "m")
-              events []
-              emit #(table.insert events $1)
-              parser {:finish (fn [] nil)}
-              resp {:status 200 :body "" :headers {}}]
-          (assert.is_false state.saw-terminal?)
-          (let [asst (oc.finalize-stream state parser {:message nil} "m" resp emit)]
-            (assert.are.equal :error asst.stop-reason)
-            (assert.is_truthy
-              (string.find asst.error-message "without a completion event" 1 true))
-            (assert.are.equal :error (. events (length events) :type))))))
-
-    (it "finalizes a stream with a finish_reason as a success"
-      (fn []
-        (let [state (oc.new-stream-state "m")
-              events []
-              emit #(table.insert events $1)]
-          (oc.process-stream-chunk! state
-            {:choices [{:delta {:content "hi"} :finish_reason :stop}]} emit)
-          (assert.is_true state.saw-terminal?)
-          (let [parser {:finish (fn [] nil)}
-                resp {:status 200 :body "ok" :headers {}}
-                asst (oc.finalize-stream state parser {:message nil} "m" resp emit)]
-            (assert.are.equal :stop asst.stop-reason)
-            (assert.are.equal :done (. events (length events) :type))))))))
+          (fn []
+            (it "treats a 200 stream with no finish_reason as an incomplete error"
+                (fn []
+                  (let [state (oc.new-stream-state "m")
+                        events []
+                        emit #(table.insert events $1)
+                        parser {:finish (fn [] nil)}
+                        resp {:status 200 :body "" :headers {}}]
+                    (assert.is_false state.saw-terminal?)
+                    (let [asst (oc.finalize-stream state parser {:message nil}
+                                                   "m" resp emit)]
+                      (assert.are.equal :error asst.stop-reason)
+                      (assert.is_truthy (string.find asst.error-message
+                                                     "without a completion event"
+                                                     1 true))
+                      (assert.are.equal :error (. events (length events) :type))))))
+            (it "finalizes a stream with a finish_reason as a success"
+                (fn []
+                  (let [state (oc.new-stream-state "m")
+                        events []
+                        emit #(table.insert events $1)]
+                    (oc.process-stream-chunk! state
+                                              {:choices [{:delta {:content "hi"}
+                                                          :finish_reason :stop}]}
+                                              emit)
+                    (assert.is_true state.saw-terminal?)
+                    (let [parser {:finish (fn [] nil)}
+                          resp {:status 200 :body "ok" :headers {}}
+                          asst (oc.finalize-stream state parser {:message nil}
+                                                   "m" resp emit)]
+                      (assert.are.equal :stop asst.stop-reason)
+                      (assert.are.equal :done (. events (length events) :type))))))))

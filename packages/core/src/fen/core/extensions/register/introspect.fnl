@@ -18,7 +18,8 @@
     (error "register :introspect requires {:name ...}"))
   (when (not= (type spec.snapshot) :function)
     (error "register :introspect requires {:snapshot fn}"))
-  (let [(record unregister) (util.add-tagged! state.introspectors-extra spec owner)]
+  (let [(record unregister) (util.add-tagged! state.introspectors-extra spec
+                                              owner)]
     (handle-result :introspect spec.name owner unregister)))
 
 (fn M.unregister-by-owner [owner]

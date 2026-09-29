@@ -60,10 +60,11 @@
     (while (not done?)
       (let [pos (string.find s sub i 1)]
         (if pos
-            (do (table.insert out pos)
-                (set i (+ pos sub-len))
-                (when (and ?yield-fn (= (% (length out) LINES-BEFORE-YIELD) 0))
-                  (?yield-fn)))
+            (do
+              (table.insert out pos)
+              (set i (+ pos sub-len))
+              (when (and ?yield-fn (= (% (length out) LINES-BEFORE-YIELD) 0))
+                (?yield-fn)))
             (set done? true))))
     out))
 
@@ -72,8 +73,7 @@
 
 (fn line-context [content line-start]
   (let [line-end (- (or (string.find content "\n" line-start true)
-                        (+ (length content) 1))
-                    1)
+                        (+ (length content) 1)) 1)
         line (string.gsub (string.sub content line-start line-end) "\r$" "")]
     (if (> (length line) MAX-CONTEXT-BYTES)
         (.. (text.utf8-prefix line MAX-CONTEXT-BYTES) "...")
@@ -97,8 +97,8 @@
             (maybe-yield ?yield-fn))
           (set nl (string.find content "\n" line-start true)))
         (table.insert sites
-                      (.. "line " (tostring line)
-                          ": " (line-context content line-start)))))
+                      (.. "line " (tostring line) ": "
+                          (line-context content line-start)))))
     (.. "\nmatch sites:\n" (table.concat sites "\n")
         (if (> (length hits) shown)
             (.. "\nand " (tostring (- (length hits) shown)) " more")
@@ -123,25 +123,25 @@
                                  " (file has CRLF line endings; old_string uses LF — try \\r\\n)"
                                  "")))
                     (> (length hits) 1)
-                    (set error-msg (.. "edit " (tostring i)
-                                       ": old_string is not unique ("
-                                       (tostring (length hits))
-                                       " matches)"
-                                       (match-sites-message content hits ?yield-fn)))
+                    (set error-msg
+                         (.. "edit " (tostring i)
+                             ": old_string is not unique ("
+                             (tostring (length hits)) " matches)"
+                             (match-sites-message content hits ?yield-fn)))
                     (table.insert matches
-                      {:start (. hits 1)
-                       :end (+ (. hits 1) (length old-str) -1)
-                       :new (or edit.new_string "")
-                       :index i})))))))
+                                  {:start (. hits 1)
+                                   :end (+ (. hits 1) (length old-str) -1)
+                                   :new (or edit.new_string "")
+                                   :index i})))))))
     (when (not error-msg)
       (table.sort matches (fn [a b] (< a.start b.start)))
       (each [k cur (ipairs matches)]
         (when (and (not error-msg) (> k 1))
           (let [prev (. matches (- k 1))]
             (when (>= prev.end cur.start)
-              (set error-msg (.. "edits " (tostring prev.index)
-                                 " and " (tostring cur.index)
-                                 " overlap")))))))
+              (set error-msg
+                   (.. "edits " (tostring prev.index) " and "
+                       (tostring cur.index) " overlap")))))))
     (if error-msg (values nil error-msg) (values matches nil))))
 
 (fn apply-edits [content matches]
@@ -149,10 +149,8 @@
   (var result content)
   (for [k (length matches) 1 -1]
     (let [m (. matches k)]
-      (set result
-           (.. (string.sub result 1 (- m.start 1))
-               m.new
-               (string.sub result (+ m.end 1))))))
+      (set result (.. (string.sub result 1 (- m.start 1)) m.new
+                      (string.sub result (+ m.end 1))))))
   result)
 
 (fn validate-edit-file [path edits ?yield-fn]
@@ -171,8 +169,7 @@
                     (values {:path path
                              :edits edits
                              :content content
-                             :matches matches}
-                            nil))))))))
+                             :matches matches} nil))))))))
 
 (fn write-edit-file [validated ?yield-fn]
   (maybe-yield ?yield-fn)
@@ -180,10 +177,11 @@
         (wf werr) (io.open validated.path :w)]
     (if (not wf)
         (values nil werr)
-        (do (wf:write result)
-            (wf:close)
-            (maybe-yield ?yield-fn)
-            (values true nil)))))
+        (do
+          (wf:write result)
+          (wf:close)
+          (maybe-yield ?yield-fn)
+          (values true nil)))))
 
 (fn run-edit-one-unlocked [path edits ?yield-fn]
   (let [(validated verr) (validate-edit-file path edits ?yield-fn)]
@@ -192,14 +190,14 @@
         (let [(_ werr) (write-edit-file validated ?yield-fn)]
           (if werr
               (util.err werr)
-              (util.ok (.. "applied " (tostring (length edits))
-                           " edit(s) to " path)))))))
+              (util.ok (.. "applied " (tostring (length edits)) " edit(s) to "
+                           path)))))))
 
 (fn run-edit-one [{: path : edits} ?yield-fn]
   (if (or (not path) (= path ""))
       (util.err "missing 'path'")
       (file-mutex.with-file path ?yield-fn
-                            #(run-edit-one-unlocked path edits ?yield-fn))))
+        #(run-edit-one-unlocked path edits ?yield-fn))))
 
 (fn run-edit-batch [files ?yield-fn]
   (if (or (not files) (= (length files) 0))
@@ -214,12 +212,17 @@
             (let [path (?. f :path)
                   key (and path (not= path "") (file-mutex.canonical-path path))]
               (if (and key (. seen key))
-                  (set error-msg (.. path ": duplicate path in files batch; combine edits for the same file in one entry"))
+                  (set error-msg
+                       (.. path
+                           ": duplicate path in files batch; combine edits for the same file in one entry"))
                   (do
                     (when key (tset seen key true))
-                    (let [(v verr) (validate-edit-file path (?. f :edits) ?yield-fn)]
+                    (let [(v verr) (validate-edit-file path (?. f :edits)
+                                                       ?yield-fn)]
                       (if verr
-                          (set error-msg (.. (or path (.. "file " (tostring i))) ": " verr))
+                          (set error-msg
+                               (.. (or path (.. "file " (tostring i))) ": "
+                                   verr))
                           (table.insert validated v)))))))
           (maybe-yield ?yield-fn))
         (if error-msg
@@ -230,16 +233,18 @@
                 (when (not write-err)
                   ;; Hold only this path's lock, from the fresh read through
                   ;; validation and write; never hold multiple batch locks.
-                  (file-mutex.with-file
-                    v.path ?yield-fn
-                    #(let [(locked-v verr) (validate-edit-file v.path v.edits ?yield-fn)]
+                  (file-mutex.with-file v.path
+                    ?yield-fn
+                    #(let [(locked-v verr) (validate-edit-file v.path v.edits
+                                                               ?yield-fn)]
                        (if verr
                            (set write-err (.. v.path ": " verr))
                            (let [(_ werr) (write-edit-file locked-v ?yield-fn)]
                              (if werr
                                  (set write-err (.. v.path ": " werr))
                                  (table.insert summaries
-                                               (.. "applied " (tostring (length v.edits))
+                                               (.. "applied "
+                                                   (tostring (length v.edits))
                                                    " edit(s) to " v.path)))))))))
               (if write-err
                   (util.err write-err)
@@ -247,7 +252,7 @@
 
 (fn run-edit [args _ctx ?yield-fn]
   (let [has-single? (or (and args.path (not= args.path ""))
-                         (not= args.edits nil))
+                        (not= args.edits nil))
         has-files? (not= args.files nil)]
     (if (and has-single? has-files?)
         (util.err "provide either 'path'/'edits' or 'files', not both")
@@ -282,6 +287,7 @@
                                                                                                   :description "Exact text to match (unique in file)"}
                                                                                      :new_string {:type :string
                                                                                                   :description "Replacement text"}}
-                                                                        :required [:old_string :new_string]}}}
+                                                                        :required [:old_string
+                                                                                   :new_string]}}}
                                            :required [:path :edits]}}}}
  :execute run-edit}

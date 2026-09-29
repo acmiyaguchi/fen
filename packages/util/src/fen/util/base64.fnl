@@ -5,7 +5,9 @@
 (for [i 1 (length CHARS)]
   (tset LOOKUP (string.byte CHARS i) (- i 1)))
 
-(local PAD-BYTE 61) ; ASCII '='
+(local PAD-BYTE 61)
+
+; ASCII '='
 
 (fn lookup-byte [b]
   (or (. LOOKUP b) 0))
@@ -90,7 +92,4 @@
           step3 (string.gsub step2 "=" "")]
       step3)))
 
-{: decode-standard
- : decode-url
- : encode-standard
- : encode-url}
+{: decode-standard : decode-url : encode-standard : encode-url}

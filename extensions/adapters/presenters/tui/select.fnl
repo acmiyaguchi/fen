@@ -10,13 +10,12 @@
 
 (local OVERLAY-MAX-ROWS 12)
 
-(local SC
-  {:border (bor tb.WHITE tb.DIM)
-   :title  (bor tb.WHITE tb.BOLD)
-   :item   tb.DEFAULT
-   :sel    (bor tb.CYAN tb.REVERSE)
-   :hint   (bor tb.WHITE tb.DIM)
-   :normal tb.DEFAULT})
+(local SC {:border (bor tb.WHITE tb.DIM)
+           :title (bor tb.WHITE tb.BOLD)
+           :item tb.DEFAULT
+           :sel (bor tb.CYAN tb.REVERSE)
+           :hint (bor tb.WHITE tb.DIM)
+           :normal tb.DEFAULT})
 
 ;; State machine takes synthetic key descriptors so tests can drive it
 ;; without termbox2.
@@ -94,42 +93,42 @@
 (fn M.step! [s key]
   (when (not s.done?)
     (case key.kind
-      :up    (do (set s.cursor (- s.cursor 1)) (clamp-cursor s))
-      :down  (do (set s.cursor (+ s.cursor 1)) (clamp-cursor s))
+      :up (do
+            (set s.cursor (- s.cursor 1))
+            (clamp-cursor s))
+      :down (do
+              (set s.cursor (+ s.cursor 1))
+              (clamp-cursor s))
       :enter (let [picks (M.filtered s)
                    pick (. picks s.cursor)]
                (when pick
                  (set s.result pick))
                (set s.done? true))
-      :esc   (do (set s.result nil) (set s.done? true))
-      :bs    (do
-               (when (> (length s.filter-text) 0)
-                 (set s.filter-text
-                      (string.sub s.filter-text 1
-                                  (- (length s.filter-text) 1))))
-               (set s.cursor 1))
-      :char  (do
-               (set s.filter-text (.. s.filter-text (or key.text "")))
-               (set s.cursor 1))))
+      :esc (do
+             (set s.result nil)
+             (set s.done? true))
+      :bs (do
+            (when (> (length s.filter-text) 0)
+              (set s.filter-text
+                   (string.sub s.filter-text 1 (- (length s.filter-text) 1))))
+            (set s.cursor 1))
+      :char (do
+              (set s.filter-text (.. s.filter-text (or key.text "")))
+              (set s.cursor 1))))
   s)
 
 (fn termbox->key [ev]
-  (if (not= ev.type tb.EVENT_KEY) nil
-      (= ev.key tb.KEY_ENTER) {:kind :enter}
+  (if (not= ev.type tb.EVENT_KEY) nil (= ev.key tb.KEY_ENTER) {:kind :enter}
       (= ev.key tb.KEY_CTRL_C) {:kind :esc}
-      (or (= ev.key tb.KEY_BACKSPACE) (= ev.key tb.KEY_BACKSPACE2))
-      {:kind :bs}
-      (= ev.key tb.KEY_ARROW_UP) {:kind :up}
-      (= ev.key tb.KEY_ARROW_DOWN) {:kind :down}
-      (= ev.key tb.KEY_CTRL_P) {:kind :up}
+      (or (= ev.key tb.KEY_BACKSPACE) (= ev.key tb.KEY_BACKSPACE2)) {:kind :bs}
+      (= ev.key tb.KEY_ARROW_UP) {:kind :up} (= ev.key tb.KEY_ARROW_DOWN)
+      {:kind :down} (= ev.key tb.KEY_CTRL_P) {:kind :up}
       (= ev.key tb.KEY_CTRL_N) {:kind :down}
       ;; termbox quirk: ev.key=0/ev.ch=0 means "no key we care about".
       (and ev.ch (> ev.ch 0))
       {:kind :char :text (or ev.text (string.char ev.ch))}
       ;; Some termbox builds only set ev.text for printable input.
-      (and ev.text (not= ev.text ""))
-      {:kind :char :text ev.text}
-      nil))
+      (and ev.text (not= ev.text "")) {:kind :char :text ev.text} nil))
 
 (fn box-top [w title]
   (let [head (.. "┌─ " title " ")
@@ -162,15 +161,15 @@
         (first-visible item-h n-items) (M.visible-window s item-cap)
         rows (+ 2 item-h)
         y0 (math.max top-min (- y1 rows -1))
-        title (.. s.label
-                  (if (not= s.filter-text "")
-                      (.. " > " s.filter-text)
-                      ""))
+        title (.. s.label (if (not= s.filter-text "")
+                              (.. " > " s.filter-text)
+                              ""))
         more-prefix? (> first-visible 1)
         more-suffix? (> n-items (+ first-visible item-h -1))
         hint (if (or more-prefix? more-suffix?)
-                 (.. "↑↓ " first-visible "-" (math.min n-items (+ first-visible item-h -1))
-                     "/" n-items " · enter select · esc cancel")
+                 (.. "↑↓ " first-visible "-"
+                     (math.min n-items (+ first-visible item-h -1)) "/" n-items
+                     " · enter select · esc cancel")
                  "enter select · esc cancel · type to filter")]
     (draw.fill-row y0 0 (- w 1) 32 SC.normal SC.normal)
     (draw.put-clipped 0 y0 SC.title SC.normal (box-top w title) w)

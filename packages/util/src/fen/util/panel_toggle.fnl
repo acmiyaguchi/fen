@@ -28,35 +28,36 @@
    :on-toggle invalidates extension-owned render cache on visibility changes;
    :subcommands adds non-toggle command actions such as `/mem gc`; and
    :before-command receives the dispatcher run-state before command handling."
-  (when (or (not opts) (not opts.name) (not opts.state)
-            (not opts.command) (not opts.panel-spec))
+  (when (or (not opts) (not opts.name) (not opts.state) (not opts.command)
+            (not opts.panel-spec))
     (error "panel-toggle.install! requires :name :command :panel-spec :state"))
   ;; Handlers close over module-private helpers; reload rewires them only when owners re-run install!.
   (let [command opts.command
         name opts.name
-        toggle (fn [_args _run-state] (set-visible! api opts (not opts.state.visible?)))
+        toggle (fn [_args _run-state]
+                 (set-visible! api opts (not opts.state.visible?)))
         on (fn [_args _run-state] (set-visible! api opts true))
         off (fn [_args _run-state] (set-visible! api opts false))
         extras (or opts.subcommands {})
         toggle-subcommands {:on {:description "show the panel" :handler on}
                             :off {:description "hide the panel" :handler off}}
         _ (each [k v (pairs extras)] (tset toggle-subcommands k v))
-        sub (subcommands.build
-              {:name name
-               :emit api.emit
-               :summary (or command.description "Toggle the panel")
-               :default toggle
-               :subcommands toggle-subcommands})
+        sub (subcommands.build {:name name
+                                :emit api.emit
+                                :summary (or command.description
+                                             "Toggle the panel")
+                                :default toggle
+                                :subcommands toggle-subcommands})
         spec {}]
     (each [k v (pairs command)] (tset spec k v))
     (set spec.name (or command.name name))
     (set spec.usage (or command.usage sub.usage))
     (set spec.subcommands (or command.subcommands sub.descriptor))
     (set spec.complete (or command.complete sub.complete))
-    (set spec.handler
-         (fn [args run-state]
-           (when opts.before-command (opts.before-command run-state))
-           (sub.handler args run-state)))
+    (set spec.handler (fn [args run-state]
+                        (when opts.before-command
+                          (opts.before-command run-state))
+                        (sub.handler args run-state)))
     (api.register :command spec)
     (api.register :panel opts.panel-spec)
     (api.on :dismiss

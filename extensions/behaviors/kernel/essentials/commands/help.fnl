@@ -46,8 +46,8 @@
   (let [name (.. "/" (item-name cmd))
         suffix (if cmd.idle-only? " (idle only)" "")
         desc (or cmd.description "")]
-    (.. "  " (string.format (.. "%-" (tostring width) "s") name)
-        " " desc suffix)))
+    (.. "  " (string.format (.. "%-" (tostring width) "s") name) " " desc
+        suffix)))
 
 (fn keys-text [control]
   (table.concat (or control.keys [control.name]) ", "))
@@ -92,11 +92,11 @@
 ;; tags: commands help register
 (fn M.register [api]
   (api.register :command
-    {:name :help
-     :order 1000
-     :description "Show available commands and controls"
-     :handler (fn [_args _state]
-                (api.emit {:type :assistant-text
-                                  :text (format-help api)}))}))
+                {:name :help
+                 :order 1000
+                 :description "Show available commands and controls"
+                 :handler (fn [_args _state]
+                            (api.emit {:type :assistant-text
+                                       :text (format-help api)}))}))
 
 M

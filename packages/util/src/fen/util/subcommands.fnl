@@ -63,8 +63,7 @@
    and lowercased; rest is the remaining argument string, trimmed. Returns
    (nil \"\") when there is no argument."
   (let [word (args-util.first-arg args)]
-    (values (and word (string.lower word))
-            (args-util.rest-args args))))
+    (values (and word (string.lower word)) (args-util.rest-args args))))
 
 (fn M.help-lines [descriptor]
   "Render the help table for `descriptor` as a list of plain strings."
@@ -76,10 +75,10 @@
       (table.insert rows {:name entry.name :description entry.description}))
     (when (not descriptor.has-help-subcommand?)
       (table.insert rows {:name HELP-WORD :description "show this help"}))
-    (table.insert lines
-      (if (and descriptor.summary (not= descriptor.summary ""))
-          (.. label " — " descriptor.summary)
-          label))
+    (table.insert lines (if (and descriptor.summary
+                                 (not= descriptor.summary ""))
+                            (.. label " — " descriptor.summary)
+                            label))
     (when (and descriptor.usage (not= descriptor.usage ""))
       (table.insert lines (.. "usage: " descriptor.usage)))
     (when (> (length rows) 0)
@@ -88,11 +87,12 @@
       (each [_ row (ipairs rows)]
         (set name-w (math.max name-w (length row.name))))
       (each [_ row (ipairs rows)]
-        (let [pad (string.rep " " (math.max 1 (- (+ name-w 2) (length row.name))))]
+        (let [pad (string.rep " "
+                              (math.max 1 (- (+ name-w 2) (length row.name))))]
           (table.insert lines
-            (if (= row.description "")
-                (.. "  " row.name)
-                (.. "  " row.name pad row.description))))))
+                        (if (= row.description "")
+                            (.. "  " row.name)
+                            (.. "  " row.name pad row.description))))))
     lines))
 
 ;; @doc fen.util.subcommands.help-text
@@ -146,15 +146,17 @@
         default-takes-args? (and default spec.default-takes-args?)
         (by-name ordered) (collect-subcommands spec.subcommands)
         has-help-subcommand? (not= (. by-name HELP-WORD) nil)
-        usage (or spec.usage (default-usage name ordered (not= default nil)
-                                            has-help-subcommand?))
+        usage (or spec.usage
+                  (default-usage name ordered (not= default nil)
+                    has-help-subcommand?))
         descriptor {:name name
                     :summary (or spec.summary "")
                     :usage usage
                     :has-help-subcommand? has-help-subcommand?
                     :subcommands ordered}
         help-text (M.help-text descriptor)
-        show-help (fn [] (emit {:type :info :text (M.help-text descriptor)}))
+        show-help (fn []
+                    (emit {:type :info :text (M.help-text descriptor)}))
         unknown (fn [word]
                   (emit {:type :error
                          :error (.. (cmd-label name) ": unknown subcommand: "
@@ -164,7 +166,8 @@
                   (let [(word rest) (parse args)]
                     (if (= word nil)
                         (if default
-                            (default (or (and args (trim args)) "") run-state)
+                            (default (or (and args (trim args)) "")
+                              run-state)
                             (show-help))
                         (and (= word HELP-WORD) (not has-help-subcommand?))
                         (show-help)
@@ -178,13 +181,14 @@
                    (let [choices []]
                      (each [_ entry (ipairs ordered)]
                        (table.insert choices
-                         {:label entry.name
-                          :value entry.name
-                          :description entry.description}))
+                                     {:label entry.name
+                                      :value entry.name
+                                      :description entry.description}))
                      (when (not has-help-subcommand?)
                        (table.insert choices
-                         {:label HELP-WORD :value HELP-WORD
-                          :description "show this help"}))
+                                     {:label HELP-WORD
+                                      :value HELP-WORD
+                                      :description "show this help"}))
                      choices))]
     {:handler handler
      :complete complete

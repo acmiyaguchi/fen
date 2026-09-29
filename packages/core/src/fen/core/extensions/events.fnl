@@ -46,7 +46,8 @@
              :timestamp (log.timestamp)
              :cwd (path.cwd)
              :error (redact.scrub-string (first-line (or ev.error ev.text "")))}]
-    (when ev.traceback (set rec.traceback (redact.scrub-string (tostring ev.traceback))))
+    (when ev.traceback
+      (set rec.traceback (redact.scrub-string (tostring ev.traceback))))
     (when ev.owner (set rec.owner ev.owner))
     (when ev.event (set rec.event ev.event))
     (when ev.source (set rec.source ev.source))
@@ -58,8 +59,8 @@
 
 (fn append-error-log! [rec]
   (jsonl.append! state (M.error-log-path) rec
-                (fn [err]
-                  (log.warn (.. "errors: append failed: " err)))))
+                 (fn [err]
+                   (log.warn (.. "errors: append failed: " err)))))
 
 (fn record-error! [ev]
   (when (error-event? ev)
@@ -83,10 +84,8 @@
   (let [event-type (?. ev :type)
         owner (or entry.__owner :anonymous)
         summary (first-line err)
-        msg (.. "extension handler failed"
-                " owner=" (tostring owner)
-                " event=" (tostring event-type)
-                ": " summary)]
+        msg (.. "extension handler failed" " owner=" (tostring owner) " event="
+                (tostring event-type) ": " summary)]
     (log.warn msg)
     (when (not= event-type :extension-error)
       (M.emit {:type :extension-error

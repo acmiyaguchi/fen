@@ -3,6 +3,7 @@
 (local events (require :fen.core.extensions.events))
 (local session-backend-registry
        (require :fen.core.extensions.register.session_backend))
+
 (local log (require :fen.util.log))
 (local path (require :fen.util.path))
 
@@ -78,8 +79,9 @@
       opts.continue?
       (let [p (backend.latest (M.cwd))]
         (if (not p)
-            (do (log.warn "session: --continue but no prior session found")
-                (values (M.open opts backend) 0))
+            (do
+              (log.warn "session: --continue but no prior session found")
+              (values (M.open opts backend) 0))
             (let [msgs (backend.load p)
                   s (if opts.no-session? nil (backend.open-existing p))]
               (each [_ m (ipairs msgs)]
@@ -112,13 +114,12 @@
    The closure is looked up through mutable state so /new, /resume, /reload,
    /model, and /handoff do not need to reattach per-agent callbacks."
   (events.unregister-by-owner OWNER)
-  (events.on
-    :message-appended
-    (fn [ev]
-      (when (= ev.agent state.agent)
-        (when state.flush (state.flush))
-        (when state.update-queue-status (state.update-queue-status))))
-    OWNER))
+  (events.on :message-appended
+             (fn [ev]
+               (when (= ev.agent state.agent)
+                 (when state.flush (state.flush))
+                 (when state.update-queue-status (state.update-queue-status))))
+             OWNER))
 
 ;; @doc fen.session_lifecycle.uninstall!
 ;; kind: function

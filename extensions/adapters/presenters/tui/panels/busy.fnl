@@ -5,7 +5,16 @@
 
 (local M {})
 
-(local SPINNER-FRAMES ["⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏"])
+(local SPINNER-FRAMES ["⠋"
+                       "⠙"
+                       "⠹"
+                       "⠸"
+                       "⠼"
+                       "⠴"
+                       "⠦"
+                       "⠧"
+                       "⠇"
+                       "⠏"])
 
 (fn active-status-info []
   (workspaces.active-status-info))
@@ -27,8 +36,7 @@
   "Seconds since the current turn started, or empty string when idle."
   (let [s (active-status-info)
         start (or s.turn-start 0)]
-    (if (= start 0) ""
-        (.. (tostring (- (os.time) start)) "s"))))
+    (if (= start 0) "" (.. (tostring (- (os.time) start)) "s"))))
 
 (fn fmt-delay [ms]
   (let [n (or ms 0)]
@@ -39,9 +47,9 @@
 (fn busy-label []
   (let [s (active-status-info)]
     (if s.retrying?
-        (.. "retrying " (tostring (or s.retry-attempt 0))
-            "/" (tostring (or s.retry-max-attempts 0))
-            " in " (fmt-delay s.retry-delay-ms)
+        (.. "retrying " (tostring (or s.retry-attempt 0)) "/"
+            (tostring (or s.retry-max-attempts 0)) " in "
+            (fmt-delay s.retry-delay-ms)
             (if s.retry-reason (.. " after " (tostring s.retry-reason)) ""))
         (or s.running-label (if s.thinking? "thinking" "")))))
 

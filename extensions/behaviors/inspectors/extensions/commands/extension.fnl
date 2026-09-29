@@ -11,7 +11,8 @@
 (local args-util (require :fen.util.args))
 (local panel (require :fen.util.panel))
 (local types (require :fen.core.types))
-(local panel-state (require :fen.extensions.extensions_inspector.state.extensions))
+(local panel-state
+       (require :fen.extensions.extensions_inspector.state.extensions))
 
 (local M {})
 
@@ -39,12 +40,8 @@
     (.. s (string.rep " " (math.max 0 (- w n))))))
 
 (fn table-row [name status origin versions path]
-  (.. "  "
-      (pad name 18) "  "
-      (pad status 19) "  "
-      (pad origin 10) "  "
-      (pad versions 3) "  "
-      (tostring (or path ""))))
+  (.. "  " (pad name 18) "  " (pad status 19) "  " (pad origin 10) "  "
+      (pad versions 3) "  " (tostring (or path ""))))
 
 (fn join-list [items]
   (if (or (not items) (= (length items) 0))
@@ -89,19 +86,19 @@
             (table.insert lines (dim (.. "    " line)))))))))
 
 (local REGISTRY-KINDS
-  [{:kind :commands :label "commands"}
-   {:kind :tools :label "tools"}
-   {:kind :controls :label "controls"}
-   {:kind :status :label "status"}
-   {:kind :panels :label "panels"}
-   {:kind :presenters :label "presenters"}
-   {:kind :providers :label "providers"}
-   {:kind :auth-backends :label "auth backends"}
-   {:kind :session-backends :label "session backends"}
-   {:kind :prompt-fragments :label "prompt fragments"}
-   {:kind :event-handlers :label "events"}
-   {:kind :hooks :label "hooks"}
-   {:kind :introspectors :label "introspectors"}])
+       [{:kind :commands :label "commands"}
+        {:kind :tools :label "tools"}
+        {:kind :controls :label "controls"}
+        {:kind :status :label "status"}
+        {:kind :panels :label "panels"}
+        {:kind :presenters :label "presenters"}
+        {:kind :providers :label "providers"}
+        {:kind :auth-backends :label "auth backends"}
+        {:kind :session-backends :label "session backends"}
+        {:kind :prompt-fragments :label "prompt fragments"}
+        {:kind :event-handlers :label "events"}
+        {:kind :hooks :label "hooks"}
+        {:kind :introspectors :label "introspectors"}])
 
 (fn normalize-kind [s]
   (let [s (tostring (or s ""))]
@@ -159,10 +156,14 @@
 
 (fn record-detail [kind rec]
   (let [parts []]
-    (when rec.placement (table.insert parts (.. "placement: " (tostring rec.placement))))
-    (when rec.side (table.insert parts (.. "side: " (tostring rec.side))))
-    (when rec.api (table.insert parts (.. "api: " (tostring rec.api))))
-    (when rec.order (table.insert parts (.. "order: " (tostring rec.order))))
+    (when rec.placement
+      (table.insert parts (.. "placement: " (tostring rec.placement))))
+    (when rec.side
+      (table.insert parts (.. "side: " (tostring rec.side))))
+    (when rec.api
+      (table.insert parts (.. "api: " (tostring rec.api))))
+    (when rec.order
+      (table.insert parts (.. "order: " (tostring rec.order))))
     (when (and (= kind :prompt-fragments) rec.dynamic?)
       (table.insert parts "dynamic"))
     (if (> (length parts) 0)
@@ -177,14 +178,13 @@
             (table.insert out {:event event-name :owner rec.owner})))
         (each [_ rec (ipairs (safe-list api kind))]
           (table.insert out rec)))
-    (table.sort out
-                (fn [a b]
-                  (let [an (display-name kind a)
-                        bn (display-name kind b)]
-                    (if (= an bn)
-                        (< (tostring (or a.owner ""))
-                           (tostring (or b.owner "")))
-                        (< an bn)))))
+    (table.sort out (fn [a b]
+                      (let [an (display-name kind a)
+                            bn (display-name kind b)]
+                        (if (= an bn)
+                            (< (tostring (or a.owner ""))
+                               (tostring (or b.owner "")))
+                            (< an bn)))))
     out))
 
 (fn contributions-for-owner [api owner]
@@ -228,9 +228,10 @@
         out []]
     (each [_ spec (ipairs REGISTRY-KINDS)]
       (when (or (not kind) (= kind spec.kind))
-        (table.insert out {:kind spec.kind
-                           :label spec.label
-                           :items (registry-records api spec.kind)})))
+        (table.insert out
+                      {:kind spec.kind
+                       :label spec.label
+                       :items (registry-records api spec.kind)})))
     out))
 
 (fn add-contribution-lines! [lines api e]
@@ -241,8 +242,9 @@
         (each [_ group (ipairs groups)]
           (let [names []]
             (each [_ rec (ipairs group.items)]
-              (table.insert names (.. (display-name group.kind rec)
-                                      (record-detail group.kind rec))))
+              (table.insert names
+                            (.. (display-name group.kind rec)
+                                (record-detail group.kind rec))))
             (table.insert lines
                           (dim (.. "  " group.label ": "
                                    (table.concat names ", ")))))))))
@@ -265,7 +267,8 @@
             (each [_ rec (ipairs records)]
               (table.insert rows
                             (dim (.. "  " (pad (display-name spec.kind rec) 24)
-                                     " owner: " (tostring (or rec.owner "unknown"))
+                                     " owner: "
+                                     (tostring (or rec.owner "unknown"))
                                      (record-detail spec.kind rec))))))))
     rows))
 
@@ -274,7 +277,8 @@
                (dim (.. "status: " (status-label e)))
                (dim (.. "origin: " (origin-label e)))
                (dim (.. "source: " (tostring (or e.source "unknown"))))
-               (dim (.. "discovered versions: " (tostring (or e.version-count 1))))]]
+               (dim (.. "discovered versions: "
+                        (tostring (or e.version-count 1))))]]
     (when e.description
       (table.insert lines (dim (.. "description: " (tostring e.description)))))
     (when e.path
@@ -284,8 +288,8 @@
       (each [_ v (ipairs e.versions)]
         (table.insert lines
                       (dim (.. "  " (if v.active? "* " "  ")
-                               (tostring (or v.source "unknown"))
-                               "  " (tostring (or v.path "")))))))
+                               (tostring (or v.source "unknown")) "  "
+                               (tostring (or v.path "")))))))
     (when e.entry-module
       (table.insert lines (dim (.. "entry module: " (tostring e.entry-module)))))
     (when e.entry
@@ -294,9 +298,11 @@
       (table.insert lines (dim (.. "presenter: " (tostring e.presenter)))))
     (when e.interactive-only?
       (table.insert lines (dim "interactive only: true")))
-    (table.insert lines (dim (.. "reload modules: " (join-list e.reload-modules))))
+    (table.insert lines
+                  (dim (.. "reload modules: " (join-list e.reload-modules))))
     (when (and e.reload-exclude (> (length e.reload-exclude) 0))
-      (table.insert lines (dim (.. "reload excludes: " (join-list e.reload-exclude)))))
+      (table.insert lines
+                    (dim (.. "reload excludes: " (join-list e.reload-exclude)))))
     (when e.error
       (table.insert lines (dim (.. "error: " (tostring e.error)))))
     (add-contribution-lines! lines api e)
@@ -307,9 +313,8 @@
   (let [choices []]
     (each [_ e (ipairs (extension-items api))]
       (table.insert choices
-                    {:label (.. (tostring e.name)
-                                "  " (status-label e)
-                                "  " (origin-label e))
+                    {:label (.. (tostring e.name) "  " (status-label e) "  "
+                                (origin-label e))
                      :value e
                      :description (or e.description e.path "")}))
     choices))
@@ -320,17 +325,17 @@
     (if (= (length items) 0)
         (table.insert rows (dim "  (none loaded)"))
         (do
-          (table.insert rows (dim (table-row "name" "status" "origin" "#" "path")))
+          (table.insert rows
+                        (dim (table-row "name" "status" "origin" "#" "path")))
           ;; Keep this ASCII: byte-oriented terminal clipping can split
           ;; multi-byte box/separator glyphs inside a table cell.
-          (table.insert rows (dim (table-row "----" "------" "------" "-" "----")))
+          (table.insert rows
+                        (dim (table-row "----" "------" "------" "-" "----")))
           (each [_ e (ipairs items)]
             (table.insert rows
-                          (dim (table-row e.name
-                                          (status-label e)
+                          (dim (table-row e.name (status-label e)
                                           (origin-label e)
-                                          (or e.version-count 1)
-                                          e.path))))))
+                                          (or e.version-count 1) e.path))))))
     rows))
 
 (fn wrap-text [text width]
@@ -384,8 +389,7 @@
 
 (fn panel-rows [api w]
   (let [now (os.time)]
-    (when (or (not panel-state.cached-rows)
-              (not= now panel-state.cached-at)
+    (when (or (not panel-state.cached-rows) (not= now panel-state.cached-at)
               (not= w panel-state.cached-w)
               (not= panel-state.selected-name panel-state.cached-selected-name)
               (not= panel-state.view panel-state.cached-view)
@@ -433,7 +437,7 @@
           (invalidate-cache!)
           (api.emit {:type :redraw}))
         (api.emit {:type :error
-                          :error (.. "extension not found: " (tostring name))}))))
+                   :error (.. "extension not found: " (tostring name))}))))
 
 (fn panel-spec [api]
   {:name :extensions
@@ -450,9 +454,10 @@
 
 (fn handle-toggle [api]
   (if panel-state.visible?
-      (do (set panel-state.visible? false)
-          (invalidate-cache!)
-          (api.emit {:type :info :text "extensions panel: off"}))
+      (do
+        (set panel-state.visible? false)
+        (invalidate-cache!)
+        (api.emit {:type :info :text "extensions panel: off"}))
       (do
         (api.emit {:type :dismiss})
         (set panel-state.view :extensions)
@@ -467,7 +472,7 @@
     (if (= (length choices) 0)
         (api.emit {:type :info :text "no extensions loaded"})
         (let [picked (api.ui.select {:label "extension details"
-                                 :choices choices})]
+                                     :choices choices})]
           (when picked
             (let [e (or picked.value picked)]
               (when e.name
@@ -484,16 +489,16 @@
 
 (fn perform-extension-reload! [state name]
   (let [(ok? err) (if state.reload-extension
-                       (state.reload-extension name)
-                       (values false "extension loader unavailable"))]
+                      (state.reload-extension name)
+                      (values false "extension loader unavailable"))]
     (if (not ok?)
         (values false err)
         (do
           (when state.reload-model-providers
             (state.reload-model-providers))
           (let [saved state.agent.messages
-                new-agent (state.make-agent-from-opts
-                            state.opts state.on-event state.agent-extra)]
+                new-agent (state.make-agent-from-opts state.opts state.on-event
+                                                      state.agent-extra)]
             (set new-agent.messages saved)
             (set state.agent new-agent))
           (invalidate-cache!)
@@ -505,7 +510,8 @@
   (let [verb (if enabled? "enable" "disable")
         e (and name (find-extension api name))]
     (if (or (not name) (= name ""))
-        (api.emit {:type :error :error (.. "usage: /extensions " verb " <name>")})
+        (api.emit {:type :error
+                   :error (.. "usage: /extensions " verb " <name>")})
         (not e)
         (api.emit {:type :error :error (.. "extension not found: " name)})
         (?. state :busy?)
@@ -522,7 +528,8 @@
                 (api.emit {:type :info
                            :text (.. "extensions." key ".enabled = "
                                      (tostring enabled?) " saved to settings"
-                                     (if (and (not enabled?) (= e.source :explicit))
+                                     (if (and (not enabled?)
+                                              (= e.source :explicit))
                                          "; --extension still loads it this run"
                                          ""))})
                 (invalidate-cache!)
@@ -533,8 +540,7 @@
         text (if structured?
                  (.. "Extension " (tostring (or value.action :result)) ".")
                  value)
-        result {:content [(types.text-block text)]
-                :is-error? error?}]
+        result {:content [(types.text-block text)] :is-error? error?}]
     (when structured? (set result.details value))
     result))
 
@@ -550,23 +556,34 @@
             (tool-result "show requires name" true)
             (let [e (find-extension api args.name)]
               (if e
-                  (tool-result {:action :show :extension (extension-data api e)} false)
-                  (tool-result (.. "extension not found: " (tostring args.name)) true))))
+                  (tool-result {:action :show
+                                :extension (extension-data api e)}
+                               false)
+                  (tool-result (.. "extension not found: " (tostring args.name))
+                               true))))
         (= action "registry")
         (let [kind (and args.kind (normalize-kind args.kind))]
           (if (and args.kind (not kind))
-              (tool-result (.. "unknown registry kind: " (tostring args.kind)) true)
-              (tool-result {:action :registry :registry (registry-data api kind)} false)))
+              (tool-result (.. "unknown registry kind: " (tostring args.kind))
+                           true)
+              (tool-result {:action :registry
+                            :registry (registry-data api kind)}
+                           false)))
         (= action "reload")
         (if (or (not ctx) (not ctx.state))
-            (tool-result "extension reload requires an interactive run state" true)
+            (tool-result "extension reload requires an interactive run state"
+                         true)
             (if (or (not args.name) (= (tostring args.name) ""))
                 (tool-result "reload requires name" true)
-                (let [(ok? err) (perform-extension-reload! ctx.state (tostring args.name))]
+                (let [(ok? err) (perform-extension-reload! ctx.state
+                                                           (tostring args.name))]
                   (if ok?
-                      (tool-result {:action :reload :name (tostring args.name)
-                                    :reloaded true} false)
-                      (tool-result (.. "reload-extension: " (tostring err)) true)))))
+                      (tool-result {:action :reload
+                                    :name (tostring args.name)
+                                    :reloaded true}
+                                   false)
+                      (tool-result (.. "reload-extension: " (tostring err))
+                                   true)))))
         (tool-result (.. "unknown extension action: " action) true))))
 
 ;; @doc fen.extensions.extensions_inspector.commands.extension.register
@@ -576,80 +593,82 @@
 ;; tags: commands extensions register
 (fn M.register [api]
   (api.register :command
-    {:name :reload-extension
-     :order 20
-     :description "Reload one external extension by name"
-     :idle-only? true
-     :handler (fn [args state]
-                (let [name (args-util.first-arg args)]
-                  (if (or (not name) (= name ""))
-                      (api.emit {:type :error
-                                        :error "usage: /reload-extension <name>"})
-                      (let [(ok? err) (perform-extension-reload! state name)]
-                        (if ok?
-                            (api.emit {:type :info
-                                       :text (.. "reloaded extension: " name)})
-                            (api.emit {:type :error
-                                       :error (.. "reload-extension: "
-                                                  (tostring err))}))))))})
-
+                {:name :reload-extension
+                 :order 20
+                 :description "Reload one external extension by name"
+                 :idle-only? true
+                 :handler (fn [args state]
+                            (let [name (args-util.first-arg args)]
+                              (if (or (not name) (= name ""))
+                                  (api.emit {:type :error
+                                             :error "usage: /reload-extension <name>"})
+                                  (let [(ok? err) (perform-extension-reload! state
+                                                                             name)]
+                                    (if ok?
+                                        (api.emit {:type :info
+                                                   :text (.. "reloaded extension: "
+                                                             name)})
+                                        (api.emit {:type :error
+                                                   :error (.. "reload-extension: "
+                                                              (tostring err))}))))))})
   (api.register :tool
-    {:name :extension
-     :label "Extension"
-     :exposure :search
-     :snippet "Inspect or reload extensions"
-     :description "Inspect loaded extensions and live registries, or reload one external extension. Actions: list, show, registry, reload. Read actions do not require interactive state; reload does."
-     :parameters {:type :object
-                  :properties {:action {:type :string
-                                        :enum ["list" "show" "registry" "reload"]}
-                               :name {:type :string
-                                      :description "Extension name for show or reload"}
-                               :kind {:type :string
-                                      :description "Optional registry kind for registry"}}
-                  :required [:action]}
-     :execute (fn [args ctx _yield!] (execute-tool api args ctx))})
-
+                {:name :extension
+                 :label "Extension"
+                 :exposure :search
+                 :snippet "Inspect or reload extensions"
+                 :description "Inspect loaded extensions and live registries, or reload one external extension. Actions: list, show, registry, reload. Read actions do not require interactive state; reload does."
+                 :parameters {:type :object
+                              :properties {:action {:type :string
+                                                    :enum ["list"
+                                                           "show"
+                                                           "registry"
+                                                           "reload"]}
+                                           :name {:type :string
+                                                  :description "Extension name for show or reload"}
+                                           :kind {:type :string
+                                                  :description "Optional registry kind for registry"}}
+                              :required [:action]}
+                 :execute (fn [args ctx _yield!] (execute-tool api args ctx))})
   (api.register :command
-    {:name :extensions
-     :order 10
-     :description "Pick an extension, show details, inspect live registry, or enable/disable one in settings"
-     :handler (fn [args state]
-                (let [parts (split-args args)
-                      name (. parts 1)]
-                  (if (= name "registry")
-                      (show-registry-panel api (. parts 2))
-                      (= name "enable")
-                      (set-extension-enabled! api state (. parts 2) true)
-                      (= name "disable")
-                      (set-extension-enabled! api state (. parts 2) false)
-                      (and name (not= name ""))
-                      (show-extension-panel api name)
-                      (pick-extension! api))))})
-
+                {:name :extensions
+                 :order 10
+                 :description "Pick an extension, show details, inspect live registry, or enable/disable one in settings"
+                 :handler (fn [args state]
+                            (let [parts (split-args args)
+                                  name (. parts 1)]
+                              (if (= name "registry")
+                                  (show-registry-panel api (. parts 2))
+                                  (= name "enable")
+                                  (set-extension-enabled! api state (. parts 2)
+                                                          true)
+                                  (= name "disable")
+                                  (set-extension-enabled! api state (. parts 2)
+                                                          false)
+                                  (and name (not= name ""))
+                                  (show-extension-panel api name)
+                                  (pick-extension! api))))})
   ;; @doc register-site:panel:extensions
   ;; summary: Extension detail and picker panel backing the /extensions command.
   ;; tags: panel extensions commands
   (api.register :panel (panel-spec api))
-
   (api.register :introspect
-    {:name :panel
-     :description "Current /extensions panel state and cache metadata"
-     :snapshot (fn [_]
-                 {:visible? panel-state.visible?
-                  :view panel-state.view
-                  :selected-name panel-state.selected-name
-                  :registry-kind panel-state.registry-kind
-                  :cached-w panel-state.cached-w
-                  :cached-at panel-state.cached-at
-                  :cached-selected-name panel-state.cached-selected-name})})
-
+                {:name :panel
+                 :description "Current /extensions panel state and cache metadata"
+                 :snapshot (fn [_]
+                             {:visible? panel-state.visible?
+                              :view panel-state.view
+                              :selected-name panel-state.selected-name
+                              :registry-kind panel-state.registry-kind
+                              :cached-w panel-state.cached-w
+                              :cached-at panel-state.cached-at
+                              :cached-selected-name panel-state.cached-selected-name})})
   (api.on :dismiss
-    (fn [ev]
-      (when panel-state.visible?
-        (set panel-state.visible? false)
-        (invalidate-cache!)
-        (when ev.announce?
-          (api.emit {:type :info :text "extensions panel: off"}))))))
+          (fn [ev]
+            (when panel-state.visible?
+              (set panel-state.visible? false)
+              (invalidate-cache!)
+              (when ev.announce?
+                (api.emit {:type :info :text "extensions panel: off"}))))))
 
 (tset M :_extension-detail-lines extension-detail-lines)
 (tset M :_registry-lines registry-lines)

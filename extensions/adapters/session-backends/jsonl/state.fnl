@@ -9,6 +9,4 @@
 ;; (#426). The eviction policy lives in the reloadable session module; only the
 ;; data and the monotonic recency clock persist here.
 
-{:record-cache {}
- :cache-cap 64
- :cache-clock 0}
+{:record-cache {} :cache-cap 64 :cache-clock 0}

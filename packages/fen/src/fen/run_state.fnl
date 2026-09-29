@@ -3,8 +3,7 @@
 (local M {})
 
 (fn current-state [state-box]
-  (or state-box.state
-      (error "run state is not installed")))
+  (or state-box.state (error "run state is not installed")))
 
 (fn call-backend [state-box method ...]
   (let [st (current-state state-box)
@@ -32,7 +31,8 @@
                :make-agent-from-opts cfg.make-agent-from-opts
                :open-session (fn [opts]
                                (let [st (current-state state-box)]
-                                 (session-lifecycle.open opts st.session-backend)))
+                                 (session-lifecycle.open opts
+                                                         st.session-backend)))
                :open-existing-session (fn [ref ?yield-fn]
                                         (call-backend state-box :open-existing
                                                       ref ?yield-fn))
@@ -43,8 +43,8 @@
                :make-flush (fn [agent session ?last-saved]
                              (let [st (current-state state-box)]
                                (session-lifecycle.make-flush st.session-backend
-                                                            agent session
-                                                            ?last-saved)))
+                                                             agent session
+                                                             ?last-saved)))
                :load-session (fn [ref ?yield-fn]
                                (call-backend state-box :load ref ?yield-fn))
                :find-session (fn [cwd target ?yield-fn]
@@ -56,15 +56,14 @@
                                     []))
                :session-info (fn [session]
                                (let [st (current-state state-box)]
-                                 (session-lifecycle.backend-info
-                                   st.session-backend session)))
+                                 (session-lifecycle.backend-info st.session-backend
+                                                                 session)))
                :reload-modules cfg.reload-modules
-               :load-extensions
-               (fn [opts mode] (extension-loader.load! opts mode))
-               :reload-extension
-               (fn [name] (extension-loader.reload-extension! name))
-               :reload-model-providers
-               (fn [] (models-mod.register-providers!))
+               :load-extensions (fn [opts mode]
+                                  (extension-loader.load! opts mode))
+               :reload-extension (fn [name]
+                                   (extension-loader.reload-extension! name))
+               :reload-model-providers (fn [] (models-mod.register-providers!))
                :agent-extra cfg.agent-extra
                :update-queue-status cfg.update-queue-status
                :busy? false

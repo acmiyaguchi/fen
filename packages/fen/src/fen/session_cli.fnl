@@ -20,7 +20,8 @@
         (not (. VERBS verb))
         (values nil "usage: fen session <new|list|show|send> ... --json")
         (let [context (.. "session-" verb)
-              opts {:session-backend :jsonl :extension-paths []
+              opts {:session-backend :jsonl
+                    :extension-paths []
                     :extra-skill-paths []}
               positionals []
               prompt-parts []]
@@ -30,25 +31,35 @@
           (while (and (<= i (length argv)) (not err))
             (let [token (. argv i)]
               (if after-separator?
-                  (do (table.insert prompt-parts (tostring token))
-                      (set i (+ i 1)))
+                  (do
+                    (table.insert prompt-parts (tostring token))
+                    (set i (+ i 1)))
                   (= token :--)
-                  (do (set after-separator? true) (set i (+ i 1)))
+                  (do
+                    (set after-separator? true)
+                    (set i (+ i 1)))
                   (and (= verb :doctor) (= token :--repair))
-                  (do (set opts.repair? true) (set i (+ i 1)))
+                  (do
+                    (set opts.repair? true)
+                    (set i (+ i 1)))
                   (parse-util.option-token? token)
                   (let [known (flags.find-any token)
                         flag (and known (flags.find token context))]
                     (if (not flag)
-                        (set err (if known
-                                     (flags.invalid-message known context)
-                                     (flags.unknown-message token context)))
-                        (let [(next-index parse-error)
-                              (parse-util.consume! opts flag argv i)]
+                        (set err
+                             (if known
+                                 (flags.invalid-message known context)
+                                 (flags.unknown-message token context)))
+                        (let [(next-index parse-error) (parse-util.consume! opts
+                                                                            flag
+                                                                            argv
+                                                                            i)]
                           (if parse-error
                               (set err parse-error)
                               (set i next-index)))))
-                  (do (table.insert positionals token) (set i (+ i 1))))))
+                  (do
+                    (table.insert positionals token)
+                    (set i (+ i 1))))))
           (if err
               (values nil err)
               (do
@@ -76,13 +87,13 @@
         (.. "fen session " opts.verb " does not accept positional arguments")
         (and (not= opts.verb :send) opts.inline-prompt)
         "text after -- is valid only for fen session send"
-        (and opts.tail
-             (or (not= opts.tail (math.floor opts.tail)) (< opts.tail 0)))
+        (and opts.tail (or (not= opts.tail (math.floor opts.tail))
+                           (< opts.tail 0)))
         "--tail must be a non-negative integer"
-        (and (= opts.verb :send)
-             (> (+ (if opts.prompt 1 0)
-                   (if opts.prompt-file 1 0)
-                   (if opts.inline-prompt 1 0)) 1))
+        (and (= opts.verb :send) (> (+ (if opts.prompt 1 0)
+                                       (if opts.prompt-file 1 0)
+                                       (if opts.inline-prompt 1 0))
+                                    1))
         "choose exactly one of --prompt, --prompt-file, or text after --"
         nil)))
 
@@ -90,7 +101,8 @@
   (if opts.prompt-file
       (let [(f open-error) (io.open opts.prompt-file :r)]
         (if (not f)
-            (values nil (.. "cannot read --prompt-file: " (tostring open-error)))
+            (values nil
+                    (.. "cannot read --prompt-file: " (tostring open-error)))
             (let [text (f:read :*a)]
               (f:close)
               (values text nil))))
@@ -116,13 +128,15 @@
     (set print stderr-print)
     ;; Capture os.exit into the protocol envelope so a single JSON document is always emitted;
     ;; hooks.prepare! runs eager startup validation (resolve-provider-config os.exits on an unusable provider).
-    (set os.exit (fn [?code] (error {:__session-cli-exit true
-                                     :code (or ?code 0)})))
-    (let [(ok? a b) (xpcall f (fn [err]
-                                (if (and (= (type err) :table)
-                                         err.__session-cli-exit)
-                                    err
-                                    (debug.traceback (tostring err) 2))))]
+    (set os.exit
+         (fn [?code]
+           (error {:__session-cli-exit true :code (or ?code 0)})))
+    (let [(ok? a b) (xpcall f
+                            (fn [err]
+                              (if (and (= (type err) :table)
+                                       err.__session-cli-exit)
+                                  err
+                                  (debug.traceback (tostring err) 2))))]
       (set os.exit old-exit)
       (set print old-print)
       (set io.stdout old-stdout)
@@ -136,19 +150,18 @@
                                        :invalid_invocation
                                        :runtime_failure)
                              :message (.. "session command exited "
-                                         (tostring code))}}
+                                          (tostring code))}}
                     code))
           (values {:ok false
-                   :error {:code :runtime_failure :message (tostring a)}} 1)))))
+                   :error {:code :runtime_failure :message (tostring a)}}
+                  1)))))
 
 (fn json-ready! [result]
   "Preserve array shape for empty collection fields in the wire document."
   (when (and (= (type result) :table) result.ok)
-    (when (and (= (type result.sessions) :table)
-               (= (next result.sessions) nil))
+    (when (and (= (type result.sessions) :table) (= (next result.sessions) nil))
       (set result.sessions json.empty-array))
-    (when (and (= (type result.messages) :table)
-               (= (next result.messages) nil))
+    (when (and (= (type result.messages) :table) (= (next result.messages) nil))
       (set result.messages json.empty-array))
     (when (and (= (type (?. result :turn :messages)) :table)
                (= (next result.turn.messages) nil))
@@ -167,23 +180,27 @@
     (let [(prompt prompt-error) (if (= opts.verb :send)
                                     (read-prompt opts)
                                     (values nil nil))]
-      (when (and (= opts.verb :send) (or prompt-error (not prompt) (= prompt "")))
-        (io.stdout:write
-          (.. (json.encode (invocation-error
-                             (or prompt-error "session send requires a non-empty prompt")))
-              "\n"))
+      (when (and (= opts.verb :send)
+                 (or prompt-error (not prompt) (= prompt "")))
+        (io.stdout:write (.. (json.encode (invocation-error (or prompt-error
+                                                                "session send requires a non-empty prompt")))
+                             "\n"))
         (os.exit 2))
-      (let [(result exit-code)
-            (protocol-call
-              (fn []
-                (hooks.prepare! opts (= opts.verb :send))
-                (case opts.verb
-                  :new (control.new opts)
-                  :list (control.list opts)
-                  :show (control.show opts.session-id opts)
-                  :send (control.send opts.session-id prompt opts
-                                      hooks.resolve-provider-config)
-                  :doctor (control.doctor opts.session-id opts))))]
+      (let [(result exit-code) (protocol-call (fn []
+                                                (hooks.prepare! opts
+                                                                (= opts.verb
+                                                                   :send))
+                                                (case opts.verb
+                                                  :new (control.new opts)
+                                                  :list (control.list opts)
+                                                  :show (control.show opts.session-id
+                                                                      opts)
+                                                  :send (control.send opts.session-id
+                                                                      prompt
+                                                                      opts
+                                                                      hooks.resolve-provider-config)
+                                                  :doctor (control.doctor opts.session-id
+                                                                          opts))))]
         (io.stdout:write (.. (json.encode (json-ready! result)) "\n"))
         (os.exit exit-code)))))
 

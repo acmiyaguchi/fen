@@ -1,4 +1,3 @@
-
 (local ext-api (require :fen.core.extensions.test_api))
 (local th (require :fen.testing.tools))
 (local tools th.tools)
@@ -17,299 +16,307 @@
 (after_each (fn [] (h.assert-no-leaks!)))
 
 (describe "agent_state extension tool #slow"
-  (fn []
-    (after_each (fn [] (ext-api.reset!)))
+          (fn []
+            (after_each (fn [] (ext-api.reset!)))
 
-    (fn agent [reg]
-      {:model "test-model"
-       :provider-name :openai
-       :system-prompt "system text"
-       :max-tokens 123
-       :api-key "secret"
-       :thinking-status "reason:medium"
-       :provider-options {:api-key "secret2"
-                          :creds {:access "oauth-secret"}
-                          :reasoning-effort :medium}
-       :messages [(types.user-message "hello")
-                  (types.assistant-message
-                    {:content [(types.text-block "hi")]
-                     :api :openai-completions
-                     :provider :openai
-                     :model "test-model"
-                     :usage {:input 10 :output 3 :total-tokens 13}
-                     :stop-reason :stop})]
-       :tools reg})
+            (fn agent [reg]
+              {:model "test-model"
+               :provider-name :openai
+               :system-prompt "system text"
+               :max-tokens 123
+               :api-key "secret"
+               :thinking-status "reason:medium"
+               :provider-options {:api-key "secret2"
+                                  :creds {:access "oauth-secret"}
+                                  :reasoning-effort :medium}
+               :messages [(types.user-message "hello")
+                          (types.assistant-message {:content [(types.text-block "hi")]
+                                                    :api :openai-completions
+                                                    :provider :openai
+                                                    :model "test-model"
+                                                    :usage {:input 10
+                                                            :output 3
+                                                            :total-tokens 13}
+                                                    :stop-reason :stop})]
+               :tools reg})
 
-    (fn contains? [items wanted]
-      (var found? false)
-      (each [_ item (ipairs (or items []))]
-        (when (= item wanted) (set found? true)))
-      found?)
+            (fn contains? [items wanted]
+              (var found? false)
+              (each [_ item (ipairs (or items []))]
+                (when (= item wanted) (set found? true)))
+              found?)
 
-    (fn agent-state-registry []
-      (ext-api.reset!)
-      (tset package.loaded :fen.extensions.agent_state nil)
-      (tset package.loaded :fen.extensions.agent_state.tool nil)
-      (let [mod (require :fen.extensions.agent_state)
-            api (ext-api.make-runtime-api :agent_state)]
-        (mod.register api))
-      (tool-reg.merged registry))
+            (fn agent-state-registry []
+              (ext-api.reset!)
+              (tset package.loaded :fen.extensions.agent_state nil)
+              (tset package.loaded :fen.extensions.agent_state.tool nil)
+              (let [mod (require :fen.extensions.agent_state)
+                    api (ext-api.make-runtime-api :agent_state)]
+                (mod.register api))
+              (tool-reg.merged registry))
 
-    (it "answers simple get queries as JSON"
-      (fn []
-        (let [reg (agent-state-registry)
-              r (execute reg :agent_state
-                               {:query "(:get :model)"}
-                               {:agent (agent reg)})]
-          (assert.is_false r.is-error?)
-          (assert.are.equal "\"test-model\"" (first-text r.content)))))
-
-    (it "supports count, slice, pluck, where, and last"
-      (fn []
-        (let [reg (agent-state-registry)
-              r (execute reg :agent_state
-                               {:query "(:pluck (:slice (:get :messages) -2 2) :role)"}
-                               {:agent (agent reg)})
-              decoded (json.decode (first-text r.content))]
-          (assert.is_false r.is-error?)
-          (assert.are.equal "user" (. decoded 1))
-          (assert.are.equal "assistant" (. decoded 2)))
-        (let [reg (agent-state-registry)
-              r (execute reg :agent_state
-                               {:query "(:get (:last (:where (:get :messages) :role :assistant)) :stop-reason)"}
-                               {:agent (agent reg)})]
-          (assert.is_false r.is-error?)
-          (assert.are.equal "\"stop\"" (first-text r.content)))))
-
-    (it "exposes sanitized tool descriptors, not executable closures or secrets"
-      (fn []
-        (let [reg (agent-state-registry)
-              r (execute reg :agent_state
-                               {:query "(:get :tools)"}
-                               {:agent (agent reg)})
-              text (first-text r.content)]
-          (assert.is_false r.is-error?)
-          (assert.is_nil (string.find text "secret" 1 true))
-          (assert.is_nil (string.find text "execute" 1 true))
-          (assert.is_truthy (string.find text "agent_state" 1 true)))))
-
-    (it "exposes model source and dynamic catalog cache state"
-      (fn []
-        (let [reg (agent-state-registry)
-              api (ext-api.make-runtime-api :fake-provider)]
-          (api.register :provider
-            {:name :fake
-             :api :mock
-             :list-models (fn [_] [{:id "fresh-model"}])
-             :models [{:id "fallback-model"}]
-             :complete (fn [])})
-          (let [a (agent reg)]
-            (set a.provider-name :fake)
-            (set a.model "fresh-model")
-            (let [r (execute reg :agent_state
-                                   {:query "(:get :model-info)"}
-                                   {:agent a})
-                  decoded (json.decode (first-text r.content))]
-              (assert.is_false r.is-error?)
-              (assert.are.equal "dynamic" decoded.model-source)
-              (assert.are.equal "ok" (. decoded :dynamic-model-cache :status))
-              (assert.are.equal 1 (. decoded :dynamic-model-cache :model-count)))))))
-
-    (it "exposes extension registry introspection"
-      (fn []
-        (let [reg (agent-state-registry)
-              r (execute reg :agent_state
-                               {:query "(:keys (:get :extensions))"}
-                               {:agent (agent reg)})
-              decoded (json.decode (first-text r.content))]
-          (assert.is_false r.is-error?)
-          (assert.are.same ["auth-backends" "commands" "controls" "event-handlers" "extension-errors" "hooks" "introspectors" "loaded" "logs" "panels" "presenters" "prompt-fragments" "providers" "session-backends" "snapshots" "status" "tools"]
-                           decoded))
-        (let [reg (agent-state-registry)
-              r (execute reg :agent_state
-                               {:query "(:get :extensions :tools 0 :name)"}
-                               {:agent (agent reg)})]
-          (assert.is_false r.is-error?)
-          (assert.are.equal "\"agent_state\"" (first-text r.content)))))
-
-    (it "exposes extension snapshots"
-      (fn []
-        (let [reg (agent-state-registry)
-              api (ext-api.make-runtime-api :snap-test)]
-          (api.register :introspect
-            {:name :state
-             :snapshot (fn [_] {:count 3})})
-          (let [r (execute reg :agent_state
-                           {:query "(:get :extensions :snapshots :snap-test :state :count)"}
-                           {:agent (agent reg)})]
-            (assert.is_false r.is-error?)
-            (assert.are.equal "3" (first-text r.content))))))
-
-    (it "surfaces snapshot errors without failing the state query"
-      (fn []
-        (let [reg (agent-state-registry)
-              api (ext-api.make-runtime-api :snap-bad)]
-          (api.register :introspect
-            {:name :boom
-             :snapshot (fn [_] (error "boom"))})
-          (let [r (execute reg :agent_state
-                           {:query "(:get :extensions :snapshots :snap-bad :boom :error)"}
-                           {:agent (agent reg)})]
-            (assert.is_false r.is-error?)
-            (assert.is_truthy (string.find (first-text r.content) "boom" 1 true))))))
-
-    (it "exposes introspector descriptors without snapshot functions"
-      (fn []
-        (let [reg (agent-state-registry)
-              api (ext-api.make-runtime-api :desc-test)]
-          (api.register :introspect
-            {:name :state
-             :description "state summary"
-             :snapshot (fn [_] {:ok true})})
-          (let [r (execute reg :agent_state
-                           {:query "(:first (:where (:get :extensions :introspectors) :owner :desc-test))"}
-                           {:agent (agent reg)})
-                decoded (json.decode (first-text r.content))]
-            (assert.is_false r.is-error?)
-            (assert.are.equal "desc-test" decoded.owner)
-            (assert.are.equal "state" decoded.name)
-            (assert.are.equal "state summary" decoded.description)
-            (assert.is_nil decoded.snapshot)))))
-
-    (it "passes tool context into extension snapshots"
-      (fn []
-        (let [reg (agent-state-registry)
-              api (ext-api.make-runtime-api :ctx-test)]
-          (api.register :introspect
-            {:name :ctx
-             :snapshot (fn [ctx] {:has-agent? (not= nil (?. ctx :agent))})})
-          (let [r (execute reg :agent_state
-                           {:query "(:get :extensions :snapshots :ctx-test :ctx :has-agent?)"}
-                           {:agent (agent reg)})]
-            (assert.is_false r.is-error?)
-            (assert.are.equal "true" (first-text r.content))))))
-
-    (it "exposes sanitized thinking settings without provider secrets"
-      (fn []
-        (let [reg (agent-state-registry)
-              ctx {:agent (agent reg)
-                   :state {:opts {:thinking :medium
-                                  :reasoning-effort :high
-                                  :thinking-budget 8192}}}
-              r (execute reg :agent_state
-                         {:query "(:get :thinking)"}
-                         ctx)
-              text (first-text r.content)
-              decoded (json.decode text)]
-          (assert.is_false r.is-error?)
-          (assert.are.equal "medium" decoded.level)
-          (assert.are.equal "reason:medium" decoded.status)
-          (assert.are.equal "high" (. decoded "exact-overrides" :reasoning-effort))
-          (assert.are.equal 8192 (. decoded "exact-overrides" :thinking-budget))
-          (assert.are.equal "medium" (. decoded "provider-options" :reasoning-effort))
-          (assert.is_nil (. decoded "provider-options" :api-key))
-          (assert.is_nil (. decoded "provider-options" :creds))
-          (assert.is_nil (string.find text "secret" 1 true)))))
-
-    (it "exposes runtime, run, session, model, and message summaries"
-      (fn []
-        (let [steering-state (require :fen.extensions.steering.state)
-              reg (agent-state-registry)
-              ctx {:agent (agent reg)
-                   :state {:busy? true
-                           :cancel-requested? false}}]
-          (while (> (length steering-state.steering-queue) 0)
-            (table.remove steering-state.steering-queue))
-          (while (> (length steering-state.follow-up-queue) 0)
-            (table.remove steering-state.follow-up-queue))
-          (table.insert steering-state.steering-queue "a")
-          (table.insert steering-state.steering-queue "b")
-          (table.insert steering-state.follow-up-queue "c")
-          (let [r (execute reg :agent_state
-                           {:query "(:get :run)"}
-                           ctx)
-                decoded (json.decode (first-text r.content))]
-            (assert.is_false r.is-error?)
-            (assert.are.equal true (. decoded "available?"))
-            (assert.are.equal true (. decoded "busy?"))
-            (assert.are.equal 2 decoded.steering-count)
-            (assert.are.equal 1 decoded.follow-up-count))
-          (let [r (execute reg :agent_state
-                           {:query "(:keys (:get))"}
-                           ctx)
-                decoded (json.decode (first-text r.content))]
-            (assert.is_false r.is-error?)
-            (assert.is_true (contains? decoded "runtime"))
-            (assert.is_true (contains? decoded "session"))
-            (assert.is_true (contains? decoded "model-info"))
-            (assert.is_true (contains? decoded "message-summary")))
-          (while (> (length steering-state.steering-queue) 0)
-            (table.remove steering-state.steering-queue))
-          (while (> (length steering-state.follow-up-queue) 0)
-            (table.remove steering-state.follow-up-queue)))))
-
-    (it "exposes a bounded error log tail"
-      (fn []
-        (let [reg (agent-state-registry)]
-          (events.emit {:type :error
-                        :error "tail boom"})
-          (let [r (execute reg :agent_state
-                           {:query "(:get :error-log :tail -1 :error)"}
-                           {:agent (agent reg)})]
-            (assert.is_false r.is-error?)
-            (assert.are.equal "\"tail boom\"" (first-text r.content))))))
-
-    (it "exposes panel visibility introspection"
-      (fn []
-        (let [reg (agent-state-registry)
-              api (ext-api.make-runtime-api :panel-test)]
-          (api.register :panel
-            {:name :visible-panel
-             :placement :above-input
-             :order 10
-             :height (fn [_ctx] 2)
-             :render (fn [_ctx] [])})
-          (api.register :panel
-            {:name :hidden-panel
-             :placement :above-input
-             :order 20
-             :height (fn [_ctx] 0)
-             :render (fn [_ctx] [])})
-          (let [r (execute reg :agent_state
-                           {:query "(:get :extensions :panels)"}
-                           {:agent (agent reg)})
-                decoded (json.decode (first-text r.content))]
-            (assert.is_false r.is-error?)
-            (assert.are.equal "visible-panel" (. decoded 1 :name))
-            (assert.are.equal true (. decoded 1 "visible?"))
-            (assert.are.equal 2 (. decoded 1 :height))
-            (assert.are.equal "hidden-panel" (. decoded 2 :name))
-            (assert.are.equal false (. decoded 2 "visible?"))))))
-
-    (it "exposes recent errors and the append log path"
-      (fn []
-        (let [reg (agent-state-registry)]
-          (events.emit {:type :error
-                        :error "inline boom"
-                        :traceback "stack traceback\n  here"})
-          (let [r (execute reg :agent_state
-                           {:query "(:get :errors -1 :error)"}
-                           {:agent (agent reg)})]
-            (assert.is_false r.is-error?)
-            (assert.are.equal "\"inline boom\"" (first-text r.content)))
-          (let [r (execute reg :agent_state
-                           {:query "(:get :error-log-path)"}
-                           {:agent (agent reg)})
-                text (first-text r.content)]
-            (assert.is_false r.is-error?)
-            (assert.is_truthy (string.find text "errors.jsonl" 1 true))))))
-
-    (it "returns an error for invalid query syntax"
-      (fn []
-        (let [reg (agent-state-registry)
-              r (execute reg :agent_state
-                               {:query "(:get :messages"}
-                               {:agent (agent reg)})]
-          (assert.is_true r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content) "unterminated")))))))
-
+            (it "answers simple get queries as JSON"
+                (fn []
+                  (let [reg (agent-state-registry)
+                        r (execute reg :agent_state {:query "(:get :model)"}
+                                   {:agent (agent reg)})]
+                    (assert.is_false r.is-error?)
+                    (assert.are.equal "\"test-model\"" (first-text r.content)))))
+            (it "supports count, slice, pluck, where, and last"
+                (fn []
+                  (let [reg (agent-state-registry)
+                        r (execute reg :agent_state
+                                   {:query "(:pluck (:slice (:get :messages) -2 2) :role)"}
+                                   {:agent (agent reg)})
+                        decoded (json.decode (first-text r.content))]
+                    (assert.is_false r.is-error?)
+                    (assert.are.equal "user" (. decoded 1))
+                    (assert.are.equal "assistant" (. decoded 2)))
+                  (let [reg (agent-state-registry)
+                        r (execute reg :agent_state
+                                   {:query "(:get (:last (:where (:get :messages) :role :assistant)) :stop-reason)"}
+                                   {:agent (agent reg)})]
+                    (assert.is_false r.is-error?)
+                    (assert.are.equal "\"stop\"" (first-text r.content)))))
+            (it "exposes sanitized tool descriptors, not executable closures or secrets"
+                (fn []
+                  (let [reg (agent-state-registry)
+                        r (execute reg :agent_state {:query "(:get :tools)"}
+                                   {:agent (agent reg)})
+                        text (first-text r.content)]
+                    (assert.is_false r.is-error?)
+                    (assert.is_nil (string.find text "secret" 1 true))
+                    (assert.is_nil (string.find text "execute" 1 true))
+                    (assert.is_truthy (string.find text "agent_state" 1 true)))))
+            (it "exposes model source and dynamic catalog cache state"
+                (fn []
+                  (let [reg (agent-state-registry)
+                        api (ext-api.make-runtime-api :fake-provider)]
+                    (api.register :provider
+                                  {:name :fake
+                                   :api :mock
+                                   :list-models (fn [_] [{:id "fresh-model"}])
+                                   :models [{:id "fallback-model"}]
+                                   :complete (fn [])})
+                    (let [a (agent reg)]
+                      (set a.provider-name :fake)
+                      (set a.model "fresh-model")
+                      (let [r (execute reg :agent_state
+                                       {:query "(:get :model-info)"} {:agent a})
+                            decoded (json.decode (first-text r.content))]
+                        (assert.is_false r.is-error?)
+                        (assert.are.equal "dynamic" decoded.model-source)
+                        (assert.are.equal "ok"
+                                          (. decoded :dynamic-model-cache
+                                             :status))
+                        (assert.are.equal 1
+                                          (. decoded :dynamic-model-cache
+                                             :model-count)))))))
+            (it "exposes extension registry introspection"
+                (fn []
+                  (let [reg (agent-state-registry)
+                        r (execute reg :agent_state
+                                   {:query "(:keys (:get :extensions))"}
+                                   {:agent (agent reg)})
+                        decoded (json.decode (first-text r.content))]
+                    (assert.is_false r.is-error?)
+                    (assert.are.same ["auth-backends"
+                                      "commands"
+                                      "controls"
+                                      "event-handlers"
+                                      "extension-errors"
+                                      "hooks"
+                                      "introspectors"
+                                      "loaded"
+                                      "logs"
+                                      "panels"
+                                      "presenters"
+                                      "prompt-fragments"
+                                      "providers"
+                                      "session-backends"
+                                      "snapshots"
+                                      "status"
+                                      "tools"]
+                                     decoded))
+                  (let [reg (agent-state-registry)
+                        r (execute reg :agent_state
+                                   {:query "(:get :extensions :tools 0 :name)"}
+                                   {:agent (agent reg)})]
+                    (assert.is_false r.is-error?)
+                    (assert.are.equal "\"agent_state\"" (first-text r.content)))))
+            (it "exposes extension snapshots"
+                (fn []
+                  (let [reg (agent-state-registry)
+                        api (ext-api.make-runtime-api :snap-test)]
+                    (api.register :introspect
+                                  {:name :state :snapshot (fn [_] {:count 3})})
+                    (let [r (execute reg :agent_state
+                                     {:query "(:get :extensions :snapshots :snap-test :state :count)"}
+                                     {:agent (agent reg)})]
+                      (assert.is_false r.is-error?)
+                      (assert.are.equal "3" (first-text r.content))))))
+            (it "surfaces snapshot errors without failing the state query"
+                (fn []
+                  (let [reg (agent-state-registry)
+                        api (ext-api.make-runtime-api :snap-bad)]
+                    (api.register :introspect
+                                  {:name :boom
+                                   :snapshot (fn [_] (error "boom"))})
+                    (let [r (execute reg :agent_state
+                                     {:query "(:get :extensions :snapshots :snap-bad :boom :error)"}
+                                     {:agent (agent reg)})]
+                      (assert.is_false r.is-error?)
+                      (assert.is_truthy (string.find (first-text r.content)
+                                                     "boom" 1 true))))))
+            (it "exposes introspector descriptors without snapshot functions"
+                (fn []
+                  (let [reg (agent-state-registry)
+                        api (ext-api.make-runtime-api :desc-test)]
+                    (api.register :introspect
+                                  {:name :state
+                                   :description "state summary"
+                                   :snapshot (fn [_] {:ok true})})
+                    (let [r (execute reg :agent_state
+                                     {:query "(:first (:where (:get :extensions :introspectors) :owner :desc-test))"}
+                                     {:agent (agent reg)})
+                          decoded (json.decode (first-text r.content))]
+                      (assert.is_false r.is-error?)
+                      (assert.are.equal "desc-test" decoded.owner)
+                      (assert.are.equal "state" decoded.name)
+                      (assert.are.equal "state summary" decoded.description)
+                      (assert.is_nil decoded.snapshot)))))
+            (it "passes tool context into extension snapshots"
+                (fn []
+                  (let [reg (agent-state-registry)
+                        api (ext-api.make-runtime-api :ctx-test)]
+                    (api.register :introspect
+                                  {:name :ctx
+                                   :snapshot (fn [ctx]
+                                               {:has-agent? (not= nil
+                                                                  (?. ctx
+                                                                      :agent))})})
+                    (let [r (execute reg :agent_state
+                                     {:query "(:get :extensions :snapshots :ctx-test :ctx :has-agent?)"}
+                                     {:agent (agent reg)})]
+                      (assert.is_false r.is-error?)
+                      (assert.are.equal "true" (first-text r.content))))))
+            (it "exposes sanitized thinking settings without provider secrets"
+                (fn []
+                  (let [reg (agent-state-registry)
+                        ctx {:agent (agent reg)
+                             :state {:opts {:thinking :medium
+                                            :reasoning-effort :high
+                                            :thinking-budget 8192}}}
+                        r (execute reg :agent_state {:query "(:get :thinking)"}
+                                   ctx)
+                        text (first-text r.content)
+                        decoded (json.decode text)]
+                    (assert.is_false r.is-error?)
+                    (assert.are.equal "medium" decoded.level)
+                    (assert.are.equal "reason:medium" decoded.status)
+                    (assert.are.equal "high"
+                                      (. decoded "exact-overrides"
+                                         :reasoning-effort))
+                    (assert.are.equal 8192
+                                      (. decoded "exact-overrides"
+                                         :thinking-budget))
+                    (assert.are.equal "medium"
+                                      (. decoded "provider-options"
+                                         :reasoning-effort))
+                    (assert.is_nil (. decoded "provider-options" :api-key))
+                    (assert.is_nil (. decoded "provider-options" :creds))
+                    (assert.is_nil (string.find text "secret" 1 true)))))
+            (it "exposes runtime, run, session, model, and message summaries"
+                (fn []
+                  (let [steering-state (require :fen.extensions.steering.state)
+                        reg (agent-state-registry)
+                        ctx {:agent (agent reg)
+                             :state {:busy? true :cancel-requested? false}}]
+                    (while (> (length steering-state.steering-queue) 0)
+                      (table.remove steering-state.steering-queue))
+                    (while (> (length steering-state.follow-up-queue) 0)
+                      (table.remove steering-state.follow-up-queue))
+                    (table.insert steering-state.steering-queue "a")
+                    (table.insert steering-state.steering-queue "b")
+                    (table.insert steering-state.follow-up-queue "c")
+                    (let [r (execute reg :agent_state {:query "(:get :run)"}
+                                     ctx)
+                          decoded (json.decode (first-text r.content))]
+                      (assert.is_false r.is-error?)
+                      (assert.are.equal true (. decoded "available?"))
+                      (assert.are.equal true (. decoded "busy?"))
+                      (assert.are.equal 2 decoded.steering-count)
+                      (assert.are.equal 1 decoded.follow-up-count))
+                    (let [r (execute reg :agent_state {:query "(:keys (:get))"}
+                                     ctx)
+                          decoded (json.decode (first-text r.content))]
+                      (assert.is_false r.is-error?)
+                      (assert.is_true (contains? decoded "runtime"))
+                      (assert.is_true (contains? decoded "session"))
+                      (assert.is_true (contains? decoded "model-info"))
+                      (assert.is_true (contains? decoded "message-summary")))
+                    (while (> (length steering-state.steering-queue) 0)
+                      (table.remove steering-state.steering-queue))
+                    (while (> (length steering-state.follow-up-queue) 0)
+                      (table.remove steering-state.follow-up-queue)))))
+            (it "exposes a bounded error log tail"
+                (fn []
+                  (let [reg (agent-state-registry)]
+                    (events.emit {:type :error :error "tail boom"})
+                    (let [r (execute reg :agent_state
+                                     {:query "(:get :error-log :tail -1 :error)"}
+                                     {:agent (agent reg)})]
+                      (assert.is_false r.is-error?)
+                      (assert.are.equal "\"tail boom\"" (first-text r.content))))))
+            (it "exposes panel visibility introspection"
+                (fn []
+                  (let [reg (agent-state-registry)
+                        api (ext-api.make-runtime-api :panel-test)]
+                    (api.register :panel
+                                  {:name :visible-panel
+                                   :placement :above-input
+                                   :order 10
+                                   :height (fn [_ctx] 2)
+                                   :render (fn [_ctx] [])})
+                    (api.register :panel
+                                  {:name :hidden-panel
+                                   :placement :above-input
+                                   :order 20
+                                   :height (fn [_ctx] 0)
+                                   :render (fn [_ctx] [])})
+                    (let [r (execute reg :agent_state
+                                     {:query "(:get :extensions :panels)"}
+                                     {:agent (agent reg)})
+                          decoded (json.decode (first-text r.content))]
+                      (assert.is_false r.is-error?)
+                      (assert.are.equal "visible-panel" (. decoded 1 :name))
+                      (assert.are.equal true (. decoded 1 "visible?"))
+                      (assert.are.equal 2 (. decoded 1 :height))
+                      (assert.are.equal "hidden-panel" (. decoded 2 :name))
+                      (assert.are.equal false (. decoded 2 "visible?"))))))
+            (it "exposes recent errors and the append log path"
+                (fn []
+                  (let [reg (agent-state-registry)]
+                    (events.emit {:type :error
+                                  :error "inline boom"
+                                  :traceback "stack traceback\n  here"})
+                    (let [r (execute reg :agent_state
+                                     {:query "(:get :errors -1 :error)"}
+                                     {:agent (agent reg)})]
+                      (assert.is_false r.is-error?)
+                      (assert.are.equal "\"inline boom\""
+                                        (first-text r.content)))
+                    (let [r (execute reg :agent_state
+                                     {:query "(:get :error-log-path)"}
+                                     {:agent (agent reg)})
+                          text (first-text r.content)]
+                      (assert.is_false r.is-error?)
+                      (assert.is_truthy (string.find text "errors.jsonl" 1 true))))))
+            (it "returns an error for invalid query syntax"
+                (fn []
+                  (let [reg (agent-state-registry)
+                        r (execute reg :agent_state {:query "(:get :messages"}
+                                   {:agent (agent reg)})]
+                    (assert.is_true r.is-error?)
+                    (assert.is_truthy (string.find (first-text r.content)
+                                                   "unterminated")))))))

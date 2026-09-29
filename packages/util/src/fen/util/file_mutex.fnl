@@ -61,7 +61,7 @@
 
 (fn shell-canonical-path [path fallback]
   (let [pipe (io-util.popen (.. "readlink -f -- " (path-util.shell-quote path)
-                                  " 2>/dev/null") :r)
+                                " 2>/dev/null") :r)
         resolved (and pipe (pipe:read :*l))]
     (when pipe (pipe:close))
     (if (and resolved (not= resolved "")) resolved (path-util.realpath path))))
@@ -121,10 +121,14 @@
     (assert (not (and owner (= entry.owner owner)))
             (.. "re-entrant file mutex acquire: " key))
     (if (and (not entry.owner) (= (length entry.waiters) 0))
-        (do (set entry.owner owner) owner)
         (do
-          (assert yield! (.. "file mutex contention in synchronous mutation: " key))
-          (assert owner "file mutex cooperative mutation must run in a coroutine")
+          (set entry.owner owner)
+          owner)
+        (do
+          (assert yield! (.. "file mutex contention in synchronous mutation: "
+                             key))
+          (assert owner
+                  "file mutex cooperative mutation must run in a coroutine")
           (table.insert entry.waiters owner)
           (while (or entry.owner (not= (. entry.waiters 1) owner))
             (let [(ok? err) (pcall yield!)]
@@ -148,5 +152,4 @@
     (release! key owner)
     (if ok? result (error result))))
 
-{:with-file with-file
- :canonical-path canonical-path}
+{:with-file with-file :canonical-path canonical-path}

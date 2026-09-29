@@ -19,7 +19,8 @@
     (when (not= (type (. spec k)) :function)
       (error (.. "register :session-backend requires {:" (tostring k) " ...}"))))
   (let [name spec.name
-        (tagged unregister) (util.set-tagged! state.session-backends name spec owner)]
+        (tagged unregister) (util.set-tagged! state.session-backends name spec
+                                              owner)]
     (handle-result :session-backend name owner unregister)))
 
 ;; @doc fen.core.extensions.register.session_backend.unregister-by-owner
@@ -99,13 +100,10 @@
 ;; tags: extensions session state persistence
 (fn M.append-extension-state! [extension value ?version]
   (let [version (or ?version 1)]
-    (when (or (not extension)
-              (not= (type version) :number)
-              (not= version (math.floor version))
-              (< version 1))
+    (when (or (not extension) (not= (type version) :number)
+              (not= version (math.floor version)) (< version 1))
       (error "extension session state requires an owner and positive integer version"))
-    (when (or (not= (type value) :table)
-              (not (json-friendly? value {})))
+    (when (or (not= (type value) :table) (not (json-friendly? value {})))
       (error "extension session state must be a JSON-friendly table"))
     (let [backend (M.active)
           handle state.session.handle

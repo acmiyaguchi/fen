@@ -27,8 +27,9 @@
   (let [sec (os.time)]
     (if (= sec last-sec)
         (set per-sec-counter (% (+ per-sec-counter 1) 1000))
-        (do (set last-sec sec)
-            (set per-sec-counter 0)))
+        (do
+          (set last-sec sec)
+          (set per-sec-counter 0)))
     (+ (* sec 1000) per-sec-counter)))
 
 (fn M.uuidv7 []
@@ -40,10 +41,7 @@
         ;; RFC4122 variant: top two bits 10 -> one of 8,9,a,b.
         variant-nibble (. ["8" "9" "a" "b"] (+ (% (string.byte rand 4) 4) 1))
         rest (string.sub rand 5 20)]
-    (.. (string.sub time-hex 1 8) "-"
-        (string.sub time-hex 9 12) "-"
-        "7" rand-a "-"
-        variant-nibble (string.sub rest 1 3) "-"
-        (string.sub rest 4 15))))
+    (.. (string.sub time-hex 1 8) "-" (string.sub time-hex 9 12) "-" "7" rand-a
+        "-" variant-nibble (string.sub rest 1 3) "-" (string.sub rest 4 15))))
 
 M

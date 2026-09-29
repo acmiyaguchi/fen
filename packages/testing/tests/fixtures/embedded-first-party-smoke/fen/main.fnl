@@ -1,4 +1,3 @@
-
 (local loader (require :fen.core.extensions.loader))
 (local state (require :fen.core.extensions.state))
 
@@ -12,7 +11,8 @@
   (io.stderr:write (.. "EMBEDDED-FIRST-PARTY-FAIL: " msg "\n"))
   (os.exit 1))
 
-(let [(ok? summary-or-err) (pcall loader.load! {:presenter :print} {:interactive? true})]
+(let [(ok? summary-or-err) (pcall loader.load! {:presenter :print}
+                                  {:interactive? true})]
   (when (not ok?)
     (fail! (tostring summary-or-err)))
   (let [summary summary-or-err
@@ -36,8 +36,7 @@
       (fail! (.. "prompt_fragments=" (tostring prompt-fragments))))
     (when (< presenters 1)
       (fail! (.. "presenters=" (tostring presenters))))
-    (io.write
-      (string.format
-        "EMBEDDED-FIRST-PARTY-OK loaded=%d providers=%d tools=%d commands=%d session_backends=%d prompt_fragments=%d presenters=%d\n"
-        summary.loaded providers tools commands session-backends prompt-fragments presenters))
+    (io.write (string.format "EMBEDDED-FIRST-PARTY-OK loaded=%d providers=%d tools=%d commands=%d session_backends=%d prompt_fragments=%d presenters=%d\n"
+                             summary.loaded providers tools commands
+                             session-backends prompt-fragments presenters))
     (os.exit 0)))

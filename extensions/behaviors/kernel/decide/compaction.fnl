@@ -26,8 +26,8 @@
 ;; Headroom under decide's request cap for the request envelope around the measured entries.
 (local BATCH-BUDGET-RATIO 0.8)
 (local DROP-CRITERIA
-  {:true "The continuing work does not need this output: it is superseded, redundant, or unrelated to the current request."
-   :false "The output holds facts the continuing work still needs, such as file contents, errors, test results, or decisions."})
+       {:true "The continuing work does not need this output: it is superseded, redundant, or unrelated to the current request."
+        :false "The output holds facts the continuing work still needs, such as file contents, errors, test results, or decisions."})
 
 ;; Auto-compaction moment. Inside compact's soft window a rating of at least
 ;; GOOD-MOMENT-THRESHOLD lets compact compact early.
@@ -35,10 +35,10 @@
 (local MOMENT-MESSAGES 6)
 (local MOMENT-TAIL-BYTES 400)
 (local MOMENT-QUESTION
-  {:type :noul
-   :instructions "state.recent_messages are the latest messages of a coding-agent session, oldest first, each cut to its tail. Is this a good moment to compact: the last subtask finished (e.g. checks passed) rather than work being mid-flight (an edit awaiting validation, a failing check being iterated)?"
-   :criteria {:true "The last subtask finished: checks passed or the assistant reported the work done, and nothing awaits validation."
-              :false "Work is mid-flight: an edit awaits validation, a failing check is being iterated, or the assistant announced an immediate next step."}})
+       {:type :noul
+        :instructions "state.recent_messages are the latest messages of a coding-agent session, oldest first, each cut to its tail. Is this a good moment to compact: the last subtask finished (e.g. checks passed) rather than work being mid-flight (an edit awaiting validation, a failing check being iterated)?"
+        :criteria {:true "The last subtask finished: checks passed or the assistant reported the work done, and nothing awaits validation."
+                   :false "Work is mid-flight: an edit awaits validation, a failing check is being iterated, or the assistant announced an immediate next step."}})
 
 (fn content-text [content]
   "Message text as the summarizer sees it: text, thinking, and tool-call names."
@@ -69,7 +69,8 @@
       s
       (let [h (text.utf8-prefix s head)
             t (utf8-suffix s tail)]
-        (.. h "\n[... " (- (length s) (length h) (length t)) " bytes omitted ...]\n" t))))
+        (.. h "\n[... " (- (length s) (length h) (length t))
+            " bytes omitted ...]\n" t))))
 
 (fn latest-user-text [messages]
   (var found nil)
@@ -106,20 +107,23 @@
         (let [body (content-text m.content)
               args (args-summary (. args-by-id m.tool-call-id))]
           (when (>= (length body) MIN-RATED-BYTES)
-            (table.insert out {:id (.. "r" i)
-                               :index i
-                               :bytes (length body)
-                               : args
-                               :item {:tool (tostring m.tool-name)
-                                      : args
-                                      :bytes (length body)
-                                      :is_error (= m.is-error? true)
-                                      :output (head-tail body RATE-HEAD-BYTES RATE-TAIL-BYTES)}})))))
+            (table.insert out
+                          {:id (.. "r" i)
+                           :index i
+                           :bytes (length body)
+                           : args
+                           :item {:tool (tostring m.tool-name)
+                                  : args
+                                  :bytes (length body)
+                                  :is_error (= m.is-error? true)
+                                  :output (head-tail body RATE-HEAD-BYTES
+                                                     RATE-TAIL-BYTES)}})))))
     out))
 
 (fn drop-question [id]
   {:type :noul
-   :instructions (.. "state.tool_results." id " is an older tool result from a coding-agent session about to be summarized. Is it no longer needed to continue the work on state.request?")
+   :instructions (.. "state.tool_results." id
+                     " is an older tool result from a coding-agent session about to be summarized. Is it no longer needed to continue the work on state.request?")
    :criteria DROP-CRITERIA})
 
 (fn encoded-bytes [v]
@@ -150,10 +154,10 @@
   (let [out {}]
     (each [k v (pairs m)] (tset out k v))
     (set out.content
-         [(types.text-block
-            (.. "[tool result omitted before compaction: " (tostring m.tool-name)
-                (if c.args (.. " " c.args) "")
-                ", " c.bytes " bytes]"))])
+         [(types.text-block (.. "[tool result omitted before compaction: "
+                                (tostring m.tool-name)
+                                (if c.args (.. " " c.args) "") ", " c.bytes
+                                " bytes]"))])
     out))
 
 ;; @doc fen.extensions.decide.compaction.rate-tool-results
@@ -165,10 +169,12 @@
   (let [candidates (if (service.enabled?) (rating-candidates span) [])]
     (if (= (length candidates) 0)
         (values span 0)
-        (let [request (head-tail (latest-user-text messages) REQUEST-HEAD-BYTES REQUEST-TAIL-BYTES)
+        (let [request (head-tail (latest-user-text messages) REQUEST-HEAD-BYTES
+                                 REQUEST-TAIL-BYTES)
               drop {}]
           (each [_ batch (ipairs (rating-batches request candidates))]
-            (let [answers (service.ask batch.state batch.questions {:yield ?yield!})]
+            (let [answers (service.ask batch.state batch.questions
+                                       {:yield ?yield!})]
               (when answers
                 (each [id _ (pairs batch.questions)]
                   (let [p (?. answers id :noul)]
@@ -195,7 +201,8 @@
         out []]
     (for [i (math.max 1 (+ (- n MOMENT-MESSAGES) 1)) n]
       (let [m (. messages i)
-            entry {:role (tostring m.role) :text (tail-text (content-text m.content))}]
+            entry {:role (tostring m.role)
+                   :text (tail-text (content-text m.content))}]
         (when (= m.role :tool-result)
           (set entry.tool (tostring m.tool-name))
           (set entry.is_error (= m.is-error? true)))
@@ -209,11 +216,11 @@
 ;; tags: decide compaction async
 (fn M.ask-good-moment! [messages on-good]
   (when (service.enabled?)
-    (service.ask-async! (moment-state messages)
-                        {:good_moment MOMENT-QUESTION}
+    (service.ask-async! (moment-state messages) {:good_moment MOMENT-QUESTION}
                         (fn [answers]
                           (let [p (?. answers :good_moment :noul)]
-                            (when (and (= (type p) :number) (>= p GOOD-MOMENT-THRESHOLD))
+                            (when (and (= (type p) :number)
+                                       (>= p GOOD-MOMENT-THRESHOLD))
                               (on-good))))))
   nil)
 

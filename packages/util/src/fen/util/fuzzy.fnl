@@ -6,10 +6,9 @@
   (string.lower (tostring (or s ""))))
 
 (fn boundary? [s i]
-  (or (= i 1)
-      (let [prev (string.sub s (- i 1) (- i 1))]
-        (or (= prev " ") (= prev "-") (= prev "_")
-            (= prev "/") (= prev ":") (= prev ".")))))
+  (or (= i 1) (let [prev (string.sub s (- i 1) (- i 1))]
+                (or (= prev " ") (= prev "-") (= prev "_") (= prev "/")
+                    (= prev ":") (= prev ".")))))
 
 ;; @doc fen.util.fuzzy.score
 ;; kind: function
@@ -53,7 +52,8 @@
             (when substring?
               (set score (+ score 20)))
             (set score (- score (math.min 20 (or (. positions 1) 1))))
-            (set score (- score (math.min 20 (- (or last cn) (. positions 1) -1 qn))))
+            (set score
+                 (- score (math.min 20 (- (or last cn) (. positions 1) -1 qn))))
             score)))))
 
 ;; @doc fen.util.fuzzy.edit-distance
@@ -83,12 +83,16 @@
                       insertion (+ (. curr (- j 1)) 1)
                       substitution (+ (. prev (- j 1)) cost)
                       transposition (and prevprev (> i 1) (> j 1)
-                                         (= (string.sub a i i) (string.sub b (- j 1) (- j 1)))
-                                         (= (string.sub a (- i 1) (- i 1)) (string.sub b j j))
+                                         (= (string.sub a i i)
+                                            (string.sub b (- j 1) (- j 1)))
+                                         (= (string.sub a (- i 1) (- i 1))
+                                            (string.sub b j j))
                                          (+ (. prevprev (- j 2)) 1))]
-                  (tset curr j (if transposition
-                                   (math.min deletion insertion substitution transposition)
-                                   (math.min deletion insertion substitution)))))
+                  (tset curr j
+                        (if transposition
+                            (math.min deletion insertion substitution
+                                      transposition)
+                            (math.min deletion insertion substitution)))))
               (set prevprev prev)
               (set prev curr)))
           (. prev bn)))))

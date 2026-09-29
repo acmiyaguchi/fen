@@ -1,0 +1,6 @@
+# Formatting-only commits for git blame to skip.
+# GitHub applies this file automatically; locally run:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style: format all Fennel sources with fnlfmt
+dfa29857e8c35c24fd9b29cb172b2bfcb9108f45

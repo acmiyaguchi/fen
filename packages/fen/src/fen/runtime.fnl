@@ -5,7 +5,8 @@
 
 (fn which [name]
   "Resolve NAME on PATH via `command -v`, or nil when not found."
-  (let [pipe (io.popen (.. "command -v " (path.shell-quote name) " 2>/dev/null") :r)]
+  (let [pipe (io.popen (.. "command -v " (path.shell-quote name) " 2>/dev/null")
+                       :r)]
     (when pipe
       (let [out (pipe:read :*l)]
         (pipe:close)
@@ -38,9 +39,6 @@
 ;;   environment), then $FEN_BIN, then /proc/self/exe, then `fen` on PATH.
 ;; tags: runtime process self
 (fn M.binary-path []
-  (or (from-arg0)
-      (os.getenv :FEN_BIN)
-      (from-proc-self)
-      (which :fen)))
+  (or (from-arg0) (os.getenv :FEN_BIN) (from-proc-self) (which :fen)))
 
 M

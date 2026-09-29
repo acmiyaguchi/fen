@@ -29,8 +29,13 @@
           (table.insert sample (- frame-id 1)))
         (table.insert samples sample)
         (table.insert weights (. state.counts id))))
-    {:type :sampled :name name :unit :none :startValue 0
-     :endValue (length samples) :samples samples :weights weights}))
+    {:type :sampled
+     :name name
+     :unit :none
+     :startValue 0
+     :endValue (length samples)
+     :samples samples
+     :weights weights}))
 
 (fn speedscope-data []
   (let [frames []
@@ -42,14 +47,16 @@
       (let [thread-id (. state.stack-threads id)]
         (when (not (. by-thread thread-id)) (tset by-thread thread-id []))
         (table.insert (. by-thread thread-id) id)))
-    (let [profiles [(sampled-profile "fen Lua VM instruction samples (merged)" all-ids)]
+    (let [profiles [(sampled-profile "fen Lua VM instruction samples (merged)"
+                                     all-ids)]
           thread-ids []]
       (each [thread-id _ (pairs by-thread)] (table.insert thread-ids thread-id))
       (table.sort thread-ids)
       (each [_ thread-id (ipairs thread-ids)]
         (table.insert profiles
-          (sampled-profile (.. "fen Lua VM instruction samples (" thread-id ")")
-                           (. by-thread thread-id))))
+                      (sampled-profile (.. "fen Lua VM instruction samples ("
+                                           thread-id ")")
+                                       (. by-thread thread-id))))
       {:$schema "https://www.speedscope.app/file-format-schema.json"
        :shared {:frames frames}
        :profiles profiles
@@ -67,7 +74,8 @@
         (each [_ frame-id (ipairs (. state.stacks id))]
           (table.insert names (folded-name (. state.frames frame-id :name))))
         (table.insert lines
-          (.. (table.concat names ";") " " (tostring (. state.counts id))))))
+                      (.. (table.concat names ";") " "
+                          (tostring (. state.counts id))))))
     (table.concat lines "\n")))
 
 (fn metadata []
@@ -151,7 +159,8 @@
         (if (or (= output root)
                 (= (string.sub output 1 (+ (length root) 1)) (.. root "/")))
             output
-            (values nil "profile tool output directory must be under the fen profiles artifact root"))
+            (values nil
+                    "profile tool output directory must be under the fen profiles artifact root"))
         (.. root "/" output))))
 
 (fn M.default-output-dir []
@@ -169,7 +178,8 @@
               (when (not (path.dir-exists? next))
                 (set candidate next)))
             (set i (+ i 1)))
-          (or candidate (error "could not allocate a unique profile output directory"))))))
+          (or candidate
+              (error "could not allocate a unique profile output directory"))))))
 
 ;; @doc fen.extensions.profiler.export.save!
 ;; kind: function

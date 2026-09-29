@@ -16,180 +16,180 @@
 (fn char [text] {:kind :char :text text})
 
 (describe "select.filtered"
-  (fn []
-    (it "starts with the optional initial query"
-      (fn []
-        (let [s (make [{:label "alpha"} {:label "beta"}] "bt")
-              matches (select.filtered s)]
-          (assert.are.equal "bt" s.filter-text)
-          (assert.are.equal 1 (length matches))
-          (assert.are.equal "beta" (. matches 1 :label))
-          (select.step! s {:kind :bs})
-          (assert.are.equal "b" s.filter-text))))
-
-    (it "returns all choices when filter-text is empty"
-      (fn []
-        (let [s (make [{:label "a"} {:label "b"} {:label "c"}])]
-          (assert.are.equal 3 (length (select.filtered s))))))
-
-    (it "matches substrings of label case-insensitively"
-      (fn []
-        (let [s (make [{:label "Bash"} {:label "Read"} {:label "Edit"}])]
-          (set s.filter-text "EA")
-          (let [matches (select.filtered s)]
-            (assert.are.equal 1 (length matches))
-            (assert.are.equal "Read" (. matches 1 :label))))))
-
-    (it "matches ordered fuzzy characters and ranks best matches first"
-      (fn []
-        (let [s (make [{:label "openai/gpt-5.5"}
-                       {:label "anthropic/claude-sonnet-4-6"}
-                       {:label "anthropic/claude-haiku-4-5"}])]
-          (set s.filter-text "snt")
-          (let [matches (select.filtered s)]
-            (assert.are.equal 1 (length matches))
-            (assert.are.equal "anthropic/claude-sonnet-4-6"
-                              (. matches 1 :label))))))
-
-    (it "replaces choices while preserving the highlighted label"
-      (fn []
-        (let [s (make [{:label "alpha"} {:label "beta"}])]
-          (set s.cursor 2)
-          (select.replace-choices! s [{:label "aardvark"}
-                                      {:label "beta"}
-                                      {:label "gamma"}])
-          (assert.are.equal 2 s.cursor)
-          (assert.are.equal "beta" (. (select.filtered s) s.cursor :label)))))
-
-    (it "matches description as well as label"
-      (fn []
-        (let [s (make [{:label "x" :description "shell command"}
-                       {:label "y" :description "edit file"}])]
-          (set s.filter-text "shell")
-          (let [matches (select.filtered s)]
-            (assert.are.equal 1 (length matches))
-            (assert.are.equal "x" (. matches 1 :label))))))))
+          (fn []
+            (it "starts with the optional initial query"
+                (fn []
+                  (let [s (make [{:label "alpha"} {:label "beta"}] "bt")
+                        matches (select.filtered s)]
+                    (assert.are.equal "bt" s.filter-text)
+                    (assert.are.equal 1 (length matches))
+                    (assert.are.equal "beta" (. matches 1 :label))
+                    (select.step! s {:kind :bs})
+                    (assert.are.equal "b" s.filter-text))))
+            (it "returns all choices when filter-text is empty"
+                (fn []
+                  (let [s (make [{:label "a"} {:label "b"} {:label "c"}])]
+                    (assert.are.equal 3 (length (select.filtered s))))))
+            (it "matches substrings of label case-insensitively"
+                (fn []
+                  (let [s (make [{:label "Bash"}
+                                 {:label "Read"}
+                                 {:label "Edit"}])]
+                    (set s.filter-text "EA")
+                    (let [matches (select.filtered s)]
+                      (assert.are.equal 1 (length matches))
+                      (assert.are.equal "Read" (. matches 1 :label))))))
+            (it "matches ordered fuzzy characters and ranks best matches first"
+                (fn []
+                  (let [s (make [{:label "openai/gpt-5.5"}
+                                 {:label "anthropic/claude-sonnet-4-6"}
+                                 {:label "anthropic/claude-haiku-4-5"}])]
+                    (set s.filter-text "snt")
+                    (let [matches (select.filtered s)]
+                      (assert.are.equal 1 (length matches))
+                      (assert.are.equal "anthropic/claude-sonnet-4-6"
+                                        (. matches 1 :label))))))
+            (it "replaces choices while preserving the highlighted label"
+                (fn []
+                  (let [s (make [{:label "alpha"} {:label "beta"}])]
+                    (set s.cursor 2)
+                    (select.replace-choices! s
+                                             [{:label "aardvark"}
+                                              {:label "beta"}
+                                              {:label "gamma"}])
+                    (assert.are.equal 2 s.cursor)
+                    (assert.are.equal "beta"
+                                      (. (select.filtered s) s.cursor :label)))))
+            (it "matches description as well as label"
+                (fn []
+                  (let [s (make [{:label "x" :description "shell command"}
+                                 {:label "y" :description "edit file"}])]
+                    (set s.filter-text "shell")
+                    (let [matches (select.filtered s)]
+                      (assert.are.equal 1 (length matches))
+                      (assert.are.equal "x" (. matches 1 :label))))))))
 
 (describe "select modal cooperative ticks"
-  (fn []
-    (it "pumps main and background workspace ticks while the overlay waits"
-      (fn []
-        (var peeks 0)
-        (var main-ticks 0)
-        (var background-ticks 0)
-        (let [original-tui (. package.loaded :fen.extensions.tui)
-              original-peek tb.peek_event
-              original-tick state.on-tick
-              original-init? state.tb-initialized?]
-          (set state.tb-initialized? true)
-          (set state.tb-cols 80)
-          (set state.tb-rows 24)
-          (set state.on-tick #(set main-ticks (+ main-ticks 1)))
-          (tset package.loaded :fen.extensions.tui
-                {:tick-background! #(set background-ticks (+ background-ticks 1))})
-          ;; First poll times out (an idle modal frame), second picks.
-          (set tb.peek_event
-               (fn [_]
-                 (set peeks (+ peeks 1))
-                 (when (= peeks 2)
-                   {:type tb.EVENT_KEY :key tb.KEY_ENTER})))
-          (let [(ok? picked)
-                (pcall select.tui-select {:label "pick"
-                                          :choices [{:label "only" :value :only}]})]
-            (set tb.peek_event original-peek)
-            (set state.on-tick original-tick)
-            (set state.tb-initialized? original-init?)
-            (tset package.loaded :fen.extensions.tui original-tui)
-            (assert.is_true ok? (tostring picked))
-            (assert.are.equal :only picked.value)
-            (assert.are.equal 2 main-ticks)
-            (assert.are.equal 2 background-ticks)))))))
+          (fn []
+            (it "pumps main and background workspace ticks while the overlay waits"
+                (fn []
+                  (var peeks 0)
+                  (var main-ticks 0)
+                  (var background-ticks 0)
+                  (let [original-tui (. package.loaded :fen.extensions.tui)
+                        original-peek tb.peek_event
+                        original-tick state.on-tick
+                        original-init? state.tb-initialized?]
+                    (set state.tb-initialized? true)
+                    (set state.tb-cols 80)
+                    (set state.tb-rows 24)
+                    (set state.on-tick #(set main-ticks (+ main-ticks 1)))
+                    (tset package.loaded :fen.extensions.tui
+                          {:tick-background! #(set background-ticks
+                                                   (+ background-ticks 1))})
+                    ;; First poll times out (an idle modal frame), second picks.
+                    (set tb.peek_event
+                         (fn [_]
+                           (set peeks (+ peeks 1))
+                           (when (= peeks 2)
+                             {:type tb.EVENT_KEY :key tb.KEY_ENTER})))
+                    (let [(ok? picked) (pcall select.tui-select
+                                              {:label "pick"
+                                               :choices [{:label "only"
+                                                          :value :only}]})]
+                      (set tb.peek_event original-peek)
+                      (set state.on-tick original-tick)
+                      (set state.tb-initialized? original-init?)
+                      (tset package.loaded :fen.extensions.tui original-tui)
+                      (assert.is_true ok? (tostring picked))
+                      (assert.are.equal :only picked.value)
+                      (assert.are.equal 2 main-ticks)
+                      (assert.are.equal 2 background-ticks)))))))
 
 (describe "select.visible-window"
-  (fn []
-    (it "keeps the cursor visible in long lists"
-      (fn []
-        (let [s (make [{:label "1"} {:label "2"} {:label "3"} {:label "4"} {:label "5"}])]
-          (set s.cursor 5)
-          (let [(first count total) (select.visible-window s 3)]
-            (assert.are.equal 3 first)
-            (assert.are.equal 3 count)
-            (assert.are.equal 5 total)))))
-
-    (it "uses a one-row no-match window for empty filtered results"
-      (fn []
-        (let [s (make [{:label "alpha"}])]
-          (set s.filter-text "z")
-          (let [(first count total) (select.visible-window s 12)]
-            (assert.are.equal 1 first)
-            (assert.are.equal 1 count)
-            (assert.are.equal 0 total)))))))
+          (fn []
+            (it "keeps the cursor visible in long lists"
+                (fn []
+                  (let [s (make [{:label "1"}
+                                 {:label "2"}
+                                 {:label "3"}
+                                 {:label "4"}
+                                 {:label "5"}])]
+                    (set s.cursor 5)
+                    (let [(first count total) (select.visible-window s 3)]
+                      (assert.are.equal 3 first)
+                      (assert.are.equal 3 count)
+                      (assert.are.equal 5 total)))))
+            (it "uses a one-row no-match window for empty filtered results"
+                (fn []
+                  (let [s (make [{:label "alpha"}])]
+                    (set s.filter-text "z")
+                    (let [(first count total) (select.visible-window s 12)]
+                      (assert.are.equal 1 first)
+                      (assert.are.equal 1 count)
+                      (assert.are.equal 0 total)))))))
 
 (describe "select.step!"
-  (fn []
-    (it "down moves cursor and clamps to filtered length"
-      (fn []
-        (let [s (make [{:label "a"} {:label "b"} {:label "c"}])]
-          (select.step! s {:kind :down})
-          (assert.are.equal 2 s.cursor)
-          (select.step! s {:kind :down})
-          (assert.are.equal 3 s.cursor)
-          (select.step! s {:kind :down})
-          (assert.are.equal 3 s.cursor))))
-
-    (it "up clamps at 1"
-      (fn []
-        (let [s (make [{:label "a"} {:label "b"}])]
-          (select.step! s {:kind :up})
-          (assert.are.equal 1 s.cursor))))
-
-    (it "char appends to filter and resets cursor"
-      (fn []
-        (let [s (make [{:label "alpha"} {:label "beta"} {:label "gamma"}])]
-          (select.step! s {:kind :down})
-          (select.step! s (char "b"))
-          (assert.are.equal "b" s.filter-text)
-          (assert.are.equal 1 s.cursor)
-          (let [matches (select.filtered s)]
-            (assert.are.equal 1 (length matches))
-            (assert.are.equal "beta" (. matches 1 :label))))))
-
-    (it "backspace strips one byte from filter"
-      (fn []
-        (let [s (make [{:label "a"} {:label "b"}])]
-          (select.step! s (char "a"))
-          (select.step! s (char "b"))
-          (assert.are.equal "ab" s.filter-text)
-          (select.step! s {:kind :bs})
-          (assert.are.equal "a" s.filter-text)
-          (select.step! s {:kind :bs})
-          (assert.are.equal "" s.filter-text)
-          (select.step! s {:kind :bs})
-          (assert.are.equal "" s.filter-text))))
-
-    (it "enter sets result to the cursored choice and marks done"
-      (fn []
-        (let [picks [{:label "first" :value :a}
-                     {:label "second" :value :b}
-                     {:label "third" :value :c}]
-              s (make picks)]
-          (select.step! s {:kind :down})
-          (select.step! s {:kind :enter})
-          (assert.is_true s.done?)
-          (assert.are.equal :b (. s.result :value)))))
-
-    (it "esc sets result to nil and marks done"
-      (fn []
-        (let [s (make [{:label "a"}])]
-          (select.step! s {:kind :esc})
-          (assert.is_true s.done?)
-          (assert.is_nil s.result))))
-
-    (it "enter on an empty filtered list marks done with nil result"
-      (fn []
-        (let [s (make [{:label "alpha"}])]
-          (select.step! s (char "z"))
-          (assert.are.equal 0 (length (select.filtered s)))
-          (select.step! s {:kind :enter})
-          (assert.is_true s.done?)
-          (assert.is_nil s.result))))))
+          (fn []
+            (it "down moves cursor and clamps to filtered length"
+                (fn []
+                  (let [s (make [{:label "a"} {:label "b"} {:label "c"}])]
+                    (select.step! s {:kind :down})
+                    (assert.are.equal 2 s.cursor)
+                    (select.step! s {:kind :down})
+                    (assert.are.equal 3 s.cursor)
+                    (select.step! s {:kind :down})
+                    (assert.are.equal 3 s.cursor))))
+            (it "up clamps at 1"
+                (fn []
+                  (let [s (make [{:label "a"} {:label "b"}])]
+                    (select.step! s {:kind :up})
+                    (assert.are.equal 1 s.cursor))))
+            (it "char appends to filter and resets cursor"
+                (fn []
+                  (let [s (make [{:label "alpha"}
+                                 {:label "beta"}
+                                 {:label "gamma"}])]
+                    (select.step! s {:kind :down})
+                    (select.step! s (char "b"))
+                    (assert.are.equal "b" s.filter-text)
+                    (assert.are.equal 1 s.cursor)
+                    (let [matches (select.filtered s)]
+                      (assert.are.equal 1 (length matches))
+                      (assert.are.equal "beta" (. matches 1 :label))))))
+            (it "backspace strips one byte from filter"
+                (fn []
+                  (let [s (make [{:label "a"} {:label "b"}])]
+                    (select.step! s (char "a"))
+                    (select.step! s (char "b"))
+                    (assert.are.equal "ab" s.filter-text)
+                    (select.step! s {:kind :bs})
+                    (assert.are.equal "a" s.filter-text)
+                    (select.step! s {:kind :bs})
+                    (assert.are.equal "" s.filter-text)
+                    (select.step! s {:kind :bs})
+                    (assert.are.equal "" s.filter-text))))
+            (it "enter sets result to the cursored choice and marks done"
+                (fn []
+                  (let [picks [{:label "first" :value :a}
+                               {:label "second" :value :b}
+                               {:label "third" :value :c}]
+                        s (make picks)]
+                    (select.step! s {:kind :down})
+                    (select.step! s {:kind :enter})
+                    (assert.is_true s.done?)
+                    (assert.are.equal :b (. s.result :value)))))
+            (it "esc sets result to nil and marks done"
+                (fn []
+                  (let [s (make [{:label "a"}])]
+                    (select.step! s {:kind :esc})
+                    (assert.is_true s.done?)
+                    (assert.is_nil s.result))))
+            (it "enter on an empty filtered list marks done with nil result"
+                (fn []
+                  (let [s (make [{:label "alpha"}])]
+                    (select.step! s (char "z"))
+                    (assert.are.equal 0 (length (select.filtered s)))
+                    (select.step! s {:kind :enter})
+                    (assert.is_true s.done?)
+                    (assert.is_nil s.result))))))

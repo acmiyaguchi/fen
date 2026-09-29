@@ -23,7 +23,9 @@
 (fn set-level! [level]
   (let [n (. levels level)]
     (if n
-        (do (set log-sink.level n) true)
+        (do
+          (set log-sink.level n)
+          true)
         false)))
 
 (local MAX-RECENT 100)
@@ -35,10 +37,11 @@
 (fn record! [level message timestamp]
   (ensure-recent!)
   (set log-sink.next-seq (+ log-sink.next-seq 1))
-  (table.insert log-sink.recent {:seq log-sink.next-seq
-                                 :timestamp timestamp
-                                 :level level
-                                 :message (tostring message)})
+  (table.insert log-sink.recent
+                {:seq log-sink.next-seq
+                 :timestamp timestamp
+                 :level level
+                 :message (tostring message)})
   (while (> (length log-sink.recent) MAX-RECENT)
     (table.remove log-sink.recent 1))
   log-sink.next-seq)
@@ -53,8 +56,10 @@
         after (or ?after-seq 0)]
     (each [_ rec (ipairs log-sink.recent)]
       (when (> rec.seq after)
-        (table.insert out {:seq rec.seq :timestamp rec.timestamp
-                           :level rec.level :message rec.message})))
+        (table.insert out {:seq rec.seq
+                           :timestamp rec.timestamp
+                           :level rec.level
+                           :message rec.message})))
     (let [first-retained (?. log-sink.recent 1 :seq)]
       (values out (and first-retained (< after (- first-retained 1)))))))
 
@@ -70,9 +75,8 @@
           _recorded (record! level msg ts)
           fallback-line (string.format "[%s] %s\n" level msg)]
       (if (log-sink.active?)
-          (let [(ok? _err) (log-sink.write-line
-                             (string.format "[%s] [%s] %s"
-                                            ts level msg))]
+          (let [(ok? _err) (log-sink.write-line (string.format "[%s] [%s] %s"
+                                                               ts level msg))]
             ;; write-line clears the sink on failure; route through the fallback seam so the line isn't dropped.
             (when (not ok?) (log-sink.write-fallback fallback-line)))
           ;; No file sink: use log_sink's fallback (host-injectable; io.stderr may not exist embedded).
@@ -104,8 +108,8 @@
 ;; summary: Return the current UTC time formatted as RFC3339/ISO8601 for diagnostic file output.
 ;; tags: util logging time
 {:debug (fn [msg] (write :debug msg))
- :info  (fn [msg] (write :info msg))
- :warn  (fn [msg] (write :warn msg))
+ :info (fn [msg] (write :info msg))
+ :warn (fn [msg] (write :warn msg))
  :error (fn [msg] (write :error msg))
  :timestamp timestamp
  :enabled? enabled?

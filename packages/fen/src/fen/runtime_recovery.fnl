@@ -5,22 +5,21 @@
 
 (local M {})
 
-(local REGISTRY-BUCKETS
-  [:handlers
-   :tools-extra
-   :commands-extra
-   :controls-extra
-   :status-extra
-   :panel-extra
-   :presenters
-   :introspectors-extra
-   :providers
-   :auth-backends
-   :session-backends
-   :input-handlers
-   :prompt-fragments
-   :extensions
-   :reload-fingerprints])
+(local REGISTRY-BUCKETS [:handlers
+                         :tools-extra
+                         :commands-extra
+                         :controls-extra
+                         :status-extra
+                         :panel-extra
+                         :presenters
+                         :introspectors-extra
+                         :providers
+                         :auth-backends
+                         :session-backends
+                         :input-handlers
+                         :prompt-fragments
+                         :extensions
+                         :reload-fingerprints])
 
 (fn copy-list [items]
   (let [out []]

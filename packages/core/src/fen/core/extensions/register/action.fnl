@@ -77,28 +77,36 @@
     (if (not record)
         (failure owner name "unknown action")
         (let [safe-args (or args {})
-              (schema-ok? valid? errors)
-              (pcall json-schema.validate record.parameters safe-args)]
+              (schema-ok? valid? errors) (pcall json-schema.validate
+                                                record.parameters safe-args)]
           (if (not schema-ok?)
               (failure owner name "action schema validation failed"
-                       {:details [{:field "arguments" :message (tostring valid?)}]})
+                       {:details [{:field "arguments"
+                                   :message (tostring valid?)}]})
               (not valid?)
               (failure owner name "invalid action arguments" {:details errors})
-              (let [(ok? value-or-error)
-                    (xpcall (fn [] (record.invoke safe-args ctx)) debug.traceback)]
+              (let [(ok? value-or-error) (xpcall (fn []
+                                                   (record.invoke safe-args ctx))
+                                                 debug.traceback)]
                 (if (not ok?)
                     (failure owner name "action invocation failed"
-                             {:details [{:field "action" :message (tostring value-or-error)}]})
+                             {:details [{:field "action"
+                                         :message (tostring value-or-error)}]})
                     (and (= (type value-or-error) :table)
                          (= value-or-error.ok false))
-                    (failure owner name (or value-or-error.error "action rejected")
+                    (failure owner name
+                             (or value-or-error.error "action rejected")
                              {:details value-or-error.details
                               :state value-or-error.state})
                     (and (= (type value-or-error) :table)
                          (= value-or-error.ok true))
-                    {:ok true :owner record.__owner :action record.name
+                    {:ok true
+                     :owner record.__owner
+                     :action record.name
                      :state value-or-error.state}
-                    {:ok true :owner record.__owner :action record.name
+                    {:ok true
+                     :owner record.__owner
+                     :action record.name
                      :state value-or-error})))))))
 
 M

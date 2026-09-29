@@ -47,7 +47,15 @@
 (fn read-pipe [pipe ?yield-fn]
   (process.read-pipe-close pipe ?yield-fn))
 
-(fn run-grep [{: pattern : path : glob : ignore_case : literal : context : limit} _ctx ?yield-fn]
+(fn run-grep [{: pattern
+               : path
+               : glob
+               : ignore_case
+               : literal
+               : context
+               : limit}
+              _ctx
+              ?yield-fn]
   (if (or (not pattern) (= pattern ""))
       (util.err "missing 'pattern'")
       (let [target (or path ".")
@@ -60,8 +68,8 @@
             (table.insert opts (.. "-C " (tostring context-int)))))
         (when (and glob (not= glob ""))
           (table.insert opts (.. "--include=" (util.shellquote glob))))
-        (let [cmd (.. "grep " (table.concat opts " ")
-                      " -- " (util.shellquote pattern) " " (util.shellquote target)
+        (let [cmd (.. "grep " (table.concat opts " ") " -- "
+                      (util.shellquote pattern) " " (util.shellquote target)
                       " 2>&1 | head -n " (tostring cap))
               pipe (io.popen cmd :r)]
           (if (not pipe) (util.err "io.popen failed")
@@ -74,8 +82,10 @@
  :snippet "Search file contents with regex"
  :description "Search files for a regex pattern. Recursive when path is a directory."
  :parameters {:type :object
-              :properties {:pattern {:type :string :description "Pattern to search for"}
-                           :path {:type :string :description "File or directory (default: .)"}
+              :properties {:pattern {:type :string
+                                     :description "Pattern to search for"}
+                           :path {:type :string
+                                  :description "File or directory (default: .)"}
                            :glob {:type :string
                                   :description "Filename glob filter, e.g. *.fnl"}
                            :ignore_case {:type :boolean

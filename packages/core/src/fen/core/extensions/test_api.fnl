@@ -65,9 +65,7 @@
 (fn M.make-runtime-api [?owner ?manifest ?opts]
   "Return an uncaptured runtime api for tests that need production-shaped
    registration behavior without requiring the loader-owned factory directly."
-  (ext-api.make-api (or ?owner :test)
-                    ?manifest
-                    (or ?opts {:privileged? true})))
+  (ext-api.make-api (or ?owner :test) ?manifest (or ?opts {:privileged? true})))
 
 (fn M.make [?owner ?manifest ?opts]
   "Return a captured api. Resets the global extensions registry so the
@@ -87,38 +85,41 @@
                  :enqueue base.enqueue
                  :session base.session
                  :captured captured}]
-    (set wrapped.register
-         (fn [kind spec]
-           (let [result (base.register kind spec)
-                 record {:kind kind :spec spec :result result}]
-             (if (= kind :tool) (table.insert captured.tools record)
-                 (= kind :command) (table.insert captured.commands record)
-                 (= kind :presenter) (table.insert captured.presenters record)
-                 (= kind :hook) (table.insert captured.hooks record)
-                 (= kind :introspect) (table.insert captured.introspectors record)
-                 (= kind :action) (table.insert captured.actions record))
-             result)))
-    (set wrapped.on
-         (fn [event-name handler]
-           (let [unsub (base.on event-name handler)]
-             (table.insert captured.subscriptions
-                           {:event event-name :handler handler})
-             unsub)))
-    (set wrapped.emit
-         (fn [ev]
-           (table.insert captured.events-out ev)
-           (base.emit ev)))
-    (set wrapped.prompt
-         (fn [text-or-fn opts]
-           (let [result (base.prompt text-or-fn opts)]
-             (table.insert captured.prompts
-                           {:text-or-fn text-or-fn :opts opts :result result})
-             result)))
-    (set wrapped.fire
-         (fn [ev]
-           ;; events-in = fired by the test runner; events-out = emitted by the extension.
-           (table.insert captured.events-in ev)
-           (events.emit ev)))
+    (set wrapped.register (fn [kind spec]
+                            (let [result (base.register kind spec)
+                                  record {:kind kind :spec spec :result result}]
+                              (if (= kind :tool)
+                                  (table.insert captured.tools record)
+                                  (= kind :command)
+                                  (table.insert captured.commands record)
+                                  (= kind :presenter)
+                                  (table.insert captured.presenters record)
+                                  (= kind :hook)
+                                  (table.insert captured.hooks record)
+                                  (= kind :introspect)
+                                  (table.insert captured.introspectors record)
+                                  (= kind :action)
+                                  (table.insert captured.actions record))
+                              result)))
+    (set wrapped.on (fn [event-name handler]
+                      (let [unsub (base.on event-name handler)]
+                        (table.insert captured.subscriptions
+                                      {:event event-name :handler handler})
+                        unsub)))
+    (set wrapped.emit (fn [ev]
+                        (table.insert captured.events-out ev)
+                        (base.emit ev)))
+    (set wrapped.prompt (fn [text-or-fn opts]
+                          (let [result (base.prompt text-or-fn opts)]
+                            (table.insert captured.prompts
+                                          {:text-or-fn text-or-fn
+                                           :opts opts
+                                           :result result})
+                            result)))
+    (set wrapped.fire (fn [ev]
+                        ;; events-in = fired by the test runner; events-out = emitted by the extension.
+                        (table.insert captured.events-in ev)
+                        (events.emit ev)))
     wrapped))
 
 M

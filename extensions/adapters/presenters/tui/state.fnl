@@ -244,12 +244,10 @@
  :tb-init-failed? false
  :tb-cols 0
  :tb-rows 0
-
  :dirty? true
  :force-redraw? false
  ;; Geometry of the most recently painted frame, used for mouse hit-testing.
  :paint-layout nil
-
  ;; Reloadable workspaces.fnl creates/upgrades records; this identity module holds no tab behavior closures.
  :workspaces []
  :active-workspace-id :main-session
@@ -257,7 +255,6 @@
  :spinner-ticks 0
  :spinner-interval-ticks 8
  :animations? true
-
  ;; Expensive bits are pre-stringified at append time so redraw never redoes that work.
  :transcript []
  ;; Keyed by "<row-type>:<content-index>".
@@ -276,7 +273,6 @@
  :pastes {}
  :input-hint nil
  :input-hints-shown {}
-
  :selection nil
  :selection-paint nil
  :copy-status nil
@@ -291,10 +287,8 @@
  :alt-pending? false
  :on-tick nil
  :cancel-pressed? false
-
  ;; Kept here so /reload does not reset stall-warning rate limiting.
  :last-stall-warn-ms 0
-
  ;; cum-* are cumulative billed tokens; cum-input re-counts the full context each turn ("wallet input").
  :status-info {:model nil
                :provider nil

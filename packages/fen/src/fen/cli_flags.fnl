@@ -5,410 +5,413 @@
 (local M {})
 
 (local FLAGS
-  [{:name "--provider"
-    :arg :value
-    :placeholder "NAME"
-    :description "Provider (openai, openai-codex, anthropic, openrouter, sakana, ...)"
-    :group :common
-    :applies-to [:top :goal :list :show :session-send]
-    :parse {:action :set-value :dest :provider :mark :provider-explicit?}
-    :help {:top-short "Provider (openai, openai-codex, anthropic, openrouter, sakana, ...)"
-           :top-all ["openai | openai-responses | openai-codex |"
-                     "anthropic | openrouter | sakana |"
-                     "<custom from models.json>"
-                     "(default: saved setting, else openai)."
-                     "openai-codex uses your"
-                     "ChatGPT subscription via OAuth — run"
-                     "`fen --login openai-codex` once first."]
-           :goal "Provider to use (openai, anthropic, openrouter, sakana, custom, ...)"
-           :list "Select the provider used for provider/model discovery"
-           :show "Select the provider used for provider/model discovery"}}
-
-   {:name "--model"
-    :arg :value
-    :placeholder "NAME"
-    :description "Model id for the selected provider"
-    :group :common
-    :applies-to [:top :goal :session-send]
-    :parse {:action :set-value :dest :model :mark :model-explicit?}
-    :help {:top-short "Model id for the selected provider"
-           :top-all ["Model id (default: saved setting when present;"
-                     "otherwise gpt-5.4-nano for openai and"
-                     "openai-responses, gpt-5.5 for openai-codex,"
-                     "claude-haiku-4-5 for anthropic, the first curated"
-                     "model for openrouter, fugu-ultra for sakana; or"
-                     "the first model declared for a custom provider)."
-                     "Accepts PROVIDER/MODEL canonical ids and"
-                     "unambiguous substring/fuzzy matches against the"
-                     "provider catalog; unknown ids fail fast with"
-                     "suggestions."]
-           :goal "Model id for the selected provider"}}
-
-   {:name "--system"
-    :arg :value
-    :placeholder "TEXT"
-    :description "System prompt"
-    :group :advanced
-    :applies-to [:top :goal :session-send]
-    :parse {:action :set-value :dest :system}
-    :help {:top-all "System prompt"}}
-
-   {:name "--system-file"
-    :arg :value
-    :placeholder "PATH"
-    :description "Read the system prompt from PATH"
-    :group :advanced
-    :applies-to [:top :goal :session-send]
-    :parse {:action :read-file :dest :system :read-error "cannot read --system-file"}
-    :help {:top-all "Read the system prompt from PATH (overrides --system)"}}
-
-   {:name "--max-iterations"
-    :arg :value
-    :placeholder "N"
-    :description "Goal iteration cap"
-    :group :common
-    :applies-to [:goal]
-    :invalid {:top "--max-iterations is valid only with `fen goal`"}
-    :parse {:action :set-value :dest :max-iterations :value-kind :number
-            :mark :max-iterations-given?}
-    :help {:top-all ["Goal iteration cap (default: 10, maximum: 100)."
-                     "Valid only with `fen goal`."]
-           :goal "Iteration cap (default: 10, maximum: 100)"}}
-
-   {:name "--max-tokens"
-    :arg :value
-    :placeholder "N"
-    :description "Reply token cap"
-    :group :advanced
-    :applies-to [:top :goal :session-send]
-    :parse {:action :set-value :dest :max-tokens :value-kind :number}
-    :help {:top-all ["Reply token cap (default: 16384). Reasoning models"
-                     "(gpt-5*, o1, o3) charge their thinking against this"
-                     "cap, so 1024 leaves nothing for visible output."]
-           :goal "Reply token cap (default: 16384)"}}
-
-   {:name "--retries"
-    :arg :value
-    :placeholder "N"
-    :description "Provider HTTP attempts for transient failures"
-    :group :advanced
-    :applies-to [:top :goal :session-send]
-    :parse {:action :set-value :dest :retry-max-attempts :value-kind :number}
-    :suggest? false
-    :help {:top-all ["Provider HTTP attempts for transient failures"
-                     "(default: 4; use 1 to disable)"]
-           :goal "Provider HTTP attempts for transient failures"}}
-
-   {:name "--thinking"
-    :arg :value
-    :placeholder "LEVEL"
-    :description "Provider-neutral thinking level"
-    :group :common
-    :applies-to [:top :goal :session-send]
-    :parse {:action :set-value :dest :thinking}
-    :help {:top-short "off | minimal | low | medium | high | xhigh"
-           :top-all ["Provider-neutral thinking level: off | minimal | low |"
-                     "medium | high | xhigh. Maps to Anthropic budgets or"
-                     "OpenAI reasoning effort."]
-           :goal "off | minimal | low | medium | high | xhigh"}}
-
-   {:name "--thinking-budget"
-    :arg :value
-    :placeholder "N"
-    :description "Anthropic extended-thinking token budget"
-    :group :advanced
-    :applies-to [:top :goal :session-send]
-    :parse {:action :set-value :dest :thinking-budget :value-kind :number}
-    :help {:top-all ["Anthropic only: enable extended thinking with N tokens"
-                     "(exact override; wins over --thinking)"]
-           :goal "Anthropic extended-thinking token budget"}}
-
-   {:name "--reasoning-effort"
-    :arg :value
-    :placeholder "E"
-    :description "OpenAI Responses/Codex effort override"
-    :group :advanced
-    :applies-to [:top :goal :session-send]
-    :parse {:action :set-value :dest :reasoning-effort}
-    :help {:top-all ["OpenAI Responses / Codex: minimal | low | medium |"
-                     "high | xhigh. Exact override; wins over --thinking."
-                     "Clamped per-model where the API refuses some values"
-                     "(e.g. gpt-5.5 minimal → low)."]
-           :goal "OpenAI Responses/Codex effort override"}}
-
-   {:name "--print"
-    :arg :value
-    :placeholder "TEXT"
-    :description "One-shot mode; print final assistant text and exit"
-    :group :common
-    :applies-to [:top]
-    :invalid {:goal "--print cannot be used with `fen goal`"}
-    :parse {:action :set-value :dest :print}
-    :help {:top-short ["One-shot mode; print final assistant text and exit"
-                       "(pass `-` to read the prompt from stdin)"]
-           :top-all ["One-shot mode; defaults to the print presenter, prints"
-                     "final assistant text, and exits. Pass `-` to read the"
-                     "prompt from stdin. Combine with --presenter json for a"
-                     "machine-readable result."]}}
-
-   {:name "--prompt"
-    :arg :value
-    :placeholder "TEXT"
-    :description "Session turn prompt (pass - to read stdin)"
-    :group :common
-    :applies-to [:session-send]
-    :parse {:action :set-value :dest :prompt}}
-
-   {:name "--prompt-file"
-    :arg :value
-    :placeholder "PATH"
-    :description "Read a one-shot prompt from PATH"
-    :group :common
-    :applies-to [:top :session-send]
-    :invalid {:goal "--prompt-file cannot be used with `fen goal`"}
-    :parse {:action :set-value :dest :prompt-file}
-    :help {:top-short "Read a one-shot prompt from PATH (no shell interpolation)"
-           :top-all ["Read a one-shot prompt from PATH (like --print, without"
-                     "shell interpolation); cannot be combined with --print."]}}
-
-   {:name "--tail"
-    :arg :value
-    :placeholder "N"
-    :description "Return only the last N transcript messages"
-    :group :common
-    :applies-to [:session-show]
-    :parse {:action :set-value :dest :tail :value-kind :number}}
-
-   {:name "--tools"
-    :arg :value
-    :placeholder "NAMES"
-    :description "Comma-separated hard allowlist of agent tools"
-    :group :common
-    :applies-to [:top :goal :session-send]
-    :parse {:action :set-value :dest :tools
-            :value-must-not-look-like-flag? true
-            :missing-message "--tools requires a comma-separated value"}
-    :help {:top-short "Comma-separated hard allowlist of agent tools"
-           :top-all "Comma-separated hard allowlist of agent tools."
-           :goal "Comma-separated hard allowlist of agent tools"}}
-
-   {:name "--denied-tools"
-    :arg :value
-    :placeholder "NAMES"
-    :description "Comma-separated denylist of agent tools"
-    :group :common
-    :applies-to [:top :goal :session-send]
-    :parse {:action :set-value :dest :denied-tools
-            :value-must-not-look-like-flag? true
-            :missing-message "--denied-tools requires a comma-separated value"}
-    :help {:top-short "Comma-separated denylist of agent tools"
-           :top-all "Comma-separated denylist of agent tools."
-           :goal "Comma-separated denylist of agent tools"}}
-
-   {:name "--no-tools"
-    :arg :none
-    :description "Disable every agent tool"
-    :group :common
-    :applies-to [:top :goal :session-send]
-    :parse {:action :set-true :dest :no-tools?}
-    :help {:top-short "Disable every agent tool"
-           :top-all "Disable every agent tool (conflicts with --tools and --denied-tools)."
-           :goal "Disable every agent tool"}}
-
-   {:name "--presenter"
-    :arg :value
-    :placeholder "NAME"
-    :description "Presenter selection"
-    :group :common
-    :applies-to [:top]
-    :invalid {:goal "--presenter cannot be used with `fen goal`"}
-    :parse {:action :set-value :dest :presenter}
-    :help {:top-short "tui | stdio | web | print | json | rpc (default: tui)"
-           :top-all ["Presenter: tui | stdio | web | print | json | rpc"
-                     "(default: tui). json writes a structured result blob"
-                     "(final-text, messages, usage, stop-reason) to"
-                     "FEN_JSON_OUTPUT_PATH, or stdout when unset. rpc runs a"
-                     "live wire-protocol child (see docs/wire.md)."]}}
-
-   {:name "--session-backend"
-    :arg :value
-    :placeholder "N"
-    :description "Session backend"
-    :group :advanced
-    :applies-to [:top :goal :session-new :session-list :session-show :session-send :session-doctor]
-    :parse {:action :set-value :dest :session-backend}
-    :help {:top-all "Session backend (default: jsonl)"
-           :goal "Session backend (default: jsonl)"}}
-
-   {:name "--continue"
-    :arg :none
-    :description "Resume the most recent session for the current cwd"
-    :group :common
-    :applies-to [:top :goal]
-    :parse {:action :set-true :dest :continue?}
-    :help {:top-short "Resume the most recent session for the current cwd"
-           :top-all "Resume the most recent session for the current cwd"
-           :goal "Resume the most recent session for the current cwd"}}
-
-   {:name "--no-session"
-    :arg :none
-    :description "Do not write a transcript to disk"
-    :group :common
-    :applies-to [:top :goal]
-    :parse {:action :set-true :dest :no-session?}
-    :help {:top-short "Do not write a transcript to disk"
-           :top-all "Do not write a transcript to disk"
-           :goal "Do not write a transcript to disk"}}
-
-   {:name "--skill"
-    :arg :value
-    :placeholder "PATH"
-    :description "Additional skill file or directory"
-    :group :advanced
-    :applies-to [:top :goal :session-send]
-    :parse {:action :append-value :dest :extra-skill-paths}
-    :help {:top-all "Additional skill file or directory (repeatable)"
-           :goal "Additional skill file or directory (repeatable)"}}
-
-   {:name "--extension"
-    :arg :value
-    :placeholder "PATH"
-    :description "Load an external extension file or directory"
-    :group :advanced
-    :applies-to [:top :goal :list :show :session-new :session-list :session-show :session-send :session-doctor]
-    :parse {:action :append-value :dest :extension-paths}
-    :help {:top-all ["Load an external extension file or directory"
-                     "(repeatable; dir expects init.fnl or init.lua)"]
-           :goal "Load an external extension file or directory (repeatable)"
-           :list "Load an external extension before discovery (repeatable)"
-           :show "Load an external extension before discovery (repeatable)"}}
-
-   {:name "--login"
-    :arg :value
-    :placeholder "PROVIDER"
-    :description "Run a provider's interactive login flow and exit"
-    :group :advanced
-    :applies-to [:top]
-    :parse {:action :set-value :dest :login}
-    :help {:top-all ["Run the provider's interactive login flow (e.g."
-                     "openai-codex) and exit"]}}
-
-   {:name "--logout"
-    :arg :value
-    :placeholder "PROVIDER"
-    :description "Remove a provider's stored credentials and exit"
-    :group :advanced
-    :applies-to [:top]
-    :parse {:action :set-value :dest :logout}
-    :help {:top-all "Remove the provider's stored credentials and exit"}}
-
-   {:name "--version"
-    :arg :none
-    :description "Print build/source version metadata and exit"
-    :group :advanced
-    :applies-to [:top]
-    :parse {:action :set-true :dest :version?}
-    :help {:top-all "Print build/source version metadata and exit"}}
-
-   {:name "--dev-path"
-    :suggest? false
-    :arg :value
-    :placeholder "DIR"
-    :description "Single-file launcher module overlay root"
-    :group :internal
-    :applies-to [:top]
-    :parse {:action :append-value :dest :dev-paths}
-    :help {:top-all ["Single-file binary only: prepend a Lua module"
-                     "root so .fnl/.lua in DIR shadow the embedded"
-                     "archive (repeatable). Consumed by the launcher."]}}
-
-   {:name "--extension-root"
-    :suggest? false
-    :arg :value
-    :placeholder "DIR"
-    :description "Single-file launcher trusted extension overlay root"
-    :group :internal
-    :applies-to [:top]
-    :parse {:action :append-value :dest :extension-roots}
-    :help {:top-all ["Single-file binary only: trusted first-party flat"
-                     "extension overlay root (repeatable); consumed by the"
-                     "launcher."]}}
-
-   {:name "--check"
-    :arg :none
-    :description "Explicitly verify provider connectivity"
-    :group :common
-    :applies-to [:list]
-    :parse {:action :set-true :dest :check?}
-    :help {:list "Contact each listed provider to verify connectivity (providers only)"}}
-
-   {:name "--json"
-    :arg :none
-    :description "Emit stable JSON metadata for scripts"
-    :group :common
-    :applies-to [:list :show :session-new :session-list :session-show :session-send :session-doctor]
-    :parse {:action :set-true :dest :json?}
-    :help {:top-all "Emit stable JSON metadata for discovery subcommands"
-           :list "Emit stable JSON metadata for scripts"
-           :show "Emit stable JSON metadata for scripts"}}
-
-   {:name "--lua"
-    :arg :none
-    :description "Run or evaluate input as Lua"
-    :group :common
-    :applies-to [:run :eval]
-    :parse {:action :set-const :dest :language :const :lua}
-    :help {:top-all "Run/evaluate input as Lua, overriding inference"
-           :run "Run SCRIPT as Lua, overriding extension inference"}}
-
-   {:name "--fennel"
-    :arg :none
-    :description "Run or evaluate input as Fennel"
-    :group :common
-    :applies-to [:run :eval]
-    :parse {:action :set-const :dest :language :const :fennel}
-    :help {:top-all "Run/evaluate input as Fennel, overriding inference"
-           :run "Run SCRIPT as Fennel, overriding extension inference"}}
-
-   {:name "--"
-    :arg :none
-    :description "Stop parsing options"
-    :group :common
-    :applies-to [:run :eval]
-    :flag? false
-    :help {:run "Stop parsing fen run options; the next token is SCRIPT"}}
-
-   {:name "--help"
-    :aliases ["-h"]
-    :display "-h, --help"
-    :arg :none
-    :description "Show help and exit"
-    :group :common
-    :applies-to [:top :goal :list :show :run :eval :providers :session-new :session-list :session-show :session-send]
-    :parse {:action :set-true :dest :help?}
-    :help {:top-short "Show this help (use --help-all for the full version)"
-           :top-all "Show the short help"
-           :goal "Show this help and exit"
-           :list "Show this help and exit"
-           :show "Show this help and exit"
-           :run "Show this help and exit"
-           :providers "Show this help and exit"}}
-
-   {:name "--help-all"
-    :arg :none
-    :description "Show exhaustive help and exit"
-    :group :advanced
-    :applies-to [:top :goal]
-    :parse {:action :help-all}
-    :help {:top-all "Show this exhaustive help"}}
-
-   {:name "name"
-    :arg :none
-    :description "Optional provider setup page to show"
-    :group :common
-    :applies-to [:providers]
-    :flag? false
-    :help {:providers "Optional provider setup page to show"}}])
+       [{:name "--provider"
+         :arg :value
+         :placeholder "NAME"
+         :description "Provider (openai, openai-codex, anthropic, openrouter, sakana, ...)"
+         :group :common
+         :applies-to [:top :goal :list :show :session-send]
+         :parse {:action :set-value :dest :provider :mark :provider-explicit?}
+         :help {:top-short "Provider (openai, openai-codex, anthropic, openrouter, sakana, ...)"
+                :top-all ["openai | openai-responses | openai-codex |"
+                          "anthropic | openrouter | sakana |"
+                          "<custom from models.json>"
+                          "(default: saved setting, else openai)."
+                          "openai-codex uses your"
+                          "ChatGPT subscription via OAuth — run"
+                          "`fen --login openai-codex` once first."]
+                :goal "Provider to use (openai, anthropic, openrouter, sakana, custom, ...)"
+                :list "Select the provider used for provider/model discovery"
+                :show "Select the provider used for provider/model discovery"}}
+        {:name "--model"
+         :arg :value
+         :placeholder "NAME"
+         :description "Model id for the selected provider"
+         :group :common
+         :applies-to [:top :goal :session-send]
+         :parse {:action :set-value :dest :model :mark :model-explicit?}
+         :help {:top-short "Model id for the selected provider"
+                :top-all ["Model id (default: saved setting when present;"
+                          "otherwise gpt-5.4-nano for openai and"
+                          "openai-responses, gpt-5.5 for openai-codex,"
+                          "claude-haiku-4-5 for anthropic, the first curated"
+                          "model for openrouter, fugu-ultra for sakana; or"
+                          "the first model declared for a custom provider)."
+                          "Accepts PROVIDER/MODEL canonical ids and"
+                          "unambiguous substring/fuzzy matches against the"
+                          "provider catalog; unknown ids fail fast with"
+                          "suggestions."]
+                :goal "Model id for the selected provider"}}
+        {:name "--system"
+         :arg :value
+         :placeholder "TEXT"
+         :description "System prompt"
+         :group :advanced
+         :applies-to [:top :goal :session-send]
+         :parse {:action :set-value :dest :system}
+         :help {:top-all "System prompt"}}
+        {:name "--system-file"
+         :arg :value
+         :placeholder "PATH"
+         :description "Read the system prompt from PATH"
+         :group :advanced
+         :applies-to [:top :goal :session-send]
+         :parse {:action :read-file
+                 :dest :system
+                 :read-error "cannot read --system-file"}
+         :help {:top-all "Read the system prompt from PATH (overrides --system)"}}
+        {:name "--max-iterations"
+         :arg :value
+         :placeholder "N"
+         :description "Goal iteration cap"
+         :group :common
+         :applies-to [:goal]
+         :invalid {:top "--max-iterations is valid only with `fen goal`"}
+         :parse {:action :set-value
+                 :dest :max-iterations
+                 :value-kind :number
+                 :mark :max-iterations-given?}
+         :help {:top-all ["Goal iteration cap (default: 10, maximum: 100)."
+                          "Valid only with `fen goal`."]
+                :goal "Iteration cap (default: 10, maximum: 100)"}}
+        {:name "--max-tokens"
+         :arg :value
+         :placeholder "N"
+         :description "Reply token cap"
+         :group :advanced
+         :applies-to [:top :goal :session-send]
+         :parse {:action :set-value :dest :max-tokens :value-kind :number}
+         :help {:top-all ["Reply token cap (default: 16384). Reasoning models"
+                          "(gpt-5*, o1, o3) charge their thinking against this"
+                          "cap, so 1024 leaves nothing for visible output."]
+                :goal "Reply token cap (default: 16384)"}}
+        {:name "--retries"
+         :arg :value
+         :placeholder "N"
+         :description "Provider HTTP attempts for transient failures"
+         :group :advanced
+         :applies-to [:top :goal :session-send]
+         :parse {:action :set-value
+                 :dest :retry-max-attempts
+                 :value-kind :number}
+         :suggest? false
+         :help {:top-all ["Provider HTTP attempts for transient failures"
+                          "(default: 4; use 1 to disable)"]
+                :goal "Provider HTTP attempts for transient failures"}}
+        {:name "--thinking"
+         :arg :value
+         :placeholder "LEVEL"
+         :description "Provider-neutral thinking level"
+         :group :common
+         :applies-to [:top :goal :session-send]
+         :parse {:action :set-value :dest :thinking}
+         :help {:top-short "off | minimal | low | medium | high | xhigh"
+                :top-all ["Provider-neutral thinking level: off | minimal | low |"
+                          "medium | high | xhigh. Maps to Anthropic budgets or"
+                          "OpenAI reasoning effort."]
+                :goal "off | minimal | low | medium | high | xhigh"}}
+        {:name "--thinking-budget"
+         :arg :value
+         :placeholder "N"
+         :description "Anthropic extended-thinking token budget"
+         :group :advanced
+         :applies-to [:top :goal :session-send]
+         :parse {:action :set-value :dest :thinking-budget :value-kind :number}
+         :help {:top-all ["Anthropic only: enable extended thinking with N tokens"
+                          "(exact override; wins over --thinking)"]
+                :goal "Anthropic extended-thinking token budget"}}
+        {:name "--reasoning-effort"
+         :arg :value
+         :placeholder "E"
+         :description "OpenAI Responses/Codex effort override"
+         :group :advanced
+         :applies-to [:top :goal :session-send]
+         :parse {:action :set-value :dest :reasoning-effort}
+         :help {:top-all ["OpenAI Responses / Codex: minimal | low | medium |"
+                          "high | xhigh. Exact override; wins over --thinking."
+                          "Clamped per-model where the API refuses some values"
+                          "(e.g. gpt-5.5 minimal → low)."]
+                :goal "OpenAI Responses/Codex effort override"}}
+        {:name "--print"
+         :arg :value
+         :placeholder "TEXT"
+         :description "One-shot mode; print final assistant text and exit"
+         :group :common
+         :applies-to [:top]
+         :invalid {:goal "--print cannot be used with `fen goal`"}
+         :parse {:action :set-value :dest :print}
+         :help {:top-short ["One-shot mode; print final assistant text and exit"
+                            "(pass `-` to read the prompt from stdin)"]
+                :top-all ["One-shot mode; defaults to the print presenter, prints"
+                          "final assistant text, and exits. Pass `-` to read the"
+                          "prompt from stdin. Combine with --presenter json for a"
+                          "machine-readable result."]}}
+        {:name "--prompt"
+         :arg :value
+         :placeholder "TEXT"
+         :description "Session turn prompt (pass - to read stdin)"
+         :group :common
+         :applies-to [:session-send]
+         :parse {:action :set-value :dest :prompt}}
+        {:name "--prompt-file"
+         :arg :value
+         :placeholder "PATH"
+         :description "Read a one-shot prompt from PATH"
+         :group :common
+         :applies-to [:top :session-send]
+         :invalid {:goal "--prompt-file cannot be used with `fen goal`"}
+         :parse {:action :set-value :dest :prompt-file}
+         :help {:top-short "Read a one-shot prompt from PATH (no shell interpolation)"
+                :top-all ["Read a one-shot prompt from PATH (like --print, without"
+                          "shell interpolation); cannot be combined with --print."]}}
+        {:name "--tail"
+         :arg :value
+         :placeholder "N"
+         :description "Return only the last N transcript messages"
+         :group :common
+         :applies-to [:session-show]
+         :parse {:action :set-value :dest :tail :value-kind :number}}
+        {:name "--tools"
+         :arg :value
+         :placeholder "NAMES"
+         :description "Comma-separated hard allowlist of agent tools"
+         :group :common
+         :applies-to [:top :goal :session-send]
+         :parse {:action :set-value
+                 :dest :tools
+                 :value-must-not-look-like-flag? true
+                 :missing-message "--tools requires a comma-separated value"}
+         :help {:top-short "Comma-separated hard allowlist of agent tools"
+                :top-all "Comma-separated hard allowlist of agent tools."
+                :goal "Comma-separated hard allowlist of agent tools"}}
+        {:name "--denied-tools"
+         :arg :value
+         :placeholder "NAMES"
+         :description "Comma-separated denylist of agent tools"
+         :group :common
+         :applies-to [:top :goal :session-send]
+         :parse {:action :set-value
+                 :dest :denied-tools
+                 :value-must-not-look-like-flag? true
+                 :missing-message "--denied-tools requires a comma-separated value"}
+         :help {:top-short "Comma-separated denylist of agent tools"
+                :top-all "Comma-separated denylist of agent tools."
+                :goal "Comma-separated denylist of agent tools"}}
+        {:name "--no-tools"
+         :arg :none
+         :description "Disable every agent tool"
+         :group :common
+         :applies-to [:top :goal :session-send]
+         :parse {:action :set-true :dest :no-tools?}
+         :help {:top-short "Disable every agent tool"
+                :top-all "Disable every agent tool (conflicts with --tools and --denied-tools)."
+                :goal "Disable every agent tool"}}
+        {:name "--presenter"
+         :arg :value
+         :placeholder "NAME"
+         :description "Presenter selection"
+         :group :common
+         :applies-to [:top]
+         :invalid {:goal "--presenter cannot be used with `fen goal`"}
+         :parse {:action :set-value :dest :presenter}
+         :help {:top-short "tui | stdio | web | print | json | rpc (default: tui)"
+                :top-all ["Presenter: tui | stdio | web | print | json | rpc"
+                          "(default: tui). json writes a structured result blob"
+                          "(final-text, messages, usage, stop-reason) to"
+                          "FEN_JSON_OUTPUT_PATH, or stdout when unset. rpc runs a"
+                          "live wire-protocol child (see docs/wire.md)."]}}
+        {:name "--session-backend"
+         :arg :value
+         :placeholder "N"
+         :description "Session backend"
+         :group :advanced
+         :applies-to [:top
+                      :goal
+                      :session-new
+                      :session-list
+                      :session-show
+                      :session-send
+                      :session-doctor]
+         :parse {:action :set-value :dest :session-backend}
+         :help {:top-all "Session backend (default: jsonl)"
+                :goal "Session backend (default: jsonl)"}}
+        {:name "--continue"
+         :arg :none
+         :description "Resume the most recent session for the current cwd"
+         :group :common
+         :applies-to [:top :goal]
+         :parse {:action :set-true :dest :continue?}
+         :help {:top-short "Resume the most recent session for the current cwd"
+                :top-all "Resume the most recent session for the current cwd"
+                :goal "Resume the most recent session for the current cwd"}}
+        {:name "--no-session"
+         :arg :none
+         :description "Do not write a transcript to disk"
+         :group :common
+         :applies-to [:top :goal]
+         :parse {:action :set-true :dest :no-session?}
+         :help {:top-short "Do not write a transcript to disk"
+                :top-all "Do not write a transcript to disk"
+                :goal "Do not write a transcript to disk"}}
+        {:name "--skill"
+         :arg :value
+         :placeholder "PATH"
+         :description "Additional skill file or directory"
+         :group :advanced
+         :applies-to [:top :goal :session-send]
+         :parse {:action :append-value :dest :extra-skill-paths}
+         :help {:top-all "Additional skill file or directory (repeatable)"
+                :goal "Additional skill file or directory (repeatable)"}}
+        {:name "--extension"
+         :arg :value
+         :placeholder "PATH"
+         :description "Load an external extension file or directory"
+         :group :advanced
+         :applies-to [:top
+                      :goal
+                      :list
+                      :show
+                      :session-new
+                      :session-list
+                      :session-show
+                      :session-send
+                      :session-doctor]
+         :parse {:action :append-value :dest :extension-paths}
+         :help {:top-all ["Load an external extension file or directory"
+                          "(repeatable; dir expects init.fnl or init.lua)"]
+                :goal "Load an external extension file or directory (repeatable)"
+                :list "Load an external extension before discovery (repeatable)"
+                :show "Load an external extension before discovery (repeatable)"}}
+        {:name "--login"
+         :arg :value
+         :placeholder "PROVIDER"
+         :description "Run a provider's interactive login flow and exit"
+         :group :advanced
+         :applies-to [:top]
+         :parse {:action :set-value :dest :login}
+         :help {:top-all ["Run the provider's interactive login flow (e.g."
+                          "openai-codex) and exit"]}}
+        {:name "--logout"
+         :arg :value
+         :placeholder "PROVIDER"
+         :description "Remove a provider's stored credentials and exit"
+         :group :advanced
+         :applies-to [:top]
+         :parse {:action :set-value :dest :logout}
+         :help {:top-all "Remove the provider's stored credentials and exit"}}
+        {:name "--version"
+         :arg :none
+         :description "Print build/source version metadata and exit"
+         :group :advanced
+         :applies-to [:top]
+         :parse {:action :set-true :dest :version?}
+         :help {:top-all "Print build/source version metadata and exit"}}
+        {:name "--dev-path"
+         :suggest? false
+         :arg :value
+         :placeholder "DIR"
+         :description "Single-file launcher module overlay root"
+         :group :internal
+         :applies-to [:top]
+         :parse {:action :append-value :dest :dev-paths}
+         :help {:top-all ["Single-file binary only: prepend a Lua module"
+                          "root so .fnl/.lua in DIR shadow the embedded"
+                          "archive (repeatable). Consumed by the launcher."]}}
+        {:name "--extension-root"
+         :suggest? false
+         :arg :value
+         :placeholder "DIR"
+         :description "Single-file launcher trusted extension overlay root"
+         :group :internal
+         :applies-to [:top]
+         :parse {:action :append-value :dest :extension-roots}
+         :help {:top-all ["Single-file binary only: trusted first-party flat"
+                          "extension overlay root (repeatable); consumed by the"
+                          "launcher."]}}
+        {:name "--check"
+         :arg :none
+         :description "Explicitly verify provider connectivity"
+         :group :common
+         :applies-to [:list]
+         :parse {:action :set-true :dest :check?}
+         :help {:list "Contact each listed provider to verify connectivity (providers only)"}}
+        {:name "--json"
+         :arg :none
+         :description "Emit stable JSON metadata for scripts"
+         :group :common
+         :applies-to [:list
+                      :show
+                      :session-new
+                      :session-list
+                      :session-show
+                      :session-send
+                      :session-doctor]
+         :parse {:action :set-true :dest :json?}
+         :help {:top-all "Emit stable JSON metadata for discovery subcommands"
+                :list "Emit stable JSON metadata for scripts"
+                :show "Emit stable JSON metadata for scripts"}}
+        {:name "--lua"
+         :arg :none
+         :description "Run or evaluate input as Lua"
+         :group :common
+         :applies-to [:run :eval]
+         :parse {:action :set-const :dest :language :const :lua}
+         :help {:top-all "Run/evaluate input as Lua, overriding inference"
+                :run "Run SCRIPT as Lua, overriding extension inference"}}
+        {:name "--fennel"
+         :arg :none
+         :description "Run or evaluate input as Fennel"
+         :group :common
+         :applies-to [:run :eval]
+         :parse {:action :set-const :dest :language :const :fennel}
+         :help {:top-all "Run/evaluate input as Fennel, overriding inference"
+                :run "Run SCRIPT as Fennel, overriding extension inference"}}
+        {:name "--"
+         :arg :none
+         :description "Stop parsing options"
+         :group :common
+         :applies-to [:run :eval]
+         :flag? false
+         :help {:run "Stop parsing fen run options; the next token is SCRIPT"}}
+        {:name "--help"
+         :aliases ["-h"]
+         :display "-h, --help"
+         :arg :none
+         :description "Show help and exit"
+         :group :common
+         :applies-to [:top
+                      :goal
+                      :list
+                      :show
+                      :run
+                      :eval
+                      :providers
+                      :session-new
+                      :session-list
+                      :session-show
+                      :session-send]
+         :parse {:action :set-true :dest :help?}
+         :help {:top-short "Show this help (use --help-all for the full version)"
+                :top-all "Show the short help"
+                :goal "Show this help and exit"
+                :list "Show this help and exit"
+                :show "Show this help and exit"
+                :run "Show this help and exit"
+                :providers "Show this help and exit"}}
+        {:name "--help-all"
+         :arg :none
+         :description "Show exhaustive help and exit"
+         :group :advanced
+         :applies-to [:top :goal]
+         :parse {:action :help-all}
+         :help {:top-all "Show this exhaustive help"}}
+        {:name "name"
+         :arg :none
+         :description "Optional provider setup page to show"
+         :group :common
+         :applies-to [:providers]
+         :flag? false
+         :help {:providers "Optional provider setup page to show"}}])
 
 (fn contains? [xs value]
   (var found? false)
@@ -420,23 +423,22 @@
 (fn M.all [] FLAGS)
 
 (fn M.applies? [flag context]
-  (or (not context)
-      (contains? flag.applies-to context)))
+  (or (not context) (contains? flag.applies-to context)))
 
 (fn flag-name-matches? [flag name]
   (let [needle (tostring name)]
-    (or (= needle flag.name)
-        (do
-          (var matched? false)
-          (each [_ alias (ipairs (or flag.aliases []))]
-            (when (= needle alias)
-              (set matched? true)))
-          matched?))))
+    (or (= needle flag.name) (do
+                               (var matched? false)
+                               (each [_ alias (ipairs (or flag.aliases []))]
+                                 (when (= needle alias)
+                                   (set matched? true)))
+                               matched?))))
 
 (fn M.find-any [name]
   (var found nil)
   (each [_ flag (ipairs FLAGS)]
-    (when (and (not found) (not= flag.flag? false) (flag-name-matches? flag name))
+    (when (and (not found) (not= flag.flag? false)
+               (flag-name-matches? flag name))
       (set found flag)))
   found)
 
@@ -446,14 +448,13 @@
 
 (fn M.invalid-message [flag context]
   (let [messages flag.invalid]
-    (or (and messages (. messages context))
-        (.. flag.name " is not valid here"))))
+    (or (and messages (. messages context)) (.. flag.name " is not valid here"))))
 
 (fn M.label [flag]
-  (or flag.display
-      (if (= flag.arg :value)
-          (.. flag.name " " (tostring (or flag.placeholder "VALUE")))
-          flag.name)))
+  (or flag.display (if (= flag.arg :value)
+                       (.. flag.name " "
+                           (tostring (or flag.placeholder "VALUE")))
+                       flag.name)))
 
 (fn help-lines [flag context]
   (let [help flag.help
@@ -500,8 +501,7 @@
 (fn flag-names [?context]
   (let [names []]
     (each [_ flag (ipairs FLAGS)]
-      (when (and (not= flag.flag? false)
-                 (not= flag.suggest? false)
+      (when (and (not= flag.flag? false) (not= flag.suggest? false)
                  (or (not ?context) (M.applies? flag ?context)))
         (table.insert names flag.name)
         (each [_ alias (ipairs (or flag.aliases []))]
@@ -511,8 +511,7 @@
 (fn all-flag-names []
   (let [names []]
     (each [_ flag (ipairs FLAGS)]
-      (when (and (not= flag.flag? false)
-                 (not= flag.suggest? false))
+      (when (and (not= flag.flag? false) (not= flag.suggest? false))
         (table.insert names flag.name)
         (each [_ alias (ipairs (or flag.aliases []))]
           (table.insert names alias))))
@@ -551,7 +550,6 @@
 (fn M.unknown-message [name ?context]
   (let [suggestion (M.nearest-flag name ?context)]
     (.. "unknown option: " (tostring name)
-        (if suggestion (.. "\ndid you mean " suggestion "?") "")
-        "\n")))
+        (if suggestion (.. "\ndid you mean " suggestion "?") "") "\n")))
 
 M

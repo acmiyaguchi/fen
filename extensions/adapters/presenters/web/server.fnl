@@ -30,11 +30,14 @@
       true
       (let [(sent err last) (c.socket:send c.out)]
         (if sent
-            (do (set c.out (string.sub c.out (+ sent 1))) true)
+            (do
+              (set c.out (string.sub c.out (+ sent 1)))
+              true)
             (= err :timeout)
-            (do (when (and last (> last 0))
-                  (set c.out (string.sub c.out (+ last 1))))
-                true)
+            (do
+              (when (and last (> last 0))
+                (set c.out (string.sub c.out (+ last 1))))
+              true)
             false))))
 
 (fn close! [c]
@@ -45,19 +48,15 @@
   (while (> i 0)
     (let [c (. list i)
           ok? (flush! c)]
-      (when (or (not ok?)
-                (and c.close-after? (= (or c.out "") "")))
+      (when (or (not ok?) (and c.close-after? (= (or c.out "") "")))
         (close! c)
         (remove-at list i)))
     (set i (- i 1))))
 
 (fn response [status ctype body]
   (let [body (or body "")]
-    (.. "HTTP/1.1 " status "\r\n"
-        "Content-Type: " ctype "\r\n"
-        "Content-Length: " (length body) "\r\n"
-        "Connection: close\r\n\r\n"
-        body)))
+    (.. "HTTP/1.1 " status "\r\n" "Content-Type: " ctype "\r\n"
+        "Content-Length: " (length body) "\r\n" "Connection: close\r\n\r\n" body)))
 
 (fn no-content []
   "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
@@ -74,7 +73,10 @@
   (let [header-end (or (string.find buf "\r\n\r\n" 1 true)
                        (string.find buf "\n\n" 1 true))]
     (when header-end
-      (let [sep-len (if (= (string.sub buf header-end (+ header-end 3)) "\r\n\r\n") 4 2)
+      (let [sep-len (if (= (string.sub buf header-end (+ header-end 3))
+                           "\r\n\r\n")
+                        4
+                        2)
             header (string.sub buf 1 (- header-end 1))
             body-start (+ header-end sep-len)
             body (string.sub buf body-start)
@@ -89,7 +91,9 @@
                 (tset headers (string.lower k) v))))
           (let [content-length (or (tonumber (. headers "content-length")) 0)]
             (when (>= (length body) content-length)
-              {:method method :path path :headers headers
+              {:method method
+               :path path
+               :headers headers
                :body (string.sub body 1 content-length)})))))))
 
 (fn accept-clients! [_socket state]
@@ -97,18 +101,17 @@
   (while (< n 16)
     (let [(client _err) (state.server:accept)]
       (if client
-          (do (table.insert state.clients (conn client :http))
-              (set n (+ n 1)))
+          (do
+            (table.insert state.clients (conn client :http))
+            (set n (+ n 1)))
           (lua "break")))))
 
 (fn add-sse! [state c ctx]
   (set c.kind :sse)
   (set c.buf "")
-  (queue! c (.. "HTTP/1.1 200 OK\r\n"
-               "Content-Type: text/event-stream\r\n"
-               "Cache-Control: no-cache\r\n"
-               "Connection: keep-alive\r\n"
-               "X-Accel-Buffering: no\r\n\r\n"))
+  (queue! c (.. "HTTP/1.1 200 OK\r\n" "Content-Type: text/event-stream\r\n"
+                "Cache-Control: no-cache\r\n" "Connection: keep-alive\r\n"
+                "X-Accel-Buffering: no\r\n\r\n"))
   (queue! c (sse-frame "layout" (json.encode (layout.html-snapshot ctx))))
   (table.insert state.sse-clients c))
 
@@ -136,12 +139,11 @@
   ;; Emit on the bus directly; ctx.state.on-event only works after the run context is installed.
   (web-state.api.emit ev))
 
-(local DISMISS-COMMANDS
-  {:status "/status"
-   :queue "/queue"
-   :prompt "/prompt"
-   :extensions "/extensions"
-   :mem "/mem"})
+(local DISMISS-COMMANDS {:status "/status"
+                         :queue "/queue"
+                         :prompt "/prompt"
+                         :extensions "/extensions"
+                         :mem "/mem"})
 
 (fn active-panel-names [ctx]
   (let [out {}
@@ -172,32 +174,39 @@
 
 (fn handle-request! [req c ctx state]
   (if (and (= req.method :GET) (= req.path "/"))
-      (do (queue! c (response "200 OK" "text/html; charset=utf-8" (page.html)))
-          (set c.close-after? true)
-          :close)
+      (do
+        (queue! c (response "200 OK" "text/html; charset=utf-8" (page.html)))
+        (set c.close-after? true)
+        :close)
       (and (= req.method :GET) (= req.path "/events"))
-      (do (add-sse! state c ctx)
-          :sse)
+      (do
+        (add-sse! state c ctx)
+        :sse)
       (and (= req.method :POST) (= req.path "/input"))
-      (do (enqueue-input! state (or req.body ""))
-          (queue! c (no-content))
-          (set c.close-after? true)
-          :close)
+      (do
+        (enqueue-input! state (or req.body ""))
+        (queue! c (no-content))
+        (set c.close-after? true)
+        :close)
       (and (= req.method :POST) (= req.path "/select"))
-      (do (finish-select! state (or req.body ""))
-          (queue! c (no-content))
-          (set c.close-after? true)
-          :close)
+      (do
+        (finish-select! state (or req.body ""))
+        (queue! c (no-content))
+        (set c.close-after? true)
+        :close)
       (and (= req.method :POST) (= req.path "/dismiss"))
-      (do (dismiss-panels! ctx)
-          (set state.last-snapshot nil)
-          (set state.last-broadcast 0)
-          (queue! c (no-content))
-          (set c.close-after? true)
-          :close)
-      (do (queue! c (response "404 Not Found" "text/plain; charset=utf-8" "not found\n"))
-          (set c.close-after? true)
-          :close)))
+      (do
+        (dismiss-panels! ctx)
+        (set state.last-snapshot nil)
+        (set state.last-broadcast 0)
+        (queue! c (no-content))
+        (set c.close-after? true)
+        :close)
+      (do
+        (queue! c (response "404 Not Found" "text/plain; charset=utf-8"
+                            "not found\n"))
+        (set c.close-after? true)
+        :close)))
 
 (fn drain-clients! [_socket state ctx]
   (var i (length state.clients))
@@ -214,8 +223,9 @@
                     (when (= action :sse)
                       (remove-at state.clients i)))
                   (and err (not (= err :timeout)))
-                  (do (close! c)
-                      (remove-at state.clients i)))))))
+                  (do
+                    (close! c)
+                    (remove-at state.clients i)))))))
     (set i (- i 1))))
 
 (fn drain-inputs! [state ctx]
@@ -258,7 +268,7 @@
         (ensure-queues! state)
         (set state.quit? false)
         (io.stderr:write (.. "fen web presenter: http://" state.host ":"
-                            (tostring state.port) "/\n"))))))
+                             (tostring state.port) "/\n"))))))
 
 ;; @doc fen.extensions.web.server.shutdown
 ;; kind: function

@@ -1,10 +1,8 @@
-
 (local test-api (require :fen.core.extensions.test_api))
 (local register-registry (require :fen.core.extensions.register))
 (local mock (require :fen.extensions.provider_mock.mock_provider))
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
-
 
 (fn register-mock! [?name]
   "Register a copy of the mock provider record under ?name (default :mock)."
@@ -14,10 +12,10 @@
     (register-registry.register :provider p :test)
     p))
 
+(fn call [id name ?args]
+  {:id id :name name :args (or ?args {})})
 
-(fn call [id name ?args] {:id id :name name :args (or ?args {})})
 (fn tool-spec [id name ?args] {:tool-call (call id name ?args)})
-
 
 (fn record-events []
   (let [log []]
@@ -33,7 +31,8 @@
 
 (fn event-types [log]
   (let [out []]
-    (each [_ ev (ipairs (ui-events log))] (table.insert out ev.type))
+    (each [_ ev (ipairs (ui-events log))]
+      (table.insert out ev.type))
     out))
 
 (fn any? [pred xs]
@@ -46,7 +45,8 @@
     (if (= m.role role) m found)))
 
 (fn stub-registry [output]
-  [{:name :noop :label "Noop"
+  [{:name :noop
+    :label "Noop"
     :description "no-op"
     :parameters {:type :object :properties {}}
     :execute (fn [_]
@@ -56,657 +56,787 @@
   (var n 0)
   (for [i 1 (length s)]
     (let [b (string.byte s i)]
-      (when (or (and (< b 32) (not (or (= b 9) (= b 10) (= b 13))))
-                (= b 127))
+      (when (or (and (< b 32) (not (or (= b 9) (= b 10) (= b 13)))) (= b 127))
         (set n (+ n 1)))))
   n)
 
-
 (describe "core.agent.step (mock provider)"
-  (fn []
-    (before_each (fn [] (test-api.reset!) (register-mock!)))
-
-    (it "stops after one turn when the model returns a final text"
-      (fn []
-        (let [(log on-event) (record-events)
-              rec []
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools (stub-registry "")
-                       :on-event on-event
-                       :provider-options {:mock-script ["hello"] :mock-record rec}})]
-          (let [final (agent-mod.step agent "hi")]
-            (assert.are.equal "hello" final)
-            (assert.are.equal 1 (length rec))
-            (assert.are.same [:llm-start :llm-end :assistant-text]
-                             (event-types log))))))
-
-    (it "emits thinking rows before final assistant text"
-      (fn []
-        (let [(log on-event) (record-events)
-              rec []
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools (stub-registry "")
-                       :on-event on-event
-                       :provider-options
-                       {:mock-script [{:thinking "step by step" :text "answer"}]
-                        :mock-record rec}})]
-          (let [final (agent-mod.step agent "think")]
-            (assert.are.equal "answer" final)
-            (assert.are.same [:llm-start :llm-end :assistant-thinking :assistant-text]
-                             (event-types log))
-            (let [events (ui-events log)]
-              (assert.are.equal "step by step" (. events 3 :text))
-              (assert.is_false (. events 3 :final?))
-              (assert.is_true (. events 3 :spacer-after?))
-              (assert.are.equal "answer" (. events 4 :text))
-              (assert.is_true (. events 4 :final?)))))))
-
-    (it "emits thinking rows before tool calls"
-      (fn []
-        (let [(log on-event) (record-events)
-              rec []
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools (stub-registry "tool ran")
-                       :on-event on-event
-                       :provider-options
-                       {:mock-script [{:thinking "need a tool"
-                                       :tool-call (call "call-1" :noop)}
-                                      "done"]
-                        :mock-record rec}})]
-          (let [final (agent-mod.step agent "use a tool")]
-            (assert.are.equal "done" final)
-            (assert.are.same
-              [:llm-start :llm-end :assistant-thinking :tool-call :tool-result
-               :llm-start :llm-end :assistant-text]
-              (event-types log))))))
-
-    (it "executes tool calls then continues until a stop"
-      (fn []
-        (let [(log on-event) (record-events)
-              rec []
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools (stub-registry "tool ran")
-                       :on-event on-event
-                       :provider-options
-                       {:mock-script [(tool-spec "call-1" :noop) "done"]
-                        :mock-record rec}})]
-          (let [final (agent-mod.step agent "use a tool")]
-            (assert.are.equal "done" final)
-            (assert.are.equal 2 (length rec))
-            (assert.are.same
-              [:llm-start :llm-end :tool-call :tool-result
-               :llm-start :llm-end :assistant-text]
-              (event-types log))))))
-
-    (it "leaves tool-choice unset by default"
-      (fn []
-        (let [rec []
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools (stub-registry "tool ran")
-                       :provider-options
-                       {:mock-script [(tool-spec "call-1" :noop) "done"]
-                        :mock-record rec}})]
-          (agent-mod.step agent "use a tool")
-          (assert.are.equal 2 (length rec))
-          (assert.is_nil (. rec 1 :tool-choice))
-          (assert.is_nil (. rec 1 :options :tool-choice)))))
-
-    (it "tool-choice :none keeps tool definitions and refuses tool calls with paired errors"
-      (fn []
-        (let [(log on-event) (record-events)
-              rec []
-              executed []
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools [{:name :noop :label "Noop" :description "no-op"
-                                :parameters {:type :object :properties {}}
-                                :execute (fn [_]
-                                           (table.insert executed true)
-                                           {:content [(types.text-block "ran")]
-                                            :is-error? false})}]
-                       :on-event on-event
-                       :provider-options
-                       {:mock-script [{:tool-calls [(call "call-1" :noop)
-                                                    (call "call-2" :noop)]}
-                                      "final answer"]
-                        :mock-record rec}})]
-          (let [final (agent-mod.step agent "wrap up" nil {:tool-choice :none})]
-            (assert.are.equal "final answer" final)
-            (assert.are.equal 0 (length executed))
-            (assert.are.equal 2 (length rec))
-            (each [_ r (ipairs rec)]
-              (assert.are.equal :none r.tool-choice)
-              (assert.are.equal 1 (length r.context.tools)))
-            ;; user, assistant(2 calls), result, result, assistant(final)
-            (let [msgs agent.messages]
-              (assert.are.equal 5 (length msgs))
-              (assert.are.equal :tool-result (. msgs 3 :role))
-              (assert.are.equal "call-1" (. msgs 3 :tool-call-id))
-              (assert.is_true (. msgs 3 :is-error?))
-              (assert.are.equal "call-2" (. msgs 4 :tool-call-id))
-              (assert.is_true (. msgs 4 :is-error?))
-              (assert.are.equal :stop (. msgs 5 :stop-reason)))
-            (assert.are.same
-              [:llm-start :llm-end :tool-call :tool-result :tool-call :tool-result
-               :llm-start :llm-end :assistant-text]
-              (event-types log))))))
-
-    (it "tool-choice :none ends the step with an error after a second refused turn"
-      (fn []
-        (let [(log on-event) (record-events)
-              executed []
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools [{:name :noop :label "Noop" :description "no-op"
-                                :parameters {:type :object :properties {}}
-                                :execute (fn [_]
-                                           (table.insert executed true)
-                                           {:content [(types.text-block "ran")]
-                                            :is-error? false})}]
-                       :on-event on-event
-                       :provider-options
-                       {:mock-script [(tool-spec "call-1" :noop)
-                                      (tool-spec "call-2" :noop)
-                                      "never reached"]}})]
-          (let [final (agent-mod.step agent "wrap up" nil {:tool-choice :none})]
-            (assert.are.equal "[error] model called tools while tool-choice is none" final)
-            (assert.are.equal 0 (length executed))
-            ;; Every call is paired with a result; history is provider-valid.
-            (let [msgs agent.messages
-                  pending {}]
-              (each [_ m (ipairs msgs)]
-                (when (= m.role :assistant)
-                  (each [_ b (ipairs m.content)]
-                    (when (= b.type :tool-call) (tset pending b.id true))))
-                (when (= m.role :tool-result)
-                  (tset pending m.tool-call-id nil)))
-              (assert.are.same {} pending)
-              (assert.are.equal :tool-result (. msgs (length msgs) :role)))
-            (assert.is_true (any? #(= $1.type :error) log))
-            ;; A later default step executes tools again.
-            (set agent.provider-options.mock-script
-                 (fn [req] (if (= req.turn 3) (tool-spec "call-3" :noop) "ok")))
-            (assert.are.equal "ok" (agent-mod.step agent "go on"))
-            (assert.are.equal 1 (length executed))))))
-
-    (it "tool-choice :none gives injected steering a fresh refusal allowance"
-      (fn []
-        (let [(log on-event) (record-events)
-              polls {:n 0}
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools (stub-registry "tool output")
-                       :on-event on-event
-                       :get-steering (fn []
-                                       (set polls.n (+ polls.n 1))
-                                       (if (= polls.n 2) ["answer in text"] []))
-                       :provider-options
-                       {:mock-script [(tool-spec "call-1" :noop)
-                                      (tool-spec "call-2" :noop)
-                                      "done"]}})]
-          (let [final (agent-mod.step agent "wrap up" nil {:tool-choice :none})]
-            (assert.are.equal "done" final)
-            (assert.are.same
-              [:llm-start :llm-end :tool-call :tool-result
-               :steering-injected :llm-start :llm-end :tool-call :tool-result
-               :llm-start :llm-end :assistant-text]
-              (event-types log))))))
-
-    (it "rejects an unknown tool-choice value"
-      (fn []
-        (let [agent (agent-mod.make-agent
-                      {:provider-name :mock :model "mock" :api-key :test
-                       :provider-options {:mock-script ["x"]}})]
-          (assert.has_error #(agent-mod.step agent "hi" nil {:tool-choice :any})))))
-
-    (it "passes optional per-agent tool context into tool execution"
-      (fn []
-        (let [seen {}
-              (_ on-event) (record-events)
-              run-state {:busy? true}
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools [{:name :ctx-tool
-                                :label "Context Tool"
-                                :description "records context"
-                                :parameters {:type :object}
-                                :execute (fn [_args ctx]
-                                           (set seen.agent ctx.agent)
-                                           (set seen.state ctx.state)
-                                           {:content [(types.text-block "ok")]
-                                            :is-error? false})}]
-                       :tool-context (fn [_agent] {:state run-state})
-                       :on-event on-event
-                       :provider-options
-                       {:mock-script [(tool-spec "call-1" :ctx-tool) "done"]}})]
-          (agent-mod.step agent "go")
-          (assert.are.equal agent seen.agent)
-          (assert.are.equal run-state seen.state))))
-
-    (it "appends a canonical ToolResultMessage after each tool execution"
-      (fn []
-        (let [(_ on-event) (record-events)
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools (stub-registry "tool output")
-                       :on-event on-event
-                       :provider-options
-                       {:mock-script [(tool-spec "call-xyz" :noop) "ok"]}})]
-          (agent-mod.step agent "go")
-          (local tr (find-by-role agent.messages :tool-result))
-          (assert.is_table tr)
-          (assert.are.equal "call-xyz" tr.tool-call-id)
-          (assert.are.equal :noop tr.tool-name)
-          (assert.is_false tr.is-error?)
-          (assert.are.equal "tool output" (. tr.content 1 :text)))))
-
-    (it "sanitizes poison tool results before they enter later provider context"
-      (fn []
-        (let [poison (.. "safe" (string.char 0) (string.char 255) "tail")
-              (_ on-event) (record-events)
-              rec []
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools (stub-registry poison)
-                       :on-event on-event
-                       :provider-options
-                       {:mock-script [(tool-spec "call-poison" :noop) "done"]
-                        :mock-record rec}})]
-          (assert.are.equal "done" (agent-mod.step agent "go"))
-          (let [ctx-msgs (. rec 2 :context :messages)
-                tr (find-by-role ctx-msgs :tool-result)]
-            (assert.is_table tr)
-            (assert.are.equal "call-poison" tr.tool-call-id)
-            (let [body (. tr.content 1 :text)]
-              (assert.are.equal 0 (raw-unsafe-count body))
-              (assert.is_truthy (string.find body "\\x00" 1 true))
-              (assert.is_truthy (string.find body "\\xFF" 1 true))
-              (assert.is_truthy (string.find body "tool output sanitized" 1 true)))))))
-
-    (it "sanitizes thrown tool error text before storing tool error output"
-      (fn []
-        (let [(_ on-event) (record-events)
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools [{:name :boom
-                                :label "Boom"
-                                :description "throws binary-ish text"
-                                :parameters {:type :object}
-                                :execute (fn [_]
-                                           (error (.. "bad" (string.char 0) (string.char 255) "err")))}]
-                       :on-event on-event
-                       :provider-options
-                       {:mock-script [(tool-spec "call-boom" :boom) "done"]}})]
-          (assert.are.equal "done" (agent-mod.step agent "go"))
-          (local tr (find-by-role agent.messages :tool-result))
-          (assert.is_table tr)
-          (assert.is_true tr.is-error?)
-          (let [body (. tr.content 1 :text)]
-            (assert.are.equal 0 (raw-unsafe-count body))
-            (assert.is_truthy (string.find body "\\x00" 1 true))
-            (assert.is_truthy (string.find body "\\xFF" 1 true))))))
-
-    (it "executes multiple tool calls from one assistant turn before continuing"
-      (fn []
-        (let [(log on-event) (record-events)
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools (stub-registry "tool output")
-                       :on-event on-event
-                       :provider-options
-                       {:mock-script [{:text "checking"
-                                       :tool-calls [(call "call-1" :noop)
-                                                    (call "call-2" :noop)]}
-                                      "done"]}})]
-          (let [final (agent-mod.step agent "go")]
-            (assert.are.equal "done" final)
-            (assert.are.same
-              [:llm-start :llm-end :assistant-text
-               :tool-call :tool-result :tool-call :tool-result
-               :llm-start :llm-end :assistant-text]
-              (event-types log))
-            (assert.are.equal :assistant (. agent.messages 2 :role))
-            (assert.are.equal :tool-result (. agent.messages 3 :role))
-            (assert.are.equal "call-1" (. agent.messages 3 :tool-call-id))
-            (assert.are.equal :tool-result (. agent.messages 4 :role))
-            (assert.are.equal "call-2" (. agent.messages 4 :tool-call-id))
-            (assert.are.equal :assistant (. agent.messages 5 :role))))))
-
-    (it "rejects same-turn same-file edit calls so the model retries as one batch"
-      (fn []
-        (let [(log on-event) (record-events)
-              executed {:n 0}
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools [{:name :edit
-                                :label "Edit"
-                                :description "stub edit"
-                                :parameters {:type :object}
-                                :execute (fn [_]
-                                           (set executed.n (+ executed.n 1))
-                                           {:content [(types.text-block "edited")]
-                                            :is-error? false})}]
-                       :on-event on-event
-                       :provider-options
-                       {:mock-script
-                        [{:tool-calls
-                          [(call "edit-1" :edit
-                                 {:path "same.fnl"
-                                  :edits [{:old_string "a" :new_string "b"}]})
-                           (call "edit-2" :edit
-                                 {:path "same.fnl"
-                                  :edits [{:old_string "c" :new_string "d"}]})]}
-                         "done"]}})]
-          (let [final (agent-mod.step agent "go")]
-            (assert.are.equal "done" final)
-            (assert.are.equal 0 executed.n)
-            (assert.are.same
-              [:llm-start :llm-end :tool-call :tool-result :tool-call :tool-result
-               :llm-start :llm-end :assistant-text]
-              (event-types log))
-            (assert.are.equal :tool-result (. agent.messages 3 :role))
-            (assert.are.equal "edit-1" (. agent.messages 3 :tool-call-id))
-            (assert.is_true (. agent.messages 3 :is-error?))
-            (assert.is_truthy
-              (string.find (. agent.messages 3 :content 1 :text)
-                           "single batched edit" 1 true))
-            (assert.are.equal :tool-result (. agent.messages 4 :role))
-            (assert.are.equal "edit-2" (. agent.messages 4 :tool-call-id))
-            (assert.is_true (. agent.messages 4 :is-error?))))))
-
-    (it "injects steering messages before the next provider call"
-      (fn []
-        (let [(log on-event) (record-events)
-              calls {:n 0}
-              rec []
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools (stub-registry "tool output")
-                       :on-event on-event
-                       :get-steering (fn []
-                                       (set calls.n (+ calls.n 1))
-                                       (if (= calls.n 2) ["please steer"] []))
-                       :provider-options
-                       {:mock-script [(tool-spec "call-1" :noop) "done"]
-                        :mock-record rec}})]
-          (let [final (agent-mod.step agent "go")]
-            (assert.are.equal "done" final)
-            (assert.are.same
-              [:llm-start :llm-end :tool-call :tool-result
-               :steering-injected :llm-start :llm-end :assistant-text]
-              (event-types log))
-            (assert.are.equal :user (. agent.messages 4 :role))
-            (assert.are.equal "please steer" (. agent.messages 4 :content))
-            (assert.are.equal :assistant (. agent.messages 5 :role))
-            (assert.are.equal "please steer"
-                              (. rec 2 :context :messages 4 :content))))))
-
-    (it "injects steering queued during a natural stop before exiting"
-      (fn []
-        (let [(log on-event) (record-events)
-              polls {:n 0}
-              rec []
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools (stub-registry "")
-                       :on-event on-event
-                       :get-steering (fn []
-                                       (set polls.n (+ polls.n 1))
-                                       (if (= polls.n 2) ["midrun steer"] []))
-                       :provider-options
-                       {:mock-script ["first done" "second done"]
-                        :mock-record rec}})]
-          (let [final (agent-mod.step agent "go")]
-            (assert.are.equal "second done" final)
-            (assert.are.same
-              [:llm-start :llm-end :assistant-text
-               :steering-injected :llm-start :llm-end :assistant-text]
-              (event-types log))
-            (assert.are.equal :user (. agent.messages 3 :role))
-            (assert.are.equal "midrun steer" (. agent.messages 3 :content))
-            (assert.are.equal "midrun steer"
-                              (. rec 2 :context :messages 3 :content))))))
-
-    (it "prefers queued steering over follow-up after a natural stop"
-      (fn []
-        (let [(log on-event) (record-events)
-              steering-polls {:n 0}
-              followup-polls {:n 0}
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools (stub-registry "")
-                       :on-event on-event
-                       :get-steering (fn []
-                                       (set steering-polls.n (+ steering-polls.n 1))
-                                       (if (= steering-polls.n 2) ["steer first"] []))
-                       :get-follow-up (fn []
-                                        (set followup-polls.n (+ followup-polls.n 1))
-                                        (if (= followup-polls.n 1) ["follow second"] []))
-                       :provider-options
-                       {:mock-script ["first done" "second done" "third done"]}})]
-          (let [final (agent-mod.step agent "go")]
-            (assert.are.equal "third done" final)
-            (assert.are.same
-              [:llm-start :llm-end :assistant-text
-               :steering-injected :llm-start :llm-end :assistant-text
-               :follow-up-injected :llm-start :llm-end :assistant-text]
-              (event-types log))
-            (assert.are.equal "steer first" (. agent.messages 3 :content))
-            (assert.are.equal "follow second" (. agent.messages 5 :content))))))
-
-    (it "injects follow-up messages after a natural stop and continues"
-      (fn []
-        (let [(log on-event) (record-events)
-              used {:v false}
-              rec []
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools (stub-registry "")
-                       :on-event on-event
-                       :get-follow-up (fn []
-                                        (if used.v
-                                            []
-                                            (do (set used.v true)
-                                                ["next task"])))
-                       :provider-options
-                       {:mock-script ["first done" "second done"]
-                        :mock-record rec}})]
-          (let [final (agent-mod.step agent "go")]
-            (assert.are.equal "second done" final)
-            (assert.are.same
-              [:llm-start :llm-end :assistant-text
-               :follow-up-injected :llm-start :llm-end :assistant-text]
-              (event-types log))
-            (assert.are.equal :user (. agent.messages 3 :role))
-            (assert.are.equal "next task" (. agent.messages 3 :content))
-            (assert.are.equal 2 (length rec))))))
-
-    (it "trips the safety cap when the model never stops"
-      (fn []
-        (let [(log on-event) (record-events)
-              rec []
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools (stub-registry "")
-                       :on-event on-event
-                       :provider-options
-                       {:mock-script (fn [_req] (tool-spec "loop" :noop))
-                        :mock-record rec}})]
-          (let [final (agent-mod.step agent "loop forever")]
-            (assert.is_truthy
-              (string.find final "tool%-call loop exceeded safety cap"))
-            (assert.is_true (<= (length rec) agent-mod.SAFETY-CAP))
-            (assert.is_true (>= (length rec) agent-mod.SAFETY-CAP))
-            (assert.is_false (any? #(= $1 :error) (event-types log)))))))
-
-    (it "surfaces an error stop-reason and stops the loop"
-      (fn []
-        (let [(log on-event) (record-events)
-              rec []
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools (stub-registry "")
-                       :on-event on-event
-                       :provider-options
-                       {:mock-script [{:error "boom"}] :mock-record rec}})]
-          (let [final (agent-mod.step agent "hi")]
-            (assert.are.equal "[error] boom" final)
-            (assert.are.equal 1 (length rec))
-            (assert.is_true (any? #(= $1 :error) (event-types log)))))))
-
-    (it "records an errored turn in history but excludes it from later provider context"
-      (fn []
-        (let [(_ on-event) (record-events)
-              rec []
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools (stub-registry "")
-                       :on-event on-event
-                       :provider-options
-                       {:mock-script (let [calls {:n 0}]
-                                       (fn [_req]
-                                         (set calls.n (+ calls.n 1))
-                                         (if (= calls.n 1) {:error "boom"} "recovered")))
-                        :mock-record rec}})]
-          (assert.are.equal "[error] boom" (agent-mod.step agent "hi"))
-          (assert.are.equal "recovered" (agent-mod.step agent "again"))
-          (assert.are.equal 2 (length rec))
-          ;; The retry turn must not replay the errored assistant message
-          ;; (its [error]/partial content poisons provider context).
-          (assert.is_false
-            (any? (fn [m] (and (= m.role :assistant) (= m.stop-reason :error)))
-                  (. rec 2 :context :messages)))
-          (assert.is_true
-            (any? (fn [m] (and (= m.role :assistant) (= m.stop-reason :error)))
-                  agent.messages)))))
-
-    (it "passes the per-agent tools to the provider as canonical Tool[]"
-      (fn []
-        (let [(_ on-event) (record-events)
-              rec []
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools [{:name :custom-tool
-                                :label "Custom"
-                                :description "marker"
-                                :parameters {:type :object}
-                                :execute (fn [_]
-                                           {:content [(types.text-block "")]
-                                            :is-error? false})}]
-                       :on-event on-event
-                       :provider-options {:mock-script ["ok"] :mock-record rec}})]
-          (agent-mod.step agent "go")
-          (let [first-call (. rec 1)
-                names {}]
-            (each [_ d (ipairs first-call.context.tools)]
-              (assert.is_nil d.execute)
-              (tset names (tostring d.name) true))
-            (assert.is_true (. names "custom-tool"))
-            (assert.is_nil (. names "bash"))))))
-
-    (it "applies convert-to-llm before sending messages to the provider"
-      (fn []
-        (let [(_ on-event) (record-events)
-              rec []
-              convert (fn [msgs]
-                        (let [out []]
-                          (each [_ m (ipairs msgs)]
-                            (when (not= m.role :note)
-                              (table.insert out m)))
-                          out))
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools (stub-registry "")
-                       :on-event on-event
-                       :convert-to-llm convert
-                       :provider-options {:mock-script ["ok"] :mock-record rec}})]
-          (table.insert agent.messages {:role :note :content "internal"})
-          (agent-mod.step agent "hi")
-          (let [first-call (. rec 1)
-                roles {}]
-            (each [_ m (ipairs first-call.context.messages)]
-              (tset roles m.role true))
-            (assert.is_nil (. roles :note))
-            (assert.is_true (. roles :user)))
-          (assert.is_true (any? (fn [m] (= m.role :note)) agent.messages)))))
-
-    (it "passes the system prompt through context, not as a message"
-      (fn []
-        (let [(_ on-event) (record-events)
-              rec []
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :system "you are a test"
-                       :tools (stub-registry "")
-                       :on-event on-event
-                       :provider-options {:mock-script ["ok"] :mock-record rec}})]
-          (agent-mod.step agent "hi")
-          (let [first-call (. rec 1)]
-            (assert.are.equal "you are a test" first-call.context.system-prompt)
-            (assert.is_false (any? (fn [m] (= m.role :system)) agent.messages))))))
-
-    (it "dispatches by :provider-name"
-      (fn []
-        (test-api.reset!)
-        (register-mock! :anthropic)
-        (let [(_ on-event) (record-events)
-              rec []
-              agent (agent-mod.make-agent
-                      {:provider-name :anthropic
-                       :model "mock" :api-key :test
-                       :tools (stub-registry "")
-                       :on-event on-event
-                       :provider-options {:mock-script ["ok"] :mock-record rec}})]
-          (assert.are.equal "ok" (agent-mod.step agent "hi"))
-          (assert.are.equal 1 (length rec)))))
-
-    (it "emits :message-appended after each message append"
-      (fn []
-        (let [(log on-event) (record-events)
-              agent (agent-mod.make-agent
-                      {:provider-name :mock
-                       :model "mock" :api-key :test
-                       :tools (stub-registry "tool output")
-                       :on-event on-event
-                       :provider-options
-                       {:mock-script [(tool-spec "call-1" :noop) "done"]}})]
-          (agent-mod.step agent "go")
-          (let [roles [] indexes []]
-            (each [_ ev (ipairs log)]
-              (when (= ev.type :message-appended)
-                (table.insert roles ev.message.role)
-                (table.insert indexes ev.index)
-                (assert.are.equal agent ev.agent)))
-            (assert.are.same [:user :assistant :tool-result :assistant] roles)
-            (assert.are.same [1 2 3 4] indexes)))))
-
-    ))
+          (fn []
+            (before_each (fn [] (test-api.reset!) (register-mock!)))
+            (it "stops after one turn when the model returns a final text"
+                (fn []
+                  (let [(log on-event) (record-events)
+                        rec []
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "")
+                                                     :on-event on-event
+                                                     :provider-options {:mock-script ["hello"]
+                                                                        :mock-record rec}})]
+                    (let [final (agent-mod.step agent "hi")]
+                      (assert.are.equal "hello" final)
+                      (assert.are.equal 1 (length rec))
+                      (assert.are.same [:llm-start :llm-end :assistant-text]
+                                       (event-types log))))))
+            (it "emits thinking rows before final assistant text"
+                (fn []
+                  (let [(log on-event) (record-events)
+                        rec []
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "")
+                                                     :on-event on-event
+                                                     :provider-options {:mock-script [{:thinking "step by step"
+                                                                                       :text "answer"}]
+                                                                        :mock-record rec}})]
+                    (let [final (agent-mod.step agent "think")]
+                      (assert.are.equal "answer" final)
+                      (assert.are.same [:llm-start
+                                        :llm-end
+                                        :assistant-thinking
+                                        :assistant-text]
+                                       (event-types log))
+                      (let [events (ui-events log)]
+                        (assert.are.equal "step by step" (. events 3 :text))
+                        (assert.is_false (. events 3 :final?))
+                        (assert.is_true (. events 3 :spacer-after?))
+                        (assert.are.equal "answer" (. events 4 :text))
+                        (assert.is_true (. events 4 :final?)))))))
+            (it "emits thinking rows before tool calls"
+                (fn []
+                  (let [(log on-event) (record-events)
+                        rec []
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "tool ran")
+                                                     :on-event on-event
+                                                     :provider-options {:mock-script [{:thinking "need a tool"
+                                                                                       :tool-call (call "call-1"
+                                                                                                        :noop)}
+                                                                                      "done"]
+                                                                        :mock-record rec}})]
+                    (let [final (agent-mod.step agent "use a tool")]
+                      (assert.are.equal "done" final)
+                      (assert.are.same [:llm-start
+                                        :llm-end
+                                        :assistant-thinking
+                                        :tool-call
+                                        :tool-result
+                                        :llm-start
+                                        :llm-end
+                                        :assistant-text]
+                                       (event-types log))))))
+            (it "executes tool calls then continues until a stop"
+                (fn []
+                  (let [(log on-event) (record-events)
+                        rec []
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "tool ran")
+                                                     :on-event on-event
+                                                     :provider-options {:mock-script [(tool-spec "call-1"
+                                                                                                 :noop)
+                                                                                      "done"]
+                                                                        :mock-record rec}})]
+                    (let [final (agent-mod.step agent "use a tool")]
+                      (assert.are.equal "done" final)
+                      (assert.are.equal 2 (length rec))
+                      (assert.are.same [:llm-start
+                                        :llm-end
+                                        :tool-call
+                                        :tool-result
+                                        :llm-start
+                                        :llm-end
+                                        :assistant-text]
+                                       (event-types log))))))
+            (it "leaves tool-choice unset by default"
+                (fn []
+                  (let [rec []
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "tool ran")
+                                                     :provider-options {:mock-script [(tool-spec "call-1"
+                                                                                                 :noop)
+                                                                                      "done"]
+                                                                        :mock-record rec}})]
+                    (agent-mod.step agent "use a tool")
+                    (assert.are.equal 2 (length rec))
+                    (assert.is_nil (. rec 1 :tool-choice))
+                    (assert.is_nil (. rec 1 :options :tool-choice)))))
+            (it "tool-choice :none keeps tool definitions and refuses tool calls with paired errors"
+                (fn []
+                  (let [(log on-event) (record-events)
+                        rec []
+                        executed []
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools [{:name :noop
+                                                              :label "Noop"
+                                                              :description "no-op"
+                                                              :parameters {:type :object
+                                                                           :properties {}}
+                                                              :execute (fn [_]
+                                                                         (table.insert executed
+                                                                                       true)
+                                                                         {:content [(types.text-block "ran")]
+                                                                          :is-error? false})}]
+                                                     :on-event on-event
+                                                     :provider-options {:mock-script [{:tool-calls [(call "call-1"
+                                                                                                          :noop)
+                                                                                                    (call "call-2"
+                                                                                                          :noop)]}
+                                                                                      "final answer"]
+                                                                        :mock-record rec}})]
+                    (let [final (agent-mod.step agent "wrap up" nil
+                                                {:tool-choice :none})]
+                      (assert.are.equal "final answer" final)
+                      (assert.are.equal 0 (length executed))
+                      (assert.are.equal 2 (length rec))
+                      (each [_ r (ipairs rec)]
+                        (assert.are.equal :none r.tool-choice)
+                        (assert.are.equal 1 (length r.context.tools)))
+                      ;; user, assistant(2 calls), result, result, assistant(final)
+                      (let [msgs agent.messages]
+                        (assert.are.equal 5 (length msgs))
+                        (assert.are.equal :tool-result (. msgs 3 :role))
+                        (assert.are.equal "call-1" (. msgs 3 :tool-call-id))
+                        (assert.is_true (. msgs 3 :is-error?))
+                        (assert.are.equal "call-2" (. msgs 4 :tool-call-id))
+                        (assert.is_true (. msgs 4 :is-error?))
+                        (assert.are.equal :stop (. msgs 5 :stop-reason)))
+                      (assert.are.same [:llm-start
+                                        :llm-end
+                                        :tool-call
+                                        :tool-result
+                                        :tool-call
+                                        :tool-result
+                                        :llm-start
+                                        :llm-end
+                                        :assistant-text]
+                                       (event-types log))))))
+            (it "tool-choice :none ends the step with an error after a second refused turn"
+                (fn []
+                  (let [(log on-event) (record-events)
+                        executed []
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools [{:name :noop
+                                                              :label "Noop"
+                                                              :description "no-op"
+                                                              :parameters {:type :object
+                                                                           :properties {}}
+                                                              :execute (fn [_]
+                                                                         (table.insert executed
+                                                                                       true)
+                                                                         {:content [(types.text-block "ran")]
+                                                                          :is-error? false})}]
+                                                     :on-event on-event
+                                                     :provider-options {:mock-script [(tool-spec "call-1"
+                                                                                                 :noop)
+                                                                                      (tool-spec "call-2"
+                                                                                                 :noop)
+                                                                                      "never reached"]}})]
+                    (let [final (agent-mod.step agent "wrap up" nil
+                                                {:tool-choice :none})]
+                      (assert.are.equal "[error] model called tools while tool-choice is none"
+                                        final)
+                      (assert.are.equal 0 (length executed))
+                      ;; Every call is paired with a result; history is provider-valid.
+                      (let [msgs agent.messages
+                            pending {}]
+                        (each [_ m (ipairs msgs)]
+                          (when (= m.role :assistant)
+                            (each [_ b (ipairs m.content)]
+                              (when (= b.type :tool-call)
+                                (tset pending b.id true))))
+                          (when (= m.role :tool-result)
+                            (tset pending m.tool-call-id nil)))
+                        (assert.are.same {} pending)
+                        (assert.are.equal :tool-result
+                                          (. msgs (length msgs) :role)))
+                      (assert.is_true (any? #(= $1.type :error) log))
+                      ;; A later default step executes tools again.
+                      (set agent.provider-options.mock-script
+                           (fn [req]
+                             (if (= req.turn 3) (tool-spec "call-3" :noop) "ok")))
+                      (assert.are.equal "ok" (agent-mod.step agent "go on"))
+                      (assert.are.equal 1 (length executed))))))
+            (it "tool-choice :none gives injected steering a fresh refusal allowance"
+                (fn []
+                  (let [(log on-event) (record-events)
+                        polls {:n 0}
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "tool output")
+                                                     :on-event on-event
+                                                     :get-steering (fn []
+                                                                     (set polls.n
+                                                                          (+ polls.n
+                                                                             1))
+                                                                     (if (= polls.n
+                                                                            2)
+                                                                         ["answer in text"]
+                                                                         []))
+                                                     :provider-options {:mock-script [(tool-spec "call-1"
+                                                                                                 :noop)
+                                                                                      (tool-spec "call-2"
+                                                                                                 :noop)
+                                                                                      "done"]}})]
+                    (let [final (agent-mod.step agent "wrap up" nil
+                                                {:tool-choice :none})]
+                      (assert.are.equal "done" final)
+                      (assert.are.same [:llm-start
+                                        :llm-end
+                                        :tool-call
+                                        :tool-result
+                                        :steering-injected
+                                        :llm-start
+                                        :llm-end
+                                        :tool-call
+                                        :tool-result
+                                        :llm-start
+                                        :llm-end
+                                        :assistant-text]
+                                       (event-types log))))))
+            (it "rejects an unknown tool-choice value"
+                (fn []
+                  (let [agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :provider-options {:mock-script ["x"]}})]
+                    (assert.has_error #(agent-mod.step agent "hi" nil
+                                                       {:tool-choice :any})))))
+            (it "passes optional per-agent tool context into tool execution"
+                (fn []
+                  (let [seen {}
+                        (_ on-event) (record-events)
+                        run-state {:busy? true}
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools [{:name :ctx-tool
+                                                              :label "Context Tool"
+                                                              :description "records context"
+                                                              :parameters {:type :object}
+                                                              :execute (fn [_args
+                                                                            ctx]
+                                                                         (set seen.agent
+                                                                              ctx.agent)
+                                                                         (set seen.state
+                                                                              ctx.state)
+                                                                         {:content [(types.text-block "ok")]
+                                                                          :is-error? false})}]
+                                                     :tool-context (fn [_agent]
+                                                                     {:state run-state})
+                                                     :on-event on-event
+                                                     :provider-options {:mock-script [(tool-spec "call-1"
+                                                                                                 :ctx-tool)
+                                                                                      "done"]}})]
+                    (agent-mod.step agent "go")
+                    (assert.are.equal agent seen.agent)
+                    (assert.are.equal run-state seen.state))))
+            (it "appends a canonical ToolResultMessage after each tool execution"
+                (fn []
+                  (let [(_ on-event) (record-events)
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "tool output")
+                                                     :on-event on-event
+                                                     :provider-options {:mock-script [(tool-spec "call-xyz"
+                                                                                                 :noop)
+                                                                                      "ok"]}})]
+                    (agent-mod.step agent "go")
+                    (local tr (find-by-role agent.messages :tool-result))
+                    (assert.is_table tr)
+                    (assert.are.equal "call-xyz" tr.tool-call-id)
+                    (assert.are.equal :noop tr.tool-name)
+                    (assert.is_false tr.is-error?)
+                    (assert.are.equal "tool output" (. tr.content 1 :text)))))
+            (it "sanitizes poison tool results before they enter later provider context"
+                (fn []
+                  (let [poison (.. "safe" (string.char 0) (string.char 255)
+                                   "tail")
+                        (_ on-event) (record-events)
+                        rec []
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry poison)
+                                                     :on-event on-event
+                                                     :provider-options {:mock-script [(tool-spec "call-poison"
+                                                                                                 :noop)
+                                                                                      "done"]
+                                                                        :mock-record rec}})]
+                    (assert.are.equal "done" (agent-mod.step agent "go"))
+                    (let [ctx-msgs (. rec 2 :context :messages)
+                          tr (find-by-role ctx-msgs :tool-result)]
+                      (assert.is_table tr)
+                      (assert.are.equal "call-poison" tr.tool-call-id)
+                      (let [body (. tr.content 1 :text)]
+                        (assert.are.equal 0 (raw-unsafe-count body))
+                        (assert.is_truthy (string.find body "\\x00" 1 true))
+                        (assert.is_truthy (string.find body "\\xFF" 1 true))
+                        (assert.is_truthy (string.find body
+                                                       "tool output sanitized" 1
+                                                       true)))))))
+            (it "sanitizes thrown tool error text before storing tool error output"
+                (fn []
+                  (let [(_ on-event) (record-events)
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools [{:name :boom
+                                                              :label "Boom"
+                                                              :description "throws binary-ish text"
+                                                              :parameters {:type :object}
+                                                              :execute (fn [_]
+                                                                         (error (.. "bad"
+                                                                                    (string.char 0)
+                                                                                    (string.char 255)
+                                                                                    "err")))}]
+                                                     :on-event on-event
+                                                     :provider-options {:mock-script [(tool-spec "call-boom"
+                                                                                                 :boom)
+                                                                                      "done"]}})]
+                    (assert.are.equal "done" (agent-mod.step agent "go"))
+                    (local tr (find-by-role agent.messages :tool-result))
+                    (assert.is_table tr)
+                    (assert.is_true tr.is-error?)
+                    (let [body (. tr.content 1 :text)]
+                      (assert.are.equal 0 (raw-unsafe-count body))
+                      (assert.is_truthy (string.find body "\\x00" 1 true))
+                      (assert.is_truthy (string.find body "\\xFF" 1 true))))))
+            (it "executes multiple tool calls from one assistant turn before continuing"
+                (fn []
+                  (let [(log on-event) (record-events)
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "tool output")
+                                                     :on-event on-event
+                                                     :provider-options {:mock-script [{:text "checking"
+                                                                                       :tool-calls [(call "call-1"
+                                                                                                          :noop)
+                                                                                                    (call "call-2"
+                                                                                                          :noop)]}
+                                                                                      "done"]}})]
+                    (let [final (agent-mod.step agent "go")]
+                      (assert.are.equal "done" final)
+                      (assert.are.same [:llm-start
+                                        :llm-end
+                                        :assistant-text
+                                        :tool-call
+                                        :tool-result
+                                        :tool-call
+                                        :tool-result
+                                        :llm-start
+                                        :llm-end
+                                        :assistant-text]
+                                       (event-types log))
+                      (assert.are.equal :assistant (. agent.messages 2 :role))
+                      (assert.are.equal :tool-result (. agent.messages 3 :role))
+                      (assert.are.equal "call-1"
+                                        (. agent.messages 3 :tool-call-id))
+                      (assert.are.equal :tool-result (. agent.messages 4 :role))
+                      (assert.are.equal "call-2"
+                                        (. agent.messages 4 :tool-call-id))
+                      (assert.are.equal :assistant (. agent.messages 5 :role))))))
+            (it "rejects same-turn same-file edit calls so the model retries as one batch"
+                (fn []
+                  (let [(log on-event) (record-events)
+                        executed {:n 0}
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools [{:name :edit
+                                                              :label "Edit"
+                                                              :description "stub edit"
+                                                              :parameters {:type :object}
+                                                              :execute (fn [_]
+                                                                         (set executed.n
+                                                                              (+ executed.n
+                                                                                 1))
+                                                                         {:content [(types.text-block "edited")]
+                                                                          :is-error? false})}]
+                                                     :on-event on-event
+                                                     :provider-options {:mock-script [{:tool-calls [(call "edit-1"
+                                                                                                          :edit
+                                                                                                          {:path "same.fnl"
+                                                                                                           :edits [{:old_string "a"
+                                                                                                                    :new_string "b"}]})
+                                                                                                    (call "edit-2"
+                                                                                                          :edit
+                                                                                                          {:path "same.fnl"
+                                                                                                           :edits [{:old_string "c"
+                                                                                                                    :new_string "d"}]})]}
+                                                                                      "done"]}})]
+                    (let [final (agent-mod.step agent "go")]
+                      (assert.are.equal "done" final)
+                      (assert.are.equal 0 executed.n)
+                      (assert.are.same [:llm-start
+                                        :llm-end
+                                        :tool-call
+                                        :tool-result
+                                        :tool-call
+                                        :tool-result
+                                        :llm-start
+                                        :llm-end
+                                        :assistant-text]
+                                       (event-types log))
+                      (assert.are.equal :tool-result (. agent.messages 3 :role))
+                      (assert.are.equal "edit-1"
+                                        (. agent.messages 3 :tool-call-id))
+                      (assert.is_true (. agent.messages 3 :is-error?))
+                      (assert.is_truthy (string.find (. agent.messages 3
+                                                        :content 1 :text)
+                                                     "single batched edit" 1
+                                                     true))
+                      (assert.are.equal :tool-result (. agent.messages 4 :role))
+                      (assert.are.equal "edit-2"
+                                        (. agent.messages 4 :tool-call-id))
+                      (assert.is_true (. agent.messages 4 :is-error?))))))
+            (it "injects steering messages before the next provider call"
+                (fn []
+                  (let [(log on-event) (record-events)
+                        calls {:n 0}
+                        rec []
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "tool output")
+                                                     :on-event on-event
+                                                     :get-steering (fn []
+                                                                     (set calls.n
+                                                                          (+ calls.n
+                                                                             1))
+                                                                     (if (= calls.n
+                                                                            2)
+                                                                         ["please steer"]
+                                                                         []))
+                                                     :provider-options {:mock-script [(tool-spec "call-1"
+                                                                                                 :noop)
+                                                                                      "done"]
+                                                                        :mock-record rec}})]
+                    (let [final (agent-mod.step agent "go")]
+                      (assert.are.equal "done" final)
+                      (assert.are.same [:llm-start
+                                        :llm-end
+                                        :tool-call
+                                        :tool-result
+                                        :steering-injected
+                                        :llm-start
+                                        :llm-end
+                                        :assistant-text]
+                                       (event-types log))
+                      (assert.are.equal :user (. agent.messages 4 :role))
+                      (assert.are.equal "please steer"
+                                        (. agent.messages 4 :content))
+                      (assert.are.equal :assistant (. agent.messages 5 :role))
+                      (assert.are.equal "please steer"
+                                        (. rec 2 :context :messages 4 :content))))))
+            (it "injects steering queued during a natural stop before exiting"
+                (fn []
+                  (let [(log on-event) (record-events)
+                        polls {:n 0}
+                        rec []
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "")
+                                                     :on-event on-event
+                                                     :get-steering (fn []
+                                                                     (set polls.n
+                                                                          (+ polls.n
+                                                                             1))
+                                                                     (if (= polls.n
+                                                                            2)
+                                                                         ["midrun steer"]
+                                                                         []))
+                                                     :provider-options {:mock-script ["first done"
+                                                                                      "second done"]
+                                                                        :mock-record rec}})]
+                    (let [final (agent-mod.step agent "go")]
+                      (assert.are.equal "second done" final)
+                      (assert.are.same [:llm-start
+                                        :llm-end
+                                        :assistant-text
+                                        :steering-injected
+                                        :llm-start
+                                        :llm-end
+                                        :assistant-text]
+                                       (event-types log))
+                      (assert.are.equal :user (. agent.messages 3 :role))
+                      (assert.are.equal "midrun steer"
+                                        (. agent.messages 3 :content))
+                      (assert.are.equal "midrun steer"
+                                        (. rec 2 :context :messages 3 :content))))))
+            (it "prefers queued steering over follow-up after a natural stop"
+                (fn []
+                  (let [(log on-event) (record-events)
+                        steering-polls {:n 0}
+                        followup-polls {:n 0}
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "")
+                                                     :on-event on-event
+                                                     :get-steering (fn []
+                                                                     (set steering-polls.n
+                                                                          (+ steering-polls.n
+                                                                             1))
+                                                                     (if (= steering-polls.n
+                                                                            2)
+                                                                         ["steer first"]
+                                                                         []))
+                                                     :get-follow-up (fn []
+                                                                      (set followup-polls.n
+                                                                           (+ followup-polls.n
+                                                                              1))
+                                                                      (if (= followup-polls.n
+                                                                             1)
+                                                                          ["follow second"]
+                                                                          []))
+                                                     :provider-options {:mock-script ["first done"
+                                                                                      "second done"
+                                                                                      "third done"]}})]
+                    (let [final (agent-mod.step agent "go")]
+                      (assert.are.equal "third done" final)
+                      (assert.are.same [:llm-start
+                                        :llm-end
+                                        :assistant-text
+                                        :steering-injected
+                                        :llm-start
+                                        :llm-end
+                                        :assistant-text
+                                        :follow-up-injected
+                                        :llm-start
+                                        :llm-end
+                                        :assistant-text]
+                                       (event-types log))
+                      (assert.are.equal "steer first"
+                                        (. agent.messages 3 :content))
+                      (assert.are.equal "follow second"
+                                        (. agent.messages 5 :content))))))
+            (it "injects follow-up messages after a natural stop and continues"
+                (fn []
+                  (let [(log on-event) (record-events)
+                        used {:v false}
+                        rec []
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "")
+                                                     :on-event on-event
+                                                     :get-follow-up (fn []
+                                                                      (if used.v
+                                                                          []
+                                                                          (do
+                                                                            (set used.v
+                                                                                 true)
+                                                                            ["next task"])))
+                                                     :provider-options {:mock-script ["first done"
+                                                                                      "second done"]
+                                                                        :mock-record rec}})]
+                    (let [final (agent-mod.step agent "go")]
+                      (assert.are.equal "second done" final)
+                      (assert.are.same [:llm-start
+                                        :llm-end
+                                        :assistant-text
+                                        :follow-up-injected
+                                        :llm-start
+                                        :llm-end
+                                        :assistant-text]
+                                       (event-types log))
+                      (assert.are.equal :user (. agent.messages 3 :role))
+                      (assert.are.equal "next task"
+                                        (. agent.messages 3 :content))
+                      (assert.are.equal 2 (length rec))))))
+            (it "trips the safety cap when the model never stops"
+                (fn []
+                  (let [(log on-event) (record-events)
+                        rec []
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "")
+                                                     :on-event on-event
+                                                     :provider-options {:mock-script (fn [_req]
+                                                                                       (tool-spec "loop"
+                                                                                                  :noop))
+                                                                        :mock-record rec}})]
+                    (let [final (agent-mod.step agent "loop forever")]
+                      (assert.is_truthy (string.find final
+                                                     "tool%-call loop exceeded safety cap"))
+                      (assert.is_true (<= (length rec) agent-mod.SAFETY-CAP))
+                      (assert.is_true (>= (length rec) agent-mod.SAFETY-CAP))
+                      (assert.is_false (any? #(= $1 :error) (event-types log)))))))
+            (it "surfaces an error stop-reason and stops the loop"
+                (fn []
+                  (let [(log on-event) (record-events)
+                        rec []
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "")
+                                                     :on-event on-event
+                                                     :provider-options {:mock-script [{:error "boom"}]
+                                                                        :mock-record rec}})]
+                    (let [final (agent-mod.step agent "hi")]
+                      (assert.are.equal "[error] boom" final)
+                      (assert.are.equal 1 (length rec))
+                      (assert.is_true (any? #(= $1 :error) (event-types log)))))))
+            (it "records an errored turn in history but excludes it from later provider context"
+                (fn []
+                  (let [(_ on-event) (record-events)
+                        rec []
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "")
+                                                     :on-event on-event
+                                                     :provider-options {:mock-script (let [calls {:n 0}]
+                                                                                       (fn [_req]
+                                                                                         (set calls.n
+                                                                                              (+ calls.n
+                                                                                                 1))
+                                                                                         (if (= calls.n
+                                                                                                1)
+                                                                                             {:error "boom"}
+                                                                                             "recovered")))
+                                                                        :mock-record rec}})]
+                    (assert.are.equal "[error] boom"
+                                      (agent-mod.step agent "hi"))
+                    (assert.are.equal "recovered"
+                                      (agent-mod.step agent "again"))
+                    (assert.are.equal 2 (length rec))
+                    ;; The retry turn must not replay the errored assistant message
+                    ;; (its [error]/partial content poisons provider context).
+                    (assert.is_false (any? (fn [m]
+                                             (and (= m.role :assistant)
+                                                  (= m.stop-reason :error)))
+                                           (. rec 2 :context :messages)))
+                    (assert.is_true (any? (fn [m]
+                                            (and (= m.role :assistant)
+                                                 (= m.stop-reason :error)))
+                                          agent.messages)))))
+            (it "passes the per-agent tools to the provider as canonical Tool[]"
+                (fn []
+                  (let [(_ on-event) (record-events)
+                        rec []
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools [{:name :custom-tool
+                                                              :label "Custom"
+                                                              :description "marker"
+                                                              :parameters {:type :object}
+                                                              :execute (fn [_]
+                                                                         {:content [(types.text-block "")]
+                                                                          :is-error? false})}]
+                                                     :on-event on-event
+                                                     :provider-options {:mock-script ["ok"]
+                                                                        :mock-record rec}})]
+                    (agent-mod.step agent "go")
+                    (let [first-call (. rec 1)
+                          names {}]
+                      (each [_ d (ipairs first-call.context.tools)]
+                        (assert.is_nil d.execute)
+                        (tset names (tostring d.name) true))
+                      (assert.is_true (. names "custom-tool"))
+                      (assert.is_nil (. names "bash"))))))
+            (it "applies convert-to-llm before sending messages to the provider"
+                (fn []
+                  (let [(_ on-event) (record-events)
+                        rec []
+                        convert (fn [msgs]
+                                  (let [out []]
+                                    (each [_ m (ipairs msgs)]
+                                      (when (not= m.role :note)
+                                        (table.insert out m)))
+                                    out))
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "")
+                                                     :on-event on-event
+                                                     :convert-to-llm convert
+                                                     :provider-options {:mock-script ["ok"]
+                                                                        :mock-record rec}})]
+                    (table.insert agent.messages
+                                  {:role :note :content "internal"})
+                    (agent-mod.step agent "hi")
+                    (let [first-call (. rec 1)
+                          roles {}]
+                      (each [_ m (ipairs first-call.context.messages)]
+                        (tset roles m.role true))
+                      (assert.is_nil (. roles :note))
+                      (assert.is_true (. roles :user)))
+                    (assert.is_true (any? (fn [m] (= m.role :note))
+                                          agent.messages)))))
+            (it "passes the system prompt through context, not as a message"
+                (fn []
+                  (let [(_ on-event) (record-events)
+                        rec []
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :system "you are a test"
+                                                     :tools (stub-registry "")
+                                                     :on-event on-event
+                                                     :provider-options {:mock-script ["ok"]
+                                                                        :mock-record rec}})]
+                    (agent-mod.step agent "hi")
+                    (let [first-call (. rec 1)]
+                      (assert.are.equal "you are a test"
+                                        first-call.context.system-prompt)
+                      (assert.is_false (any? (fn [m] (= m.role :system))
+                                             agent.messages))))))
+            (it "dispatches by :provider-name"
+                (fn []
+                  (test-api.reset!)
+                  (register-mock! :anthropic)
+                  (let [(_ on-event) (record-events)
+                        rec []
+                        agent (agent-mod.make-agent {:provider-name :anthropic
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "")
+                                                     :on-event on-event
+                                                     :provider-options {:mock-script ["ok"]
+                                                                        :mock-record rec}})]
+                    (assert.are.equal "ok" (agent-mod.step agent "hi"))
+                    (assert.are.equal 1 (length rec)))))
+            (it "emits :message-appended after each message append"
+                (fn []
+                  (let [(log on-event) (record-events)
+                        agent (agent-mod.make-agent {:provider-name :mock
+                                                     :model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "tool output")
+                                                     :on-event on-event
+                                                     :provider-options {:mock-script [(tool-spec "call-1"
+                                                                                                 :noop)
+                                                                                      "done"]}})]
+                    (agent-mod.step agent "go")
+                    (let [roles []
+                          indexes []]
+                      (each [_ ev (ipairs log)]
+                        (when (= ev.type :message-appended)
+                          (table.insert roles ev.message.role)
+                          (table.insert indexes ev.index)
+                          (assert.are.equal agent ev.agent)))
+                      (assert.are.same [:user
+                                        :assistant
+                                        :tool-result
+                                        :assistant]
+                                       roles)
+                      (assert.are.same [1 2 3 4] indexes)))))))

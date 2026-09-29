@@ -55,8 +55,9 @@
     (while (not done?)
       (let [chunk (f:read READ-CHUNK-SIZE)]
         (if chunk
-            (do (table.insert chunks chunk)
-                (maybe-yield ?yield-fn))
+            (do
+              (table.insert chunks chunk)
+              (maybe-yield ?yield-fn))
             (set done? true))))
     (table.concat chunks)))
 

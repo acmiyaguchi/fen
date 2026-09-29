@@ -6,8 +6,7 @@
 
 (local fennel (require :fennel))
 (set fennel.path
-     (.. fennel.path
-         ";./scripts/?.fnl;./scripts/?/init.fnl"
+     (.. fennel.path ";./scripts/?.fnl;./scripts/?/init.fnl"
          ";./packages/core/src/?.fnl;./packages/core/src/?/init.fnl"
          ";./packages/util/src/?.fnl;./packages/util/src/?/init.fnl"))
 
@@ -20,19 +19,20 @@
 ;; Pages URL; override with FEN_DOCS_BASE_URL when hosting elsewhere. A trailing
 ;; slash is enforced so URL joins stay correct.
 (local SITE-BASE-URL
-  (let [env (os.getenv "FEN_DOCS_BASE_URL")
-        raw (if (and env (not= env "")) env "https://acmiyaguchi.github.io/fen/")]
-    (if (string.match raw "/$") raw (.. raw "/"))))
+       (let [env (os.getenv "FEN_DOCS_BASE_URL")
+             raw (if (and env (not= env "")) env
+                     "https://acmiyaguchi.github.io/fen/")]
+         (if (string.match raw "/$") raw (.. raw "/"))))
 
 ;; Generated Markdown/JSON artifacts published next to the HTML, as
 ;; [filename link-label] pairs. Declared once so the home-page links and the
 ;; self-contained-site copy step can't drift out of sync.
 (local GENERATED-ARTIFACTS
-  [[:core.md "Generated core Markdown"]
-   [:contracts.md "Generated contracts Markdown"]
-   [:extensions.md "Generated extensions Markdown"]
-   [:api-index.json "API index JSON"]
-   [:api-index.jsonl "API index JSONL"]])
+       [[:core.md "Generated core Markdown"]
+        [:contracts.md "Generated contracts Markdown"]
+        [:extensions.md "Generated extensions Markdown"]
+        [:api-index.json "API index JSON"]
+        [:api-index.jsonl "API index JSONL"]])
 
 ;; Hero demo (issue #141), recorded via `make hero-cast`. The animated SVG's
 ;; vector glyph positions scale cleanly as an <img> on any screen with no
@@ -43,10 +43,9 @@
 ;; page. markdown-to-html wraps it in a paragraph, so we match the wrapped form.
 (local DEMO-SENTINEL "<p>DEMO_PLAYER_EMBED</p>")
 
-(local DEMO-EMBED
-  (.. "<div class=\"demo\"><img src=\"assets/demo.svg\""
-      " alt=\"fen TUI demo: reading the README and describing itself\""
-      " loading=\"lazy\"></div>"))
+(local DEMO-EMBED (.. "<div class=\"demo\"><img src=\"assets/demo.svg\""
+                      " alt=\"fen TUI demo: reading the README and describing itself\""
+                      " loading=\"lazy\"></div>"))
 
 (fn write-file [path text]
   (os.execute (.. "mkdir -p " (string.match path "^(.+)/[^/]+$")))
@@ -101,7 +100,7 @@ on Lua 5.4, 0 on 5.1; accept either.)"
   (.. "<a href=\"" (attr-escape href) "\">" (html-escape text) "</a>"))
 
 (local SITE-CSS
-"html,body{max-width:100%;overflow-x:hidden}\n\
+       "html,body{max-width:100%;overflow-x:hidden}\n\
 body{font:16px/1.5 sans-serif;margin:0;color:#111;background:#fff}\n\
 a{color:#0645ad;overflow-wrap:anywhere}\n\
 .permalink{font-size:.8em;text-decoration:none;color:#777;margin-left:.35em}\n\
@@ -147,27 +146,28 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
         tops []]
     ;; `%1` backreferences the captured heading level so </h2>/</h3> match their
     ;; own opening tag; headings are walked in document order.
-    (each [level id inner (string.gmatch body "<h([23]) id=\"([^\"]+)\"[^>]*>(.-)</h%1>")]
+    (each [level id inner (string.gmatch body
+                                         "<h([23]) id=\"([^\"]+)\"[^>]*>(.-)</h%1>")]
       (let [lvl (tonumber level)]
         (when (<= lvl max-level)
-          (let [a (.. "<a href=\"#" (attr-escape id) "\">" (strip-tags inner) "</a>")
-                parent (. tops (# tops))]
+          (let [a (.. "<a href=\"#" (attr-escape id) "\">" (strip-tags inner)
+                      "</a>")
+                parent (. tops (length tops))]
             (if (and (= lvl 3) parent)
                 (table.insert parent.children a)
                 (table.insert tops {:link a :children []}))))))
-    (if (>= (# tops) 4)
+    (if (>= (length tops) 4)
         (let [lis (icollect [_ t (ipairs tops)]
                     (.. "<li>" t.link
-                        (if (> (# t.children) 0)
+                        (if (> (length t.children) 0)
                             (.. "<ul>"
                                 (table.concat (icollect [_ c (ipairs t.children)]
-                                                (.. "<li>" c "</li>")) "")
+                                                (.. "<li>" c "</li>"))
+                                              "")
                                 "</ul>")
-                            "")
-                        "</li>"))]
+                            "") "</li>"))]
           (.. "<nav class=\"toc\" aria-label=\"Section table of contents\"><div class=\"toc-title\">On this page</div><ul>"
-              (table.concat lis "")
-              "</ul></nav>\n"))
+              (table.concat lis "") "</ul></nav>\n"))
         "")))
 
 (fn render-page [title body ?section ?opts]
@@ -181,36 +181,39 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
              ["registries.html" "Registries"]
              ["graphs.html" "Graphs"]
              ["sitemap.html" "Sitemap"]]
-        nav-html (table.concat
-                   (icollect [_ item (ipairs nav)]
-                     (let [href (. item 1) label (. item 2)]
-                       (.. "<a" (if (= label ?section) " class=\"active\"" "")
-                           " href=\"" base href "\">" label "</a>")))
-                   "")]
+        nav-html (table.concat (icollect [_ item (ipairs nav)]
+                                 (let [href (. item 1)
+                                       label (. item 2)]
+                                   (.. "<a"
+                                       (if (= label ?section)
+                                           " class=\"active\""
+                                           "")
+                                       " href=\"" base href "\">" label "</a>")))
+                               "")]
     (.. "<!doctype html>\n<html lang=\"en\">\n<head>\n"
         "<meta charset=\"utf-8\">\n"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
         "<title>" (html-escape title) "</title>\n"
         "<link rel=\"stylesheet\" href=\"" base "style.css\">\n"
-        "</head>\n<body><div class=\"nav\">" nav-html "</div><div class=\"main\">\n"
-        (section-toc body toc-depth) body "\n</div></body></html>\n")))
+        "</head>\n<body><div class=\"nav\">" nav-html
+        "</div><div class=\"main\">\n" (section-toc body toc-depth) body
+        "\n</div></body></html>\n")))
 
 (fn permalink [id]
-  (.. " <a class=\"permalink\" href=\"#" (attr-escape id) "\" aria-label=\"Link to this section\">#</a>"))
+  (.. " <a class=\"permalink\" href=\"#" (attr-escape id)
+      "\" aria-label=\"Link to this section\">#</a>"))
 
 (fn aggregate-section-heading [topic prefix]
   (let [id (slug (.. "aggregate-section-" (tostring topic.name)))]
     (.. "<h2 id=\"" (attr-escape id) "\">"
-        (link (.. (or prefix "") (slug topic.name) ".html") (tostring topic.name))
-        (permalink id)
-        "</h2>")))
+        (link (.. (or prefix "") (slug topic.name) ".html")
+              (tostring topic.name)) (permalink id) "</h2>")))
 
 (fn markdown-inline [s]
   (let [s (html-escape s)
         s (string.gsub s "%!%[([^%]]*)%]%(([^%)]+)%)"
                        "<img src=\"%2\" alt=\"%1\" style=\"max-width:100%%;height:auto\">")
-        s (string.gsub s "%[([^%]]+)%]%(([^%)]+)%)"
-                       "<a href=\"%2\">%1</a>")
+        s (string.gsub s "%[([^%]]+)%]%(([^%)]+)%)" "<a href=\"%2\">%1</a>")
         s (string.gsub s "`([^`]+)`" "<code>%1</code>")
         s (string.gsub s "%*%*([^*]+)%*%*" "<strong>%1</strong>")
         s (string.gsub s "%*([^*<>]+)%*" "<em>%1</em>")]
@@ -222,8 +225,7 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
     s))
 
 (fn table-separator-row? [line]
-  (and (string.match line "^%s*|")
-       (string.match line "^%s*|?[%s|%-%:]+|?%s*$")))
+  (and (string.match line "^%s*|") (string.match line "^%s*|?[%s|%-%:]+|?%s*$")))
 
 (fn split-table-row [line]
   (let [line (string.gsub (string.gsub line "^%s*|" "") "|%s*$" "")
@@ -236,12 +238,14 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
   (let [out ["<table>"]
         header (split-table-row (. rows 1))]
     (when ?caption
-      (table.insert out (.. "<caption>" (markdown-inline ?caption) " table</caption>")))
+      (table.insert out (.. "<caption>" (markdown-inline ?caption)
+                            " table</caption>")))
     (table.insert out "<thead><tr>")
     (each [_ cell (ipairs header)]
-      (table.insert out (.. "<th scope=\"col\">" (markdown-inline cell) "</th>")))
+      (table.insert out
+                    (.. "<th scope=\"col\">" (markdown-inline cell) "</th>")))
     (table.insert out "</tr></thead><tbody>")
-    (for [i 3 (# rows)]
+    (for [i 3 (length rows)]
       (table.insert out "<tr>")
       (each [_ cell (ipairs (split-table-row (. rows i)))]
         (table.insert out (.. "<td>" (markdown-inline cell) "</td>")))
@@ -250,17 +254,19 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
     (table.concat out "")))
 
 (fn flush-paragraph [out para ?table-caption]
-  (when (> (# para) 0)
-    (if (and (>= (# para) 2)
-             (string.match (. para 1) "^%s*|")
+  (when (> (length para) 0)
+    (if (and (>= (length para) 2) (string.match (. para 1) "^%s*|")
              (table-separator-row? (. para 2)))
         (table.insert out (render-table para (or ?table-caption "Reference")))
-        (table.insert out (.. "<p>" (markdown-inline (table.concat para " ")) "</p>")))
-    (while (> (# para) 0) (table.remove para))))
+        (table.insert out (.. "<p>" (markdown-inline (table.concat para " "))
+                              "</p>")))
+    (while (> (length para) 0) (table.remove para))))
 
 (fn markdown-to-html [md]
   "Small markdown renderer for repository docs: headings, paragraphs, lists, and fences."
-  (let [out [] para [] heading-seen {}]
+  (let [out []
+        para []
+        heading-seen {}]
     (var in-code? false)
     (var current-heading nil)
     (var code-lines [])
@@ -268,33 +274,41 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
     (var list-kind nil)
     (var pending-item nil)
     (var pending-subitems [])
+
     (fn flush-list-item []
       (when pending-item
         (var body (markdown-inline pending-item))
-        (when (> (# pending-subitems) 0)
+        (when (> (length pending-subitems) 0)
           (set body (.. body "<ul class=\"nested-list\">"
-                        (table.concat
-                          (icollect [_ item (ipairs pending-subitems)]
-                            (.. "<li class=\"nested-list-item\">" (markdown-inline item) "</li>"))
-                          "")
-                        "</ul>")))
+                        (table.concat (icollect [_ item (ipairs pending-subitems)]
+                                        (.. "<li class=\"nested-list-item\">"
+                                            (markdown-inline item) "</li>"))
+                                      "") "</ul>")))
         (table.insert out (.. "<li>" body "</li>"))
-        (while (> (# pending-subitems) 0) (table.remove pending-subitems))
+        (while (> (length pending-subitems) 0) (table.remove pending-subitems))
         (set pending-item nil)))
+
     (fn close-list []
       (when list-kind
         (flush-list-item)
         (table.insert out (.. "</" list-kind ">"))
         (set list-kind nil)))
+
     (each [_ line (ipairs (split-lines md))]
       (let [fence (string.match line "^```")]
         (if in-code?
             (if fence
                 (do
                   (let [class-attr (if code-language
-                                        (.. " class=\"language-" (attr-escape (slug code-language)) "\"")
-                                        "")]
-                    (table.insert out (.. "<pre><code" class-attr ">" (html-escape (table.concat code-lines "\n")) "</code></pre>")))
+                                       (.. " class=\"language-"
+                                           (attr-escape (slug code-language))
+                                           "\"")
+                                       "")]
+                    (table.insert out
+                                  (.. "<pre><code" class-attr ">"
+                                      (html-escape (table.concat code-lines
+                                                                 "\n"))
+                                      "</code></pre>")))
                   (set code-lines [])
                   (set code-language nil)
                   (set in-code? false))
@@ -316,13 +330,17 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
                     (flush-paragraph out para current-heading)
                     (close-list)
                     (set current-heading text)
-                    (let [level (math.min 6 (# marks))
+                    (let [level (math.min 6 (length marks))
                           base-id (slug (.. "doc-heading-" text))
                           seen (or (. heading-seen base-id) 0)
                           id (if (= seen 0) base-id (.. base-id "-" (+ seen 1)))]
                       (tset heading-seen base-id (+ seen 1))
-                      (table.insert out (.. "<h" level " id=\"" (attr-escape id) "\">" (markdown-inline text) (permalink id) "</h" level ">"))))
-                  (let [nested-unordered-item (string.match line "^%s+[-*]%s+(.+)$")
+                      (table.insert out
+                                    (.. "<h" level " id=\"" (attr-escape id)
+                                        "\">" (markdown-inline text)
+                                        (permalink id) "</h" level ">"))))
+                  (let [nested-unordered-item (string.match line
+                                                            "^%s+[-*]%s+(.+)$")
                         unordered-item (string.match line "^[-*]%s+(.+)$")
                         ordered-item (string.match line "^%d+%.%s+(.+)$")
                         continuation (string.match line "^%s+(.+)$")
@@ -341,44 +359,67 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
                           (flush-list-item)
                           (set pending-item item))
                         (and list-kind pending-item continuation)
-                        (if (> (# pending-subitems) 0)
-                            (tset pending-subitems (# pending-subitems)
-                                  (.. (. pending-subitems (# pending-subitems)) " " continuation))
-                            (set pending-item (.. pending-item " " continuation)))
+                        (if (> (length pending-subitems) 0)
+                            (tset pending-subitems (length pending-subitems)
+                                  (.. (. pending-subitems
+                                         (length pending-subitems))
+                                      " " continuation))
+                            (set pending-item
+                                 (.. pending-item " " continuation)))
                         (do
                           (close-list)
                           (table.insert para line)))))))))
     (when in-code?
       (let [class-attr (if code-language
-                          (.. " class=\"language-" (attr-escape (slug code-language)) "\"")
-                          "")]
-        (table.insert out (.. "<pre><code" class-attr ">" (html-escape (table.concat code-lines "\n")) "</code></pre>"))))
+                           (.. " class=\"language-"
+                               (attr-escape (slug code-language)) "\"")
+                           "")]
+        (table.insert out (.. "<pre><code" class-attr ">"
+                              (html-escape (table.concat code-lines "\n"))
+                              "</code></pre>"))))
     (flush-paragraph out para current-heading)
     (close-list)
     (table.concat out "\n")))
 
 (local RUNTIME-TOPICS
-  [{:name :commands :kind :command :summary "Registered slash commands."}
-   {:name :tools :kind :tool :summary "Registered agent tools."}
-   {:name :providers :kind :provider :summary "Registered LLM providers."}
-   {:name :auth-backends :kind :auth-backend :summary "Registered auth backends."}
-   {:name :session-backends :kind :session-backend :summary "Registered session persistence backends."}
-   {:name :presenters :kind :presenter :summary "Registered interactive presenters."}
-   {:name :controls :kind :control :summary "Registered keyboard/UI controls."}
-   {:name :status :kind :status :summary "Registered status-line items."}
-   {:name :panels :kind :panel :summary "Registered presenter panels."}
-   {:name :prompt-fragments :kind :prompt-fragment :summary "Registered system-prompt fragments."}
-   {:name :extensions :kind :extension :summary "First-party extension manifests."}])
+       [{:name :commands :kind :command :summary "Registered slash commands."}
+        {:name :tools :kind :tool :summary "Registered agent tools."}
+        {:name :providers :kind :provider :summary "Registered LLM providers."}
+        {:name :auth-backends
+         :kind :auth-backend
+         :summary "Registered auth backends."}
+        {:name :session-backends
+         :kind :session-backend
+         :summary "Registered session persistence backends."}
+        {:name :presenters
+         :kind :presenter
+         :summary "Registered interactive presenters."}
+        {:name :controls
+         :kind :control
+         :summary "Registered keyboard/UI controls."}
+        {:name :status :kind :status :summary "Registered status-line items."}
+        {:name :panels :kind :panel :summary "Registered presenter panels."}
+        {:name :prompt-fragments
+         :kind :prompt-fragment
+         :summary "Registered system-prompt fragments."}
+        {:name :extensions
+         :kind :extension
+         :summary "First-party extension manifests."}])
 
 (local CONTRACT-TOPICS
-  [{:name :events :key :events :summary "Event-bus shapes."}
-   {:name :types :key :types :summary "Canonical message/tool types."}
-   {:name :register-kinds :key :register-kinds :summary "Extension API register kinds."}
-   {:name :interfaces :key :interfaces :summary "Provider/auth/session interface records."}])
+       [{:name :events :key :events :summary "Event-bus shapes."}
+        {:name :types :key :types :summary "Canonical message/tool types."}
+        {:name :register-kinds
+         :key :register-kinds
+         :summary "Extension API register kinds."}
+        {:name :interfaces
+         :key :interfaces
+         :summary "Provider/auth/session interface records."}])
 
 (fn sorted-keys [t]
   (let [keys []]
-    (each [k _ (pairs (or t {}))] (table.insert keys (tostring k)))
+    (each [k _ (pairs (or t {}))]
+      (table.insert keys (tostring k)))
     (table.sort keys)
     keys))
 
@@ -403,7 +444,8 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
       (let [text (read-file path)
             name (or (string.match text ":name%s+:([%w_%-]+)")
                      (string.match text ":name%s+\"([^\"]+)\""))
-            description (or (string.match text ":description%s+\"([^\"]*)\"") "")]
+            description (or (string.match text ":description%s+\"([^\"]*)\"")
+                            "")]
         (table.insert items {:kind :extension
                              :name name
                              :description description
@@ -415,44 +457,53 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
   (or r.description
       (let [kind (tostring (or r.kind "contribution"))
             name (tostring (or r.name "(dynamic)"))]
-        (if (= kind :status)
-            (.. "Registered " name " status-line item.")
-            (= kind :presenter)
-            (.. "Registered " name " presenter.")
-            (= kind :hook)
-            (.. "Registered " name " extension hook.")
+        (if (= kind :status) (.. "Registered " name " status-line item.")
+            (= kind :presenter) (.. "Registered " name " presenter.")
+            (= kind :hook) (.. "Registered " name " extension hook.")
             (.. "Registered " name " " kind " registry entry.")))))
 
 (fn register-site-anchor [r name]
   (slug (.. "register-site-" (tostring (or r.kind "unknown")) "-" name "-"
-           (or r.path "unknown") "-" (or r.line 0))))
+            (or r.path "unknown") "-" (or r.line 0))))
 
 (fn render-register-topic [topic items ?embedded?]
   (let [rows []]
-    (if (= (# items) 0)
-        (table.insert rows "<p class=\"muted\">No source-scanned registrations.</p>")
+    (if (= (length items) 0)
+        (table.insert rows
+                      "<p class=\"muted\">No source-scanned registrations.</p>")
         (do
-          (table.sort items (fn [a b]
-                              (< (tostring (or a.name "")) (tostring (or b.name "")))))
-          (table.insert rows (.. "<table><caption>" (html-escape (.. (tostring topic.name) " registry")) "</caption><thead><tr><th scope=\"col\">Name</th><th scope=\"col\">Description</th><th scope=\"col\">Source</th></tr></thead><tbody>"))
+          (table.sort items
+                      (fn [a b]
+                        (< (tostring (or a.name "")) (tostring (or b.name "")))))
+          (table.insert rows
+                        (.. "<table><caption>"
+                            (html-escape (.. (tostring topic.name) " registry"))
+                            "</caption><thead><tr><th scope=\"col\">Name</th><th scope=\"col\">Description</th><th scope=\"col\">Source</th></tr></thead><tbody>"))
           (each [_ r (ipairs items)]
             (let [name (or r.name "(dynamic)")
                   row-id (register-site-anchor r name)]
               (table.insert rows
-                (.. "<tr id=\"" (attr-escape row-id) "\"><td><code>" (html-escape name) "</code>" (permalink row-id) "</td><td>"
-                    (markdown-inline (register-summary r)) "</td><td class=\"source\">"
-                    (html-escape (.. r.path ":" (tostring (or r.line "?")))) "</td></tr>"))))
+                            (.. "<tr id=\"" (attr-escape row-id)
+                                "\"><td><code>" (html-escape name) "</code>"
+                                (permalink row-id) "</td><td>"
+                                (markdown-inline (register-summary r))
+                                "</td><td class=\"source\">"
+                                (html-escape (.. r.path ":"
+                                                 (tostring (or r.line "?"))))
+                                "</td></tr>"))))
           (table.insert rows "</tbody></table>")))
     (if ?embedded?
-        (.. "<p>" (markdown-inline topic.summary) "</p>" (table.concat rows "\n"))
-        (.. "<h1>" (html-escape (tostring topic.name)) "</h1><p>" (markdown-inline topic.summary) "</p>"
-            (table.concat rows "\n")))))
+        (.. "<p>" (markdown-inline topic.summary) "</p>"
+            (table.concat rows "\n"))
+        (.. "<h1>" (html-escape (tostring topic.name)) "</h1><p>"
+            (markdown-inline topic.summary) "</p>" (table.concat rows "\n")))))
 
 (fn field-type [f]
-  (or f.type
-      (and f.const (.. ":" (tostring f.const)))
-      (and f.enum (.. "enum " (table.concat (icollect [_ v (ipairs f.enum)] (.. ":" (tostring v))) " | ")))
-      "any"))
+  (or f.type (and f.const (.. ":" (tostring f.const)))
+      (and f.enum (.. "enum "
+                      (table.concat (icollect [_ v (ipairs f.enum)]
+                                      (.. ":" (tostring v)))
+                                    " | "))) "any"))
 
 (fn contract-prefix [topic-key]
   (if (= topic-key :register-kinds) "register-kind"
@@ -462,13 +513,16 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
       (tostring topic-key)))
 
 (fn contract-field-anchor [prefix name field-name]
-  (slug (.. "contract-field-" prefix "-" (tostring name) "-" (tostring field-name))))
+  (slug (.. "contract-field-" prefix "-" (tostring name) "-"
+            (tostring field-name))))
 
 (fn contract-member-anchor [prefix name category value]
-  (slug (.. "contract-member-" prefix "-" (tostring name) "-" category "-" (tostring value))))
+  (slug (.. "contract-member-" prefix "-" (tostring name) "-" category "-"
+            (tostring value))))
 
 (fn contract-member-label [category value]
-  (if (or (= category "enum") (= category "method") (= category "optional-method"))
+  (if (or (= category "enum") (= category "method")
+          (= category "optional-method"))
       (.. ":" (tostring value))
       (tostring value)))
 
@@ -486,14 +540,19 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
 
 (fn render-field-table [topic-key name fields]
   (let [prefix (contract-prefix topic-key)
-        rows [(.. "<table><caption>Fields for " (html-escape (tostring name)) " " (html-escape prefix) " contract</caption><thead><tr><th scope=\"col\">Field</th><th scope=\"col\">Type</th><th scope=\"col\">Required</th><th scope=\"col\">Summary</th></tr></thead><tbody>")]]
+        rows [(.. "<table><caption>Fields for " (html-escape (tostring name))
+                  " " (html-escape prefix)
+                  " contract</caption><thead><tr><th scope=\"col\">Field</th><th scope=\"col\">Type</th><th scope=\"col\">Required</th><th scope=\"col\">Summary</th></tr></thead><tbody>")]]
     (each [_ k (ipairs (sorted-keys fields))]
       (let [f (. fields k)
             ty (field-type f)
             row-id (contract-field-anchor prefix name k)]
         (table.insert rows
-          (.. "<tr id=\"" (attr-escape row-id) "\"><td><code>:" (html-escape k) "</code>" (permalink row-id) "</td><td><code>" (html-escape ty)
-              "</code></td><td>" (if f.required "yes" "") "</td><td>" (markdown-inline (or f.summary "")) "</td></tr>"))))
+                      (.. "<tr id=\"" (attr-escape row-id) "\"><td><code>:"
+                          (html-escape k) "</code>" (permalink row-id)
+                          "</td><td><code>" (html-escape ty) "</code></td><td>"
+                          (if f.required "yes" "") "</td><td>"
+                          (markdown-inline (or f.summary "")) "</td></tr>"))))
     (table.insert rows "</tbody></table>")
     (table.concat rows "\n")))
 
@@ -502,35 +561,51 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
         rows []
         add-members (fn [category vals]
                       (each [_ value (ipairs (or vals []))]
-                        (let [row-id (contract-member-anchor prefix name category value)]
+                        (let [row-id (contract-member-anchor prefix name
+                                                             category value)]
                           (table.insert rows
-                            (.. "<tr id=\"" (attr-escape row-id) "\"><td><code>" (html-escape (contract-member-label category value))
-                                "</code>" (permalink row-id) "</td><td>" (html-escape category) "</td><td>"
-                                (markdown-inline (contract-member-summary name category value)) "</td></tr>")))))]
+                                        (.. "<tr id=\"" (attr-escape row-id)
+                                            "\"><td><code>"
+                                            (html-escape (contract-member-label category
+                                                                                value))
+                                            "</code>" (permalink row-id)
+                                            "</td><td>" (html-escape category)
+                                            "</td><td>"
+                                            (markdown-inline (contract-member-summary name
+                                                                                      category
+                                                                                      value))
+                                            "</td></tr>")))))]
     (add-members "variant" body.variants)
     (add-members "enum" body.enum)
     (add-members "method" body.methods)
     (add-members "optional-method" body.optional-methods)
-    (when (> (# rows) 0)
-      (.. "<table><caption>Members for " (html-escape (tostring name)) " " (html-escape (contract-prefix topic-key)) " contract</caption><thead><tr><th scope=\"col\">Member</th><th scope=\"col\">Kind</th><th scope=\"col\">Summary</th></tr></thead><tbody>"
-          (table.concat rows "\n")
-          "</tbody></table>"))))
+    (when (> (length rows) 0)
+      (.. "<table><caption>Members for " (html-escape (tostring name)) " "
+          (html-escape (contract-prefix topic-key))
+          " contract</caption><thead><tr><th scope=\"col\">Member</th><th scope=\"col\">Kind</th><th scope=\"col\">Summary</th></tr></thead><tbody>"
+          (table.concat rows "\n") "</tbody></table>"))))
 
 (fn render-contract-topic [topic contracts ?embedded?]
   (let [bucket (. contracts topic.key)
         out [(if ?embedded?
                  (.. "<p>" (markdown-inline topic.summary) "</p>")
-                 (.. "<h1>" (html-escape (tostring topic.name)) "</h1><p>" (markdown-inline topic.summary) "</p>"))]]
+                 (.. "<h1>" (html-escape (tostring topic.name)) "</h1><p>"
+                     (markdown-inline topic.summary) "</p>"))]]
     (each [_ name (ipairs (sorted-keys bucket))]
       (let [body (. bucket name)]
         ;; On the aggregate page each topic is an <h2>, so entries nest one level
         ;; deeper as <h3>; standalone topic pages lead with an <h1>, so entries
         ;; stay <h2>.
-        (let [id (slug (.. "contract-entry-" (contract-prefix topic.key) "-" name))
+        (let [id (slug (.. "contract-entry-" (contract-prefix topic.key) "-"
+                           name))
               tag (if ?embedded? "h3" "h2")]
-          (table.insert out (.. "<" tag " id=\"" id "\"><code>" (html-escape name) "</code>" (permalink id) "</" tag ">")))
-        (when body.summary (table.insert out (.. "<p>" (markdown-inline body.summary) "</p>")))
-        (when body.fields (table.insert out (render-field-table topic.key name body.fields)))
+          (table.insert out (.. "<" tag " id=\"" id "\"><code>"
+                                (html-escape name) "</code>" (permalink id) "</"
+                                tag ">")))
+        (when body.summary
+          (table.insert out (.. "<p>" (markdown-inline body.summary) "</p>")))
+        (when body.fields
+          (table.insert out (render-field-table topic.key name body.fields)))
         (let [members (render-member-table topic.key name body)]
           (when members (table.insert out members)))))
     (table.concat out "\n")))
@@ -547,7 +622,9 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
 
 (fn file-exists? [path]
   (let [f (io.open path :r)]
-    (if f (do (f:close) true) false)))
+    (if f (do
+            (f:close)
+            true) false)))
 
 (fn module-graph-html [mod]
   (let [slug (module-graph-slug mod)
@@ -555,46 +632,57 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
         rel (.. "graphs/modules/" slug)]
     (if (file-exists? disk)
         (.. "<p class=\"source\">Module neighborhood graph: "
-            (link (.. rel ".dot") "DOT") " · "
-            (link (.. rel ".svg") "SVG") "</p>"
-            "<div class=\"graph-preview\"><a href=\"" (attr-escape (.. rel ".svg")) "\">"
-            "<img src=\"" (attr-escape (.. rel ".svg")) "\" alt=\"" (attr-escape (.. mod " module graph")) "\">"
-            "</a></div>")
+            (link (.. rel ".dot") "DOT") " · " (link (.. rel ".svg") "SVG")
+            "</p>" "<div class=\"graph-preview\"><a href=\""
+            (attr-escape (.. rel ".svg")) "\">" "<img src=\""
+            (attr-escape (.. rel ".svg")) "\" alt=\""
+            (attr-escape (.. mod " module graph")) "\">" "</a></div>")
         "")))
 
 ;; API namespaces in display order. Each module is bucketed by the first prefix
 ;; it matches; fen.core.* is checked before fen.extensions.* so that core's own
 ;; extension loader (fen.core.extensions.*) stays under Core, not Extensions.
-(local API-NAMESPACES
-  [["Core" "fen.core"]
-   ["Extensions" "fen.extensions"]
-   ["Utilities" "fen.util"]
-   ["Testing" "fen.testing"]])
+(local API-NAMESPACES [["Core" "fen.core"]
+                       ["Extensions" "fen.extensions"]
+                       ["Utilities" "fen.util"]
+                       ["Testing" "fen.testing"]])
 
 (fn module-namespace [m]
   (var label "Other")
   (each [_ pair (ipairs API-NAMESPACES) &until (not= label "Other")]
     (let [(ns prefix) (values (. pair 1) (. pair 2))]
-      (when (or (= m prefix) (= (string.sub m 1 (+ 1 (# prefix))) (.. prefix ".")))
+      (when (or (= m prefix) (= (string.sub m 1 (+ 1 (length prefix)))
+                                (.. prefix ".")))
         (set label ns))))
   label)
 
 (fn render-core-export [out e]
   (let [doc e.doc
         id (export-anchor e)]
-    (table.insert out (.. "<h4 id=\"" id "\"><code>" (html-escape e.id) "</code>" (permalink id) "</h4>"))
+    (table.insert out
+                  (.. "<h4 id=\"" id "\"><code>" (html-escape e.id) "</code>"
+                      (permalink id) "</h4>"))
     (when (or e.signature (and doc doc.signature))
-      (table.insert out (.. "<p><code>" (html-escape (or (and doc doc.signature) e.signature)) "</code></p>")))
-    (when (and doc doc.summary) (table.insert out (.. "<p>" (markdown-inline doc.summary) "</p>")))
-    (when (and doc doc.tags (> (# doc.tags) 0))
+      (table.insert out (.. "<p><code>"
+                            (html-escape (or (and doc doc.signature)
+                                             e.signature))
+                            "</code></p>")))
+    (when (and doc doc.summary)
+      (table.insert out (.. "<p>" (markdown-inline doc.summary) "</p>")))
+    (when (and doc doc.tags (> (length doc.tags) 0))
       (table.insert out
-        (.. "<p class=\"tags\"><span class=\"muted\">tags:</span> "
-            (html-escape (table.concat doc.tags ", "))
-            "</p>")))
-    (table.insert out (.. "<p class=\"source\">" (html-escape (.. e.path ":" (tostring (or (and doc doc.line) e.line "?")))) "</p>"))))
+                    (.. "<p class=\"tags\"><span class=\"muted\">tags:</span> "
+                        (html-escape (table.concat doc.tags ", ")) "</p>")))
+    (table.insert out (.. "<p class=\"source\">"
+                          (html-escape (.. e.path ":"
+                                           (tostring (or (and doc doc.line)
+                                                         e.line "?"))))
+                          "</p>"))))
 
 (fn render-core [exports]
-  (let [groups {} order [] buckets {}]
+  (let [groups {}
+        order []
+        buckets {}]
     (each [_ e (ipairs exports)]
       (let [m (or e.module "(unknown)")]
         (when (not (. groups m))
@@ -615,14 +703,17 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
                              ["Other" "miscellaneous top-level modules"]])]
         (let [(ns hint) (values (. pair 1) (. pair 2))
               mods (. buckets ns)]
-          (when (and mods (> (# mods) 0))
+          (when (and mods (> (length mods) 0))
             (let [nsid (slug (.. "api-namespace-" ns))]
-              (table.insert out (.. "<h2 id=\"" nsid "\">" (html-escape ns)
-                                    " <span class=\"muted\">(" (html-escape hint) ")</span>"
-                                    (permalink nsid) "</h2>")))
+              (table.insert out
+                            (.. "<h2 id=\"" nsid "\">" (html-escape ns)
+                                " <span class=\"muted\">(" (html-escape hint)
+                                ")</span>" (permalink nsid) "</h2>")))
             (each [_ m (ipairs mods)]
               (let [id (slug (.. "core-module-" m))]
-                (table.insert out (.. "<h3 id=\"" id "\">" (html-escape m) (permalink id) "</h3>"))
+                (table.insert out
+                              (.. "<h3 id=\"" id "\">" (html-escape m)
+                                  (permalink id) "</h3>"))
                 (table.insert out (module-graph-html m)))
               (each [_ e (ipairs (. groups m))]
                 (render-core-export out e))))))
@@ -637,53 +728,64 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
   root, since copy-site-assets! flattens docs/generated/ into OUT-DIR. External
   and unknown links pass through unchanged."
   (string.gsub html "href=\"([^\"]+)\""
-    (fn [href]
-      (let [file (string.match href "^([^#]*)")
-            frag (string.match href "(#[^\"]*)$")
-            base (string.match (or file "") "([^/]+)%.md$")
-            generated (string.match (or file "") "^generated/(.+)$")]
-        (if (and base (. doc-bases base))
-            (.. "href=\"doc-" (slug base) ".html" (or frag "") "\"")
-            generated
-            (.. "href=\"" generated (or frag "") "\"")
-            (.. "href=\"" href "\""))))))
+               (fn [href]
+                 (let [file (string.match href "^([^#]*)")
+                       frag (string.match href "(#[^\"]*)$")
+                       base (string.match (or file "") "([^/]+)%.md$")
+                       generated (string.match (or file "") "^generated/(.+)$")]
+                   (if (and base (. doc-bases base))
+                       (.. "href=\"doc-" (slug base) ".html" (or frag "") "\"")
+                       generated
+                       (.. "href=\"" generated (or frag "") "\"")
+                       (.. "href=\"" href "\""))))))
 
 (fn topic-link-with-count [prefix name n]
   "Inline link to a topic page tagged with its record count, e.g. events (38)."
-  (.. (link (.. prefix (slug name) ".html") (tostring name)) " (" (tostring n) ")"))
+  (.. (link (.. prefix (slug name) ".html") (tostring name)) " (" (tostring n)
+      ")"))
 
 (fn render-home [register-groups contracts doc-paths]
   "Dense sitemap: every page on the site plus the machine-readable exports, in a
 compact list rather than per-topic cards. The reference pages themselves carry
 the detail; this is purely an index."
   (let [registry-links (icollect [_ t (ipairs RUNTIME-TOPICS)]
-                         (topic-link-with-count "registries/" t.name (# (or (. register-groups t.kind) []))))
+                         (topic-link-with-count "registries/" t.name
+                                                (length (or (. register-groups
+                                                               t.kind)
+                                                            []))))
         contract-links (icollect [_ t (ipairs CONTRACT-TOPICS)]
-                         (topic-link-with-count "contracts/" t.name (# (sorted-keys (. contracts t.key)))))
+                         (topic-link-with-count "contracts/" t.name
+                                                (length (sorted-keys (. contracts
+                                                                        t.key)))))
         guide-links (icollect [_ p (ipairs doc-paths)]
                       (let [base (string.match p "([^/]+)%.md$")]
                         (link (.. "doc-" (slug base) ".html") base)))]
     (.. "<h1>Sitemap</h1>"
         "<p>Dense index of every page on this site plus machine-readable exports."
         " Counts show how many records each reference page lists.</p>"
-        "<h2>Pages</h2><ul>"
-        "<li>" (link "index.html" "Home") " — hand-written guides and overview</li>"
-        "<li>" (link "api.html" "API") " — exported Fennel surfaces by namespace</li>"
-        "<li>" (link "contracts.html" "Contracts") ": " (table.concat contract-links ", ") "</li>"
-        "<li>" (link "registries.html" "Registries") ": " (table.concat registry-links ", ") "</li>"
-        "<li>" (link "graphs.html" "Graphs") " — module, subsystem, and contribution graphs</li>"
-        "<li>Guides: " (table.concat guide-links ", ") "</li>"
-        "</ul>"
+        "<h2>Pages</h2><ul>" "<li>" (link "index.html" "Home")
+        " — hand-written guides and overview</li>" "<li>"
+        (link "api.html" "API")
+        " — exported Fennel surfaces by namespace</li>" "<li>"
+        (link "contracts.html" "Contracts") ": "
+        (table.concat contract-links ", ") "</li>" "<li>"
+        (link "registries.html" "Registries") ": "
+        (table.concat registry-links ", ") "</li>" "<li>"
+        (link "graphs.html" "Graphs")
+        " — module, subsystem, and contribution graphs</li>" "<li>Guides: "
+        (table.concat guide-links ", ") "</li>" "</ul>"
         "<h2>Generated artifacts</h2>"
         "<p>Markdown for review; JSON indexes for search and agent tooling; graph sources in DOT and SVG.</p>"
-        "<ul>"
-        (table.concat (icollect [_ [name label] (ipairs GENERATED-ARTIFACTS)]
-                        (.. "<li>" (link name label) "</li>")) "")
-        "<li>" (link "graphs/subsystems.dot" "Subsystem graph DOT") " · " (link "graphs/subsystems.svg" "SVG") "</li>"
-        "<li>" (link "graphs/modules.dot" "Module graph DOT") " · " (link "graphs/modules.svg" "SVG") "</li>"
-        "<li>" (link "graphs/modules-clustered.dot" "Clustered module graph DOT") " · " (link "graphs/modules-clustered.svg" "SVG") "</li>"
-        "<li>" (link "graphs/summary.md" "Graph summary Markdown") "</li>"
-        "</ul>")))
+        "<ul>" (table.concat (icollect [_ [name label] (ipairs GENERATED-ARTIFACTS)]
+                              (.. "<li>" (link name label) "</li>"))
+                            "") "<li>"
+        (link "graphs/subsystems.dot" "Subsystem graph DOT") " · "
+        (link "graphs/subsystems.svg" "SVG") "</li>" "<li>"
+        (link "graphs/modules.dot" "Module graph DOT") " · "
+        (link "graphs/modules.svg" "SVG") "</li>" "<li>"
+        (link "graphs/modules-clustered.dot" "Clustered module graph DOT")
+        " · " (link "graphs/modules-clustered.svg" "SVG") "</li>" "<li>"
+        (link "graphs/summary.md" "Graph summary Markdown") "</li>" "</ul>")))
 
 (fn write-doc-pages [doc-paths doc-bases]
   (each [_ path (ipairs doc-paths)]
@@ -704,12 +806,14 @@ the detail; this is purely an index."
     (.. (link dot (.. label " DOT")) " · " (link svg (.. label " SVG")))))
 
 (fn graph-preview [base-path label]
-  (.. "<section class=\"card\"><h2 id=\"" (attr-escape (slug (.. "graph-" label))) "\">"
-      (html-escape label) (permalink (slug (.. "graph-" label))) "</h2>"
-      "<p>" (graph-artifact-links base-path label) "</p>"
-      "<div class=\"graph-preview\"><a href=\"" (attr-escape (.. base-path ".svg")) "\">"
-      "<img src=\"" (attr-escape (.. base-path ".svg")) "\" alt=\"" (attr-escape label) " graph\">"
-      "</a></div></section>"))
+  (.. "<section class=\"card\"><h2 id=\""
+      (attr-escape (slug (.. "graph-" label))) "\">" (html-escape label)
+      (permalink (slug (.. "graph-" label))) "</h2>" "<p>"
+      (graph-artifact-links base-path label) "</p>"
+      "<div class=\"graph-preview\"><a href=\""
+      (attr-escape (.. base-path ".svg")) "\">" "<img src=\""
+      (attr-escape (.. base-path ".svg")) "\" alt=\"" (attr-escape label)
+      " graph\">" "</a></div></section>"))
 
 (fn render-graphs-page []
   (let [extension-dots (command-lines "find docs/generated/graphs/extensions -name '*.dot' -type f | sort")
@@ -722,7 +826,8 @@ the detail; this is purely an index."
              (graph-preview "graphs/modules" "Module graph")
              (graph-preview "graphs/modules-clustered" "Clustered module graph")
              "<h2 id=\"contribution-graphs\">Extension contribution graph</h2>"
-             (graph-preview "graphs/contributions" "Extension contribution graph")
+             (graph-preview "graphs/contributions"
+                            "Extension contribution graph")
              "<h2 id=\"graph-summary\">Summary</h2>"
              (markdown-to-html summary)
              "<h2 id=\"extension-graphs\">Extension graphs</h2>"]]
@@ -732,32 +837,37 @@ the detail; this is purely an index."
             label (strip-ext dot-path)]
         (table.insert extension-items
                       (.. "<li>" (graph-artifact-links rel-base label) "</li>"))))
-    (if (> (# extension-items) 0)
-        (table.insert out (.. "<ul class=\"artifact-list\">" (table.concat extension-items "\n") "</ul>"))
-        (table.insert out "<p class=\"muted\">No per-extension graph artifacts found. Run <code>make graphs</code>.</p>"))
+    (if (> (length extension-items) 0)
+        (table.insert out
+                      (.. "<ul class=\"artifact-list\">"
+                          (table.concat extension-items "\n") "</ul>"))
+        (table.insert out
+                      "<p class=\"muted\">No per-extension graph artifacts found. Run <code>make graphs</code>.</p>"))
     (table.concat out "\n")))
-
 
 (fn write-sitemap-xml! []
   "Emit sitemap.xml + robots.txt from the HTML pages already written to OUT-DIR.
 Crawlers need absolute URLs, so locations are joined onto SITE-BASE-URL;
 index.html maps to the bare origin. Enumerating the directory keeps the sitemap
 in sync with whatever pages were generated."
-  (let [files (command-lines (.. "find " OUT-DIR " -name '*.html' -type f | sort"))
+  (let [files (command-lines (.. "find " OUT-DIR
+                                 " -name '*.html' -type f | sort"))
         lastmod (os.date "%Y-%m-%d")
         urls (icollect [_ path (ipairs files)]
                ;; Path relative to OUT-DIR (strip "OUT-DIR/"), so nested pages
                ;; like registries/commands.html keep their subdir in the URL.
-               (let [rel (string.sub path (+ 2 (# OUT-DIR)))
-                     loc (if (= rel "index.html") SITE-BASE-URL (.. SITE-BASE-URL rel))]
-                 (.. "  <url><loc>" (html-escape loc) "</loc><lastmod>" lastmod "</lastmod></url>")))]
+               (let [rel (string.sub path (+ 2 (length OUT-DIR)))
+                     loc (if (= rel "index.html") SITE-BASE-URL
+                             (.. SITE-BASE-URL rel))]
+                 (.. "  <url><loc>" (html-escape loc) "</loc><lastmod>" lastmod
+                     "</lastmod></url>")))]
     (write-file (.. OUT-DIR "/sitemap.xml")
                 (.. "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
                     "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n"
-                    (table.concat urls "\n")
-                    "\n</urlset>\n"))
+                    (table.concat urls "\n") "\n</urlset>\n"))
     (write-file (.. OUT-DIR "/robots.txt")
-                (.. "User-agent: *\nAllow: /\nSitemap: " SITE-BASE-URL "sitemap.xml\n"))))
+                (.. "User-agent: *\nAllow: /\nSitemap: " SITE-BASE-URL
+                    "sitemap.xml\n"))))
 
 (fn copy-site-assets! []
   "Copy referenced graph artifacts and generated Markdown/JSON into OUT-DIR so
@@ -788,9 +898,11 @@ parent-directory references that would break when served as a root."
         doc-paths (icollect [_ p (ipairs all-doc-paths)]
                     (when (not (string.match p "/README%.md$")) p))
         doc-bases (collect [_ p (ipairs doc-paths)]
-                    (string.match p "([^/]+)%.md$") true)]
+                    (string.match p "([^/]+)%.md$")
+                    true)]
     (write-file (.. OUT-DIR "/style.css") SITE-CSS)
-    (let [home-html (rewrite-doc-links (markdown-to-html (read-file "docs/README.md")) doc-bases)
+    (let [home-html (rewrite-doc-links (markdown-to-html (read-file "docs/README.md"))
+                                       doc-bases)
           home-html (string.gsub home-html DEMO-SENTINEL (fn [] DEMO-EMBED))]
       (write-file (.. OUT-DIR "/index.html")
                   (render-page "Fen documentation" home-html "Home")))
@@ -806,37 +918,44 @@ parent-directory references that would break when served as a root."
     (each [_ topic (ipairs RUNTIME-TOPICS)]
       (write-file (.. OUT-DIR "/registries/" (slug topic.name) ".html")
                   (render-page (.. "Fen docs: " (tostring topic.name))
-                               (render-register-topic topic (or (. register-groups topic.kind) []))
-                               "Registries"
-                               {:base "../"})))
+                               (render-register-topic topic
+                                                      (or (. register-groups
+                                                             topic.kind)
+                                                          []))
+                               "Registries" {:base "../"})))
     (each [_ topic (ipairs CONTRACT-TOPICS)]
       (write-file (.. OUT-DIR "/contracts/" (slug topic.name) ".html")
                   (render-page (.. "Fen docs: " (tostring topic.name))
                                (render-contract-topic topic contracts)
-                               "Contracts"
-                               {:base "../"})))
+                               "Contracts" {:base "../"})))
     (write-file (.. OUT-DIR "/registries.html")
                 (render-page "Fen registries"
                              (.. "<h1>Fen registries</h1>"
                                  "<p>Source-scanned registry entries supplied by first-party extensions: commands, tools, providers, presenters, panels, status items, and related extension surfaces.</p>"
-                                 (table.concat
-                                   (icollect [_ topic (ipairs RUNTIME-TOPICS)]
-                                     (.. (aggregate-section-heading topic "registries/")
-                                         (render-register-topic topic (or (. register-groups topic.kind) []) true)))
-                                   "\n"))
+                                 (table.concat (icollect [_ topic (ipairs RUNTIME-TOPICS)]
+                                                 (.. (aggregate-section-heading topic
+                                                                                "registries/")
+                                                     (render-register-topic topic
+                                                                            (or (. register-groups
+                                                                                   topic.kind)
+                                                                                [])
+                                                                            true)))
+                                               "\n"))
                              "Registries"))
     (write-file (.. OUT-DIR "/contracts.html")
                 (render-page "Fen contracts"
                              (.. "<h1>Fen contracts</h1>"
-                                 (table.concat
-                                   (icollect [_ topic (ipairs CONTRACT-TOPICS)]
-                                     (.. (aggregate-section-heading topic "contracts/")
-                                         (render-contract-topic topic contracts true)))
-                                   "\n"))
-                             "Contracts"
-                             {:toc-depth 2}))
+                                 (table.concat (icollect [_ topic (ipairs CONTRACT-TOPICS)]
+                                                 (.. (aggregate-section-heading topic
+                                                                                "contracts/")
+                                                     (render-contract-topic topic
+                                                                            contracts
+                                                                            true)))
+                                               "\n"))
+                             "Contracts" {:toc-depth 2}))
     (write-file (.. OUT-DIR "/graphs.html")
-                (render-page "Fen generated graphs" (render-graphs-page) "Graphs"))
+                (render-page "Fen generated graphs" (render-graphs-page)
+                             "Graphs"))
     (write-doc-pages doc-paths doc-bases)
     (write-sitemap-xml!)
     (copy-site-assets!)

@@ -102,10 +102,7 @@
   (table.insert agent.messages message)
   (let [index (length agent.messages)]
     (token-util.note-message-appended! agent message index)
-    (emit agent {:type :message-appended
-                 :message message
-                 :agent agent
-                 : index}))
+    (emit agent {:type :message-appended :message message :agent agent : index}))
   message)
 
 (fn context-message? [m]
@@ -161,19 +158,18 @@
    queued message was injected and the loop should continue."
   (let [steering (agent.get-steering)]
     (if (> (length (or steering [])) 0)
-        (do (inject-user-lines! agent steering :steering-injected)
-            true)
+        (do
+          (inject-user-lines! agent steering :steering-injected)
+          true)
         (let [followups (agent.get-follow-up)]
           (when (> (length (or followups [])) 0)
             (inject-user-lines! agent followups :follow-up-injected)
             true)))))
 
 (fn visible-assistant-block? [block]
-  (or (and (= block.type :text)
-           (= (type block.text) :string)
+  (or (and (= block.type :text) (= (type block.text) :string)
            (not= block.text ""))
-      (and (= block.type :thinking)
-           (= (type block.thinking) :string)
+      (and (= block.type :thinking) (= (type block.thinking) :string)
            (not= block.thinking ""))))
 
 (fn emit-assistant-display [agent asst final?]
@@ -195,9 +191,10 @@
                        :final? (and final? (= i last-visible))
                        :spacer-after? (< i last-visible)})
           (= block.type :text)
-          (emit agent {:type :assistant-text
-                       :text block.text
-                       :final? (and final? (= i last-visible))}))))
+          (emit agent
+                {:type :assistant-text
+                 :text block.text
+                 :final? (and final? (= i last-visible))}))))
   emitted?)
 
 (fn assistant-tool-calls [msg]
@@ -217,12 +214,11 @@
   "Build a tool-result message for a tool call that did not return normally.
    This keeps provider history valid: APIs like OpenAI Responses reject any
    prior function_call that is missing a matching function_call_output."
-  (types.tool-result-message
-    {:tool-call-id tc.id
-     :tool-name tc.name
-     :content [(types.text-block (safe-tool-text message))]
-     :is-error? true
-     :details ?details}))
+  (types.tool-result-message {:tool-call-id tc.id
+                              :tool-name tc.name
+                              :content [(types.text-block (safe-tool-text message))]
+                              :is-error? true
+                              :details ?details}))
 
 (fn append-synthetic-tool-result! [agent tc message ?emit-call?]
   (when ?emit-call?
@@ -240,15 +236,19 @@
                  :result result})
     msg))
 
-(fn append-cancelled-tool-results! [agent tool-calls start-index current-emitted?]
+(fn append-cancelled-tool-results! [agent
+                                    tool-calls
+                                    start-index
+                                    current-emitted?]
   "Satisfy every unreturned tool call after a cancellation. `start-index` is
    the current/pending tool call; the current call may already have emitted a
    :tool-call event, while later calls have not."
   (for [i start-index (length tool-calls)]
     (let [tc (. tool-calls i)]
-      (append-synthetic-tool-result!
-        agent tc "[cancelled] tool call cancelled before completion"
-        (not (and current-emitted? (= i start-index)))))))
+      (append-synthetic-tool-result! agent tc
+                                     "[cancelled] tool call cancelled before completion"
+                                     (not (and current-emitted?
+                                               (= i start-index)))))))
 
 (fn edit-tool-call? [tc]
   (= (tostring tc.name) "edit"))
@@ -333,10 +333,10 @@
                :result out.result}))
 
 (fn append-tool-failure! [agent tc err emitted?]
-  (append-synthetic-tool-result!
-    agent tc
-    (.. "error: tool " (tostring tc.name) " failed: " (tostring err))
-    (not emitted?)))
+  (append-synthetic-tool-result! agent tc
+                                 (.. "error: tool " (tostring tc.name)
+                                     " failed: " (tostring err))
+                                 (not emitted?)))
 
 (fn run-serial-tool-call [agent tool-calls i edit-conflicts ?yield!]
   (let [tc (. tool-calls i)]
@@ -348,13 +348,14 @@
       (let [(ok? thrown) (pcall ?yield!)]
         (when (not ok?)
           (if (= thrown CANCEL-MARKER)
-              (do (append-cancelled-tool-results! agent tool-calls i true)
-                  (error CANCEL-MARKER))
+              (do
+                (append-cancelled-tool-results! agent tool-calls i true)
+                (error CANCEL-MARKER))
               (error thrown)))))
     (if (. edit-conflicts i)
         (append-synthetic-tool-result! agent tc (. edit-conflicts i) false)
-        (let [(ok? out-or-err) (pcall tools-mod.execute-call
-                                  agent.tools tc (tool-context agent) ?yield!)]
+        (let [(ok? out-or-err) (pcall tools-mod.execute-call agent.tools tc
+                                      (tool-context agent) ?yield!)]
           (if ok?
               (do
                 (append-tool-output! agent tc out-or-err)
@@ -362,12 +363,15 @@
                   (let [(yield-ok? thrown) (pcall ?yield!)]
                     (when (not yield-ok?)
                       (if (= thrown CANCEL-MARKER)
-                          (do (append-cancelled-tool-results! agent tool-calls (+ i 1) false)
-                              (error CANCEL-MARKER))
+                          (do
+                            (append-cancelled-tool-results! agent tool-calls
+                                                            (+ i 1) false)
+                            (error CANCEL-MARKER))
                           (error thrown))))))
               (= out-or-err CANCEL-MARKER)
-              (do (append-cancelled-tool-results! agent tool-calls i true)
-                  (error CANCEL-MARKER))
+              (do
+                (append-cancelled-tool-results! agent tool-calls i true)
+                (error CANCEL-MARKER))
               (append-tool-failure! agent tc out-or-err true))))))
 
 (fn batch-parallel-cap [agent tasks]
@@ -409,8 +413,9 @@
             (if ok?
                 (set task.out out-or-err)
                 (= out-or-err CANCEL-MARKER)
-                (do (set task.cancelled? true)
-                    (set cancelled? true))
+                (do
+                  (set task.cancelled? true)
+                  (set cancelled? true))
                 (set task.error out-or-err))))))
 
     (fn launch-task! [task]
@@ -420,10 +425,9 @@
                    :arguments task.tc.arguments
                    :id task.tc.id})
       (set task.co
-           (coroutines.create
-             (fn []
-               (tools-mod.execute-call agent.tools task.tc ctx
-                                       #(child-yield task)))))
+           (coroutines.create (fn []
+                                (tools-mod.execute-call agent.tools task.tc ctx
+                                                        #(child-yield task)))))
       (set active (+ active 1))
       (resume-task! task))
 
@@ -454,17 +458,15 @@
               (if (= thrown CANCEL-MARKER)
                   (set cancelled? true)
                   (error thrown)))))))
-
     (when cancelled?
       (cancel-active!))
-
     (each [_ task (ipairs tasks)]
       (if task.out
           (append-tool-output! agent task.tc task.out)
           (or cancelled? task.cancelled?)
-          (append-synthetic-tool-result!
-            agent task.tc "[cancelled] tool call cancelled before completion"
-            (not task.emitted?))
+          (append-synthetic-tool-result! agent task.tc
+                                         "[cancelled] tool call cancelled before completion"
+                                         (not task.emitted?))
           task.error
           (append-tool-failure! agent task.tc task.error task.emitted?)
           (append-tool-failure! agent task.tc "tool returned nil" task.emitted?)))
@@ -501,7 +503,7 @@
               (set i (+ i 1))))))))
 
 (local TOOL-CHOICE-NONE-RESULT
-  "error: tool calls are disabled for this turn; answer in text without calling tools.")
+       "error: tool calls are disabled for this turn; answer in text without calling tools.")
 
 (fn refuse-tool-calls! [agent tool-calls]
   "Under `:tool-choice :none`, pair every tool call that arrives anyway with a
@@ -545,8 +547,8 @@
       (values (llm.complete agent.provider-name agent.model context opts) nil)
       (let [stream-state {:visible? false}
             on-stream (make-provider-stream-handler agent stream-state)
-            asst (llm.complete agent.provider-name agent.model
-                               context opts on-stream ?yield!)]
+            asst (llm.complete agent.provider-name agent.model context opts
+                               on-stream ?yield!)]
         (values asst stream-state))))
 
 (fn complete-messages [agent messages ?model ?opts ?on-event ?yield-fn]
@@ -559,8 +561,8 @@
                  :tools []}]
     (each [k v (pairs (or ?opts {}))]
       (tset opts k v))
-    (llm.complete agent.provider-name (or ?model agent.model) context
-                  opts ?on-event ?yield-fn)))
+    (llm.complete agent.provider-name (or ?model agent.model) context opts
+                  ?on-event ?yield-fn)))
 
 (fn step-loop [agent ?yield! ?tool-choice]
   "Shared body of `step`. ?yield! nil = blocking mode (no yields, plain
@@ -585,7 +587,8 @@
   (var safety SAFETY-CAP)
   (while (and (not done?) (> safety 0))
     (set safety (- safety 1))
-    (when (> (inject-user-lines! agent (agent.get-steering) :steering-injected) 0)
+    (when (> (inject-user-lines! agent (agent.get-steering) :steering-injected)
+             0)
       (set refused-turns 0))
     (emit agent {:type :llm-start
                  :provider agent.provider-name
@@ -606,7 +609,8 @@
           (when (not ok?)
             ;; Cancelled before any tool ran: pair every call so history stays provider-valid.
             (when (and (= thrown CANCEL-MARKER) (= asst.stop-reason :tool-use))
-              (append-cancelled-tool-results! agent (assistant-tool-calls asst) 1 false))
+              (append-cancelled-tool-results! agent (assistant-tool-calls asst)
+                                              1 false))
             (error thrown))))
       (if (= asst.stop-reason :error)
           (let [err-text (tostring (or asst.error-message "unknown"))]
@@ -614,18 +618,20 @@
             (set final (.. "[error] " err-text))
             (set done? true))
           (= asst.stop-reason :tool-use)
-          (do (if streamed?
-                  (finish-stream-display agent stream-state false)
-                  (emit-assistant-display agent asst false))
-              (if (= ?tool-choice :none)
-                  (do (refuse-tool-calls! agent (assistant-tool-calls asst))
-                      (set refused-turns (+ refused-turns 1))
-                      (when (> refused-turns 1)
-                        (let [err-text "model called tools while tool-choice is none"]
-                          (emit agent {:type :error :error err-text})
-                          (set final (.. "[error] " err-text))
-                          (set done? true))))
-                  (run-tool-calls agent (assistant-tool-calls asst) ?yield!)))
+          (do
+            (if streamed?
+                (finish-stream-display agent stream-state false)
+                (emit-assistant-display agent asst false))
+            (if (= ?tool-choice :none)
+                (do
+                  (refuse-tool-calls! agent (assistant-tool-calls asst))
+                  (set refused-turns (+ refused-turns 1))
+                  (when (> refused-turns 1)
+                    (let [err-text "model called tools while tool-choice is none"]
+                      (emit agent {:type :error :error err-text})
+                      (set final (.. "[error] " err-text))
+                      (set done? true))))
+                (run-tool-calls agent (assistant-tool-calls asst) ?yield!)))
           (let [text (types.assistant-text asst)]
             (if streamed?
                 (finish-stream-display agent stream-state true)
@@ -642,14 +648,12 @@
   final)
 
 (fn append-aborted-assistant! [agent]
-  (append-message!
-    agent
-    (types.assistant-message
-      {:api agent.provider-name
-       :provider :agent
-       :model agent.model
-       :content []
-       :stop-reason :aborted})))
+  (append-message! agent
+                   (types.assistant-message {:api agent.provider-name
+                                             :provider :agent
+                                             :model agent.model
+                                             :content []
+                                             :stop-reason :aborted})))
 
 (fn step [agent user-msg ?cancel-fn ?step-opts]
   "Run one user turn through the loop. Appends a UserMessage, then iterates
@@ -676,8 +680,10 @@
    `:none` the provider request keeps its tool definitions but forbids tool
    calls for every model turn in this step, and the loop executes none."
   (let [tool-choice (?. ?step-opts :tool-choice)
-        _ (when (and tool-choice (not= tool-choice :auto) (not= tool-choice :none))
-            (error (.. "agent.step: unknown :tool-choice " (tostring tool-choice))))
+        _ (when (and tool-choice (not= tool-choice :auto)
+                     (not= tool-choice :none))
+            (error (.. "agent.step: unknown :tool-choice "
+                       (tostring tool-choice))))
         tool-choice (when (= tool-choice :none) :none)
         coop? (in-coroutine?)
         yield! (when coop? (make-yield ?cancel-fn))]
@@ -687,9 +693,10 @@
                                     $1
                                     (debug.traceback (tostring $1) 2)))]
       (if (and coop? (not ok?) (= result CANCEL-MARKER))
-          (do (append-aborted-assistant! agent)
-              (emit agent {:type :cancelled})
-              "[cancelled]")
+          (do
+            (append-aborted-assistant! agent)
+            (emit agent {:type :cancelled})
+            "[cancelled]")
           (not ok?)
           (error result)
           result))))

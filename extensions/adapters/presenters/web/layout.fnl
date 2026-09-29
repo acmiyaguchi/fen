@@ -25,10 +25,11 @@
       (when (= (or item.side :left) side)
         (let [(ok? r) (pcall item.render ctx)]
           (if (and ok? r r.text (not= r.text ""))
-              (table.insert out {:name item.name
-                                 :side side
-                                 :text (tostring r.text)
-                                 :style (or r.style :status)})
+              (table.insert out
+                            {:name item.name
+                             :side side
+                             :text (tostring r.text)
+                             :style (or r.style :status)})
               (not ok?)
               (table.insert out {:name item.name
                                  :side side
@@ -53,7 +54,8 @@
             (if ok?
                 (each [_ r (ipairs (or rows []))]
                   (table.insert norm (normalize-row r)))
-                (table.insert norm (row (.. "panel-error:" (tostring p.name)) :error)))
+                (table.insert norm
+                              (row (.. "panel-error:" (tostring p.name)) :error)))
             (table.insert out {:name p.name
                                :placement (or p.placement :above-input)
                                :order (or p.order 50)
@@ -103,7 +105,8 @@
           (table.insert choices
                         {:index i
                          :label (if (= (type choice) :table)
-                                    (tostring (or choice.label choice.name choice.value choice))
+                                    (tostring (or choice.label choice.name
+                                                  choice.value choice))
                                     (tostring choice))
                          :description (if (= (type choice) :table)
                                           (tostring (or choice.description ""))
@@ -120,7 +123,9 @@
 ;; tags: web layout snapshot json
 (fn M.snapshot [ctx]
   (let [ctx (or ctx {})
-        status-ctx {:status-info state.status-info :state state :w (or ctx.w 100)}
+        status-ctx {:status-info state.status-info
+                    :state state
+                    :w (or ctx.w 100)}
         left (rendered-status :left status-ctx)
         right (rendered-status :right status-ctx)
         status []]
@@ -155,7 +160,8 @@
         (let [node [:div {:class base-class}]]
           (each [_ seg (ipairs r.segments)]
             (table.insert node
-                          [:span {:class (style-class (or seg.style r.style))}
+                          [:span
+                           {:class (style-class (or seg.style r.style))}
                            (or seg.text "")]))
           node)
         [:div {:class base-class} (or r.text "")])))

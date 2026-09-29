@@ -60,7 +60,9 @@
 (fn M.change-summary [mods]
   "Probe each module for a fingerprint change, updating the cache. Returns a
    summary table the caller folds into the per-extension reload report."
-  (let [summary {:checked 0 :changed 0 :changed-modules []
+  (let [summary {:checked 0
+                 :changed 0
+                 :changed-modules []
                  :unresolved-modules []}]
     (each [_ modname (ipairs (or mods []))]
       (set summary.checked (+ summary.checked 1))
@@ -88,8 +90,12 @@
     (tset package.loaded modname nil)
     (let [(ok? new) (pcall require modname)]
       (if (not ok?)
-          (do (tset package.loaded modname old) (values false new))
-          (do (install-in-place! modname old new) (values true nil))))))
+          (do
+            (tset package.loaded modname old)
+            (values false new))
+          (do
+            (install-in-place! modname old new)
+            (values true nil))))))
 
 (fn reload-compiled-module-in-place! [modname compiled]
   "Execute worker-produced Lua with require's loader arguments and preserve
@@ -102,7 +108,9 @@
           (tset package.loaded modname nil)
           (let [(ok? new) (pcall chunk modname compiled.path)]
             (if (not ok?)
-                (do (tset package.loaded modname old) (values false new :execution))
+                (do
+                  (tset package.loaded modname old)
+                  (values false new :execution))
                 (do
                   ;; Match require's `true` sentinel for loaders that return nil.
                   (install-in-place! modname old
@@ -110,8 +118,7 @@
                   (values true nil nil))))))))
 
 (fn dev-overlay-fnl? [file-path]
-  (and (= (type file-path) :string)
-       (= (string.sub file-path -4) ".fnl")
+  (and (= (type file-path) :string) (= (string.sub file-path -4) ".fnl")
        ;; FEN_DEV_PATH is read via the injectable fen.util.path VFS backend, not os.getenv.
        (let [roots (string.gmatch (or (path.getenv :FEN_DEV_PATH) "") "[^:]+")]
          (var found? false)
@@ -152,15 +159,13 @@
 
 ;; Persistent-identity modules must never reload in place; fen.extensions.* state
 ;; modules are excluded by prefix below.
-(local NON-RELOADABLE
-  {:fen.main true
-   :fen.core.extensions.state true
-   :fen.util.log_sink true
-   :fen.util.file_mutex_state true})
+(local NON-RELOADABLE {:fen.main true
+                       :fen.core.extensions.state true
+                       :fen.util.log_sink true
+                       :fen.util.file_mutex_state true})
 
 (fn core-reloadable? [modname]
-  (and (= (type modname) :string)
-       (not= nil (string.find modname "^fen%."))
+  (and (= (type modname) :string) (not= nil (string.find modname "^fen%."))
        ;; Extension modules reload through their manifest's reload-modules.
        (= nil (string.find modname "^fen%.extensions%."))
        ;; *.backend selector modules are host injection points: reloading would clobber
@@ -213,8 +218,7 @@
         (table.insert observations {:module m :observation observation})
         (when observation.changed?
           (table.insert changed-modules m))))
-    (let [reload-all? (or (?. ?opts :force?)
-                          (not= nil (next prior-failures))
+    (let [reload-all? (or (?. ?opts :force?) (not= nil (next prior-failures))
                           (> (length changed-modules) 0)
                           (accumulate [unresolved? false _ item (ipairs observations)]
                             (or unresolved? (not item.observation.resolved?))))
@@ -228,14 +232,18 @@
       (let [source-start (clock.monotonic-ms)
             batch (compiler.compile! candidates ?yield)
             source-ms (- (clock.monotonic-ms) source-start)]
-        (table.insert diagnostics {:phase :compiler :elapsed-ms source-ms
-                                   :status batch.status :modules (length candidates)})
+        (table.insert diagnostics
+                      {:phase :compiler
+                       :elapsed-ms source-ms
+                       :status batch.status
+                       :modules (length candidates)})
         (if (= batch.status :failed)
             ;; Compilation is transactional: on batch error execute no module at all.
             (do
               (table.insert failures (.. "compiler: " (tostring batch.error)))
-              (table.insert diagnostics {:phase :compiler-error
-                                         :error (tostring batch.error)}) )
+              (table.insert diagnostics
+                            {:phase :compiler-error
+                             :error (tostring batch.error)}))
             (each [_ item (ipairs observations)]
               (let [m item.module
                     observation item.observation
@@ -243,22 +251,27 @@
                 (if reload-all?
                     (let [started (clock.monotonic-ms)
                           (ok? err phase) (if compiled
-                                              (reload-compiled-module-in-place! m compiled)
+                                              (reload-compiled-module-in-place! m
+                                                                                compiled)
                                               (reload-module-in-place! m))
                           elapsed (- (clock.monotonic-ms) started)]
                       (when compiled
-                        (table.insert diagnostics {:phase (or phase :execution)
-                                                   :module m :source compiled.path
-                                                   :elapsed-ms elapsed}))
+                        (table.insert diagnostics
+                                      {:phase (or phase :execution)
+                                       :module m
+                                       :source compiled.path
+                                       :elapsed-ms elapsed}))
                       (if ok?
                           (do
                             (set reload-count (+ reload-count 1))
                             (tset prior-failures m nil)
-                            (commit-fingerprint! observation.key observation.fingerprint))
+                            (commit-fingerprint! observation.key
+                                                 observation.fingerprint))
                           (do
                             (tset prior-failures m true)
                             (table.insert failures (.. m ": " (tostring err))))))
-                    (commit-fingerprint! observation.key observation.fingerprint))
+                    (commit-fingerprint! observation.key
+                                         observation.fingerprint))
                 (set processed-count (+ processed-count 1))
                 (when ?yield (?yield {:phase :core :module m})))))))
     (values reload-count failures

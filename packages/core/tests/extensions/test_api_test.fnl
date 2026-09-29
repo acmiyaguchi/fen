@@ -1,111 +1,109 @@
-
 (local test-api (require :fen.core.extensions.test_api))
 (local register (require :fen.core.extensions.register))
 
 (describe "core.extensions.test_api"
-  (fn []
-    (it "make() resets the global extensions registry"
-      (fn []
-        (let [api1 (test-api.make :first)]
-          (api1.register :tool {:name :leak :execute (fn [] {})})
-          (assert.are.equal 1 (length (api1.list :tools))))
-        (let [api2 (test-api.make :second)]
-          (assert.are.equal 0 (length (api2.list :tools))))))
-
-    (it "captures register :tool calls"
-      (fn []
-        (let [api (test-api.make)
-              spec {:name :greet :execute (fn [] {})}]
-          (api.register :tool spec)
-          (assert.are.equal 1 (length api.captured.tools))
-          (assert.are.equal :tool (. api.captured.tools 1 :kind))
-          (assert.are.equal spec (. api.captured.tools 1 :spec)))))
-
-    (it "captures prompt calls"
-      (fn []
-        (let [api (test-api.make)]
-          (api.prompt "hello" {:order 10 :id :hello})
-          (assert.are.equal 1 (length api.captured.prompts))
-          (assert.are.equal "hello" (. api.captured.prompts 1 :text-or-fn))
-          (assert.are.equal 10 (. api.captured.prompts 1 :opts :order))
-          (assert.are.equal :hello (. api.captured.prompts 1 :opts :id)))))
-
-    (it "captures emit calls in events-out and dispatches them"
-      (fn []
-        (let [api (test-api.make)
-              seen []]
-          (api.on :tool-call (fn [ev] (table.insert seen ev.name)))
-          (api.emit {:type :tool-call :name :bash :id "1"})
-          (assert.are.equal 1 (length api.captured.events-out))
-          (assert.are.equal :bash (. api.captured.events-out 1 :name))
-          (assert.are.same [:bash] seen))))
-
-    (it "fire ev records to events-in and dispatches"
-      (fn []
-        (let [api (test-api.make)
-              seen []]
-          (api.on :tool-call (fn [ev] (table.insert seen ev.id)))
-          (api.fire {:type :tool-call :name :bash :id "abc"})
-          (assert.are.equal 1 (length api.captured.events-in))
-          (assert.are.equal "abc" (. api.captured.events-in 1 :id))
-          (assert.are.same ["abc"] seen))))
-
-    (it "turn.submit! delegates to the caller state's submit helper"
-      (fn []
-        (let [api (test-api.make)
-              seen []
-              ctx {:submit-user-turn!
-                   (fn [text opts]
-                     (table.insert seen {:text text :opts opts})
-                     {:ok true :started true})}
-              opts {:when-busy :reject}
-              result (api.turn.submit! ctx "execute" opts)]
-          (assert.is_true result.ok)
-          (assert.is_true result.started)
-          (assert.are.equal "execute" (. seen 1 :text))
-          (assert.are.equal :reject (. seen 1 :opts :when-busy))
-          (assert.is_true (. seen 1 :opts :emit-user?))
-          (assert.is_nil opts.emit-user?))))
-
-    (it "turn.submit! reports unavailable runtimes without crashing"
-      (fn []
-        (let [api (test-api.make)
-              result (api.turn.submit! {} "execute")]
-          (assert.is_false result.ok)
-          (assert.are.equal "turn submission is unavailable in this runtime"
-                            result.error))))
-
-    (it "exposes enqueue on test extension APIs"
-      (fn []
-        (let [api (test-api.make)]
-          (assert.are.equal :function (type api.enqueue)))))
-
-    (it "enqueue rejects invalid text before resolving the runtime"
-      (fn []
-        (let [api (test-api.make)]
-          (let [empty (api.enqueue :steering "")
-                nil-text (api.enqueue :steering nil)
-                number (api.enqueue :steering 42)]
-            (assert.is_false empty.ok)
-            (assert.are.equal "cannot enqueue an empty message" empty.error)
-            (assert.is_false nil-text.ok)
-            (assert.are.equal "enqueue text must be a string" nil-text.error)
-            (assert.is_false number.ok)
-            (assert.are.equal "enqueue text must be a string" number.error)))))
-
-    (it "enqueue reports when no interactive runtime is installed"
-      (fn []
-        (let [api (test-api.make)
-              result (api.enqueue :steering "later")]
-          (assert.is_false result.ok)
-          (assert.are.equal "no interactive runtime" result.error))))
-
-    (it "list parity: production and test apis report the same shape"
-      (fn []
-        (let [api (test-api.make :owner-x)]
-          (api.register :tool {:name :greet :execute (fn [] {})})
-          (let [from-test (api.list :tools)
-                from-prod (register.list :tools)]
-            (assert.are.equal (length from-prod) (length from-test))
-            (assert.are.equal (. from-prod 1 :name) (. from-test 1 :name))
-            (assert.are.equal (. from-prod 1 :owner) (. from-test 1 :owner))))))))
+          (fn []
+            (it "make() resets the global extensions registry"
+                (fn []
+                  (let [api1 (test-api.make :first)]
+                    (api1.register :tool {:name :leak :execute (fn [] {})})
+                    (assert.are.equal 1 (length (api1.list :tools))))
+                  (let [api2 (test-api.make :second)]
+                    (assert.are.equal 0 (length (api2.list :tools))))))
+            (it "captures register :tool calls"
+                (fn []
+                  (let [api (test-api.make)
+                        spec {:name :greet :execute (fn [] {})}]
+                    (api.register :tool spec)
+                    (assert.are.equal 1 (length api.captured.tools))
+                    (assert.are.equal :tool (. api.captured.tools 1 :kind))
+                    (assert.are.equal spec (. api.captured.tools 1 :spec)))))
+            (it "captures prompt calls"
+                (fn []
+                  (let [api (test-api.make)]
+                    (api.prompt "hello" {:order 10 :id :hello})
+                    (assert.are.equal 1 (length api.captured.prompts))
+                    (assert.are.equal "hello"
+                                      (. api.captured.prompts 1 :text-or-fn))
+                    (assert.are.equal 10
+                                      (. api.captured.prompts 1 :opts :order))
+                    (assert.are.equal :hello
+                                      (. api.captured.prompts 1 :opts :id)))))
+            (it "captures emit calls in events-out and dispatches them"
+                (fn []
+                  (let [api (test-api.make)
+                        seen []]
+                    (api.on :tool-call (fn [ev] (table.insert seen ev.name)))
+                    (api.emit {:type :tool-call :name :bash :id "1"})
+                    (assert.are.equal 1 (length api.captured.events-out))
+                    (assert.are.equal :bash (. api.captured.events-out 1 :name))
+                    (assert.are.same [:bash] seen))))
+            (it "fire ev records to events-in and dispatches"
+                (fn []
+                  (let [api (test-api.make)
+                        seen []]
+                    (api.on :tool-call (fn [ev] (table.insert seen ev.id)))
+                    (api.fire {:type :tool-call :name :bash :id "abc"})
+                    (assert.are.equal 1 (length api.captured.events-in))
+                    (assert.are.equal "abc" (. api.captured.events-in 1 :id))
+                    (assert.are.same ["abc"] seen))))
+            (it "turn.submit! delegates to the caller state's submit helper"
+                (fn []
+                  (let [api (test-api.make)
+                        seen []
+                        ctx {:submit-user-turn! (fn [text opts]
+                                                  (table.insert seen
+                                                                {:text text
+                                                                 :opts opts})
+                                                  {:ok true :started true})}
+                        opts {:when-busy :reject}
+                        result (api.turn.submit! ctx "execute" opts)]
+                    (assert.is_true result.ok)
+                    (assert.is_true result.started)
+                    (assert.are.equal "execute" (. seen 1 :text))
+                    (assert.are.equal :reject (. seen 1 :opts :when-busy))
+                    (assert.is_true (. seen 1 :opts :emit-user?))
+                    (assert.is_nil opts.emit-user?))))
+            (it "turn.submit! reports unavailable runtimes without crashing"
+                (fn []
+                  (let [api (test-api.make)
+                        result (api.turn.submit! {} "execute")]
+                    (assert.is_false result.ok)
+                    (assert.are.equal "turn submission is unavailable in this runtime"
+                                      result.error))))
+            (it "exposes enqueue on test extension APIs"
+                (fn []
+                  (let [api (test-api.make)]
+                    (assert.are.equal :function (type api.enqueue)))))
+            (it "enqueue rejects invalid text before resolving the runtime"
+                (fn []
+                  (let [api (test-api.make)]
+                    (let [empty (api.enqueue :steering "")
+                          nil-text (api.enqueue :steering nil)
+                          number (api.enqueue :steering 42)]
+                      (assert.is_false empty.ok)
+                      (assert.are.equal "cannot enqueue an empty message"
+                                        empty.error)
+                      (assert.is_false nil-text.ok)
+                      (assert.are.equal "enqueue text must be a string"
+                                        nil-text.error)
+                      (assert.is_false number.ok)
+                      (assert.are.equal "enqueue text must be a string"
+                                        number.error)))))
+            (it "enqueue reports when no interactive runtime is installed"
+                (fn []
+                  (let [api (test-api.make)
+                        result (api.enqueue :steering "later")]
+                    (assert.is_false result.ok)
+                    (assert.are.equal "no interactive runtime" result.error))))
+            (it "list parity: production and test apis report the same shape"
+                (fn []
+                  (let [api (test-api.make :owner-x)]
+                    (api.register :tool {:name :greet :execute (fn [] {})})
+                    (let [from-test (api.list :tools)
+                          from-prod (register.list :tools)]
+                      (assert.are.equal (length from-prod) (length from-test))
+                      (assert.are.equal (. from-prod 1 :name)
+                                        (. from-test 1 :name))
+                      (assert.are.equal (. from-prod 1 :owner)
+                                        (. from-test 1 :owner))))))))

@@ -13,7 +13,8 @@
   (when (= state.dirty? nil) (set state.dirty? true))
   (when (= state.force-redraw? nil) (set state.force-redraw? false))
   (when (= state.spinner-ticks nil) (set state.spinner-ticks 0))
-  (when (= state.spinner-interval-ticks nil) (set state.spinner-interval-ticks 8))
+  (when (= state.spinner-interval-ticks nil)
+    (set state.spinner-interval-ticks 8))
   (when (= state.animations? nil) (set state.animations? true)))
 
 (fn M.invalidate! []

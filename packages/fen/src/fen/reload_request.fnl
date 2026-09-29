@@ -28,16 +28,17 @@
                        :force? (= (?. request :force?) true)}]
             ;; Coalesce by scope+force so a looping agent cannot stack reloads; latest reason wins.
             (var existing nil)
-            (each [_ queued (ipairs state.reload-requests)
-                   &until existing]
+            (each [_ queued (ipairs state.reload-requests) &until existing]
               (when (and (= queued.scope entry.scope)
                          (= queued.force? entry.force?))
                 (set existing queued)))
             (if existing
-                (do (set existing.reason entry.reason)
-                    (values true existing))
-                (do (table.insert state.reload-requests entry)
-                    (values true entry))))))))
+                (do
+                  (set existing.reason entry.reason)
+                  (values true existing))
+                (do
+                  (table.insert state.reload-requests entry)
+                  (values true entry))))))))
 
 (fn M.drain! [state execute!]
   "The presenter calls this after finishing a turn. `state.busy?` covers
@@ -67,8 +68,10 @@
   (let [scope (normalized-scope (?. request :scope))
         force? (= (?. request :force?) true)]
     (if (= scope :registries)
-        (if force? "/reload --all --recover registries" "/reload --recover registries")
-        force? "/reload --all"
+        (if force? "/reload --all --recover registries"
+            "/reload --recover registries")
+        force?
+        "/reload --all"
         "/reload")))
 
 M

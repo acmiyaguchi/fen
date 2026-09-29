@@ -26,10 +26,20 @@
 (local flat-ext (require :fen.util.flat_extensions))
 (flat-ext.install! {:roots ["extensions"] :fennel fennel :position 2})
 
-(tset package.loaded :termbox2
-  {:DEFAULT 0 :CYAN 6 :GREEN 2 :YELLOW 3 :RED 1 :WHITE 7
-   :BLACK 0 :MAGENTA 5
-   :BOLD 1 :DIM 2 :REVERSE 4 :UNDERLINE 8 :ITALIC 16 :STRIKEOUT 32})
+(tset package.loaded :termbox2 {:DEFAULT 0
+                                :CYAN 6
+                                :GREEN 2
+                                :YELLOW 3
+                                :RED 1
+                                :WHITE 7
+                                :BLACK 0
+                                :MAGENTA 5
+                                :BOLD 1
+                                :DIM 2
+                                :REVERSE 4
+                                :UNDERLINE 8
+                                :ITALIC 16
+                                :STRIKEOUT 32})
 
 (local state (require :fen.extensions.tui.state))
 (local transcript (require :fen.extensions.tui.panels.transcript))
@@ -54,8 +64,8 @@
   (.. "## Heading " (tostring i) "\n"
       "This is a markdown paragraph with **bold**, *italic*, `code`, and a [link](https://example.invalid). "
       "It is long enough to wrap across several terminal rows on smaller displays.\n"
-      "- bullet one\n- bullet two\n\n"
-      "```lua\nprint('hello from benchmark " (tostring i) "')\n```"))
+      "- bullet one\n- bullet two\n\n" "```lua\nprint('hello from benchmark "
+      (tostring i) "')\n```"))
 
 (fn seed! [n]
   (for [i 1 n]
@@ -87,15 +97,18 @@
     (set state.tb-cols width)
     (set state.tb-rows (+ height 2))
     (seed! events)
-    (print (string.format "TUI transcript benchmark: events=%d width=%d viewport=%d" events width height))
+    (print (string.format "TUI transcript benchmark: events=%d width=%d viewport=%d"
+                          events width height))
     (bench "viewport tail cached" 300 #(transcript.viewport-lines width height))
     (set state.scroll-offset 500)
-    (bench "viewport scrolled cached" 300 #(transcript.viewport-lines width height))
+    (bench "viewport scrolled cached" 300
+           #(transcript.viewport-lines width height))
     (bench "max-scroll cached" 50 #(transcript.max-scroll 1))
     (bench "viewport tail cold-cache" 30
-           #(do (set state.scroll-offset 0)
-                (clear-all!)
-                (transcript.viewport-lines width height)))
+           #(do
+              (set state.scroll-offset 0)
+              (clear-all!)
+              (transcript.viewport-lines width height)))
     (let [ev {:type :assistant-text
               :text ""
               :text-chunks []
@@ -105,30 +118,35 @@
       (set state.transcript [ev])
       (set state.scroll-offset 0)
       (bench "streaming delta redraw" 1000
-             #(do (table.insert ev.text-chunks " token")
-                  (set ev.text-dirty? true)
-                  (set ev.text-version (+ (or ev.text-version 0) 1))
-                  (transcript.clear-event-render-cache! ev)
-                  (transcript.viewport-lines width height))))
+             #(do
+                (table.insert ev.text-chunks " token")
+                (set ev.text-dirty? true)
+                (set ev.text-version (+ (or ev.text-version 0) 1))
+                (transcript.clear-event-render-cache! ev)
+                (transcript.viewport-lines width height))))
     (reset!)
     (let [invalidates {:n 0}
           old-invalidate redraw.invalidate!]
       (set redraw.invalidate! (fn [] (set invalidates.n (+ invalidates.n 1))))
       (bench "ingest 1000 small deltas" 20
-             #(do (reset!)
-                  (set invalidates.n 0)
-                  (for [i 1 1000]
-                    (ingest.append-event {:type :assistant-text-delta
-                                          :content-index 1
-                                          :delta "x"}))
-                  (ingest.append-event {:type :assistant-stream-end :final? true})
-                  (assert (= 1000 (length (transcript.event-text (. state.transcript 1)))))))
+             #(do
+                (reset!)
+                (set invalidates.n 0)
+                (for [i 1 1000]
+                  (ingest.append-event {:type :assistant-text-delta
+                                        :content-index 1
+                                        :delta "x"}))
+                (ingest.append-event {:type :assistant-stream-end :final? true})
+                (assert (= 1000
+                           (length (transcript.event-text (. state.transcript 1)))))))
       (print (.. "ingest invalidations last run: " (tostring invalidates.n)))
       (set redraw.invalidate! old-invalidate))
     (let [choices []]
       (for [i 1 5000]
-        (table.insert choices {:label (.. "choice-" (tostring i))
-                               :description (.. "description group " (tostring (% i 97)))}))
+        (table.insert choices
+                      {:label (.. "choice-" (tostring i))
+                       :description (.. "description group "
+                                        (tostring (% i 97)))}))
       (let [s (select.make-state {:label "bench" :choices choices})]
         (set s.filter-text "group 42")
         (bench "select filter 5000 choices" 200 #(select.filtered s))))))

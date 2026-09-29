@@ -11,19 +11,17 @@
 
 (local OWNER :handoff)
 
-(local BASE-HANDOFF-PROMPT
-  (table.concat
-    ["Create a handoff summary for continuing this coding-agent session in a new conversation."
-     ""
-     "Include:"
-     "- the user's goal and current status"
-     "- decisions already made"
-     "- files changed or inspected, with paths"
-     "- commands/tests run and their results"
-     "- important constraints, gotchas, and next steps"
-     ""
-     "Write only the handoff. Be concise but complete enough that a new agent can continue without the old transcript."]
-    "\n"))
+(local BASE-HANDOFF-PROMPT (table.concat ["Create a handoff summary for continuing this coding-agent session in a new conversation."
+                                          ""
+                                          "Include:"
+                                          "- the user's goal and current status"
+                                          "- decisions already made"
+                                          "- files changed or inspected, with paths"
+                                          "- commands/tests run and their results"
+                                          "- important constraints, gotchas, and next steps"
+                                          ""
+                                          "Write only the handoff. Be concise but complete enough that a new agent can continue without the old transcript."]
+                                         "\n"))
 
 (local trim (. (require :fen.util.text) :trim))
 
@@ -31,15 +29,14 @@
   (let [direction (trim direction)]
     (if (= direction "")
         BASE-HANDOFF-PROMPT
-        (table.concat
-          [BASE-HANDOFF-PROMPT
-           ""
-           "Additional user direction for this handoff:"
-           direction
-           ""
-           "Follow the additional direction when choosing emphasis, format, and level of detail."
-           "Do not include this instruction text unless it is useful context for the next session."]
-          "\n"))))
+        (table.concat [BASE-HANDOFF-PROMPT
+                       ""
+                       "Additional user direction for this handoff:"
+                       direction
+                       ""
+                       "Follow the additional direction when choosing emphasis, format, and level of detail."
+                       "Do not include this instruction text unless it is useful context for the next session."]
+                      "\n"))))
 
 (fn install-agent-messages! [agent msgs]
   (set agent.messages [])
@@ -51,22 +48,21 @@
   (when state.close-session (state.close-session state.session))
   (set state.opts.active-tool-names {})
   (set state.agent
-       (state.make-agent-from-opts
-         state.opts state.on-event state.agent-extra))
+       (state.make-agent-from-opts state.opts state.on-event state.agent-extra))
   (install-agent-messages! state.agent msgs)
   (steering.clear-queues!)
   (when state.update-queue-status (state.update-queue-status))
   (set state.session (state.open-session state.opts))
-  (api.session.set-info!
-    (and state.session-info (state.session-info state.session))
-    state.session)
-  (set state.flush (state.make-flush state.agent state.session (or ?last-saved 0)))
+  (api.session.set-info! (and state.session-info
+                              (state.session-info state.session))
+                         state.session)
+  (set state.flush (state.make-flush state.agent state.session
+                                     (or ?last-saved 0)))
   (api.emit {:type :reset-conversation})
-  (api.emit
-    {:type :set-status-info
-     :info {:provider state.opts.provider
-            :model state.agent.model
-            :thinking-status state.agent.thinking-status}}))
+  (api.emit {:type :set-status-info
+             :info {:provider state.opts.provider
+                    :model state.agent.model
+                    :thinking-status state.agent.thinking-status}}))
 
 (fn content-text [content]
   (if (= (type content) :string)
@@ -88,9 +84,8 @@
       (values (types.assistant-text asst) asst.usage))))
 
 (fn handoff-message [summary]
-  (types.user-message
-    (.. "Handoff summary from the previous fen session. Use this as context and continue from it; do not ask me to restate it.\n\n"
-        summary)))
+  (types.user-message (.. "Handoff summary from the previous fen session. Use this as context and continue from it; do not ask me to restate it.\n\n"
+                          summary)))
 
 (local CANCEL-MARKER {:type :handoff-cancel-marker})
 
@@ -103,7 +98,8 @@
 
 (fn finish-handoff! [api state args]
   (api.emit {:type :llm-start})
-  (let [(summary usage) (summarize-for-handoff state.agent args (make-yield state))
+  (let [(summary usage) (summarize-for-handoff state.agent args
+                                               (make-yield state))
         msg (handoff-message summary)]
     (api.emit {:type :llm-end :usage usage})
     (reset-agent-session! api state [msg] 1)
@@ -113,26 +109,26 @@
     (when (and state.session-backend state.session)
       (state.session-backend.append state.session msg))
     (api.emit {:type :user :text (content-text msg.content)})
-    (api.emit
-      {:type :assistant-text
-       :text (.. "✓ Handoff complete. Started a new session seeded with:\n\n"
-                 summary)})))
+    (api.emit {:type :assistant-text
+               :text (.. "✓ Handoff complete. Started a new session seeded with:\n\n"
+                         summary)})))
 
 (fn start-handoff! [api state args]
   "Run /handoff as cooperative background work so the TUI can redraw and cancel."
   (set state.cancel-requested? false)
   (set state.turn
-       (coroutines.create
-         (fn []
-           (let [(ok? err) (xpcall #(finish-handoff! api state args)
-                                   #(if (= $1 CANCEL-MARKER)
-                                      $1
-                                      (debug.traceback (tostring $1) 2)))]
-             (when (not ok?)
-               (api.emit {:type :llm-end})
-               (if (= err CANCEL-MARKER)
-                   (api.emit {:type :cancelled})
-                   (error err)))))))
+       (coroutines.create (fn []
+                            (let [(ok? err) (xpcall #(finish-handoff! api state
+                                                                      args)
+                                                    #(if (= $1 CANCEL-MARKER)
+                                                         $1
+                                                         (debug.traceback (tostring $1)
+                                                                          2)))]
+                              (when (not ok?)
+                                (api.emit {:type :llm-end})
+                                (if (= err CANCEL-MARKER)
+                                    (api.emit {:type :cancelled})
+                                    (error err)))))))
   (set state.busy? true))
 
 ;; @doc fen.extensions.handoff.register!
@@ -142,15 +138,15 @@
 ;; tags: handoff command session
 (fn register! [api]
   (api.register :command
-      {:name :handoff
-       :order 27
-       :description "Summarize this session, seed a fresh session with the summary"
-       :idle-only? true
-       :handler (fn [args state]
-                  (if (= (length (or state.agent.messages [])) 0)
-                      (api.emit {:type :error
-                                        :error "nothing to hand off yet"})
-                      (start-handoff! api state args)))} )
+                {:name :handoff
+                 :order 27
+                 :description "Summarize this session, seed a fresh session with the summary"
+                 :idle-only? true
+                 :handler (fn [args state]
+                            (if (= (length (or state.agent.messages [])) 0)
+                                (api.emit {:type :error
+                                           :error "nothing to hand off yet"})
+                                (start-handoff! api state args)))})
   true)
 
 {:register register! :register! register!}

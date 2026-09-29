@@ -20,7 +20,9 @@
 (fn M.encode-request [model state questions]
   (let [qs {}]
     (each [id q (pairs questions)]
-      (tset qs id {:type q.type :instructions q.instructions :criteria q.criteria}))
+      (tset qs id {:type q.type
+                   :instructions q.instructions
+                   :criteria q.criteria}))
     (json.encode {: model : state :questions qs})))
 
 ;; @doc fen.extensions.decide.jev.post
@@ -36,16 +38,16 @@
                            :accept "application/json"}
                  :body body
                  :timeout-ms timeout-ms
-                 :connect-timeout-ms (math.min timeout-ms MAX-CONNECT-TIMEOUT-MS)
+                 :connect-timeout-ms (math.min timeout-ms
+                                               MAX-CONNECT-TIMEOUT-MS)
                  :yield ?yield}))
 
 (fn error-message [body]
   (let [(ok? decoded) (pcall json.decode (or body ""))
-        msg (and ok? (= (type decoded) :table)
-                 (= (type decoded.error) :table)
+        msg (and ok? (= (type decoded) :table) (= (type decoded.error) :table)
                  decoded.error.message)]
-    (string.sub (if (= (type msg) :string) msg (tostring (or body "")))
-                1 MAX-ERROR-CHARS)))
+    (string.sub (if (= (type msg) :string) msg (tostring (or body ""))) 1
+                MAX-ERROR-CHARS)))
 
 (fn unit? [v]
   (and (= (type v) :number) (>= v 0) (<= v 1)))
@@ -70,10 +72,8 @@
           {:type :noul :noul raw.noul})
         (= q.type :choice)
         (let [probs (probabilities raw.probabilities)]
-          (when (and (= (type raw.choice) :string)
-                     (. q.criteria raw.choice)
-                     probs
-                     (unit? raw.confidence))
+          (when (and (= (type raw.choice) :string) (. q.criteria raw.choice)
+                     probs (unit? raw.confidence))
             {:type :choice
              :choice raw.choice
              :probabilities probs
@@ -90,9 +90,11 @@
       resp.error
       (values nil (.. "transport: " (tostring resp.error)))
       (not= resp.status 200)
-      (values nil (.. "HTTP " (tostring resp.status) ": " (error-message resp.body)))
+      (values nil (.. "HTTP " (tostring resp.status) ": "
+                      (error-message resp.body)))
       (let [(ok? decoded) (pcall json.decode (or resp.body ""))]
-        (if (not (and ok? (= (type decoded) :table) (= (type decoded.answers) :table)))
+        (if (not (and ok? (= (type decoded) :table)
+                      (= (type decoded.answers) :table)))
             (values nil "malformed response")
             (let [out {}]
               (var missing nil)
@@ -102,7 +104,9 @@
                       (tset out id answer)
                       (set missing id))))
               (if missing
-                  (values nil (.. "missing or malformed answer: " (tostring missing)))
+                  (values nil
+                          (.. "missing or malformed answer: "
+                              (tostring missing)))
                   (values out decoded.usage)))))))
 
 M

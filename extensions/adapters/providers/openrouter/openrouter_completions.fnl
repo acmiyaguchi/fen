@@ -20,7 +20,9 @@
 ;;   of them take `reasoning`.
 
 (local completions (require :fen.extensions.provider_openai.openai_completions))
-(local model-catalog (require :fen.extensions.provider_openai.openai_model_catalog))
+(local model-catalog
+       (require :fen.extensions.provider_openai.openai_model_catalog))
+
 (local json (require :fen.util.json))
 (local http (require :fen.util.http))
 
@@ -37,14 +39,17 @@
 ;; is the provider default when no `--model` / saved model is given. Users
 ;; extend or replace this list through a models.json provider with
 ;; `"api": "openrouter-completions"` instead of seeing the full catalog.
-(local MODELS
-  [{:id "google/gemini-3.8-flash"}
-   {:id "anthropic/claude-sonnet-5"}
-   {:id "deepseek/deepseek-v4.1-flash"}
-   {:id "qwen/qwen3.8-flash"}])
+(local MODELS [{:id "google/gemini-3.8-flash"}
+               {:id "anthropic/claude-sonnet-5"}
+               {:id "deepseek/deepseek-v4.1-flash"}
+               {:id "qwen/qwen3.8-flash"}])
 
 ;; `reasoning.effort` values OpenRouter accepts besides `none`.
-(local EFFORTS {:max true :xhigh true :high true :medium true :low true
+(local EFFORTS {:max true
+                :xhigh true
+                :high true
+                :medium true
+                :low true
                 :minimal true})
 
 (fn starts-with? [s prefix]
@@ -67,8 +72,7 @@
    object, or nil when it is not a value OpenRouter accepts. Only this exact
    escape hatch disables reasoning (`none`/`off`)."
   (let [e (string.lower (tostring (or effort "")))]
-    (if (or (= e "off") (= e "none")) {:enabled false}
-        (level->reasoning e))))
+    (if (or (= e "off") (= e "none")) {:enabled false} (level->reasoning e))))
 
 ;; @doc fen.extensions.provider_openrouter.openrouter_completions.reasoning-config
 ;; kind: function
@@ -80,7 +84,8 @@
         budget opts.thinking-budget]
     (if (and (= (type budget) :number) (> budget 0))
         {:max_tokens budget}
-        (or (and opts.reasoning-effort (effort->reasoning opts.reasoning-effort))
+        (or (and opts.reasoning-effort
+                 (effort->reasoning opts.reasoning-effort))
             (and opts.thinking-level (level->reasoning opts.thinking-level))))))
 
 ;; Per-process reasoning support by model id, refreshed by every `list-models`
@@ -113,17 +118,19 @@
    content into a one-part array. Returns true when a breakpoint was placed."
   (let [content msg.content]
     (if (and (= (type content) :string) (not= content ""))
-        (do (set msg.content [{:type :text :text content
-                               :cache_control {:type :ephemeral}}])
-            true)
+        (do
+          (set msg.content
+               [{:type :text :text content :cache_control {:type :ephemeral}}])
+          true)
         (and (= (type content) :table) (not (json.null? content)))
-        (do (var placed? false)
-            (for [i (length content) 1 -1 &until placed?]
-              (let [part (. content i)]
-                (when (and (= (type part) :table) (= part.type :text))
-                  (set part.cache_control {:type :ephemeral})
-                  (set placed? true))))
-            placed?)
+        (do
+          (var placed? false)
+          (for [i (length content) 1 -1 &until placed?]
+            (let [part (. content i)]
+              (when (and (= (type part) :table) (= part.type :text))
+                (set part.cache_control {:type :ephemeral})
+                (set placed? true))))
+          placed?)
         false)))
 
 ;; @doc fen.extensions.provider_openrouter.openrouter_completions.add-cache-breakpoints!
@@ -275,11 +282,12 @@
         declared? (and opts.models (> (length opts.models) 0))
         wanted (if declared? opts.models MODELS)
         resp (http.request {:method :GET
-                            :url (model-catalog.models-url
-                                   (or opts.base-url DEFAULT-BASE-URL))
+                            :url (model-catalog.models-url (or opts.base-url
+                                                               DEFAULT-BASE-URL))
                             :headers (catalog-headers opts.api-key)
                             :timeout-ms (or opts.timeout-ms 30000)
-                            :connect-timeout-ms (or opts.connect-timeout-ms 10000)
+                            :connect-timeout-ms (or opts.connect-timeout-ms
+                                                    10000)
                             :yield opts.yield})]
     (when resp.error
       (error {:reason :request-failed}))

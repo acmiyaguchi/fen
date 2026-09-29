@@ -17,13 +17,12 @@
   (when (not= (type spec.height) :function)
     (error "register :panel requires {:height fn}")))
 
-(local opts
-  {:kind :panel
-   :bucket state.panel-extra
-   :defaults {:placement :above-input :order 50}
-   :validate validate
-   :list-fields [:placement :order :height :render]
-   :sort-by-order? true})
+(local opts {:kind :panel
+             :bucket state.panel-extra
+             :defaults {:placement :above-input :order 50}
+             :validate validate
+             :list-fields [:placement :order :height :render]
+             :sort-by-order? true})
 
 ;; @doc fen.core.extensions.register.panel.register
 ;; kind: function
