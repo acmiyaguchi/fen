@@ -554,19 +554,43 @@
           (set search nil))))
   (string.sub text start (- pos 1)))
 
+(local FUNCTION-HEADS {:fn true :lambda true "λ" true :macro true})
+
+(fn function-spans [code]
+  "Byte spans of function-like forms (`fn`, `lambda`, `macro`, `#(...)`) in
+   `code` from `strip-non-code`. A require inside one runs late, at call
+   time; anywhere else it runs when the module loads, however indented."
+  (let [spans []
+        stack []]
+    (for [i 1 (# code)]
+      (let [ch (string.sub code i i)]
+        (if (= ch "(")
+            (let [head (string.match code "^%s*([^%s%(%)%[%]{}]+)" (+ i 1))]
+              (table.insert stack {:start i
+                                   :fn? (or (= "#" (string.sub code (- i 1) (- i 1)))
+                                            (. FUNCTION-HEADS (or head "")))}))
+            (or (= ch "[") (= ch "{"))
+            (table.insert stack {:start i})
+            (or (= ch ")") (= ch "]") (= ch "}"))
+            (let [open (table.remove stack)]
+              (when (and open open.fn?)
+                (table.insert spans [open.start i]))))))
+    spans))
+
 (fn scan-dependencies [text]
   "Find literal Fennel module dependencies. Best-effort and text-based;
    dynamic module expressions are intentionally ignored."
   (let [out []
-        seen {}]
-    (fn line-indented? [pos]
-      (let [prefix (line-prefix-before text pos)]
-        (not= nil (string.match prefix "^%s+"))))
+        seen {}
+        spans (function-spans (strip-non-code text))]
+    (fn inside-function? [pos]
+      (accumulate [inside? false _ [start end] (ipairs spans) &until inside?]
+        (and (<= start pos) (< pos end))))
     (fn optional-require-context? [pos]
       (let [ctx (string.sub text (math.max 1 (- pos 16)) (+ pos 32))]
         (not= nil (string.find ctx "pcall%s+require"))))
     (fn add! [kind mod pos]
-      (let [kind (if (and (= kind :require) (line-indented? pos))
+      (let [kind (if (and (= kind :require) (inside-function? pos))
                      :late-require
                      kind)]
         (when (and mod

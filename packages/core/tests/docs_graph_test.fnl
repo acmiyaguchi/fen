@@ -24,6 +24,22 @@
       (assert.are.equal "fen.testing.macros" (. deps 2 :module))
       (assert.are.equal :macro (. deps 2 :kind)))))
 
+  (it "classifies requires by function scope, not indentation" (fn []
+    (let [kinds {}]
+      (each [_ dep (ipairs (scanner.scan-dependencies
+                             (.. "(local wrapped\n       (require :eager.wrapped))\n"
+                                 "(when debug?\n  (require :eager.nested))\n"
+                                 "(fn load [] (require :late.fn))\n"
+                                 "(local f #(require :late.hashfn))\n"
+                                 "(local g (lambda []\n  \"(\" (require :late.lambda)))\n")))]
+        (tset kinds dep.module dep.kind))
+      (assert.are.same {:eager.wrapped :require
+                        :eager.nested :require
+                        :late.fn :late-require
+                        :late.hashfn :late-require
+                        :late.lambda :late-require}
+                       kinds))))
+
   (it "derives nested first-party extension modules from manifests" (fn []
     (let [init (scanner.module-from-path "extensions/behaviors/kernel/builtin-tools/init.fnl")
           tool (scanner.module-from-path "extensions/behaviors/kernel/builtin-tools/bash.fnl")]
