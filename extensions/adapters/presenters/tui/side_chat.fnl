@@ -19,6 +19,7 @@
 (local REGISTRY-KEY "fen.extensions.tui.side-chat.runtime")
 (when (= (. registry REGISTRY-KEY) nil)
   (tset registry REGISTRY-KEY {:live {} :reap [] :runtimes {}}))
+
 (local volatile (. registry REGISTRY-KEY))
 (when (= volatile.runtimes nil) (set volatile.runtimes {}))
 ;; Per-instance owner token: turns outliving a reload get cancelled.
@@ -31,8 +32,7 @@
           (each [k v (pairs value)]
             (let [copied (copy-data v)]
               (when (and (not= copied nil)
-                         (or (= (type k) :string)
-                             (= (type k) :number)
+                         (or (= (type k) :string) (= (type k) :number)
                              (= (type k) :boolean)))
                 (tset out k copied))))
           out)
@@ -59,11 +59,13 @@
         effective (tool-policy.narrow READ-ONLY-NAMES source)]
     ;; Only plain option data on the workspace; runtime callbacks stay volatile.
     (if (= (length effective) 0)
-        (do (set opts.tools nil)
-            (set opts.no-tools? true)
-            (set opts.web-search nil))
-        (do (set opts.tools (table.concat effective ","))
-            (set opts.no-tools? false)))
+        (do
+          (set opts.tools nil)
+          (set opts.no-tools? true)
+          (set opts.web-search nil))
+        (do
+          (set opts.tools (table.concat effective ","))
+          (set opts.no-tools? false)))
     (set opts.denied-tools nil)
     (set opts.active-tool-names {})
     (set opts.pinned-tools [])
@@ -92,20 +94,29 @@
 
 (fn entry-for! [ws ?runtime]
   (let [existing (live-entry ws)
-        runtime (runtime-handle
-                  (or ?runtime (and existing existing.runtime)
-                      (. volatile.runtimes ws.id) (current-runtime)))]
+        runtime (runtime-handle (or ?runtime (and existing existing.runtime)
+                                    (. volatile.runtimes ws.id)
+                                    (current-runtime)))]
     (when runtime (tset volatile.runtimes ws.id runtime))
     (if (and existing (= existing.owner OWNER))
-        (do (when runtime (set existing.runtime runtime)) existing)
+        (do
+          (when runtime (set existing.runtime runtime))
+          existing)
         (and existing existing.busy?)
         ;; Old module owns a live turn: mark for cooperative cancellation.
-        (do (set existing.cancel-requested? true)
-            (when ws.side (set ws.side.cancel-requested? true))
-            existing)
-        (let [entry {:owner OWNER :runtime runtime :agent nil :turn nil
-                     :busy? false :turn-id 0 :turn-result nil
-                     :turn-error nil :cancel-requested? false
+        (do
+          (set existing.cancel-requested? true)
+          (when ws.side (set ws.side.cancel-requested? true))
+          existing)
+        (let [entry {:owner OWNER
+                     :runtime runtime
+                     :agent nil
+                     :turn nil
+                     :busy? false
+                     :turn-id 0
+                     :turn-result nil
+                     :turn-error nil
+                     :cancel-requested? false
                      :discard? false}]
           (tset volatile.live ws.id entry)
           entry))))
@@ -135,11 +146,10 @@
         (set ws.side.opts opts)
         (if (not factory)
             (values nil "side agent factory is unavailable; retry /btw")
-            (let [(ok? agent-or-error)
-                  (pcall factory
-                         opts
-                         (fn [ev] (M.on-event! WORKSPACE-ID ev))
-                         {})]
+            (let [(ok? agent-or-error) (pcall factory opts
+                                              (fn [ev]
+                                                (M.on-event! WORKSPACE-ID ev))
+                                              {})]
               (if (and ok? agent-or-error)
                   (do
                     ;; Replace any factory-fresh messages array with the
@@ -192,9 +202,8 @@
         (not (ensure-agent! ws entry))
         {:ok false
          :error "side agent could not be constructed; check credentials/model and retry /btw"}
-        (let [result (submit-agent-turn!
-                       entry line
-                       (fn [ev] (M.on-event! WORKSPACE-ID ev)))]
+        (let [result (submit-agent-turn! entry line
+                                         (fn [ev] (M.on-event! WORKSPACE-ID ev)))]
           (when result.started
             (set ws.side.busy? true)
             (set ws.status :running)
@@ -208,8 +217,9 @@
     (if (= value "")
         {:ok false :error "cannot submit an empty side turn"}
         (and (?. ws :side :busy?) opts.queue?)
-        (do (table.insert ws.side.pending value)
-            {:ok true :queued true})
+        (do
+          (table.insert ws.side.pending value)
+          {:ok true :queued true})
         (?. ws :side :busy?)
         {:ok false :error "side agent is busy"}
         (start! ws value))))
@@ -225,25 +235,23 @@
    :pending []})
 
 (fn make-side! [runtime]
-  (let [ws (workspaces.create!
-             {:id WORKSPACE-ID
-              :kind :side-chat
-              :title "btw"
-              :source {:kind :ephemeral-side-chat}
-              :status :idle
-              :provider (?. runtime :agent :provider-name)
-              :model (?. runtime :agent :model)
-              :usage {}
-              :activity-count 0
-              :dirty? false
-              :side (new-side-data runtime)})]
+  (let [ws (workspaces.create! {:id WORKSPACE-ID
+                                :kind :side-chat
+                                :title "btw"
+                                :source {:kind :ephemeral-side-chat}
+                                :status :idle
+                                :provider (?. runtime :agent :provider-name)
+                                :model (?. runtime :agent :model)
+                                :usage {}
+                                :activity-count 0
+                                :dirty? false
+                                :side (new-side-data runtime)})]
     (entry-for! ws runtime)
     ws))
 
 (fn M.open! [runtime ?initial]
   "Open or focus the singleton btw workspace and optionally submit a turn."
-  (let [ws (or (workspaces.find WORKSPACE-ID)
-               (make-side! runtime))
+  (let [ws (or (workspaces.find WORKSPACE-ID) (make-side! runtime))
         entry (entry-for! ws runtime)
         initial (text.trim (tostring (or ?initial "")))]
     ;; Retry construction on every focus: a failed provider must not leave
@@ -258,20 +266,22 @@
     (when (not= initial "")
       (let [result (M.submit! ws initial {:queue? true})]
         (when (and (not result.ok) (not result.queued))
-          (workspaces.append-to! ws.id
-                                 {:type :error :error result.error}))))
+          (workspaces.append-to! ws.id {:type :error :error result.error}))))
     ws))
 
 (fn finish-turn! [ws entry ok? value]
   (when entry.agent (copy-history! ws entry.agent))
   (if ok?
       (set ws.side.turn-result value)
-      (do (set ws.side.turn-error value)
-          (when (and ws.side.turn-error (not entry.discard?))
-            (workspaces.append-to!
-              ws.id {:type :error
-                     :error (.. "side agent task: " (text.first-line value))
-                     :traceback (debug.traceback entry.turn (tostring value))}))))
+      (do
+        (set ws.side.turn-error value)
+        (when (and ws.side.turn-error (not entry.discard?))
+          (workspaces.append-to! ws.id
+                                 {:type :error
+                                  :error (.. "side agent task: "
+                                             (text.first-line value))
+                                  :traceback (debug.traceback entry.turn
+                                                              (tostring value))}))))
   (set entry.busy? false)
   (set entry.turn nil)
   (set entry.cancel-requested? false)
@@ -322,8 +332,11 @@
   (each [_ item (ipairs volatile.reap)]
     (when (= item.entry entry) (set found? true)))
   (when (not found?)
-    (table.insert volatile.reap {:ws ws :entry entry :done? false
-                                  :ok? true :value nil})))
+    (table.insert volatile.reap {:ws ws
+                                 :entry entry
+                                 :done? false
+                                 :ok? true
+                                 :value nil})))
 
 (fn tick-one! [ws]
   (let [entry (live-entry ws)]
@@ -361,8 +374,7 @@
     (set entry.cancel-requested? true)
     (when entry.turn
       (var attempts 0)
-      (while (and (< attempts 64)
-                  (not= (coroutine.status entry.turn) :dead))
+      (while (and (< attempts 64) (not= (coroutine.status entry.turn) :dead))
         (pcall coroutine.resume entry.turn)
         (set attempts (+ attempts 1))))
     (tset volatile.live id nil))
@@ -399,14 +411,15 @@
         (let [reply (last-assistant-text ws)]
           (if (not reply)
               (values nil "the btw conversation has no assistant reply yet")
-              (do (workspaces.with-main!
-                    (fn []
-                      (let [state (require :fen.extensions.tui.state)]
-                        (set state.input-buf reply)
-                        (set state.input-cursor (length reply))
-                        (set state.history-pos 0)
-                        (set state.history-draft ""))))
-                  true))))))
+              (do
+                (workspaces.with-main! (fn []
+                                         (let [state (require :fen.extensions.tui.state)]
+                                           (set state.input-buf reply)
+                                           (set state.input-cursor
+                                                (length reply))
+                                           (set state.history-pos 0)
+                                           (set state.history-draft ""))))
+                true))))))
 
 (fn M.request-cancel! [ws]
   "Request cooperative cancellation without discarding the side conversation."
@@ -429,19 +442,19 @@
             (set entry.discard? true)
             (set entry.cancel-requested? true)
             ;; Bounded drain now; park on the reap list if cleanup needs more.
-            (let [item {:ws ws :entry entry :done? false
-                        :ok? true :value nil}]
+            (let [item {:ws ws :entry entry :done? false :ok? true :value nil}]
               (if (resume-entry! item CANCEL-RESUME-LIMIT)
                   (finish-turn! ws entry item.ok? item.value)
-                  (do (set ws.status :closed)
-                      (park-for-reap! ws entry)))))
+                  (do
+                    (set ws.status :closed)
+                    (park-for-reap! ws entry)))))
           (do
             (tset volatile.live ws.id nil)
             (tset volatile.runtimes ws.id nil)
             (set ws.side nil)
             (set ws.agent nil)
             (set ws.status :closed)))
-    true)))
+      true)))
 
 (set M.WORKSPACE-ID WORKSPACE-ID)
 (set M.READ-ONLY-TOOLS READ-ONLY-TOOLS)

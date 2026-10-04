@@ -23,7 +23,8 @@
   (let [pipe (io.popen (.. "p=" (shell-quote p)
                            "; if test -d \"$p\"; then echo directory;"
                            " elif test -f \"$p\"; then echo file;"
-                           " elif test -e \"$p\"; then echo other; fi") :r)]
+                           " elif test -e \"$p\"; then echo other; fi")
+                       :r)]
     (if (not pipe) nil
         (let [out (pipe:read :*l)]
           (pipe:close)
@@ -65,8 +66,8 @@
               (when ok?
                 (each [name (values iter dir-obj)]
                   (add! name))))
-            (let [pipe (io.popen (.. "ls -1A " (shell-quote dir)
-                                      " 2>/dev/null") :r)]
+            (let [pipe (io.popen (.. "ls -1A " (shell-quote dir) " 2>/dev/null")
+                                 :r)]
               (when pipe
                 (each [line (pipe:lines)]
                   (add! line))
@@ -79,8 +80,7 @@
 ;; summary: Resolve a directory through `pwd -P`, returning its physical path or nil if the shell probe fails.
 ;; tags: util paths vfs shell
 (fn M.pwd-physical [dir]
-  (let [pipe (io.popen (.. "cd " (shell-quote dir)
-                            " 2>/dev/null && pwd -P") :r)]
+  (let [pipe (io.popen (.. "cd " (shell-quote dir) " 2>/dev/null && pwd -P") :r)]
     (when pipe
       (let [out (pipe:read :*l)]
         (pipe:close)

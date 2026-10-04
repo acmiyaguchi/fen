@@ -83,7 +83,7 @@
   (if (or (not path) (= path ""))
       (util.err "missing 'path'")
       (file-mutex.with-file path ?yield-fn
-                            #(run-write-unlocked path content ?yield-fn))))
+        #(run-write-unlocked path content ?yield-fn))))
 
 {:name :write
  :label "Write"
@@ -91,6 +91,7 @@
  :description "Write content to a file (overwrites). Creates the parent directory if missing."
  :parameters {:type :object
               :properties {:path {:type :string :description "File path"}
-                           :content {:type :string :description "Content to write"}}
+                           :content {:type :string
+                                     :description "Content to write"}}
               :required [:path :content]}
  :execute run-write}

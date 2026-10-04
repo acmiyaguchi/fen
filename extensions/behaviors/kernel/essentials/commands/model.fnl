@@ -41,8 +41,7 @@
 
 (fn indexed-model [query available]
   (let [idx (tonumber query)]
-    (when (and idx (= query (tostring idx)) (>= idx 0)
-               (= idx (math.floor idx)))
+    (when (and idx (= query (tostring idx)) (>= idx 0) (= idx (math.floor idx)))
       (. (sorted-copy available) (+ idx 1)))))
 
 (fn switch-model! [api state model-ref]
@@ -51,27 +50,24 @@
     (set state.opts.model model-ref.id)
     (set state.opts.provider-from-settings? false)
     (set state.opts.model-from-settings? false)
-    (let [new-agent (state.make-agent-from-opts
-                      state.opts state.on-event state.agent-extra)]
+    (let [new-agent (state.make-agent-from-opts state.opts state.on-event
+                                                state.agent-extra)]
       (set new-agent.messages saved)
       (set state.agent new-agent)
-      (let [(ok? err) (pcall api.settings.set-defaults!
-                              model-ref.provider model-ref.id)]
+      (let [(ok? err) (pcall api.settings.set-defaults! model-ref.provider
+                             model-ref.id)]
         (when (not ok?)
-          (api.emit
-            {:type :error
-             :error (.. "failed to persist default model: "
-                        (tostring err))})))
+          (api.emit {:type :error
+                     :error (.. "failed to persist default model: "
+                                (tostring err))})))
       (when state.update-queue-status (state.update-queue-status))
-      (api.emit
-        {:type :set-status-info
-         :info {:provider state.opts.provider
-                :model state.agent.model
-                :thinking-status state.agent.thinking-status}})
-      (api.emit
-        {:type :info
-         :text (.. "switched model to "
-                   (api.models.canonical-id model-ref))}))))
+      (api.emit {:type :set-status-info
+                 :info {:provider state.opts.provider
+                        :model state.agent.model
+                        :thinking-status state.agent.thinking-status}})
+      (api.emit {:type :info
+                 :text (.. "switched model to "
+                           (api.models.canonical-id model-ref))}))))
 
 (fn build-choices [api state available]
   (let [out []]
@@ -101,10 +97,9 @@
     (set catalog-ready? false))
   (when (and (not catalog-ready?) (not discovery))
     (set discovery
-         (coroutines.create
-           (fn []
-             (api.models.list
-               (model-list-opts opts :refresh coroutine.yield))))))
+         (coroutines.create (fn []
+                              (api.models.list (model-list-opts opts :refresh
+                                                                coroutine.yield))))))
   discovery)
 
 (fn pump-discovery! [api]
@@ -112,17 +107,19 @@
   (when (and (= discovery-api api) discovery)
     (let [(ok? value) (coroutine.resume discovery)]
       (if (not ok?)
-          (do (set discovery nil)
-              (set catalog-ready? true)
-              (set catalog-version (+ catalog-version 1))
-              (when (= (type api.emit) :function)
-                (api.emit {:type :model-catalog-updated :error (tostring value)})))
+          (do
+            (set discovery nil)
+            (set catalog-ready? true)
+            (set catalog-version (+ catalog-version 1))
+            (when (= (type api.emit) :function)
+              (api.emit {:type :model-catalog-updated :error (tostring value)})))
           (= (coroutine.status discovery) :dead)
-          (do (set discovery nil)
-              (set catalog-ready? true)
-              (set catalog-version (+ catalog-version 1))
-              (when (= (type api.emit) :function)
-                (api.emit {:type :model-catalog-updated})))))))
+          (do
+            (set discovery nil)
+            (set catalog-ready? true)
+            (set catalog-version (+ catalog-version 1))
+            (when (= (type api.emit) :function)
+              (api.emit {:type :model-catalog-updated})))))))
 
 (fn completion-choices [api ctx]
   (let [state (?. ctx :state)
@@ -132,8 +129,8 @@
     ;; Start one shared background refresh, but return immediately from cached
     ;; metadata so input remains responsive.
     (ensure-discovery! api opts)
-    (each [_ m (ipairs (sorted-copy
-                         (api.models.list (model-list-opts opts :cached))))]
+    (each [_ m (ipairs (sorted-copy (api.models.list (model-list-opts opts
+                                                                      :cached))))]
       (let [canon (api.models.canonical-id m)
             details []]
         (when (= canon current)
@@ -142,9 +139,10 @@
           (table.insert details "default"))
         (when m.api
           (table.insert details (tostring m.api)))
-        (table.insert out {:label canon
-                           :value canon
-                           :description (table.concat details " · ")})))
+        (table.insert out
+                      {:label canon
+                       :value canon
+                       :description (table.concat details " · ")})))
     out))
 
 (fn discovery-tick [api state]
@@ -156,12 +154,12 @@
       (when (not updated?.value)
         (pump-discovery! api)
         (if (or catalog-ready? (> catalog-version start-version))
-            (do (set updated?.value true)
-                {:label "switch model"
-                 :choices (build-choices
-                            api state
-                            (api.models.list
-                              (model-list-opts state.opts :cached)))})
+            (do
+              (set updated?.value true)
+              {:label "switch model"
+               :choices (build-choices api state
+                                       (api.models.list (model-list-opts state.opts
+                                                                         :cached)))})
             {:label "switch model · loading…"})))))
 
 (fn pick-model! [api state available ?initial-query]
@@ -181,44 +179,36 @@
 (fn exact-resolution? [api query resolved]
   (and (= resolved.status :ok)
        (let [m resolved.model]
-         (or (= query (api.models.canonical-id m))
-             (= query (tostring m.id))))))
+         (or (= query (api.models.canonical-id m)) (= query (tostring m.id))))))
 
 (fn apply-resolution! [api state query resolved]
   (if (= resolved.status :ok)
       (switch-model! api state resolved.model)
       (= resolved.status :ambiguous)
-      (api.emit
-        {:type :assistant-text
-         :text (format-candidates
-                 api
-                 (.. "ambiguous model: " query)
-                 resolved.candidates)})
-      (api.emit
-        {:type :error
-         :error (.. "unknown model: " query " (try /model)")})))
+      (api.emit {:type :assistant-text
+                 :text (format-candidates api (.. "ambiguous model: " query)
+                                          resolved.candidates)})
+      (api.emit {:type :error
+                 :error (.. "unknown model: " query " (try /model)")})))
 
 (fn handle-model [api args state]
   (let [query (trim args)
         interactive? (api.ui.has-ui?)
         ;; Interactive selection starts immediately from static/cached data;
         ;; the selector cooperatively discovers dynamic catalogs in-place.
-        available (api.models.list
-                    (model-list-opts state.opts
-                                     (if interactive? :cached :refresh)))]
+        available (api.models.list (model-list-opts state.opts
+                                                    (if interactive? :cached
+                                                        :refresh)))]
     (if (= query "")
         (if interactive?
             (pick-model! api state available)
             (api.emit {:type :error :error "no interactive model selector"}))
         (let [indexed (indexed-model query available)
-              resolved (and (not indexed)
-                            (api.models.resolve query available))]
-          (if indexed
-              (switch-model! api state indexed)
-              (exact-resolution? api query resolved)
-              (switch-model! api state resolved.model)
-              (api.ui.has-ui?)
-              (pick-model! api state available query)
+              resolved (and (not indexed) (api.models.resolve query available))]
+          (if indexed (switch-model! api state indexed)
+              (exact-resolution? api query resolved) (switch-model! api state
+                                                                    resolved.model)
+              (api.ui.has-ui?) (pick-model! api state available query)
               (apply-resolution! api state query resolved))))))
 
 ;; @doc fen.extensions.essentials.commands.model.register
@@ -232,11 +222,11 @@
   (when (= (type api.on) :function)
     (api.on :runtime-tick (fn [_ev] (pump-discovery! api))))
   (api.register :command
-    {:name :model
-     :order 12
-     :description "Switch model (fuzzy selector; exact id/index switches directly)"
-     :idle-only? true
-     :complete (fn [_arg-prefix ctx] (completion-choices api ctx))
-     :handler (fn [args state] (handle-model api args state))}))
+                {:name :model
+                 :order 12
+                 :description "Switch model (fuzzy selector; exact id/index switches directly)"
+                 :idle-only? true
+                 :complete (fn [_arg-prefix ctx] (completion-choices api ctx))
+                 :handler (fn [args state] (handle-model api args state))}))
 
 M

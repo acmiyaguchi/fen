@@ -67,16 +67,16 @@
   "Write content to a file under the tool-output dir and return its path."
   (let [dir (tool-output-dir)
         _ (maybe-yield ?yield-fn)
-        _mkdir (os.execute (.. "mkdir -p '"
-                              (string.gsub dir "'" "'\\''") "'"))
+        _mkdir (os.execute (.. "mkdir -p '" (string.gsub dir "'" "'\\''") "'"))
         _ (maybe-yield ?yield-fn)
         ts (os.date "!%Y%m%dT%H%M%S")
         path (.. dir "/" ts "_" (spill-id) ".txt")
         (f open-err) (io.open path :w)]
     (if (not f)
-        (do (io.stderr:write "fen: tool-output spill failed: "
-                              (tostring open-err) "\n")
-            nil)
+        (do
+          (io.stderr:write "fen: tool-output spill failed: "
+                           (tostring open-err) "\n")
+          nil)
         (let [(ok? err) (xpcall #(write-string-chunks f content ?yield-fn)
                                 debug.traceback)]
           (f:close)
@@ -84,11 +84,16 @@
               path
               (error err))))))
 
-(fn truncation-tag [kept-lines total-lines kept-bytes total-bytes head? full-path]
+(fn truncation-tag [kept-lines
+                    total-lines
+                    kept-bytes
+                    total-bytes
+                    head?
+                    full-path]
   (let [kind (if head? "head" "tail")
-        base (string.format "[truncated: kept %s %d/%d lines, %s/%s"
-                            kind kept-lines total-lines
-                            (fmt-kb kept-bytes) (fmt-kb total-bytes))]
+        base (string.format "[truncated: kept %s %d/%d lines, %s/%s" kind
+                            kept-lines total-lines (fmt-kb kept-bytes)
+                            (fmt-kb total-bytes))]
     (if full-path
         (.. base " — full output: " full-path "]")
         (.. base "]"))))
@@ -110,12 +115,12 @@
           (each [line (string.gmatch (.. s "\n") "([^\n]*)\n") &until done?]
             (set scanned (+ scanned 1))
             (let [llen (+ (length line) 1)]
-              (if (or (>= lines max-lines)
-                      (> (+ bytes llen) max-bytes))
+              (if (or (>= lines max-lines) (> (+ bytes llen) max-bytes))
                   (set done? true)
-                  (do (table.insert out line)
-                      (set lines (+ lines 1))
-                      (set bytes (+ bytes llen)))))
+                  (do
+                    (table.insert out line)
+                    (set lines (+ lines 1))
+                    (set bytes (+ bytes llen)))))
             (when (and ?yield-fn (>= scanned LINES-BEFORE-YIELD))
               (set scanned 0)
               (?yield-fn)))
@@ -151,13 +156,13 @@
             (while (and (> idx 0) (not done?))
               (let [line (. lines idx)
                     llen (+ (length line) 1)]
-                (if (or (>= taken max-lines)
-                        (> (+ bytes llen) max-bytes))
+                (if (or (>= taken max-lines) (> (+ bytes llen) max-bytes))
                     (set done? true)
-                    (do (table.insert out 1 line)
-                        (set taken (+ taken 1))
-                        (set bytes (+ bytes llen))
-                        (set idx (- idx 1)))))
+                    (do
+                      (table.insert out 1 line)
+                      (set taken (+ taken 1))
+                      (set bytes (+ bytes llen))
+                      (set idx (- idx 1)))))
               (set scanned-tail (+ scanned-tail 1))
               (when (and ?yield-fn (>= scanned-tail LINES-BEFORE-YIELD))
                 (set scanned-tail 0)
@@ -168,7 +173,4 @@
                                       total-bytes false full-path)]
               (values (.. tag "\n" content) true)))))))
 
-{: DEFAULT-MAX-LINES
- : DEFAULT-MAX-BYTES
- : truncate-head
- : truncate-tail}
+{: DEFAULT-MAX-LINES : DEFAULT-MAX-BYTES : truncate-head : truncate-tail}

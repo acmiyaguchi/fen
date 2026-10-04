@@ -6,5 +6,6 @@
 ;;      installed by fen.util.flat_extensions.
 ;; The require side-effect prints EXT-ROOT-OK; success exit follows.
 (let [(ok err) (pcall require :fen.extensions.sentinel_ext)]
-  (when (not ok) (io.write (.. "EXT-ROOT-FAIL: " (tostring err) "\n")))
+  (when (not ok)
+    (io.write (.. "EXT-ROOT-FAIL: " (tostring err) "\n")))
   (os.exit (if ok 0 1)))

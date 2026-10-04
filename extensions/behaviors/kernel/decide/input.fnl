@@ -35,27 +35,26 @@
 (local HINT-KEY-BYTES 200)
 (local SHIFT-HINT "topic changed · /handoff")
 (local SHIFT-QUESTIONS
-  {:topic_shift
-   {:type :noul
-    :instructions "Has the user moved to a topic unrelated to the recent conversation? Compare new_message with recent, the preceding conversation in order (oldest first)."
-    :criteria {:true "new_message starts a task or subject unrelated to recent, so the earlier context would not help with it."
-               :false "new_message continues, refines, follows up on, or relates to the work in recent."}}})
+       {:topic_shift {:type :noul
+                      :instructions "Has the user moved to a topic unrelated to the recent conversation? Compare new_message with recent, the preceding conversation in order (oldest first)."
+                      :criteria {:true "new_message starts a task or subject unrelated to recent, so the earlier context would not help with it."
+                                 :false "new_message continues, refines, follows up on, or relates to the work in recent."}}})
 
 ;; Busy-line classification. Only a choice with at least MIN-CONFIDENCE acts.
 (local MIN-CONFIDENCE 0.7)
 (local MAX-LINE-BYTES 2000)
 (local MAX-CONTEXT-BYTES 2000)
 (local ROUTE-QUESTIONS
-  {:route {:type :choice
-           :instructions (.. "The user typed `message` while a coding agent was still "
-                             "working; `latest_user_message` is the user's most recent earlier message in "
-                             "that work and `activity` is the agent's latest step. "
-                             "Decide what the user wants done with `message`.")
-           :criteria {:correction (.. "It corrects, redirects, or adds a constraint to the "
-                                      "work in progress, so the agent should see it now.")
-                      :follow-up (.. "It is a separate request or question that should wait "
-                                     "until the current work finishes.")
-                      :cancel "It asks the agent to stop or abandon the current work."}}})
+       {:route {:type :choice
+                :instructions (.. "The user typed `message` while a coding agent was still "
+                                  "working; `latest_user_message` is the user's most recent earlier message in "
+                                  "that work and `activity` is the agent's latest step. "
+                                  "Decide what the user wants done with `message`.")
+                :criteria {:correction (.. "It corrects, redirects, or adds a constraint to the "
+                                           "work in progress, so the agent should see it now.")
+                           :follow-up (.. "It is a separate request or question that should wait "
+                                          "until the current work finishes.")
+                           :cancel "It asks the agent to stop or abandon the current work."}}})
 
 ;; ---------------------------------------------------------------------------
 ;; Topic shift (idle prompts)
@@ -90,31 +89,37 @@
                    (trim (content-text m.content)))]
         (when (and body (not= body ""))
           (if (= role :user)
-              (do (set prompts (+ prompts 1))
-                  (set want-reply? true)
-                  (table.insert entries 1 {:role :user :text (clip body DIGEST-ENTRY-BYTES)}))
+              (do
+                (set prompts (+ prompts 1))
+                (set want-reply? true)
+                (table.insert entries 1
+                              {:role :user
+                               :text (clip body DIGEST-ENTRY-BYTES)}))
               want-reply?
-              (do (set want-reply? false)
-                  (table.insert entries 1 {:role :assistant :text (clip body DIGEST-ENTRY-BYTES)})))))
+              (do
+                (set want-reply? false)
+                (table.insert entries 1
+                              {:role :assistant
+                               :text (clip body DIGEST-ENTRY-BYTES)})))))
       (set i (- i 1)))
     (values entries prompts)))
 
 (fn ask-topic-shift! [api prompt token ctx]
   (let [(recent prompts) (recent-digest (or (?. ctx :state :agent :messages) []))]
     (when (>= prompts MIN-PRIOR-USER-TURNS)
-      (service.ask-async!
-        {:new_message (clip prompt NEW-MESSAGE-BYTES) : recent}
-        SHIFT-QUESTIONS
-        (fn [answers]
-          (let [p (?. answers :topic_shift :noul)]
-            (when (and (= store.topic-pending token)
-                       (= (type p) :number)
-                       (>= p SHIFT-THRESHOLD))
-              (set store.topic-pending nil)
-              (api.emit {:type :hint
-                         :text SHIFT-HINT
-                         :key (.. "handoff/topic-shift:"
-                                  (text.utf8-prefix prompt HINT-KEY-BYTES))}))))))))
+      (service.ask-async! {:new_message (clip prompt NEW-MESSAGE-BYTES)
+                           : recent} SHIFT-QUESTIONS
+                          (fn [answers]
+                            (let [p (?. answers :topic_shift :noul)]
+                              (when (and (= store.topic-pending token)
+                                         (= (type p) :number)
+                                         (>= p SHIFT-THRESHOLD))
+                                (set store.topic-pending nil)
+                                (api.emit {:type :hint
+                                           :text SHIFT-HINT
+                                           :key (.. "handoff/topic-shift:"
+                                                    (text.utf8-prefix prompt
+                                                                      HINT-KEY-BYTES))}))))))))
 
 ;; @doc fen.extensions.decide.input.forget-pending!
 ;; kind: function
@@ -138,7 +143,9 @@
         (each [_ b (ipairs (or m.content [])) &until (<= left 0)]
           (when (and (= b.type :text) (= (type b.text) :string))
             (let [sep (if (> (length parts) 0) "\n" "")
-                  piece (text.utf8-prefix (.. sep (text.utf8-prefix b.text left)) left)]
+                  piece (text.utf8-prefix (.. sep
+                                              (text.utf8-prefix b.text left))
+                                          left)]
               (table.insert parts piece)
               (set left (- left (length piece))))))
         (table.concat parts))))
@@ -158,13 +165,15 @@
         tools []]
     ;; Bounded like the other fields: stop collecting names at the byte cap.
     (var used 0)
-    (each [_ b (ipairs (or (?. last :content) [])) &until (>= used MAX-CONTEXT-BYTES)]
+    (each [_ b (ipairs (or (?. last :content) []))
+           &until (>= used MAX-CONTEXT-BYTES)]
       (when (= b.type :tool-call)
         (let [name (tostring b.name)]
           (table.insert tools name)
           (set used (+ used (length name) 2)))))
     (if (and (= (?. last :role) :assistant) (> (length tools) 0))
-        (text.utf8-prefix (.. "running tools: " (table.concat tools ", ")) MAX-CONTEXT-BYTES)
+        (text.utf8-prefix (.. "running tools: " (table.concat tools ", "))
+                          MAX-CONTEXT-BYTES)
         (= (?. last :role) :tool-result)
         "reading tool results"
         "generating a response")))
@@ -196,18 +205,15 @@
   "Whether steering will queue this input as a steering line: plain user input
    while busy that is neither a `>` follow-up nor slash text."
   (let [c (string.sub line 1 1)]
-    (and (= (?. input :kind) :user-input)
-         (?. ctx :busy?)
-         (not= c ">")
+    (and (= (?. input :kind) :user-input) (?. ctx :busy?) (not= c ">")
          (not= c "/"))))
 
 (fn classify-busy-line! [api line ctx]
   (let [runtime ctx.state
         turn-id (?. runtime :turn-id)]
-    (service.ask-async!
-      (route-state line runtime)
-      ROUTE-QUESTIONS
-      (fn [answers] (apply-route! api line runtime turn-id answers)))))
+    (service.ask-async! (route-state line runtime) ROUTE-QUESTIONS
+                        (fn [answers]
+                          (apply-route! api line runtime turn-id answers)))))
 
 ;; @doc fen.extensions.decide.input.undo!
 ;; kind: function
@@ -246,10 +252,8 @@
     ;; Any newer line makes an older topic-shift answer stale.
     (set store.topic-pending token)
     (when (service.enabled?)
-      (if (not ctx.busy?)
-          (ask-topic-shift! api line token ctx)
-          (steering-line? input line ctx)
-          (classify-busy-line! api line ctx))))
+      (if (not ctx.busy?) (ask-topic-shift! api line token ctx)
+          (steering-line? input line ctx) (classify-busy-line! api line ctx))))
   nil)
 
 M

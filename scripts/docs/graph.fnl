@@ -26,7 +26,7 @@
       (let [v (. attrs k)]
         (when (not= nil v)
           (table.insert parts (.. (tostring k) "=" (dot-quote v))))))
-    (if (> (# parts) 0)
+    (if (> (length parts) 0)
         (.. " [" (table.concat parts ", ") "]")
         "")))
 
@@ -40,17 +40,19 @@
   (let [out []]
     (each [_ e (ipairs (or edges []))]
       (table.insert out e))
-    (table.sort out
-                (fn [a b]
-                  (let [aa (.. (tostring a.from) "\0" (tostring a.to) "\0" (tostring (or a.kind "")))
-                        bb (.. (tostring b.from) "\0" (tostring b.to) "\0" (tostring (or b.kind "")))]
-                    (< aa bb))))
+    (table.sort out (fn [a b]
+                      (let [aa (.. (tostring a.from) "\0" (tostring a.to) "\0"
+                                   (tostring (or a.kind "")))
+                            bb (.. (tostring b.from) "\0" (tostring b.to) "\0"
+                                   (tostring (or b.kind "")))]
+                        (< aa bb))))
     out))
 
 (fn render-edge-lines! [out edges indent]
   (each [_ e (ipairs (sorted-edges edges))]
-    (table.insert out (.. indent (dot-quote e.from) " -> " (dot-quote e.to)
-                          (render-attrs (or e.attrs {})) ";"))))
+    (table.insert out
+                  (.. indent (dot-quote e.from) " -> " (dot-quote e.to)
+                      (render-attrs (or e.attrs {})) ";"))))
 
 (fn M.render-dot [name nodes edges]
   "Render a deterministic directed DOT graph.
@@ -79,18 +81,23 @@
           (when (. nodes id)
             (tset clustered id true)
             (table.insert node-ids id)))
-        (when (> (# node-ids) 0)
+        (when (> (length node-ids) 0)
           (table.sort node-ids)
           (table.insert out (.. "  subgraph cluster_" (dot-id cid) " {"))
-          (table.insert out (.. "    label=" (dot-quote (or cluster.label cid)) ";"))
+          (table.insert out (.. "    label=" (dot-quote (or cluster.label cid))
+                                ";"))
           (table.insert out "    style=rounded;")
           (table.insert out "    color=gray70;")
           (each [_ id (ipairs node-ids)]
-            (table.insert out (.. "    " (dot-quote id) (render-attrs (or (. nodes id) {})) ";")))
+            (table.insert out
+                          (.. "    " (dot-quote id)
+                              (render-attrs (or (. nodes id) {})) ";")))
           (table.insert out "  }"))))
     (each [_ id (ipairs (sorted-keys nodes))]
       (when (not (. clustered id))
-        (table.insert out (.. "  " (dot-quote id) (render-attrs (or (. nodes id) {})) ";"))))
+        (table.insert out
+                      (.. "  " (dot-quote id)
+                          (render-attrs (or (. nodes id) {})) ";"))))
     (render-edge-lines! out edges "  ")
     (table.insert out "}")
     (table.concat out "\n")))
@@ -136,7 +143,7 @@
                    (tset on-stack w nil)
                    (table.insert comp w)
                    (when (= w v) (set done? true))))
-               (when (> (# comp) 1)
+               (when (> (length comp) 1)
                  (table.sort comp)
                  (table.insert comps comp))))))
     (each [_ v (ipairs nodes)]

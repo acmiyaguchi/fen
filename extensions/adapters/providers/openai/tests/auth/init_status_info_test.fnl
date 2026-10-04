@@ -24,54 +24,53 @@
       (when (not ok?) (error err)))))
 
 (describe "openai-codex auth-backend :status-info"
-  (fn []
-    (it "exposes only the fen auth path under no overrides"
-      (fn []
-        (with-stubbed-getenv {:HOME "/h"}
           (fn []
-            (load-codex-backend)
-            (let [backend (auth-reg.find :openai-codex)
-                  rows (backend.status-info)]
-              (assert.are.equal 1 (length rows))
-              (assert.are.equal "auth.json path" (. rows 1 :label))
-              (assert.are.equal "/h/.config/fen/auth.json"
-                                (. rows 1 :value)))))))
-
-    (it "surfaces $FEN_AUTH_DIR as the write override"
-      (fn []
-        (with-stubbed-getenv {:HOME "/h" :FEN_AUTH_DIR "/tmp/fen-only"}
-          (fn []
-            (load-codex-backend)
-            (let [backend (auth-reg.find :openai-codex)
-                  rows (backend.status-info)]
-              (assert.are.equal 2 (length rows))
-              (assert.are.equal "auth.json path" (. rows 1 :label))
-              (assert.are.equal "/tmp/fen-only/auth.json"
-                                (. rows 1 :value))
-              (assert.are.equal "path override" (. rows 2 :label))
-              (assert.are.equal "$FEN_AUTH_DIR" (. rows 2 :value)))))))
-
-    (it "ignores $PI_CODING_AGENT_DIR"
-      (fn []
-        (with-stubbed-getenv {:HOME "/h" :PI_CODING_AGENT_DIR "/tmp/pi-shared"}
-          (fn []
-            (load-codex-backend)
-            (let [backend (auth-reg.find :openai-codex)
-                  rows (backend.status-info)]
-              (assert.are.equal 1 (length rows))
-              (assert.are.equal "/h/.config/fen/auth.json"
-                                (. rows 1 :value)))))))
-
-    (it "FEN_AUTH_DIR sets the auth path while PI_CODING_AGENT_DIR stays ignored"
-      (fn []
-        (with-stubbed-getenv {:HOME "/h"
-                              :FEN_AUTH_DIR "/tmp/fen-only"
-                              :PI_CODING_AGENT_DIR "/tmp/pi-shared"}
-          (fn []
-            (load-codex-backend)
-            (let [backend (auth-reg.find :openai-codex)
-                  rows (backend.status-info)]
-              (assert.are.equal 2 (length rows))
-              (assert.are.equal "/tmp/fen-only/auth.json"
-                                (. rows 1 :value))
-              (assert.are.equal "$FEN_AUTH_DIR" (. rows 2 :value)))))))))
+            (it "exposes only the fen auth path under no overrides"
+                (fn []
+                  (with-stubbed-getenv {:HOME "/h"}
+                    (fn []
+                      (load-codex-backend)
+                      (let [backend (auth-reg.find :openai-codex)
+                            rows (backend.status-info)]
+                        (assert.are.equal 1 (length rows))
+                        (assert.are.equal "auth.json path" (. rows 1 :label))
+                        (assert.are.equal "/h/.config/fen/auth.json"
+                                          (. rows 1 :value)))))))
+            (it "surfaces $FEN_AUTH_DIR as the write override"
+                (fn []
+                  (with-stubbed-getenv {:HOME "/h"
+                                        :FEN_AUTH_DIR "/tmp/fen-only"}
+                    (fn []
+                      (load-codex-backend)
+                      (let [backend (auth-reg.find :openai-codex)
+                            rows (backend.status-info)]
+                        (assert.are.equal 2 (length rows))
+                        (assert.are.equal "auth.json path" (. rows 1 :label))
+                        (assert.are.equal "/tmp/fen-only/auth.json"
+                                          (. rows 1 :value))
+                        (assert.are.equal "path override" (. rows 2 :label))
+                        (assert.are.equal "$FEN_AUTH_DIR" (. rows 2 :value)))))))
+            (it "ignores $PI_CODING_AGENT_DIR"
+                (fn []
+                  (with-stubbed-getenv {:HOME "/h"
+                                        :PI_CODING_AGENT_DIR "/tmp/pi-shared"}
+                    (fn []
+                      (load-codex-backend)
+                      (let [backend (auth-reg.find :openai-codex)
+                            rows (backend.status-info)]
+                        (assert.are.equal 1 (length rows))
+                        (assert.are.equal "/h/.config/fen/auth.json"
+                                          (. rows 1 :value)))))))
+            (it "FEN_AUTH_DIR sets the auth path while PI_CODING_AGENT_DIR stays ignored"
+                (fn []
+                  (with-stubbed-getenv {:HOME "/h"
+                                        :FEN_AUTH_DIR "/tmp/fen-only"
+                                        :PI_CODING_AGENT_DIR "/tmp/pi-shared"}
+                    (fn []
+                      (load-codex-backend)
+                      (let [backend (auth-reg.find :openai-codex)
+                            rows (backend.status-info)]
+                        (assert.are.equal 2 (length rows))
+                        (assert.are.equal "/tmp/fen-only/auth.json"
+                                          (. rows 1 :value))
+                        (assert.are.equal "$FEN_AUTH_DIR" (. rows 2 :value)))))))))

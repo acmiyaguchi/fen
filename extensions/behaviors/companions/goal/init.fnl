@@ -47,29 +47,32 @@
           (if (diagnostic-line? clean)
               (set saw-diagnostic? true)
               (set shown (truncate-line clean DISPLAY_REASON_MAX))))))
-    (or shown
-        (when saw-diagnostic? "provider diagnostic available"))))
+    (or shown (when saw-diagnostic? "provider diagnostic available"))))
 
 (local GOAL_STATE_VERSION 1)
-(local GOAL_STATUSES {:idle true :running true :done true :blocked true
-                      :stopped true :error true :cap-reached true})
+(local GOAL_STATUSES {:idle true
+                      :running true
+                      :done true
+                      :blocked true
+                      :stopped true
+                      :error true
+                      :cap-reached true})
+
 (local RESUMABLE_STATUSES {:blocked true :stopped true :error true})
-(local BASE_GOAL_PROMPT
-  (table.concat
-    ["You are running a bounded autonomous goal workflow in fen."
-     "Work toward the objective below without waiting for the user unless you are blocked, done, or the iteration cap is reached."
-     "Start by restating the objective and drafting or reusing a short plan."
-     "Maintain the session todo list with todo_write for non-trivial multi-step work."
-     "Use subagents for self-contained scouting, planning, review, or other independent work when helpful."
-     "Run appropriate checks before declaring completion."
-     "Respect normal tool policy, confirmation surfaces, and project constraints; autonomous continuation never grants permission for destructive or external actions."
-     "Stop when the goal is complete, blocked, unsafe, or no useful autonomous next step remains."
-     "End every response with the GOAL_STATUS marker as one final line exactly shaped as one of:"
-     "GOAL_STATUS: continue"
-     "GOAL_STATUS: done"
-     "GOAL_STATUS: blocked"
-     "GOAL_STATUS: error"]
-    "\n"))
+(local BASE_GOAL_PROMPT (table.concat ["You are running a bounded autonomous goal workflow in fen."
+                                       "Work toward the objective below without waiting for the user unless you are blocked, done, or the iteration cap is reached."
+                                       "Start by restating the objective and drafting or reusing a short plan."
+                                       "Maintain the session todo list with todo_write for non-trivial multi-step work."
+                                       "Use subagents for self-contained scouting, planning, review, or other independent work when helpful."
+                                       "Run appropriate checks before declaring completion."
+                                       "Respect normal tool policy, confirmation surfaces, and project constraints; autonomous continuation never grants permission for destructive or external actions."
+                                       "Stop when the goal is complete, blocked, unsafe, or no useful autonomous next step remains."
+                                       "End every response with the GOAL_STATUS marker as one final line exactly shaped as one of:"
+                                       "GOAL_STATUS: continue"
+                                       "GOAL_STATUS: done"
+                                       "GOAL_STATUS: blocked"
+                                       "GOAL_STATUS: error"]
+                                      "\n"))
 
 (fn active-running? []
   (= state.status :running))
@@ -144,17 +147,13 @@
 
 (fn optional-finite-number? [value]
   (or (= value nil)
-      (and (= (type value) :number)
-           (= value value)
-           (> value (- math.huge))
+      (and (= (type value) :number) (= value value) (> value (- math.huge))
            (< value math.huge))))
 
 (fn valid-restored-state? [saved]
-  (and (= (type saved) :table)
-       (. GOAL_STATUSES saved.status)
+  (and (= (type saved) :table) (. GOAL_STATUSES saved.status)
        (nonnegative-int? saved.iteration-count)
-       (nonnegative-int? saved.max-iterations)
-       (> saved.max-iterations 0)
+       (nonnegative-int? saved.max-iterations) (> saved.max-iterations 0)
        (<= saved.max-iterations MAX_MAX_ITERATIONS)
        (<= saved.iteration-count saved.max-iterations)
        (optional-type? saved.last-result :string)
@@ -171,10 +170,19 @@
                 (not= (trim saved.objective) "")))))
 
 (fn install-restored-state! [saved]
-  (each [_ key (ipairs [:status :objective :iteration-count :max-iterations
-                        :last-result :last-error :last-reason :last-marker
-                        :compaction-required? :last-compaction :retry-iteration?
-                        :started-at :updated-at])]
+  (each [_ key (ipairs [:status
+                        :objective
+                        :iteration-count
+                        :max-iterations
+                        :last-result
+                        :last-error
+                        :last-reason
+                        :last-marker
+                        :compaction-required?
+                        :last-compaction
+                        :retry-iteration?
+                        :started-at
+                        :updated-at])]
     (tset state key (. saved key)))
   (set state.run-state nil)
   ;; A persisted turn id belongs to the dead runtime and must never correlate
@@ -187,7 +195,8 @@
   (when (= state.status :running)
     (set state.status :blocked)
     (set state.retry-iteration? true)
-    (set state.last-reason "restored interrupted goal; use /goal resume to retry this iteration")))
+    (set state.last-reason
+         "restored interrupted goal; use /goal resume to retry this iteration")))
 
 (fn session-key [api]
   (let [info (api.session.info)]
@@ -210,14 +219,17 @@
           (when entry
             (let [interrupted? (= saved.status :running)]
               (install-restored-state! saved)
-              (api.emit
-                {:type :info
-                 :text (if interrupted?
-                           (.. "goal: restored interrupted goal as blocked; "
-                               "use /goal resume to retry iteration "
-                               state.iteration-count "/" state.max-iterations)
-                           (.. "goal: restored " (tostring state.status) " goal at iteration "
-                               state.iteration-count "/" state.max-iterations))}))))))))
+              (api.emit {:type :info
+                         :text (if interrupted?
+                                   (.. "goal: restored interrupted goal as blocked; "
+                                       "use /goal resume to retry iteration "
+                                       state.iteration-count "/"
+                                       state.max-iterations)
+                                   (.. "goal: restored "
+                                       (tostring state.status)
+                                       " goal at iteration "
+                                       state.iteration-count "/"
+                                       state.max-iterations))}))))))))
 
 (fn split-words [s]
   (let [out []]
@@ -227,7 +239,8 @@
 
 (fn parse-positive-int [s]
   (let [n (tonumber s)]
-    (when (and n (= n (math.floor n)) (> n 0)) n)))
+    (when (and n (= n (math.floor n)) (> n 0))
+      n)))
 
 (fn clamp-cap [n]
   (math.min (or n DEFAULT_MAX_ITERATIONS) MAX_MAX_ITERATIONS))
@@ -271,7 +284,8 @@
         (let [objective (trim (table.concat objective " "))]
           (if (= objective "")
               (values nil "missing objective")
-              (values {:objective objective :max-iterations (clamp-cap cap)} nil))))))
+              (values {:objective objective :max-iterations (clamp-cap cap)}
+                      nil))))))
 
 (fn context-estimate [run-state]
   (let [agent (?. run-state :agent)]
@@ -297,7 +311,8 @@
   (let [n (context-estimate run-state)]
     (when (and n (>= n HIGH_CONTEXT_TOKENS))
       (api.emit {:type :info
-                 :text (.. "goal: context is high (~" n " tokens); compact manually with /compact if the run blocks")})
+                 :text (.. "goal: context is high (~" n
+                           " tokens); compact manually with /compact if the run blocks")})
       n)))
 
 (fn marker-status [result]
@@ -323,18 +338,25 @@
                (.. "Iteration: " iteration " of " max-iterations)]]
     (when ?compact-required
       (table.insert lines "")
-      (table.insert lines "CONTEXT BUDGET GUARD: Before doing any other work, call the compact tool once.")
-      (table.insert lines "Preserve the objective, plan, changed files, validation results, constraints, and next steps in its guidance.")
-      (table.insert lines "If compaction fails or is unavailable, report GOAL_STATUS: blocked instead of continuing blindly."))
+      (table.insert lines
+                    "CONTEXT BUDGET GUARD: Before doing any other work, call the compact tool once.")
+      (table.insert lines
+                    "Preserve the objective, plan, changed files, validation results, constraints, and next steps in its guidance.")
+      (table.insert lines
+                    "If compaction fails or is unavailable, report GOAL_STATUS: blocked instead of continuing blindly."))
     (when ?previous
       (table.insert lines "")
       (table.insert lines "Previous iteration result:")
       (table.insert lines ?previous))
     (table.insert lines "")
-    (table.insert lines "If you need another iteration and the cap has not been reached, end with `GOAL_STATUS: continue`.")
-    (table.insert lines "If the objective is complete, end with `GOAL_STATUS: done`.")
-    (table.insert lines "If user input or manual recovery is required, end with `GOAL_STATUS: blocked` and explain why.")
-    (table.insert lines "If the run failed unexpectedly, end with `GOAL_STATUS: error` and summarize the failure.")
+    (table.insert lines
+                  "If you need another iteration and the cap has not been reached, end with `GOAL_STATUS: continue`.")
+    (table.insert lines
+                  "If the objective is complete, end with `GOAL_STATUS: done`.")
+    (table.insert lines
+                  "If user input or manual recovery is required, end with `GOAL_STATUS: blocked` and explain why.")
+    (table.insert lines
+                  "If the run failed unexpectedly, end with `GOAL_STATUS: error` and summarize the failure.")
     (table.concat lines "\n")))
 
 (fn tool-result [text ?error? ?details]
@@ -345,9 +367,11 @@
 (fn submit-iteration! [api run-state previous ?when-busy]
   (set state.run-state run-state)
   (maybe-context-warning! api run-state)
-  (let [text (prompt state.objective state.iteration-count state.max-iterations previous
-                     state.compaction-required?)
-        result (api.turn.submit! run-state text {:when-busy (or ?when-busy :reject) :emit-user? false})]
+  (let [text (prompt state.objective state.iteration-count state.max-iterations
+                     previous state.compaction-required?)
+        result (api.turn.submit! run-state text
+                                 {:when-busy (or ?when-busy :reject)
+                                  :emit-user? false})]
     (if result.ok
         (let [turn-id (or run-state.turn-id result.turn-id)]
           (if turn-id
@@ -369,11 +393,13 @@
 (fn start-goal! [api args run-state ?when-busy]
   (let [(opts err) (parse-start-args args)]
     (if (and run-state.busy? (not= ?when-busy :follow-up))
-        (api.emit {:type :error :error "/goal: cannot start while a turn is in progress"})
+        (api.emit {:type :error
+                   :error "/goal: cannot start while a turn is in progress"})
         err
         (api.emit {:type :error :error (.. "/goal: " err)})
         (active-running?)
-        (api.emit {:type :info :text "goal: already running; use /goal stop first"})
+        (api.emit {:type :info
+                   :text "goal: already running; use /goal stop first"})
         (do
           (set state.objective opts.objective)
           (set state.max-iterations opts.max-iterations)
@@ -398,11 +424,13 @@
   ;; its presentation contract; typed actions adapt it into a result payload.
   (if run-state.busy?
       (do
-        (api.emit {:type :error :error "/goal resume: cannot resume while a turn is in progress"})
+        (api.emit {:type :error
+                   :error "/goal resume: cannot resume while a turn is in progress"})
         (values false "cannot resume while a turn is in progress"))
       (not state.objective)
       (do
-        (api.emit {:type :error :error "/goal resume: no goal objective to resume"})
+        (api.emit {:type :error
+                   :error "/goal resume: no goal objective to resume"})
         (values false "no goal objective to resume"))
       (active-running?)
       (do
@@ -413,9 +441,11 @@
         (api.emit {:type :error :error (.. "/goal resume: " reason)})
         (values false reason))
       (and (not state.retry-iteration?)
-           (>= (or state.iteration-count 0) (or state.max-iterations DEFAULT_MAX_ITERATIONS)))
+           (>= (or state.iteration-count 0)
+               (or state.max-iterations DEFAULT_MAX_ITERATIONS)))
       (do
-        (api.emit {:type :error :error "/goal resume: iteration cap already reached"})
+        (api.emit {:type :error
+                   :error "/goal resume: iteration cap already reached"})
         (values false "iteration cap already reached"))
       (do
         (when (not state.retry-iteration?)
@@ -424,11 +454,13 @@
         (set state.last-error nil)
         (set-status! api :running "resumed")
         (emit-decision! api :resume :running "resumed by user"
-                        (.. "goal: resumed " state.iteration-count "/" state.max-iterations))
+                        (.. "goal: resumed " state.iteration-count "/"
+                            state.max-iterations))
         (let [result (submit-iteration! api run-state state.last-result)]
           (if result.ok
               (values true nil)
-              (values false (or result.error "goal resume could not be submitted")))))))
+              (values false
+                      (or result.error "goal resume could not be submitted")))))))
 
 (fn stop-goal! [api]
   ;; Like resume, return an outcome for typed actions without changing the
@@ -447,13 +479,12 @@
         (when cancel-active?
           (set run-state.cancel-requested? true))
         (set-status! api :stopped "stopped by user")
-        (emit-decision!
-          api :stop :stopped "stopped by user"
-          (if cancel-active?
-              "goal: stopped; active goal turn cancellation requested and no follow-up will be started"
-              (if running?
-                  "goal: stopped; no further autonomous iterations will be started"
-                  "goal: stopped")))
+        (emit-decision! api :stop :stopped "stopped by user"
+                        (if cancel-active?
+                            "goal: stopped; active goal turn cancellation requested and no follow-up will be started"
+                            (if running?
+                                "goal: stopped; no further autonomous iterations will be started"
+                                "goal: stopped")))
         (values true nil))))
 
 (fn clear-goal! [api]
@@ -465,30 +496,33 @@
 (fn status-text []
   (if (not state.objective)
       "No goal has been started. Use /goal <objective>."
-      (table.concat
-        [ (.. "Goal status: " (tostring state.status))
-          (.. "Objective: " state.objective)
-          (.. "Iteration: " (or state.iteration-count 0) "/" (or state.max-iterations DEFAULT_MAX_ITERATIONS))
-          (.. "Last marker: " (tostring (or state.last-marker "none")))
-          (.. "Reason: " (or (display-reason state.last-reason) "none")) ]
-        "\n")))
+      (table.concat [(.. "Goal status: " (tostring state.status))
+                     (.. "Objective: " state.objective)
+                     (.. "Iteration: " (or state.iteration-count 0) "/"
+                         (or state.max-iterations DEFAULT_MAX_ITERATIONS))
+                     (.. "Last marker: "
+                         (tostring (or state.last-marker "none")))
+                     (.. "Reason: "
+                         (or (display-reason state.last-reason) "none"))]
+                    "\n")))
 
 (fn show-status! [api]
   (api.emit {:type :assistant-text :text (status-text)}))
 
 (fn usage! [api]
   (api.emit {:type :assistant-text
-             :text (table.concat
-                     ["Usage:"
-                      (.. "/goal <objective>                    Start a bounded goal run (default " DEFAULT_MAX_ITERATIONS " iterations)")
-                      (.. "/goal start <objective>              Start explicitly when the objective begins with a command word")
-                      (.. "/goal --max-iterations N <objective> Start with an explicit iteration cap (max " MAX_MAX_ITERATIONS ")")
-                      "/goal status                         Show current goal state"
-                      "/goal stop                           Stop future autonomous iterations"
-                      "/goal resume                         Resume a blocked, stopped, or errored goal if under cap"
-                      "/goal panel on|off                   Toggle the goal panel"
-                      "/goal clear                          Clear goal state"]
-                     "\n")}))
+             :text (table.concat ["Usage:"
+                                  (.. "/goal <objective>                    Start a bounded goal run (default "
+                                      DEFAULT_MAX_ITERATIONS " iterations)")
+                                  (.. "/goal start <objective>              Start explicitly when the objective begins with a command word")
+                                  (.. "/goal --max-iterations N <objective> Start with an explicit iteration cap (max "
+                                      MAX_MAX_ITERATIONS ")")
+                                  "/goal status                         Show current goal state"
+                                  "/goal stop                           Stop future autonomous iterations"
+                                  "/goal resume                         Resume a blocked, stopped, or errored goal if under cap"
+                                  "/goal panel on|off                   Toggle the goal panel"
+                                  "/goal clear                          Clear goal state"]
+                                 "\n")}))
 
 (fn set-visible! [api visible? announce?]
   (set state.visible? visible?)
@@ -500,7 +534,8 @@
 (fn handle-command [api args run-state]
   (let [cmd (first-arg args)
         lower (and cmd (string.lower cmd))]
-    (if (or (= lower nil) (= lower "") (= lower "help") (= lower "--help") (= lower "-h"))
+    (if (or (= lower nil) (= lower "") (= lower "help") (= lower "--help")
+            (= lower "-h"))
         (usage! api)
         (= lower "start")
         (start-goal! api (rest-args args) run-state nil)
@@ -526,13 +561,16 @@
       (tool-result "goal requires an active agent turn" true)
       (let [objective (trim (or args.objective ""))
             cap args.max_iterations
-            cli (.. (if cap (.. "--max-iterations " cap " ") "") "-- " objective)
+            cli (.. (if cap (.. "--max-iterations " cap " ") "") "-- "
+                    objective)
             result (start-goal! api cli run-state :follow-up)]
         (if (and result result.ok)
             (tool-result (.. "Goal queued: " objective) false
-                         {:status state.status :objective state.objective
+                         {:status state.status
+                          :objective state.objective
                           :max-iterations state.max-iterations})
-            (tool-result (or (?. result :error) "goal could not be started") true)))))
+            (tool-result (or (?. result :error) "goal could not be started")
+                         true)))))
 
 (fn finish-with! [api status reason]
   (set state.last-reason reason)
@@ -540,7 +578,8 @@
   (let [shown (display-reason reason)]
     (emit-decision! api :stop status reason
                     (.. "goal: " (tostring status) " after "
-                        (or state.iteration-count 0) "/" (or state.max-iterations DEFAULT_MAX_ITERATIONS)
+                        (or state.iteration-count 0) "/"
+                        (or state.max-iterations DEFAULT_MAX_ITERATIONS)
                         (if shown (.. " — " shown) "")))))
 
 (fn continue-now! [api result ev compact-required?]
@@ -552,12 +591,15 @@
                   (if compact-required?
                       "model requested continuation; context compaction required"
                       "model requested continuation")
-                  (.. "goal: continuing " state.iteration-count "/" state.max-iterations
-                      (if compact-required? " with required context compaction" "")))
+                  (.. "goal: continuing " state.iteration-count "/"
+                      state.max-iterations
+                      (if compact-required? " with required context compaction"
+                          "")))
   (submit-iteration! api (or state.run-state (?. ev :state)) result))
 
 (fn continue-or-cap! [api result ev]
-  (if (>= (or state.iteration-count 0) (or state.max-iterations DEFAULT_MAX_ITERATIONS))
+  (if (>= (or state.iteration-count 0)
+          (or state.max-iterations DEFAULT_MAX_ITERATIONS))
       (finish-with! api :cap-reached "iteration cap reached")
       (let [run-state (or state.run-state (?. ev :state))
             estimate (context-estimate run-state)
@@ -598,8 +640,7 @@
   (= ev.agent (?. state.run-state :agent)))
 
 (fn matching-turn? [ev]
-  (and state.active-turn-id ev.turn-id
-       (= ev.turn-id state.active-turn-id)))
+  (and state.active-turn-id ev.turn-id (= ev.turn-id state.active-turn-id)))
 
 (fn on-turn-complete [api ev]
   (when (and (active-running?) (matching-agent? ev) (matching-turn? ev))
@@ -612,13 +653,15 @@
               (do
                 (set state.retry-iteration? true)
                 (finish-with! api :blocked
-                              (.. "automatic compaction failed: " (or ev.error "goal turn failed")
+                              (.. "automatic compaction failed: "
+                                  (or ev.error "goal turn failed")
                                   "; run /compact manually, then /goal resume")))
               (context-limit-error? ev.error)
               (do
                 (set state.retry-iteration? true)
                 (finish-with! api :blocked
-                              (.. "provider context limit reached: " (or ev.error "unknown error")
+                              (.. "provider context limit reached: "
+                                  (or ev.error "unknown error")
                                   "; run /compact, then /goal resume")))
               (finish-with! api :error (or ev.error "goal turn failed"))))
         (handle-success! api ev))))
@@ -632,19 +675,17 @@
     (touch!)))
 
 (fn on-compaction-summary [api ev]
-  (let [agent-success? (and (active-running?)
-                            state.compaction-required?
-                            (= ev.trigger :agent)
-                            (matching-agent? ev))
+  (let [agent-success? (and (active-running?) state.compaction-required?
+                            (= ev.trigger :agent) (matching-agent? ev))
         manual-recovery? (and (= state.status :blocked)
-                              state.compaction-required?
-                              state.retry-iteration?
+                              state.compaction-required? state.retry-iteration?
                               (= ev.trigger :manual))]
     (when (or agent-success? manual-recovery?)
       (set state.compaction-required? false)
-      (set state.last-compaction {:tokens-before ev.tokens-before
-                                  :tokens-after ev.tokens-after
-                                  :trigger ev.trigger})
+      (set state.last-compaction
+           {:tokens-before ev.tokens-before
+            :tokens-after ev.tokens-after
+            :trigger ev.trigger})
       (touch!)
       (persist! api))))
 
@@ -654,7 +695,8 @@
 (fn status-render [_ctx]
   (when (visible-status?)
     {:text (if (= state.status :running)
-               (.. "goal:" (or state.iteration-count 0) "/" (or state.max-iterations DEFAULT_MAX_ITERATIONS))
+               (.. "goal:" (or state.iteration-count 0) "/"
+                   (or state.max-iterations DEFAULT_MAX_ITERATIONS))
                (.. "goal:" (tostring state.status)))
      :style :status}))
 
@@ -665,22 +707,28 @@
   (let [width (math.max 20 (or w 80))
         rows [(row (.. "Goal: " (tostring state.status)) :assistant)]]
     (when state.objective
-      (table.insert rows (row (.. "Objective: " (truncate-line state.objective (- width 12))) :dim)))
-    (table.insert rows (row (.. "Iteration: " (or state.iteration-count 0) "/" (or state.max-iterations DEFAULT_MAX_ITERATIONS)) :dim))
+      (table.insert rows (row (.. "Objective: "
+                                  (truncate-line state.objective (- width 12)))
+                              :dim)))
+    (table.insert rows (row (.. "Iteration: " (or state.iteration-count 0) "/"
+                                (or state.max-iterations DEFAULT_MAX_ITERATIONS))
+                            :dim))
     (let [shown (display-reason state.last-reason)]
       (when shown
-        (table.insert rows (row (.. "Reason: " (truncate-line shown (- width 8))) :dim))))
+        (table.insert rows (row (.. "Reason: "
+                                    (truncate-line shown (- width 8)))
+                                :dim))))
     (when state.last-result
       (table.insert rows (row "Last result:" :dim))
       (each [line (string.gmatch state.last-result "([^\n]+)")]
         (when (< (length rows) 8)
-          (table.insert rows (row (.. "  " (truncate-line line (- width 4))) :dim)))))
+          (table.insert rows (row (.. "  " (truncate-line line (- width 4)))
+                                  :dim)))))
     rows))
 
 (fn panel-rows [ctx]
   (let [w (or (?. ctx :w) 80)]
-    (when (or (not state.cached-rows)
-              (not= state.cached-w w)
+    (when (or (not state.cached-rows) (not= state.cached-w w)
               (not= state.cached-version state.version))
       (set state.cached-rows (panel-lines w))
       (set state.cached-w w)
@@ -725,60 +773,67 @@
 
 (fn register! [api]
   (api.register :command
-    {:name :goal
-     :order 30
-     :description "Run a bounded autonomous goal workflow"
-     :handler (fn [args run-state]
-                (handle-command api args run-state))})
+                {:name :goal
+                 :order 30
+                 :description "Run a bounded autonomous goal workflow"
+                 :handler (fn [args run-state]
+                            (handle-command api args run-state))})
   (api.register :tool
-    {:name :goal
-     :label "Goal"
-     :exposure :search
-     :description "Start a bounded autonomous goal workflow during the active agent turn."
-     :parameters {:type :object
-                  :properties {:objective {:type :string}
-                               :max_iterations {:type :integer :minimum 1 :maximum MAX_MAX_ITERATIONS}}
-                  :required [:objective]}
-     :execute (fn [args ctx _yield] (execute-tool api args ctx.state))})
+                {:name :goal
+                 :label "Goal"
+                 :exposure :search
+                 :description "Start a bounded autonomous goal workflow during the active agent turn."
+                 :parameters {:type :object
+                              :properties {:objective {:type :string}
+                                           :max_iterations {:type :integer
+                                                            :minimum 1
+                                                            :maximum MAX_MAX_ITERATIONS}}
+                              :required [:objective]}
+                 :execute (fn [args ctx _yield]
+                            (execute-tool api args ctx.state))})
   ;; Start is deliberately deferred until its fresh objective/run context has
   ;; a typed action contract; these lifecycle actions operate on existing state.
   (api.register :action
-    {:name :stop
-     :description "Stop the active bounded goal run"
-     :parameters EMPTY_ACTION_PARAMETERS
-     :invoke (fn [_args ctx]
-               (let [(ok? reason) (stop-goal! api)]
-                 (if ok?
-                     {:ok true :state (snapshot ctx)}
-                     {:ok false :error reason :state (snapshot ctx)})))})
+                {:name :stop
+                 :description "Stop the active bounded goal run"
+                 :parameters EMPTY_ACTION_PARAMETERS
+                 :invoke (fn [_args ctx]
+                           (let [(ok? reason) (stop-goal! api)]
+                             (if ok?
+                                 {:ok true :state (snapshot ctx)}
+                                 {:ok false
+                                  :error reason
+                                  :state (snapshot ctx)})))})
   (api.register :action
-    {:name :resume
-     :description "Resume a stopped, blocked, or errored bounded goal run"
-     :parameters EMPTY_ACTION_PARAMETERS
-     :invoke (fn [_args ctx]
-               (let [(ok? reason) (resume-goal! api (or ctx {}))]
-                 (if ok?
-                     {:ok true :state (snapshot ctx)}
-                     {:ok false :error reason :state (snapshot ctx)})))})
+                {:name :resume
+                 :description "Resume a stopped, blocked, or errored bounded goal run"
+                 :parameters EMPTY_ACTION_PARAMETERS
+                 :invoke (fn [_args ctx]
+                           (let [(ok? reason) (resume-goal! api (or ctx {}))]
+                             (if ok?
+                                 {:ok true :state (snapshot ctx)}
+                                 {:ok false
+                                  :error reason
+                                  :state (snapshot ctx)})))})
   (api.register :action
-    {:name :clear
-     :description "Clear the bounded goal run state"
-     :parameters EMPTY_ACTION_PARAMETERS
-     :invoke (fn [_args ctx]
-               (let [(ok? reason) (clear-goal! api)]
-                 (if ok?
-                     {:ok true :state (snapshot ctx)}
-                     {:ok false :error reason :state (snapshot ctx)})))})
-  (api.register :status
-    {:name :goal
-     :side :left
-     :order 33
-     :render status-render})
+                {:name :clear
+                 :description "Clear the bounded goal run state"
+                 :parameters EMPTY_ACTION_PARAMETERS
+                 :invoke (fn [_args ctx]
+                           (let [(ok? reason) (clear-goal! api)]
+                             (if ok?
+                                 {:ok true :state (snapshot ctx)}
+                                 {:ok false
+                                  :error reason
+                                  :state (snapshot ctx)})))})
+  (api.register :status {:name :goal
+                         :side :left
+                         :order 33
+                         :render status-render})
   (api.register :panel (panel-spec))
-  (api.register :introspect
-    {:name :state
-     :description "Current bounded goal workflow state"
-     :snapshot snapshot})
+  (api.register :introspect {:name :state
+                             :description "Current bounded goal workflow state"
+                             :snapshot snapshot})
   (api.on :agent-turn-complete (fn [ev] (on-turn-complete api ev)))
   (api.on :compaction-summary (fn [ev] (on-compaction-summary api ev)))
   (api.on :error on-error)

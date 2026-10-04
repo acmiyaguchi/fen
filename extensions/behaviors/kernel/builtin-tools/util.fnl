@@ -58,9 +58,10 @@
 ;; summary: Check whether a path is a directory using a shell-quoted POSIX test probe.
 ;; tags: tools filesystem util
 (fn dir-exists? [path]
-  (let [pipe (io.popen (.. "test -d " (shellquote path)
-                            " && echo y || echo n") :r)]
-    (if (not pipe) false
+  (let [pipe (io.popen (.. "test -d " (shellquote path) " && echo y || echo n")
+                       :r)]
+    (if (not pipe)
+        false
         (let [out (or (pipe:read :*l) "")]
           (pipe:close)
           (= out "y")))))

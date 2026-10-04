@@ -6,28 +6,24 @@
 
 (local stream-state {:kind nil})
 
-(local ANSI
-  {:reset "\27[0m"
-   :bold-cyan "\27[1;36m"
-   :bold-green "\27[1;32m"
-   :bold-yellow "\27[1;33m"
-   :bold-blue "\27[1;34m"
-   :bold-red "\27[1;31m"
-   :dim "\27[2m"})
+(local ANSI {:reset "\27[0m"
+             :bold-cyan "\27[1;36m"
+             :bold-green "\27[1;32m"
+             :bold-yellow "\27[1;33m"
+             :bold-blue "\27[1;34m"
+             :bold-red "\27[1;31m"
+             :dim "\27[2m"})
 
-(local PREFIX-STYLES
-  {"you> " ANSI.bold-cyan
-   "ai> " ANSI.bold-green
-   "tool> " ANSI.bold-yellow
-   "tool< " ANSI.bold-blue
-   "info> " ANSI.dim
-   "err> " ANSI.bold-red
-   "> " ANSI.dim})
+(local PREFIX-STYLES {"you> " ANSI.bold-cyan
+                      "ai> " ANSI.bold-green
+                      "tool> " ANSI.bold-yellow
+                      "tool< " ANSI.bold-blue
+                      "info> " ANSI.dim
+                      "err> " ANSI.bold-red
+                      "> " ANSI.dim})
 
 (fn status-ok? [ok how code]
-  (or (= ok true)
-      (= ok 0)
-      (and (= how :exit) (= code 0))))
+  (or (= ok true) (= ok 0) (and (= how :exit) (= code 0))))
 
 (fn tty-fd? [fd]
   (status-ok? (os.execute (.. "test -t " (tostring fd) " >/dev/null 2>&1"))))
@@ -36,10 +32,11 @@
   (let [override (os.getenv :FEN_COLOR)
         no-color (os.getenv :NO_COLOR)
         term (or (os.getenv :TERM) "")]
-    (if (= override :never) false
-        (= override :always) true
-        (and (not no-color)
-             (not= term :dumb)
+    (if (= override :never)
+        false
+        (= override :always)
+        true
+        (and (not no-color) (not= term :dumb)
              (if (= stream :stderr) (tty-fd? 2) (tty-fd? 1))))))
 
 (fn styled-prefix [prefix stream]
@@ -114,11 +111,10 @@
 (fn M.render-event [ev]
   (when ev
     (if (or (= ev.type :assistant-text) (= ev.type :assistant-thinking)
-            (= ev.type :tool-call) (= ev.type :tool-result)
-            (= ev.type :info) (= ev.type :queued)
-            (= ev.type :steering-injected) (= ev.type :follow-up-injected)
-            (= ev.type :cancelled) (= ev.type :error)
-            (= ev.type :provider-retry) (= ev.type :user))
+            (= ev.type :tool-call) (= ev.type :tool-result) (= ev.type :info)
+            (= ev.type :queued) (= ev.type :steering-injected)
+            (= ev.type :follow-up-injected) (= ev.type :cancelled)
+            (= ev.type :error) (= ev.type :provider-retry) (= ev.type :user))
         (finish-stream!))
     (case ev.type
       :user (when (not ev.stdio-local?)
@@ -126,7 +122,8 @@
       :assistant-text (stdout-line "ai> " ev.text)
       :assistant-thinking (stdout-line "ai> " ev.text)
       :assistant-text-delta (stream-delta! :assistant-text "ai> " ev.delta)
-      :assistant-thinking-delta (stream-delta! :assistant-thinking "ai> " ev.delta)
+      :assistant-thinking-delta (stream-delta! :assistant-thinking "ai> "
+                                               ev.delta)
       :assistant-stream-end (finish-stream!)
       :tool-call (stdout-line "tool> " (tool-call-text ev))
       :tool-result (stdout-line "tool< " (tool-result-text ev))
@@ -140,7 +137,9 @@
                                    (.. "provider retry "
                                        (tostring (or ev.attempt "?")) "/"
                                        (tostring (or ev.max-attempts "?"))
-                                       (if ev.reason (.. ": " (tostring ev.reason)) "")))
+                                       (if ev.reason
+                                           (.. ": " (tostring ev.reason))
+                                           "")))
       :info (stdout-line "info> " ev.text)
       :error (stderr-line "err> " ev.error)
       _ nil)))
@@ -168,8 +167,7 @@
     (when ctx.on-tick
       (let [(ok? err) (pcall ctx.on-tick)]
         (when (not ok?)
-          (api.emit {:type :error
-                            :error (.. "on-tick: " (tostring err))}))))
+          (api.emit {:type :error :error (.. "on-tick: " (tostring err))}))))
     (when (and ctx.is-busy? (ctx.is-busy?))
       (sleep-tick))))
 
@@ -184,8 +182,7 @@
     (let [(ok? err) (pcall ctx.on-submit line)]
       (if ok?
           (M.drain-turn api ctx)
-          (api.emit {:type :error
-                            :error (.. "submit: " (tostring err))})))))
+          (api.emit {:type :error :error (.. "submit: " (tostring err))})))))
 
 ;; @doc fen.extensions.stdio.run
 ;; kind: function
@@ -243,20 +240,17 @@
       (when (and n (>= n 1) (<= n (length choices)))
         (. choices n)))))
 
-(local PRESENTER-CONTROL-EVENTS
-  {:message-appended true
-   :set-status-info true
-   :reset-conversation true
-   :reinit-presenter true
-   :redraw true
-   :dismiss true})
+(local PRESENTER-CONTROL-EVENTS {:message-appended true
+                                 :set-status-info true
+                                 :reset-conversation true
+                                 :reinit-presenter true
+                                 :redraw true
+                                 :dismiss true})
 
 (fn M.register [api]
-  (api.on :*
-          (fn [ev]
-            (when (not (. PRESENTER-CONTROL-EVENTS ev.type))
-              (M.render-event ev))))
-
+  (api.on :* (fn [ev]
+               (when (not (. PRESENTER-CONTROL-EVENTS ev.type))
+                 (M.render-event ev))))
   (api.on :reset-conversation
           (fn [_]
             (stdout-line "info> " "new conversation")))
@@ -268,9 +262,8 @@
             (let [info (or ev.info {})]
               (when (or info.provider info.model)
                 (stdout-line "info> "
-                             (.. "model " (tostring (or info.provider "?"))
-                                 ":" (tostring (or info.model "?"))))))))
-
+                             (.. "model " (tostring (or info.provider "?")) ":"
+                                 (tostring (or info.model "?"))))))))
   (api.register :presenter
                 {:name :stdio
                  :active? true

@@ -76,7 +76,9 @@
 
 (fn bounded-copy [value budget depth]
   (if (> depth EVENT-MAX-DEPTH)
-      (do (set budget.truncated? true) "[transport depth limit]")
+      (do
+        (set budget.truncated? true)
+        "[transport depth limit]")
       (= (type value) :string)
       (let [limit (math.max 1 (math.min EVENT-STRING-BYTES budget.bytes))
             scrubbed (text.scrub-tool-text value {:max-bytes limit})]
@@ -92,8 +94,11 @@
                 (set budget.entries (- budget.entries 1))
                 (tset out k (bounded-copy v budget (+ depth 1))))))
         out)
-      (or (= value nil) (= (type value) :boolean) (= (type value) :number)) value
-      (do (set budget.truncated? true) (tostring value))))
+      (or (= value nil) (= (type value) :boolean) (= (type value) :number))
+      value
+      (do
+        (set budget.truncated? true)
+        (tostring value))))
 
 (fn keep-payload! [out key value budget]
   (when (not (absent? value))
@@ -111,7 +116,8 @@
   (let [meta (or ?meta {})
         typ (?. ev :type)
         out {:type typ :timestamp (now)}
-        budget {:bytes EVENT-PAYLOAD-BYTES :entries EVENT-TABLE-ENTRIES
+        budget {:bytes EVENT-PAYLOAD-BYTES
+                :entries EVENT-TABLE-ENTRIES
                 :truncated? false}]
     (copy-meta! out meta)
     (if (= typ :tool-call)
@@ -126,11 +132,11 @@
           (set out.id (opt-str ev.id))
           (set out.tool-call-id (opt-str ev.tool-call-id))
           (set out.duration-seconds (opt-num ev.duration-seconds))
-          (set out.is-error? (not (not (or ev.is-error?
-                                               (?. ev :result :is-error?)))))
+          (set out.is-error?
+               (not (not (or ev.is-error? (?. ev :result :is-error?)))))
           (keep-payload! out :result ev.result budget)
-          (set out.summary (summarize (or (?. ev :result :content)
-                                          (?. ev :result)))))
+          (set out.summary
+               (summarize (or (?. ev :result :content) (?. ev :result)))))
         (or (= typ :assistant-text) (= typ :assistant-thinking))
         (do
           (set out.final? (not (not ev.final?)))
@@ -214,8 +220,9 @@
                   (when reader.skipping?
                     (let [nl (string.find chunk "\n" 1 true)]
                       (if nl
-                          (do (set reader.skipping? false)
-                              (set pos (+ nl 1)))
+                          (do
+                            (set reader.skipping? false)
+                            (set pos (+ nl 1)))
                           (set pos (+ (length chunk) 1)))))
                   (when (not reader.skipping?)
                     (var newline (string.find chunk "\n" pos true))
@@ -252,8 +259,13 @@
 
 ;; Fields every normalized display event may carry (see `normalize`).
 (fn display-event [extra ?required]
-  (let [props {:timestamp str :summary str :transport-truncated? bool
-               :run-id str :agent str :requested-cwd str :cwd str
+  (let [props {:timestamp str
+               :summary str
+               :transport-truncated? bool
+               :run-id str
+               :agent str
+               :requested-cwd str
+               :cwd str
                :physical-cwd str}]
     (each [k v (pairs extra)] (tset props k v))
     (object-schema props ?required)))
@@ -261,75 +273,94 @@
 (local positive-int {:type :integer :minimum 1 :maximum MAX-SAFE-INTEGER})
 
 ;; Child -> parent. Keys are wire `type` values; schemas cover the payload.
-(local EVENT-SCHEMAS
-  {;; Normalized display events.
-   :tool-call (display-event {:name str :id str :arguments any} [:name])
-   :tool-result (display-event {:name str :id str :tool-call-id str
-                                :duration-seconds num :is-error? bool
-                                :result any}
-                               [:name :is-error?])
-   :assistant-text (display-event {:final? bool :content-index int :text str}
-                                  [:final?])
-   :assistant-thinking (display-event {:final? bool :content-index int
-                                       :text str}
-                                      [:final?])
-   :assistant-text-delta (display-event {:content-index int :delta str})
-   :assistant-thinking-delta (display-event {:content-index int :delta str})
-   :assistant-stream-end (display-event {:final? bool} [:final?])
-   :user (display-event {:text str})
-   ;; ref names the steer/follow-up control whose queued text was injected.
-   :steering-injected (display-event {:text str :ref positive-int})
-   :follow-up-injected (display-event {:text str :ref positive-int})
-   :llm-start (display-event {:provider str :model str})
-   :llm-end (display-event {:stop-reason str :usage obj})
-   :agent-started (display-event {:provider str :model str})
-   :agent-turn-complete (display-event {:status str :error str})
-   :error (display-event {:error str :source str})
-   ;; refs lists control seqs the info concerns (e.g. dropped queued input).
-   :info (display-event {:refs {:type :array :items positive-int}})
-   ;; Live-child lifecycle.
-   :ready (object-schema {})
-   :turn-started (object-schema {:turn positive-int} [:turn])
-   :turn-complete (object-schema {:turn positive-int :stop-reason str
-                                  :usage obj}
-                                 [:turn :stop-reason])
-   :control-ack {:type :object
-                 :properties {:ref positive-int
-                              :status {:type :string
-                                       :enum [:accepted :rejected :applied]}
-                              :reason str}
-                 :required [:status]
-                 ;; ref may be omitted only when a rejected line had no seq.
-                 :anyOf [{:required [:ref]}
-                         {:properties {:status {:enum [:rejected]}}}]}
-   :result (object-schema {:final-text str :stop-reason str :usage obj
-                           ;; final-text was cut to fit one line.
-                           :truncated? bool
-                           ;; Private file holding the uncut final text.
-                           :final-text-path str}
-                          [:stop-reason])
-   :exit (object-schema {:status {:type :string
-                                  :enum [:done :cancelled :failed :timed-out]}
-                         :error str}
-                        [:status])})
+(local EVENT-SCHEMAS {;; Normalized display events.
+                      :tool-call (display-event {:name str
+                                                 :id str
+                                                 :arguments any}
+                                                [:name])
+                      :tool-result (display-event {:name str
+                                                   :id str
+                                                   :tool-call-id str
+                                                   :duration-seconds num
+                                                   :is-error? bool
+                                                   :result any}
+                                                  [:name :is-error?])
+                      :assistant-text (display-event {:final? bool
+                                                      :content-index int
+                                                      :text str}
+                                                     [:final?])
+                      :assistant-thinking (display-event {:final? bool
+                                                          :content-index int
+                                                          :text str}
+                                                         [:final?])
+                      :assistant-text-delta (display-event {:content-index int
+                                                            :delta str})
+                      :assistant-thinking-delta (display-event {:content-index int
+                                                                :delta str})
+                      :assistant-stream-end (display-event {:final? bool}
+                                                           [:final?])
+                      :user (display-event {:text str})
+                      ;; ref names the steer/follow-up control whose queued text was injected.
+                      :steering-injected (display-event {:text str
+                                                         :ref positive-int})
+                      :follow-up-injected (display-event {:text str
+                                                          :ref positive-int})
+                      :llm-start (display-event {:provider str :model str})
+                      :llm-end (display-event {:stop-reason str :usage obj})
+                      :agent-started (display-event {:provider str :model str})
+                      :agent-turn-complete (display-event {:status str
+                                                           :error str})
+                      :error (display-event {:error str :source str})
+                      ;; refs lists control seqs the info concerns (e.g. dropped queued input).
+                      :info (display-event {:refs {:type :array
+                                                   :items positive-int}})
+                      ;; Live-child lifecycle.
+                      :ready (object-schema {})
+                      :turn-started (object-schema {:turn positive-int} [:turn])
+                      :turn-complete (object-schema {:turn positive-int
+                                                     :stop-reason str
+                                                     :usage obj}
+                                                    [:turn :stop-reason])
+                      :control-ack {:type :object
+                                    :properties {:ref positive-int
+                                                 :status {:type :string
+                                                          :enum [:accepted
+                                                                 :rejected
+                                                                 :applied]}
+                                                 :reason str}
+                                    :required [:status]
+                                    ;; ref may be omitted only when a rejected line had no seq.
+                                    :anyOf [{:required [:ref]}
+                                            {:properties {:status {:enum [:rejected]}}}]}
+                      :result (object-schema {:final-text str
+                                              :stop-reason str
+                                              :usage obj
+                                              ;; final-text was cut to fit one line.
+                                              :truncated? bool
+                                              ;; Private file holding the uncut final text.
+                                              :final-text-path str}
+                                             [:stop-reason])
+                      :exit (object-schema {:status {:type :string
+                                                     :enum [:done
+                                                            :cancelled
+                                                            :failed
+                                                            :timed-out]}
+                                            :error str}
+                                           [:status])})
 
 ;; Parent -> child.
-(local CONTROL-SCHEMAS
-  {:prompt (object-schema {:text str} [:text])
-   :steer (object-schema {:text str} [:text])
-   :follow-up (object-schema {:text str} [:text])
-   :finalize (object-schema {:note str})
-   :cancel (object-schema {})
-   :close (object-schema {})})
+(local CONTROL-SCHEMAS {:prompt (object-schema {:text str} [:text])
+                        :steer (object-schema {:text str} [:text])
+                        :follow-up (object-schema {:text str} [:text])
+                        :finalize (object-schema {:note str})
+                        :cancel (object-schema {})
+                        :close (object-schema {})})
 
 (local SCHEMAS {:event EVENT-SCHEMAS :control CONTROL-SCHEMAS})
 
 (local ENVELOPE-SCHEMA
-  (object-schema {:v int
-                  :seq positive-int
-                  :type str
-                  :run str}
-                 [:v :seq :type :run]))
+       (object-schema {:v int :seq positive-int :type str :run str}
+                      [:v :seq :type :run]))
 
 (fn type-set [schemas]
   (let [out {}]
@@ -369,7 +400,9 @@
    {:code :reason :fatal? :seq :type :run :errors}. Codes: :invalid,
    :version-mismatch (fatal), :unknown-type, :invalid-payload. Never throws."
   (if (not (valid-direction? direction))
-      (values nil (rejection :invalid (.. "unknown direction: " (tostring direction))))
+      (values nil
+              (rejection :invalid
+                         (.. "unknown direction: " (tostring direction))))
       (not (json-object? msg))
       (values nil (rejection :invalid "message must be a JSON object"))
       (absent? msg.v)
@@ -381,26 +414,32 @@
                              msg))
       (let [(ok? errors) (json-schema.validate ENVELOPE-SCHEMA msg)]
         (if (not ok?)
-            (values nil (rejection :invalid (describe-errors errors) msg errors))
+            (values nil
+                    (rejection :invalid (describe-errors errors) msg errors))
             (let [schema (. SCHEMAS direction msg.type)]
               (if (not schema)
                   (values nil (rejection :unknown-type
-                                         (if (. SCHEMAS (other-direction direction) msg.type)
-                                             (.. msg.type " is not a " direction " message")
-                                             (.. "unknown " direction " type: " msg.type))
+                                         (if (. SCHEMAS
+                                                (other-direction direction)
+                                                msg.type)
+                                             (.. msg.type " is not a "
+                                                 direction " message")
+                                             (.. "unknown " direction " type: "
+                                                 msg.type))
                                          msg))
                   (let [(pok? perrors) (json-schema.validate schema msg)]
                     (if pok?
                         msg
-                        (values nil (rejection :invalid-payload
-                                               (describe-errors perrors)
-                                               msg perrors))))))))))
+                        (values nil
+                                (rejection :invalid-payload
+                                           (describe-errors perrors) msg perrors))))))))))
 
 (fn M.message [typ run seq ?payload]
   "Build an unvalidated envelope: ?payload fields plus :v :seq :type :run.
    Envelope fields win over payload fields of the same name."
   (let [out {}]
-    (each [k v (pairs (or ?payload {}))] (tset out k v))
+    (each [k v (pairs (or ?payload {}))]
+      (tset out k v))
     (set out.v VERSION)
     (set out.seq seq)
     (set out.type typ)
@@ -419,7 +458,8 @@
               (values nil (rejection :invalid (tostring line) valid))
               (>= (length line) MAX-LINE-BYTES)
               (values nil (rejection :too-large
-                                     (.. "encoded line exceeds " MAX-LINE-BYTES " bytes")
+                                     (.. "encoded line exceeds " MAX-LINE-BYTES
+                                         " bytes")
                                      valid))
               line)))))
 
@@ -429,8 +469,9 @@
   (if (not= (type line) :string)
       (values nil (rejection :malformed "line must be a string"))
       (>= (length line) MAX-LINE-BYTES)
-      (values nil (rejection :too-large
-                             (.. "line exceeds " MAX-LINE-BYTES " bytes")))
+      (values nil
+              (rejection :too-large
+                         (.. "line exceeds " MAX-LINE-BYTES " bytes")))
       (let [(ok? decoded) (pcall json.decode line)]
         (if (not ok?)
             (values nil (rejection :malformed (tostring decoded)))
@@ -465,10 +506,11 @@
         (values nil rej)
         (and seq (<= seq receiver.seq))
         ;; No :seq, so a rejection-ack never names an already-accepted line.
-        (values nil (rejection :out-of-order
-                               (.. "seq " seq " does not follow " receiver.seq)
-                               {:type (or (?. msg :type) (?. rej :type))
-                                :run (or (?. msg :run) (?. rej :run))}))
+        (values nil
+                (rejection :out-of-order
+                           (.. "seq " seq " does not follow " receiver.seq)
+                           {:type (or (?. msg :type) (?. rej :type))
+                            :run (or (?. msg :run) (?. rej :run))}))
         (do
           (when seq (set receiver.seq seq))
           (values msg rej)))))

@@ -49,7 +49,9 @@
               (ok? err) (pcall M.write! seq)]
           (if ok?
               {:ok? true :bytes (length s)}
-              {:ok? false :bytes (length s) :reason :write-error
+              {:ok? false
+               :bytes (length s)
+               :reason :write-error
                :error (tostring err)})))))
 
 M

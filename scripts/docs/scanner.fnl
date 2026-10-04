@@ -27,13 +27,10 @@
 (local M {})
 
 (local SOURCE-FIND
-  (.. "find packages extensions -name '*.fnl' -type f"
-      " -not -path '*/dist/*'"
-      " -not -path '*/tests/*'"
-      " -not -path '*/vendor/*'"
-      " -not -path '*/.lrbuild/*'"
-      " -not -path 'extensions/*/manifest.fnl'"
-      " | sort"))
+       (.. "find packages extensions -name '*.fnl' -type f"
+           " -not -path '*/dist/*'" " -not -path '*/tests/*'"
+           " -not -path '*/vendor/*'" " -not -path '*/.lrbuild/*'"
+           " -not -path 'extensions/*/manifest.fnl'" " | sort"))
 
 (fn read-file [path]
   (let [f (assert (io.open path :r))
@@ -84,17 +81,20 @@
   (or (string.match path "^(.+)/[^/]+$") "."))
 
 (fn starts-with? [s prefix]
-  (= (string.sub (tostring s) 1 (# prefix)) prefix))
+  (= (string.sub (tostring s) 1 (length prefix)) prefix))
 
 (fn extension-root-for-path [path]
   "Return nearest ancestor containing manifest.fnl for a file under extensions/."
   (when (string.match path "^extensions/")
     (var dir (dirname path))
     (var found nil)
-    (while (and (not found) (starts-with? dir "extensions/") (not= dir "extensions"))
+    (while (and (not found) (starts-with? dir "extensions/")
+                (not= dir "extensions"))
       (let [f (io.open (.. dir "/manifest.fnl") :r)]
         (if f
-            (do (f:close) (set found dir))
+            (do
+              (f:close)
+              (set found dir))
             (set dir (dirname dir)))))
     found))
 
@@ -108,11 +108,12 @@
         (let [ext-root (extension-root-for-path path)]
           (when ext-root
             (let [info (read-manifest-info ext-root)
-                  suffix (string.sub path (+ (# ext-root) 2))
+                  suffix (string.sub path (+ (length ext-root) 2))
                   rel (string.match suffix "^(.+)%.fnl$")
                   dotted (string.gsub (or rel "") "/" ".")
                   base (or (?. info :entry-module)
-                           (and (?. info :name) (.. "fen.extensions." info.name)))]
+                           (and (?. info :name)
+                                (.. "fen.extensions." info.name)))]
               (when (and base rel)
                 {:module (if (= dotted "init") base (.. base "." dotted))
                  :pkg ext-root
@@ -139,23 +140,18 @@
   (let [head (. lines start-idx)
         id (string.match head "^%s*;;%s+@doc%s+(%S+)")]
     (when id
-      (let [doc {:id id
-                 :line start-idx
-                 :end-line start-idx
-                 :tags []}]
+      (let [doc {:id id :line start-idx :end-line start-idx :tags []}]
         (var i (+ start-idx 1))
         (var stop? false)
-        (while (and (not stop?) (<= i (# lines)))
+        (while (and (not stop?) (<= i (length lines)))
           (let [line (. lines i)]
             (if (and (string.match line "^%s*;;")
                      (not (string.match line "^%s*;;%s+@doc%s")))
                 (do
                   (let [(k v) (parse-doc-line line)]
                     (when k
-                      (if (= k :tags)
-                          (tset doc :tags (parse-tags v))
-                          (= k :see-also)
-                          (tset doc :see-also (parse-tags v))
+                      (if (= k :tags) (tset doc :tags (parse-tags v))
+                          (= k :see-also) (tset doc :see-also (parse-tags v))
                           (tset doc k v))))
                   (set doc.end-line i)
                   (set i (+ i 1)))
@@ -167,7 +163,7 @@
    in source order."
   (let [out []]
     (var i 1)
-    (while (<= i (# lines))
+    (while (<= i (length lines))
       (let [line (. lines i)]
         (if (string.match line "^%s*;;%s+@doc%s+%S+")
             (let [doc (parse-doc-block lines i)]
@@ -208,13 +204,17 @@
             set-name (string.match line "^%(set%s+M%.([%w%-_!?]+)")]
         (if fn-name
             (let [sig (string.match line "^%(fn%s+M%.[^%s]+%s+(%[[^%]]*%])")]
-              (table.insert out {:name fn-name :line i :signature sig
-                                 :kind :function :src :fn-form}))
+              (table.insert out {:name fn-name
+                                 :line i
+                                 :signature sig
+                                 :kind :function
+                                 :src :fn-form}))
             set-name
-            (let [fn-rhs? (string.match line
-                            "^%(set%s+M%.[^%s]+%s+%(fn[%s%[]")
+            (let [fn-rhs? (string.match line "^%(set%s+M%.[^%s]+%s+%(fn[%s%[]")
                   kind (if fn-rhs? :function :data)]
-              (table.insert out {:name set-name :line i :kind kind
+              (table.insert out {:name set-name
+                                 :line i
+                                 :kind kind
                                  :src :fn-form})))))
     out))
 
@@ -252,7 +252,7 @@
   ;; `{...}` (or `(... )`) form. We support `{:foo bar : baz ...}` and
   ;; `(values ...)`-style returns are ignored (only literal tables count).
   (let [out []
-        n (# text)]
+        n (length text)]
     ;; Walk forward maintaining depth. Track every `{` as a candidate
     ;; opening for the trailing form; remember the last one whose match
     ;; closes at end-of-text (modulo trailing whitespace).
@@ -277,7 +277,9 @@
             (= ch ";")
             (set in-line-comment true)
             (= ch "\"")
-            (do (set in-string true) (set string-char "\""))
+            (do
+              (set in-string true)
+              (set string-char "\""))
             (or (= ch "(") (= ch "[") (= ch "{"))
             (do
               (when (and (= ch "{") (= depth 0))
@@ -301,12 +303,12 @@
                 preamble (string.sub text 1 (- last-table-start 1))
                 start-line (+ 1 (select 2 (string.gsub preamble "\n" "")))]
             ;; Walk body for top-level `: name` shorthand and `:name expr`.
-            (var j 2)  ; skip leading `{`
+            (var j 2) ; skip leading `{`
             (var bdepth 1)
             (var b-in-string false)
             (var b-string-char nil)
             (var b-in-comment false)
-            (let [bn (# body)]
+            (let [bn (length body)]
               (while (<= j bn)
                 (let [bc (string.sub body j j)]
                   (if b-in-comment
@@ -320,7 +322,9 @@
                       (= bc ";")
                       (set b-in-comment true)
                       (= bc "\"")
-                      (do (set b-in-string true) (set b-string-char "\""))
+                      (do
+                        (set b-in-string true)
+                        (set b-string-char "\""))
                       (or (= bc "(") (= bc "[") (= bc "{"))
                       (set bdepth (+ bdepth 1))
                       (or (= bc ")") (= bc "]") (= bc "}"))
@@ -333,18 +337,22 @@
                       (let [rest (string.sub body (+ j 1))
                             ;; Allow Fennel arrow/comparison identifiers such as
                             ;; `blank->nil` by accepting `<`/`>` in export names.
-                            (lead sname after) (string.match rest "^(%s*)([%w%-_!?<>]+)(.*)$")]
+                            (lead sname after) (string.match rest
+                                                             "^(%s*)([%w%-_!?<>]+)(.*)$")]
                         (when sname
-                          (let [trimmed (string.match (or after "") "^%s*(.-)%s*$")
+                          (let [trimmed (string.match (or after "")
+                                                      "^%s*(.-)%s*$")
                                 next-ch (string.sub trimmed 1 1)
-                                shorthand? (or (= next-ch ":") (= next-ch "}") (= next-ch ""))
+                                shorthand? (or (= next-ch ":") (= next-ch "}")
+                                               (= next-ch ""))
                                 kind (classify-trailing-name text sname)]
-                            (table.insert out {:name sname
-                                               :shorthand? shorthand?
-                                               :line start-line
-                                               :kind kind
-                                               :src :trailing}))
-                          (set j (+ j (# (or lead "")) (# sname))))))
+                            (table.insert out
+                                          {:name sname
+                                           :shorthand? shorthand?
+                                           :line start-line
+                                           :kind kind
+                                           :src :trailing}))
+                          (set j (+ j (length (or lead "")) (length sname))))))
                   (set j (+ j 1))))))))) ; close while/let/let
     out))
 
@@ -372,7 +380,7 @@
    preserving byte offsets and newlines. The result is safe for plain
    regex find against code positions."
   (let [chars []
-        n (# text)]
+        n (length text)]
     (var i 1)
     (var in-string false)
     (var string-char nil)
@@ -381,26 +389,31 @@
     (while (<= i n)
       (let [ch (string.sub text i i)]
         (if skip-next
-            (do (set skip-next false)
-                (table.insert chars (if (= ch "\n") "\n" " ")))
+            (do
+              (set skip-next false)
+              (table.insert chars (if (= ch "\n") "\n" " ")))
             (= ch "\n")
-            (do (table.insert chars "\n")
-                (when in-comment (set in-comment false)))
+            (do
+              (table.insert chars "\n")
+              (when in-comment (set in-comment false)))
             in-comment
             (table.insert chars " ")
             in-string
             (do
               (table.insert chars " ")
-              (if (= ch "\\")
-                  (set skip-next true)
-                  (= ch string-char)
-                  (do (set in-string false)
-                      (set string-char nil))))
+              (if (= ch "\\") (set skip-next true)
+                  (= ch string-char) (do
+                                       (set in-string false)
+                                       (set string-char nil))))
             (= ch ";")
-            (do (set in-comment true) (table.insert chars " "))
+            (do
+              (set in-comment true)
+              (table.insert chars " "))
             (= ch "\"")
-            (do (set in-string true) (set string-char "\"")
-                (table.insert chars " "))
+            (do
+              (set in-string true)
+              (set string-char "\"")
+              (table.insert chars " "))
             (table.insert chars ch)))
       (set i (+ i 1)))
     (table.concat chars)))
@@ -417,17 +430,18 @@
    [{:kind :name :description :path :line}]."
   (let [code (strip-non-code text)
         out []
-        n (# code)]
+        n (length code)]
     (var pos 1)
     (while pos
-      (let [(register-s register-e register-kind)
-            (string.find code "%(api%.register%s+:([%w%-_]+)" pos)
-            (toggle-s toggle-e)
-            (string.find code "%(panel%-toggle%.install!%s+" pos)
-            (s e kind)
-            (if (and toggle-s (or (not register-s) (< toggle-s register-s)))
-                (values toggle-s toggle-e "panel")
-                (values register-s register-e register-kind))]
+      (let [(register-s register-e register-kind) (string.find code
+                                                               "%(api%.register%s+:([%w%-_]+)"
+                                                               pos)
+            (toggle-s toggle-e) (string.find code
+                                             "%(panel%-toggle%.install!%s+" pos)
+            (s e kind) (if (and toggle-s
+                                (or (not register-s) (< toggle-s register-s)))
+                           (values toggle-s toggle-e "panel")
+                           (values register-s register-e register-kind))]
         (if (not s)
             (set pos nil)
             (do
@@ -436,7 +450,7 @@
               ;; `text` so descriptions/string-typed values come back
               ;; with their original contents.
               (var i e)
-              (var depth 1)  ; inside the (api.register ...
+              (var depth 1) ; inside the (api.register ...
               (var spec-start nil)
               (var spec-end nil)
               (var sd 0)
@@ -445,17 +459,22 @@
                 (set i (+ i 1))
                 (let [ch (string.sub code i i)]
                   (if (and (not found-spec?) (= ch "{"))
-                      (do (set spec-start i) (set sd 1)
-                          (set found-spec? true))
+                      (do
+                        (set spec-start i)
+                        (set sd 1)
+                        (set found-spec? true))
                       (and found-spec? (not spec-end)
                            (or (= ch "{") (= ch "(") (= ch "[")))
                       (set sd (+ sd 1))
                       (and found-spec? (not spec-end)
                            (or (= ch "}") (= ch ")") (= ch "]")))
-                      (do (set sd (- sd 1))
-                          (when (= sd 0) (set spec-end i)))
-                      (= ch "(") (set depth (+ depth 1))
-                      (= ch ")") (set depth (- depth 1)))))
+                      (do
+                        (set sd (- sd 1))
+                        (when (= sd 0) (set spec-end i)))
+                      (= ch "(")
+                      (set depth (+ depth 1))
+                      (= ch ")")
+                      (set depth (- depth 1)))))
               (let [body (if (and spec-start spec-end)
                              (string.sub text spec-start spec-end)
                              "")
@@ -466,19 +485,21 @@
                              (extract-spec-field code-body ":name%s+"))
                     description (extract-spec-field body ":description%s+")
                     has-description? (not= nil
-                                       (string.find code-body
-                                         "[%s{]:description[%s}]"))]
-                (table.insert out {:kind kind
-                                   :name name
-                                   :description description
-                                   :has-description? has-description?
-                                   :line (line-of code s)}))
+                                           (string.find code-body
+                                                        "[%s{]:description[%s}]"))]
+                (table.insert out
+                              {:kind kind
+                               :name name
+                               :description description
+                               :has-description? has-description?
+                               :line (line-of code s)}))
               (set pos (+ e 1))))))
     out))
 
 (fn register-site-doc-parts [doc]
   (when doc
-    (let [(kind name) (string.match (or doc.id "") "^register%-site:([^:]+):(.+)$")]
+    (let [(kind name) (string.match (or doc.id "")
+                                    "^register%-site:([^:]+):(.+)$")]
       (when (and kind name)
         (values kind name)))))
 
@@ -500,20 +521,19 @@
 
 ;; ----- Emit-call detection -------------------------------------------------
 
-(local EMIT-CALL-PATTERNS
-  ["%(events%.emit%s"
-   "%(extensions%.emit%s"
-   "%(api%.emit%s"
-   "%(M%.emit%s"
-   "%(emit%s+agent"
-   "%(emit%s+{"])
+(local EMIT-CALL-PATTERNS ["%(events%.emit%s"
+                           "%(extensions%.emit%s"
+                           "%(api%.emit%s"
+                           "%(M%.emit%s"
+                           "%(emit%s+agent"
+                           "%(emit%s+{"])
 
 (fn scan-emit-types [text]
   "Find every `(.../emit ... {:type :foo ...})` and capture :foo. Returns
    [{:type :foo :line N}]."
   (let [code (strip-non-code text)
         out []
-        n (# code)]
+        n (length code)]
     (each [_ pat (ipairs EMIT-CALL-PATTERNS)]
       (var pos 1)
       (while pos
@@ -549,8 +569,9 @@
   (while search
     (let [nl (string.find text "\n" search true)]
       (if (and nl (< nl pos))
-          (do (set start (+ nl 1))
-              (set search (+ nl 1)))
+          (do
+            (set start (+ nl 1))
+            (set search (+ nl 1)))
           (set search nil))))
   (string.sub text start (- pos 1)))
 
@@ -562,13 +583,14 @@
    time; anywhere else it runs when the module loads, however indented."
   (let [spans []
         stack []]
-    (for [i 1 (# code)]
+    (for [i 1 (length code)]
       (let [ch (string.sub code i i)]
         (if (= ch "(")
             (let [head (string.match code "^%s*([^%s%(%)%[%]{}]+)" (+ i 1))]
-              (table.insert stack {:start i
-                                   :fn? (or (= "#" (string.sub code (- i 1) (- i 1)))
-                                            (. FUNCTION-HEADS (or head "")))}))
+              (table.insert stack
+                            {:start i
+                             :fn? (or (= "#" (string.sub code (- i 1) (- i 1)))
+                                      (. FUNCTION-HEADS (or head "")))}))
             (or (= ch "[") (= ch "{"))
             (table.insert stack {:start i})
             (or (= ch ")") (= ch "]") (= ch "}"))
@@ -586,9 +608,11 @@
     (fn inside-function? [pos]
       (accumulate [inside? false _ [start end] (ipairs spans) &until inside?]
         (and (<= start pos) (< pos end))))
+
     (fn optional-require-context? [pos]
       (let [ctx (string.sub text (math.max 1 (- pos 16)) (+ pos 32))]
         (not= nil (string.find ctx "pcall%s+require"))))
+
     (fn add! [kind mod pos]
       (let [kind (if (and (= kind :require) (inside-function? pos))
                      :late-require
@@ -599,12 +623,25 @@
                    (not (. seen (.. kind "\0" mod))))
           (tset seen (.. kind "\0" mod) true)
           (table.insert out {:kind kind :module mod :line (line-of text pos)}))))
-    (each [_ spec (ipairs [{:kind :optional-require :pat "%(pcall%s+require%s+:([%w%._%-]+)" :source :code}
-                           {:kind :optional-require :pat "%(pcall%s+require%s+\"([^\"]+)\"" :source :text}
-                           {:kind :require :pat "[%(%s]require%s+:([%w%._%-]+)" :source :code}
-                           {:kind :require :pat "[%(%s]require%s+\"([^\"]+)\"" :source :text}
-                           {:kind :macro :pat "%(%s*import%-macros%s+:([%w%._%-]+)" :source :code}
-                           {:kind :macro :pat "%(%s*import%-macros%s+\"([^\"]+)\"" :source :text}])]
+
+    (each [_ spec (ipairs [{:kind :optional-require
+                            :pat "%(pcall%s+require%s+:([%w%._%-]+)"
+                            :source :code}
+                           {:kind :optional-require
+                            :pat "%(pcall%s+require%s+\"([^\"]+)\""
+                            :source :text}
+                           {:kind :require
+                            :pat "[%(%s]require%s+:([%w%._%-]+)"
+                            :source :code}
+                           {:kind :require
+                            :pat "[%(%s]require%s+\"([^\"]+)\""
+                            :source :text}
+                           {:kind :macro
+                            :pat "%(%s*import%-macros%s+:([%w%._%-]+)"
+                            :source :code}
+                           {:kind :macro
+                            :pat "%(%s*import%-macros%s+\"([^\"]+)\""
+                            :source :text}])]
       (let [haystack (if (= spec.source :code) (strip-non-code text) text)]
         (var pos 1)
         (while pos
@@ -644,7 +681,7 @@
 
 (fn skip-ws-and-comments [text pos]
   "Advance past whitespace and `;` line comments; return the next code position."
-  (let [n (# text)]
+  (let [n (length text)]
     (var i pos)
     (var done? false)
     (while (and (not done?) (<= i n))
@@ -662,7 +699,7 @@
    quotes/backslashes and literal newlines (multi-line strings). Returns
    (values decoded-string end-pos) or nil when pos is not a string."
   (when (= (string.sub text pos pos) "\"")
-    (let [n (# text)
+    (let [n (length text)
           out []]
       (var i (+ pos 1))
       (var close nil)
@@ -670,15 +707,15 @@
         (let [ch (string.sub text i i)]
           (if (= ch "\\")
               (let [nxt (string.sub text (+ i 1) (+ i 1))]
-                (table.insert out
-                              (if (= nxt "n") "\n"
-                                  (= nxt "t") "\t"
-                                  nxt))
+                (table.insert out (if (= nxt "n") "\n"
+                                      (= nxt "t") "\t"
+                                      nxt))
                 (set i (+ i 2)))
               (= ch "\"")
               (set close i)
-              (do (table.insert out ch)
-                  (set i (+ i 1))))))
+              (do
+                (table.insert out ch)
+                (set i (+ i 1))))))
       (when close
         (values (table.concat out) close)))))
 
@@ -687,16 +724,16 @@
    Returns (values open close) or nil."
   (let [open (string.find text "%[" pos)]
     (when open
-      (let [n (# text)]
+      (let [n (length text)]
         (var i open)
         (var depth 0)
         (var close nil)
         (while (and (not close) (<= i n))
           (let [ch (string.sub text i i)]
-            (if (= ch "[") (set depth (+ depth 1))
-                (= ch "]")
-                (do (set depth (- depth 1))
-                    (when (= depth 0) (set close i)))))
+            (if (= ch "[") (set depth (+ depth 1)) (= ch "]")
+                (do
+                  (set depth (- depth 1))
+                  (when (= depth 0) (set close i)))))
           (set i (+ i 1)))
         (when close (values open close))))))
 
@@ -727,7 +764,7 @@
     (when (not= summary "")
       (let [doc {:summary summary :tags []}
             prose []]
-        (for [i 2 (# lines)]
+        (for [i 2 (length lines)]
           (let [line (string.match (. lines i) "^%s*(.-)%s*$")
                 (k v) (string.match line "^([%w%-_]+)%s*:%s*(.*)$")]
             (if (and k (. DOCSTRING-META-KEYS k))
@@ -735,7 +772,7 @@
                     (= k :see-also) (tset doc :see-also (parse-tags v))
                     (tset doc k v))
                 (when (not= line "") (table.insert prose line)))))
-        (when (> (# prose) 0)
+        (when (> (length prose) 0)
           (tset doc :prose (table.concat prose "\n")))
         doc))))
 
@@ -781,7 +818,8 @@
         fn-exports (scan-fn-exports lines)
         trailing (scan-trailing-export-form text lines)
         merged (merge-exports fn-exports trailing)
-        register-sites (attach-register-site-docs! (scan-register-sites text) docs)
+        register-sites (attach-register-site-docs! (scan-register-sites text)
+                                                   docs)
         emit-types (scan-emit-types text)
         dependencies (scan-dependencies text)
         line-offsets (line-offsets-of text)
@@ -794,9 +832,9 @@
       (let [ds-doc (docstring-doc-for-export text line-offsets e)]
         (when ds-doc (table.insert docstring-docs ds-doc))
         ;; Docstring wins; @doc comment blocks are the fallback.
-        (tset e :doc (or ds-doc
-                         (and e.id (doc-block-by-id docs e.id))
-                         (and e.line (doc-block-for-line docs e.line))))))
+        (tset e :doc
+              (or ds-doc (and e.id (doc-block-by-id docs e.id))
+                  (and e.line (doc-block-for-line docs e.line))))))
     {:path path
      :module-info modinfo
      :doc-blocks docs
@@ -863,7 +901,9 @@
    `fen.extensions.<snake>` namespace to the flat source tree before requiring."
   (when (not flat-searcher-installed?)
     (let [flat (require :fen.util.flat_extensions)]
-      (flat.install! {:roots [:extensions] :fennel (require :fennel) :position 2}))
+      (flat.install! {:roots [:extensions]
+                      :fennel (require :fennel)
+                      :position 2}))
     (set flat-searcher-installed? true))
   (require :fen.extensions.docs.contracts))
 

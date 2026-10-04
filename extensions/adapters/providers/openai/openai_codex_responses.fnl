@@ -31,18 +31,18 @@
 ;; resolution can select them before the catalog catches up. Dynamic catalog
 ;; entries win on duplicate IDs.
 (local PINNED-CODEX-MODELS
-  [{:id "gpt-5.6-luna"
-    :name "GPT-5.6 Luna"
-    :context-window 372000
-    :default-reasoning-level :medium}
-   {:id "gpt-5.6-sol"
-    :name "GPT-5.6 Sol"
-    :context-window 372000
-    :default-reasoning-level :medium}
-   {:id "gpt-5.6-terra"
-    :name "GPT-5.6 Terra"
-    :context-window 372000
-    :default-reasoning-level :medium}])
+       [{:id "gpt-5.6-luna"
+         :name "GPT-5.6 Luna"
+         :context-window 372000
+         :default-reasoning-level :medium}
+        {:id "gpt-5.6-sol"
+         :name "GPT-5.6 Sol"
+         :context-window 372000
+         :default-reasoning-level :medium}
+        {:id "gpt-5.6-terra"
+         :name "GPT-5.6 Terra"
+         :context-window 372000
+         :default-reasoning-level :medium}])
 
 ;; @doc fen.extensions.provider_openai.openai_codex_responses.build-url
 ;; kind: function
@@ -59,8 +59,7 @@
 ;; tags: codex provider models http
 (fn ends-with? [s suffix]
   (let [n (length suffix)]
-    (and (>= (length s) n)
-         (= (string.sub s (- (length s) n -1)) suffix))))
+    (and (>= (length s) n) (= (string.sub s (- (length s) n -1)) suffix))))
 
 (fn replace-suffix [s old new]
   (if (ends-with? s old)
@@ -112,18 +111,14 @@
   "Codex emits `response.done` and `response.incomplete` aliases for
    `response.completed`. Pass everything else through unchanged."
   (case (?. ev :type)
-    :response.done
-    (let [out {}]
-      (each [k v (pairs ev)] (tset out k v))
-      (set out.type :response.completed)
-      out)
-
-    :response.incomplete
-    (let [out {}]
-      (each [k v (pairs ev)] (tset out k v))
-      (set out.type :response.completed)
-      out)
-
+    :response.done (let [out {}]
+                     (each [k v (pairs ev)] (tset out k v))
+                     (set out.type :response.completed)
+                     out)
+    :response.incomplete (let [out {}]
+                           (each [k v (pairs ev)] (tset out k v))
+                           (set out.type :response.completed)
+                           out)
     _ ev))
 
 (fn web-search-tools [mode]
@@ -140,7 +135,8 @@
    mutating the caller's table. `:hosted-tools` is always derived here from
    `:web-search`, never taken from the caller."
   (let [out {}]
-    (each [k v (pairs (or opts {}))] (tset out k v))
+    (each [k v (pairs (or opts {}))]
+      (tset out k v))
     (when (or (not out.include) (= (length out.include) 0))
       (set out.include DEFAULT-INCLUDE))
     ;; Codex rejects max_output_tokens; the vanilla Responses provider
@@ -150,8 +146,7 @@
     out))
 
 (fn selectable-codex-model? [m]
-  (and (= (type m) :table)
-       (= (or m.visibility :list) :list)
+  (and (= (type m) :table) (= (or m.visibility :list) :list)
        (not= m.supported_in_api false)))
 
 (fn parse-models [decoded]
@@ -162,10 +157,11 @@
       (when (selectable-codex-model? m)
         (let [id (or m.slug m.id)]
           (when (and id (not= id ""))
-            (table.insert out {:id id
-                               :name m.display_name
-                               :context-window m.context_window
-                               :default-reasoning-level m.default_reasoning_level})))))
+            (table.insert out
+                          {:id id
+                           :name m.display_name
+                           :context-window m.context_window
+                           :default-reasoning-level m.default_reasoning_level})))))
     out))
 
 (fn append-pinned-models [models catalog-models]
@@ -204,7 +200,8 @@
                             :url (build-models-url base-url opts.client-version)
                             :headers (build-headers creds)
                             :timeout-ms (or opts.timeout-ms 30000)
-                            :connect-timeout-ms (or opts.connect-timeout-ms 10000)
+                            :connect-timeout-ms (or opts.connect-timeout-ms
+                                                    10000)
                             :yield opts.yield})]
     (when resp.error
       (error {:reason :request-failed}))
@@ -227,24 +224,47 @@
         base-url (or opts.base-url DEFAULT-BASE-URL)
         url (build-url base-url)
         headers (build-headers creds)]
-    (streaming.complete-streaming
-      {:provider PROVIDER
-       :model model
-       :context context
-       :options opts
-       :on-event ?on-event
-       :yield-fn ?yield-fn
-       :make-stream-pipeline (fn [model on-event]
-                               (compat.make-stream-pipeline model on-event map-codex-event))
-       :build-request-opts (fn [model context opts on-chunk]
-                             (compat.build-request-opts
-                               model context opts on-chunk headers url
-                               DEFAULT-BASE-URL CODEX-PATH
-                               {:model model :api API :provider PROVIDER}))
-       :finalize-stream (fn [state parser parser-error model resp on-event request-opts]
-                          (compat.finalize-stream
-                            state parser parser-error API PROVIDER model resp on-event
-                            request-opts))})))
+    (streaming.complete-streaming {:provider PROVIDER
+                                   :model model
+                                   :context context
+                                   :options opts
+                                   :on-event ?on-event
+                                   :yield-fn ?yield-fn
+                                   :make-stream-pipeline (fn [model on-event]
+                                                           (compat.make-stream-pipeline model
+                                                                                        on-event
+                                                                                        map-codex-event))
+                                   :build-request-opts (fn [model
+                                                            context
+                                                            opts
+                                                            on-chunk]
+                                                         (compat.build-request-opts model
+                                                                                    context
+                                                                                    opts
+                                                                                    on-chunk
+                                                                                    headers
+                                                                                    url
+                                                                                    DEFAULT-BASE-URL
+                                                                                    CODEX-PATH
+                                                                                    {:model model
+                                                                                     :api API
+                                                                                     :provider PROVIDER}))
+                                   :finalize-stream (fn [state
+                                                         parser
+                                                         parser-error
+                                                         model
+                                                         resp
+                                                         on-event
+                                                         request-opts]
+                                                      (compat.finalize-stream state
+                                                                              parser
+                                                                              parser-error
+                                                                              API
+                                                                              PROVIDER
+                                                                              model
+                                                                              resp
+                                                                              on-event
+                                                                              request-opts))})))
 
 ;; @doc fen.extensions.provider_openai.openai_codex_responses.api
 ;; kind: data

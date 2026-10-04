@@ -11,7 +11,8 @@
 (fn M.register [spec owner handle-result]
   (when (or (not spec) (not spec.name))
     (error "register :auth-backend requires {:name ...}"))
-  (let [(tagged unregister) (util.set-tagged! state.auth-backends spec.name spec owner)]
+  (let [(tagged unregister) (util.set-tagged! state.auth-backends spec.name
+                                              spec owner)]
     (handle-result :auth-backend spec.name owner unregister)))
 
 ;; @doc fen.core.extensions.register.auth_backend.unregister-by-owner
@@ -40,10 +41,12 @@
 (fn M.list []
   (let [out []]
     (each [name b (pairs state.auth-backends)]
-      (table.insert out {:name name
-                         :owner b.__owner
-                         :has-configured? (= (type b.configured?) :function)
-                         :has-get-fresh-creds? (= (type b.get-fresh-creds!) :function)}))
+      (table.insert out
+                    {:name name
+                     :owner b.__owner
+                     :has-configured? (= (type b.configured?) :function)
+                     :has-get-fresh-creds? (= (type b.get-fresh-creds!)
+                                              :function)}))
     out))
 
 M

@@ -30,7 +30,8 @@
                             :url (models-url opts.base-url)
                             :headers (request-headers opts.api-key)
                             :timeout-ms (or opts.timeout-ms 30000)
-                            :connect-timeout-ms (or opts.connect-timeout-ms 10000)
+                            :connect-timeout-ms (or opts.connect-timeout-ms
+                                                    10000)
                             :yield opts.yield})]
     (when resp.error
       (error {:reason :request-failed}))

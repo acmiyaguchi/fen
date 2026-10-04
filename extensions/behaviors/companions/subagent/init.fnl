@@ -52,11 +52,13 @@
 (local DEADLINE-GRACE-SECONDS 5)
 ;; Synchronous reaps pump at most this many ticks past the cancel grace.
 (local REAP-TICKS (math.floor (/ (+ CANCEL-GRACE-MS 2000) TICK-MS)))
-(local FINALIZATION-NOTE "Investigation budget reached. Return your final answer or review artifact now. Do not run more discovery tools. Lead with findings or say no findings; label uncertainty explicitly.")
+(local FINALIZATION-NOTE
+       "Investigation budget reached. Return your final answer or review artifact now. Do not run more discovery tools. Lead with findings or say no findings; label uncertainty explicitly.")
 
 (fn copy-usage-table [t]
   (let [out {}]
-    (when (= (type t) :table) (each [k v (pairs t)] (tset out k v)))
+    (when (= (type t) :table)
+      (each [k v (pairs t)] (tset out k v)))
     out))
 
 (fn sanitize-run! [run]
@@ -80,8 +82,7 @@
   (and (= (type s) :string) (string.find s needle 1 true)))
 
 (fn event-contains-diff? [ev]
-  (or (contains? ev.summary "diff --git")
-      (contains? ev.error "diff --git")
+  (or (contains? ev.summary "diff --git") (contains? ev.error "diff --git")
       (let [(ok? encoded) (pcall json.encode (or ev.result ev))]
         (and ok? (contains? encoded "diff --git")))))
 
@@ -96,12 +97,10 @@
                     (event-contains-diff? ev))))))
 
 (fn artifact-kind [ev]
-  (if (= ev.type :assistant-text)
-      :assistant-final
-      (= ev.type :tool-call)
-      :mutating-tool-call
-      (= ev.type :tool-result)
-      (if ev.is-error? :failing-tool-result :tool-result)
+  (if (= ev.type :assistant-text) :assistant-final
+      (= ev.type :tool-call) :mutating-tool-call
+      (= ev.type :tool-result) (if ev.is-error? :failing-tool-result
+                                   :tool-result)
       ev.type))
 
 (fn artifact-summary [ev]
@@ -113,31 +112,32 @@
     (set run.final-answer-produced? true))
   (let [summary (artifact-summary ev)]
     (when (and (artifact-event? ev) summary)
-      (runs.mark-first-artifact!
-        run.id {:kind (artifact-kind ev)
-                :summary summary
-                :elapsed-ms (- (clock.monotonic-ms)
-                               (or run.started-at-ms (clock.monotonic-ms)))
-                :event-count (or run.event-count 0)}))))
+      (runs.mark-first-artifact! run.id
+                                 {:kind (artifact-kind ev)
+                                  :summary summary
+                                  :elapsed-ms (- (clock.monotonic-ms)
+                                                 (or run.started-at-ms
+                                                     (clock.monotonic-ms)))
+                                  :event-count (or run.event-count 0)}))))
 
 (fn maybe-record-final-text-artifact! [run child-text ?duration-ms]
   (let [summary (text.trim (text.first-line (or child-text "")))]
     (when (not= summary "")
       (set run.final-answer-produced? true)
-      (runs.mark-first-artifact!
-        run.id {:kind :assistant-final
-                :summary (text.truncate-line summary 160)
-                :elapsed-ms (or ?duration-ms
-                                (- (clock.monotonic-ms)
-                                   (or run.started-at-ms (clock.monotonic-ms))))
-                :event-count (or run.event-count 0)}))))
+      (runs.mark-first-artifact! run.id
+                                 {:kind :assistant-final
+                                  :summary (text.truncate-line summary 160)
+                                  :elapsed-ms (or ?duration-ms
+                                                  (- (clock.monotonic-ms)
+                                                     (or run.started-at-ms
+                                                         (clock.monotonic-ms))))
+                                  :event-count (or run.event-count 0)}))))
 
 (fn lower [v]
   (string.lower (tostring (or v ""))))
 
 (fn compact-event-line [v ?limit]
-  (text.truncate-line (text.first-line (tostring (or v "")))
-                      (or ?limit 160)))
+  (text.truncate-line (text.first-line (tostring (or v ""))) (or ?limit 160)))
 
 (fn paths-summary [args]
   (or (and args args.path (tostring args.path))
@@ -219,7 +219,8 @@
     (if blob
         (do
           (set details.usage blob)
-          (set details.usage-provenance (usage-util.usage-provenance raw :provider-reported))
+          (set details.usage-provenance
+               (usage-util.usage-provenance raw :provider-reported))
           (set details.usage-source :final-result)
           (set details.usage-complete? true))
         (and acc acc.totals (next acc.totals))
@@ -246,10 +247,14 @@
   (let [p (os.tmpname)
         (f err) (io.open p :w)]
     (if f
-        (do (f:write (or content "")) (f:close) p)
-        (do (io.stderr:write (.. "subagent: cannot write temp file " p ": "
-                                 (tostring err) "\n"))
-            nil))))
+        (do
+          (f:write (or content ""))
+          (f:close)
+          p)
+        (do
+          (io.stderr:write (.. "subagent: cannot write temp file " p ": "
+                               (tostring err) "\n"))
+          nil))))
 
 (fn present? [v]
   (and v (not= v "")))
@@ -364,17 +369,15 @@
                  (normalized-task task)
                  (tostring (or cwd ""))
                  (tostring (or routing.provider ""))
-                 (tostring (or routing.model ""))]
-                "\31"))
+                 (tostring (or routing.model ""))] "\31"))
 
 (fn repeated-timeout-warning-text [warning]
-  (.. "Attempt " (tostring warning.count)
-      " after " (tostring warning.prior-count)
+  (.. "Attempt " (tostring warning.count) " after "
+      (tostring warning.prior-count)
       " retained identical timeouts without an artifact/mutation. "
-      warning.suggestion
-      (if warning.history-truncated?
-          " Retained history is truncated, so this is a lower bound."
-          "")))
+      warning.suggestion (if warning.history-truncated?
+                            " Retained history is truncated, so this is a lower bound."
+                            "")))
 
 (fn child-model-arg [routing]
   "The child's --model value. With a provider the model is that provider's
@@ -409,16 +412,12 @@
       (path.realpath cwd)))
 
 (fn task-with-cwd-context [run]
-  (.. "Subagent launch context:\n"
-      "- Requested cwd: " run.requested-cwd "\n"
-      "- Child PWD: " run.cwd "\n"
-      "- Physical cwd: " run.physical-cwd "\n\n"
+  (.. "Subagent launch context:\n" "- Requested cwd: " run.requested-cwd "\n"
+      "- Child PWD: " run.cwd "\n" "- Physical cwd: " run.physical-cwd "\n\n"
       "Treat Child PWD as the authoritative working directory for all "
       "relative paths and tool calls. If the task concerns a git worktree "
       "or diff, verify `pwd` and `git status --short` in that directory "
-      "before drawing conclusions.\n\n"
-      "Task:\n"
-      run.task
+      "before drawing conclusions.\n\n" "Task:\n" run.task
       (if run.background?
           "\n\nBackground authority:\nThis detached job is read-only. Do not edit files or mutate repositories. Return findings to the parent agent, which owns any edits.\n"
           "")))
@@ -429,50 +428,71 @@
 
 (fn summarize-usage [usage]
   (when usage
-    (or usage.total-tokens
-        usage.total_tokens
+    (or usage.total-tokens usage.total_tokens
         (and (or usage.input usage.output)
-             (.. "input=" (tostring usage.input)
-                 " output=" (tostring usage.output))))))
+             (.. "input=" (tostring usage.input) " output="
+                 (tostring usage.output))))))
 
-(local DETAIL-LINES
-  [["run id" :run-id] ["agent" :agent] ["requested cwd" :requested-cwd]
-   ["cwd" :cwd] ["physical cwd" :physical-cwd] ["provider" :provider]
-   ["provider source" :provider-source] ["model" :model]
-   ["model source" :model-source] ["exit code" :exit-code] ["signal" :signal]
-   ["timed out" :timed-out?] ["child exit" :child-exit]
-   ["child error" :child-error] ["error" :error] ["stop reason" :stop-reason]
-   ["result truncated" :result-truncated?] ["duration ms" :duration-ms]
-   ["timeout seconds" :timeout-seconds] ["event count" :event-count]
-   ["event errors" :event-error-count] ["steering notes" :steering-count]
-   ["turn count" :turn-count] ["tool call count" :tool-call-count]
-   ["max turns" :max-turns] ["max tool calls" :max-tool-calls]
-   ["budget finalization requested" :budget-finalization-requested?]
-   ["budget finalization reason" :budget-finalization-reason]
-   ["repeated inspection warnings" :repeated-inspection-warning-count]])
+(local DETAIL-LINES [["run id" :run-id]
+                     ["agent" :agent]
+                     ["requested cwd" :requested-cwd]
+                     ["cwd" :cwd]
+                     ["physical cwd" :physical-cwd]
+                     ["provider" :provider]
+                     ["provider source" :provider-source]
+                     ["model" :model]
+                     ["model source" :model-source]
+                     ["exit code" :exit-code]
+                     ["signal" :signal]
+                     ["timed out" :timed-out?]
+                     ["child exit" :child-exit]
+                     ["child error" :child-error]
+                     ["error" :error]
+                     ["stop reason" :stop-reason]
+                     ["result truncated" :result-truncated?]
+                     ["duration ms" :duration-ms]
+                     ["timeout seconds" :timeout-seconds]
+                     ["event count" :event-count]
+                     ["event errors" :event-error-count]
+                     ["steering notes" :steering-count]
+                     ["turn count" :turn-count]
+                     ["tool call count" :tool-call-count]
+                     ["max turns" :max-turns]
+                     ["max tool calls" :max-tool-calls]
+                     ["budget finalization requested"
+                      :budget-finalization-requested?]
+                     ["budget finalization reason" :budget-finalization-reason]
+                     ["repeated inspection warnings"
+                      :repeated-inspection-warning-count]])
 
 (fn diagnostic-text [summary details ?child-text]
   (let [lines [summary]]
     (each [_ [label key] (ipairs DETAIL-LINES)]
       (add-detail-line lines label (. details key)))
     (when details.repeated-timeout-warning
-      (table.insert lines (.. "\nRepeated timeout warning: "
-                              (repeated-timeout-warning-text
-                                details.repeated-timeout-warning))))
+      (table.insert lines
+                    (.. "\nRepeated timeout warning: "
+                        (repeated-timeout-warning-text details.repeated-timeout-warning))))
     (add-detail-line lines "usage" (summarize-usage details.usage))
-    (add-detail-line lines "time to first artifact ms" details.time-to-first-artifact-ms)
+    (add-detail-line lines "time to first artifact ms"
+                     details.time-to-first-artifact-ms)
     (add-detail-line lines "first artifact" details.first-artifact-kind)
-    (add-detail-line lines "first artifact summary" details.first-artifact-summary)
+    (add-detail-line lines "first artifact summary"
+                     details.first-artifact-summary)
     (add-detail-line lines "output truncated" details.output-truncated?)
     (add-detail-line lines "full output" details.full-output-path)
     (add-detail-line lines "partial progress" details.partial-progress?)
-    (add-detail-line lines "partial assistant text" details.partial-assistant-text?)
+    (add-detail-line lines "partial assistant text"
+                     details.partial-assistant-text?)
     (when (not (blank? details.inspection-warning-tail))
-      (table.insert lines (.. "\nInspection warnings:\n" details.inspection-warning-tail)))
+      (table.insert lines
+                    (.. "\nInspection warnings:\n"
+                        details.inspection-warning-tail)))
     (when (not (blank? details.event-tail))
       (table.insert lines (.. "\nLatest child progress:\n" details.event-tail)))
     (when (and details.timed-out? details.partial-progress?)
-      (table.insert lines "\nNext action: continue from the progress above, or retry with a narrower task and an explicit timeout-seconds budget."))
+      (table.insert lines
+                    "\nNext action: continue from the progress above, or retry with a narrower task and an explicit timeout-seconds budget."))
     (when (not (blank? ?child-text))
       (table.insert lines (.. "\nChild message:\n" ?child-text)))
     (when (not (blank? details.output-tail))
@@ -483,11 +503,12 @@
   "Record a parent-side lifecycle event in the run's retained stream. Local
    events are not child artifacts, so they never count toward
    time-to-first-artifact."
-  (let [normalized (wire.normalize ev {:run-id run.id
-                                       :agent run.agent
-                                       :requested-cwd run.requested-cwd
-                                       :cwd run.cwd
-                                       :physical-cwd run.physical-cwd})]
+  (let [normalized (wire.normalize ev
+                                   {:run-id run.id
+                                    :agent run.agent
+                                    :requested-cwd run.requested-cwd
+                                    :cwd run.cwd
+                                    :physical-cwd run.physical-cwd})]
     (when (= (type ev.summary) :string)
       (set normalized.summary (compact-event-line ev.summary)))
     (runs.append-event! run.id normalized)
@@ -497,11 +518,13 @@
   (let [typ (tostring (or ev.type :event))
         name (and ev.name (.. " " (tostring ev.name)))
         summary (or ev.summary ev.error "")]
-    (.. "- " typ (or name "")
-        (if (blank? summary) "" (.. ": " summary)))))
+    (.. "- " typ (or name "") (if (blank? summary) "" (.. ": " summary)))))
 
-(local LIFECYCLE-EVENT-TYPES {:subagent-start true :subagent-done true
-                              :agent-started true :llm-start true :llm-end true})
+(local LIFECYCLE-EVENT-TYPES {:subagent-start true
+                              :subagent-done true
+                              :agent-started true
+                              :llm-start true
+                              :llm-end true})
 
 (fn partial-event-details [run]
   (let [events (or run.events [])
@@ -519,7 +542,9 @@
         lines []]
     (for [i (math.max 1 (+ 1 (- (length warnings) PARTIAL-EVENT-TAIL))) (length warnings)]
       (let [w (. warnings i)]
-        (table.insert lines (.. "- " (tostring (or w.summary w.fingerprint "warning"))))))
+        (table.insert lines
+                      (.. "- "
+                          (tostring (or w.summary w.fingerprint "warning"))))))
     (and (> (length lines) 0) (table.concat lines "\n"))))
 
 (fn event-details [run]
@@ -534,7 +559,8 @@
                  :budget-finalization-requested? run.budget-finalization-requested?
                  :budget-finalization-reason run.budget-finalization-reason
                  :final-answer-produced? run.final-answer-produced?
-                 :repeated-inspection-warning-count (length (or run.repeated-inspection-warnings []))
+                 :repeated-inspection-warning-count (length (or run.repeated-inspection-warnings
+                                                                []))
                  :repeated-inspection-warnings run.repeated-inspection-warnings
                  :repeated-timeout-warning run.repeated-timeout-warning
                  :inspection-warning-tail (inspection-warning-tail run)}]
@@ -546,8 +572,7 @@
   "True when a no-progress artifact checkpoint has elapsed with no artifact yet.
    Uses the same os.time clock as runs.copy-run's display flag so enforcement
    and reporting agree."
-  (and run.artifact-checkpoint-seconds
-       (not run.first-artifact)
+  (and run.artifact-checkpoint-seconds (not run.first-artifact)
        (>= (os.difftime (os.time) (or run.started-at (os.time)))
            run.artifact-checkpoint-seconds)))
 
@@ -572,34 +597,36 @@
   "Record one forwarded display event: retained tail, budget counters,
    inspection warnings, usage, the latest assistant text, and artifacts."
   (runs.append-event! run.id ev)
-  (when (and run.max-turns
-             (or (= ev.type :tool-call) (= ev.type :llm-start))
+  (when (and run.max-turns (or (= ev.type :tool-call) (= ev.type :llm-start))
              (>= (or run.turn-count 0) run.max-turns))
     (set run.job.past-max-turns? true))
   (if (= ev.type :tool-call)
-      (do (set run.tool-call-count (+ (or run.tool-call-count 0) 1))
-          (record-inspection-warning! run ev))
+      (do
+        (set run.tool-call-count (+ (or run.tool-call-count 0) 1))
+        (record-inspection-warning! run ev))
       (= ev.type :llm-end)
-      (do (set run.turn-count (+ (or run.turn-count 0) 1))
-          ;; Completed-turn usage survives runs that end without `result`.
-          (when ev.usage (runs.accumulate-usage! run.id ev.usage)))
+      (do
+        (set run.turn-count (+ (or run.turn-count 0) 1))
+        ;; Completed-turn usage survives runs that end without `result`.
+        (when ev.usage (runs.accumulate-usage! run.id ev.usage)))
       (= ev.type :llm-start)
       (set run.job.delta-text nil)
       (and (= ev.type :assistant-text) (present? ev.text))
       (set run.job.partial-text ev.text)
       ;; Streamed replies arrive as deltas; keep the latest reply's text.
       (= ev.type :assistant-text-delta)
-      (set run.job.delta-text (text.utf8-prefix (.. (or run.job.delta-text "") (or ev.delta ""))
-                                                PARTIAL-TEXT-BYTES))
+      (set run.job.delta-text
+           (text.utf8-prefix (.. (or run.job.delta-text "") (or ev.delta ""))
+                             PARTIAL-TEXT-BYTES))
       (= ev.type :assistant-stream-end)
       (when (present? run.job.delta-text)
         (set run.job.partial-text run.job.delta-text)
         (set run.job.delta-text nil)))
-  (maybe-record-artifact! run
-                          ;; A streamed final answer ends with this event.
+  (maybe-record-artifact! run ;; A streamed final answer ends with this event.
                           (if (and (= ev.type :assistant-stream-end) ev.final?
                                    (present? run.job.partial-text))
-                              {:type :assistant-text :final? true
+                              {:type :assistant-text
+                               :final? true
                                :summary (compact-event-line run.job.partial-text)}
                               ev)))
 
@@ -609,10 +636,12 @@
         (when (= msg.status :rejected)
           (let [control (or msg.control {})
                 steer? (= control.type :steer)]
-            (append-local-event! run {:type (if steer? :steering-rejected :warning)
-                                      :summary (.. (tostring (or control.type "control"))
-                                                   " rejected: "
-                                                   (tostring (or msg.reason "")))})))
+            (append-local-event! run
+                                 {:type (if steer? :steering-rejected :warning)
+                                  :summary (.. (tostring (or control.type
+                                                             "control"))
+                                               " rejected: "
+                                               (tostring (or msg.reason "")))})))
         (not (wire-session.lifecycle-event? typ))
         (let [ev {}]
           ;; Keep the canonical display event; drop the wire envelope.
@@ -636,9 +665,10 @@
 (fn send-control! [run typ ?payload]
   (let [(seq err) (channel.send! run.job.channel typ ?payload)]
     (when (not seq)
-      (append-local-event! run {:type :warning
-                                :summary (.. "cannot send " (tostring typ) ": "
-                                             (tostring err))}))
+      (append-local-event! run
+                           {:type :warning
+                            :summary (.. "cannot send " (tostring typ) ": "
+                                         (tostring err))}))
     seq))
 
 (fn arm-kill! [job ms]
@@ -658,8 +688,7 @@
    answer; the child answers from its own conversation with tools disabled."
   (let [reason (budget-reason run)
         status run.job.channel.status]
-    (when (and reason
-               (not run.final-answer-produced?)
+    (when (and reason (not run.final-answer-produced?)
                (not run.budget-finalization-requested?)
                ;; In `ready` the task turn is done and `close` returns it.
                (= status :running))
@@ -667,7 +696,8 @@
       (set run.budget-finalization-reason reason)
       (set run.budget-limited? true)
       (append-local-event! run {:type :budget-finalization :summary reason})
-      (send-control! run :finalize {:note (.. FINALIZATION-NOTE "\nReason: " reason)})
+      (send-control! run :finalize
+                     {:note (.. FINALIZATION-NOTE "\nReason: " reason)})
       (set run.job.finalize-by-ms (+ (clock.monotonic-ms) FINALIZE-GRACE-MS)))))
 
 (fn drive! [run]
@@ -684,13 +714,15 @@
             (send-control! run :steer {:text note.note})
             (set note (runs.take-steering! run.id)))
           (maybe-finalize! run)
-          (if (and job.finalize-by-ms (>= (clock.monotonic-ms) job.finalize-by-ms))
+          (if (and job.finalize-by-ms
+                   (>= (clock.monotonic-ms) job.finalize-by-ms))
               (send-cancel! run)
               (and (not job.close-sent?) (channel.idle? ch))
               ;; Back in `ready` with nothing outstanding: the task turn is
               ;; done, so ask for `result` and `exit`.
-              (do (set job.close-sent? true)
-                  (send-control! run :close)))))
+              (do
+                (set job.close-sent? true)
+                (send-control! run :close)))))
     (when (and job.kill-at-ms (>= (clock.monotonic-ms) job.kill-at-ms))
       (job.handle:abort))))
 
@@ -699,35 +731,34 @@
    that has none) is a failed run, as for any headless turn."
   (let [reason (?. res :stop-reason)]
     (or (not res)
-        (turn-result.failed? true (if (or (not reason) (= reason "none"))
-                                      []
-                                      [{:role :assistant :stop-reason reason}])))))
+        (turn-result.failed? true
+                             (if (or (not reason) (= reason "none"))
+                                 []
+                                 [{:role :assistant :stop-reason reason}])))))
 
 (fn result-final-text [res]
   "The result's final text and whether it is still cut short. A spilled
    answer is read back whole and its file removed; a cut one is marked."
   (let [path res.final-text-path
         f (when path (io.open path :rb))
-        spilled (when f (let [s (f:read :a)] (f:close) s))]
+        spilled (when f
+                  (let [s (f:read :a)] (f:close) s))]
     (when path (os.remove path))
-    (if spilled (values spilled false)
-        res.truncated? (values (.. (or res.final-text "")
-                                   "\n\n[subagent answer truncated to fit one wire line; full text unavailable]")
-                               true)
-        (values res.final-text false))))
+    (if spilled (values spilled false) res.truncated?
+        (values (.. (or res.final-text "")
+                    "\n\n[subagent answer truncated to fit one wire line; full text unavailable]")
+                true) (values res.final-text false))))
 
 (fn outcome-status [ch r ?err]
   "Run status from the child's `exit` event, else from the process exit."
   (let [exit-status (?. ch :exit :status)]
-    (if ?err :failed
-        (= exit-status :done) (if (result-failed? ch.result) :failed :completed)
-        exit-status exit-status
+    (if ?err :failed (= exit-status :done)
+        (if (result-failed? ch.result) :failed :completed) exit-status
+        exit-status
         ;; A protocol failure (e.g. a version mismatch) is a failure even
         ;; though the parent then cancels and kills the child.
-        (?. ch :error) :failed
-        (?. r :timed-out?) :timed-out
-        (?. r :cancelled?) :cancelled
-        :failed)))
+        (?. ch :error) :failed (?. r :timed-out?) :timed-out (?. r :cancelled?)
+        :cancelled :failed)))
 
 (fn completion-summary [run status child-text]
   (let [one-line (text.truncate-line (text.first-line (or child-text "")) 240)]
@@ -757,7 +788,8 @@
           failure? (not= status :completed)
           ;; Without `result`, answer with the latest (possibly in-flight) reply.
           child-text (if failure?
-                         (or (text.blank->nil job.delta-text) job.partial-text "")
+                         (or (text.blank->nil job.delta-text) job.partial-text
+                             "")
                          (or final-text ""))
           empty-final? (and (not failure?) (blank? final-text))
           routing job.routing
@@ -784,7 +816,8 @@
                    :error (and ?err (text.first-line (tostring ?err)))
                    :output-tail r.output
                    :output-truncated? r.truncated?
-                   :full-output-path (when (not run.background?) r.full-output-path)
+                   :full-output-path (when (not run.background?)
+                                       r.full-output-path)
                    :result child-text}]
       (when (not failure?)
         (maybe-record-final-text-artifact! run final-text r.duration-ms))
@@ -799,11 +832,15 @@
                            (diagnostic-text "Subagent completed with empty final text."
                                             details nil)
                            child-text)]
-        (append-local-event! run {:type :subagent-done :status status
-                                  :summary child-text})
+        (append-local-event! run
+                             {:type :subagent-done
+                              :status status
+                              :summary child-text})
         (apply-usage-telemetry! run details)
         (runs.finish! run.id status details)
-        (each [_ p (pairs [job.sys-path (?. ch :control-path) (?. ch :event-path)])]
+        (each [_ p (pairs [job.sys-path
+                           (?. ch :control-path)
+                           (?. ch :event-path)])]
           (os.remove p))
         ;; Background inspection uses the result and bounded output tail; the
         ;; raw process spill has no consumer there.
@@ -873,50 +910,62 @@
     (set run.job.channel ch)
     (send-control! run :prompt {:text (task-with-cwd-context run)})
     (set run.job.handle
-         (process.start-captured
-           {:argv (child-argv bin sys-path routing child-policy)
-            :cwd run.cwd
-            :env {:FEN_WIRE_CONTROL_PATH control-path
-                  :FEN_WIRE_EVENT_PATH event-path
-                  :FEN_WIRE_RUN_ID run.id
-                  :FEN_WIRE_DEADLINE (tostring (+ (os.time)
-                                                  (math.ceil run.timeout-seconds)))
-                  :PWD run.cwd}
-            :timeout-seconds (+ run.timeout-seconds DEADLINE-GRACE-SECONDS)
-            :spill? true}))))
+         (process.start-captured {:argv (child-argv bin sys-path routing
+                                                    child-policy)
+                                  :cwd run.cwd
+                                  :env {:FEN_WIRE_CONTROL_PATH control-path
+                                        :FEN_WIRE_EVENT_PATH event-path
+                                        :FEN_WIRE_RUN_ID run.id
+                                        :FEN_WIRE_DEADLINE (tostring (+ (os.time)
+                                                                        (math.ceil run.timeout-seconds)))
+                                        :PWD run.cwd}
+                                  :timeout-seconds (+ run.timeout-seconds
+                                                      DEADLINE-GRACE-SECONDS)
+                                  :spill? true}))))
 
 (fn launch! [cfg agent task requested-cwd cwd physical-cwd ctx ?opts]
   "Validate policy, record the run, and spawn its child. Returns the run, or
    nil plus an error tool result."
   (let [opts (or ?opts {})
-        (child-policy policy-error)
-        (child-tool-policy cfg (?. ctx :agent :tool-restriction))
+        (child-policy policy-error) (child-tool-policy cfg
+                                                       (?. ctx :agent
+                                                           :tool-restriction))
         bin (runtime.binary-path)
         sys-path (and (not policy-error) bin (write-temp cfg.body))]
-    (if policy-error (values nil (result policy-error.message true policy-error))
-        (not bin) (values nil (result "cannot resolve fen binary to spawn subagent" true))
-        (not sys-path) (values nil (result "cannot stage subagent system prompt" true))
+    (if policy-error
+        (values nil (result policy-error.message true policy-error))
+        (not bin)
+        (values nil (result "cannot resolve fen binary to spawn subagent" true))
+        (not sys-path)
+        (values nil (result "cannot stage subagent system prompt" true))
         (let [routing (effective-routing cfg ctx)
               fingerprint (task-fingerprint agent task cwd routing)
-              run (runs.start! {:agent agent :task task :cfg cfg
+              run (runs.start! {:agent agent
+                                :task task
+                                :cfg cfg
                                 :task-fingerprint fingerprint
                                 :repeated-timeout-warning (runs.repeated-timeout-warning fingerprint)
                                 :requested-cwd requested-cwd
-                                :cwd cwd :physical-cwd physical-cwd
-                                :timeout-seconds (or cfg.timeout-seconds DEFAULT-TIMEOUT-SECONDS)
+                                :cwd cwd
+                                :physical-cwd physical-cwd
+                                :timeout-seconds (or cfg.timeout-seconds
+                                                     DEFAULT-TIMEOUT-SECONDS)
                                 :started-at-ms (clock.monotonic-ms)
                                 :artifact-checkpoint-seconds cfg.artifact-checkpoint-seconds
                                 :max-turns cfg.max-turns
                                 :max-tool-calls cfg.max-tool-calls
                                 :background? opts.background?
                                 :collect opts.collect})]
-          (append-local-event! run {:type :subagent-start :task task
-                                    :timeout-seconds run.timeout-seconds})
+          (append-local-event! run
+                               {:type :subagent-start
+                                :task task
+                                :timeout-seconds run.timeout-seconds})
           (when run.repeated-timeout-warning
-            (append-local-event! run {:type :warning
-                                      :summary (repeated-timeout-warning-text
-                                                 run.repeated-timeout-warning)}))
-          (let [(ok? err) (pcall start-child! run bin sys-path routing child-policy)]
+            (append-local-event! run
+                                 {:type :warning
+                                  :summary (repeated-timeout-warning-text run.repeated-timeout-warning)}))
+          (let [(ok? err) (pcall start-child! run bin sys-path routing
+                                 child-policy)]
             (when (not ok?)
               (set run.job.quiet? true)
               (finish! run nil err)))
@@ -926,7 +975,8 @@
   "Blocking launch: pump the run's child to completion, yielding between
    passes. A cancellation raised by the yield cancels and reaps the child
    before it propagates."
-  (let [(run err-result) (launch! cfg agent task requested-cwd cwd physical-cwd ctx)]
+  (let [(run err-result) (launch! cfg agent task requested-cwd cwd physical-cwd
+                                  ctx)]
     (if (not run)
         err-result
         (do
@@ -939,10 +989,19 @@
                 (clock.sleep-ms TICK-MS)))
           run.job.outcome))))
 
-(fn launch-background [cfg agent task requested-cwd cwd physical-cwd ctx collect-mode]
+(fn launch-background [cfg
+                       agent
+                       task
+                       requested-cwd
+                       cwd
+                       physical-cwd
+                       ctx
+                       collect-mode]
   (if (>= (runs.active-count) MAX-BACKGROUND-RUNS)
-      (result "cannot launch background subagent: active run cap (4) reached" true)
-      (let [(run err-result) (launch! cfg agent task requested-cwd cwd physical-cwd ctx
+      (result "cannot launch background subagent: active run cap (4) reached"
+              true)
+      (let [(run err-result) (launch! cfg agent task requested-cwd cwd
+                                      physical-cwd ctx
                                       {:background? true :collect collect-mode})]
         (if (not run)
             err-result
@@ -955,12 +1014,12 @@
               (result (.. "Background subagent started: " run.id
                           (if run.repeated-timeout-warning
                               (.. "\nWarning: "
-                                  (repeated-timeout-warning-text
-                                    run.repeated-timeout-warning))
-                              ""))
-                      false {:run-id run.id :background? true
-                             :collect collect-mode
-                             :repeated-timeout-warning run.repeated-timeout-warning}))))))
+                                  (repeated-timeout-warning-text run.repeated-timeout-warning))
+                              "")) false
+                      {:run-id run.id
+                       :background? true
+                       :collect collect-mode
+                       :repeated-timeout-warning run.repeated-timeout-warning}))))))
 
 (fn invalid-agent-result [agent err]
   (result (.. "invalid agent definition " err.file ": " err.reason) true
@@ -988,8 +1047,8 @@
     (each [_ a (ipairs (or (discover.list) []))]
       (table.insert agents a))
     (table.sort agents
-      (fn [a b]
-        (< (agent-key a) (agent-key b))))
+                (fn [a b]
+                  (< (agent-key a) (agent-key b))))
     agents))
 
 (fn provider-model-status [agent]
@@ -997,13 +1056,13 @@
         model (trim agent.model)]
     (if (and (= provider "") (= model ""))
         "inherit"
-        (.. (if (= provider "") "inherit" provider)
-            "/"
+        (.. (if (= provider "") "inherit" provider) "/"
             (if (= model "") "default" model)))))
 
 (fn timeout-status [agent]
   (let [seconds (or agent.timeout-seconds DEFAULT-TIMEOUT-SECONDS)
-        parts [(.. (tostring seconds) "s" (if agent.timeout-seconds "" " default"))]]
+        parts [(.. (tostring seconds) "s"
+                   (if agent.timeout-seconds "" " default"))]]
     (when agent.max-turns
       (table.insert parts (.. "turns=" (tostring agent.max-turns))))
     (when agent.max-tool-calls
@@ -1023,8 +1082,9 @@
         (do
           (table.insert lines "Searched roots:")
           (each [_ r (ipairs rs)]
-            (table.insert lines (.. "- " (tostring (or r.scope :unknown))
-                                    ": " (tostring (or r.path "")))))))
+            (table.insert lines
+                          (.. "- " (tostring (or r.scope :unknown)) ": "
+                              (tostring (or r.path "")))))))
     lines))
 
 (fn find-agent-in-list [agents name]
@@ -1043,8 +1103,8 @@
           (table.insert shown a))
         (let [found (find-agent-in-list agents filter)]
           (when found (table.insert shown found))))
-    (let [lines [(.. "# Subagents (" (length shown) " shown, "
-                     (length agents) " discovered)")
+    (let [lines [(.. "# Subagents (" (length shown) " shown, " (length agents)
+                     " discovered)")
                  ""]]
       (if (= (length agents) 0)
           (do
@@ -1052,36 +1112,37 @@
             (each [_ line (ipairs (roots-lines))]
               (table.insert lines line))
             (table.insert lines "")
-            (table.insert lines "Add project agents under .fen/agents/ or user agents under the configured fen agents directory."))
+            (table.insert lines
+                          "Add project agents under .fen/agents/ or user agents under the configured fen agents directory."))
           (= (length shown) 0)
           (table.insert lines (.. "No subagent named `" filter "`."))
           (do
             (table.insert lines "```text")
-            (table.insert lines (.. (pad "name" 24) " "
-                                    (pad "scope" 8) " "
-                                    (pad "provider/model" 24) " "
-                                    (pad "timeout" 16) " description"))
-            (table.insert lines (.. (pad "----" 24) " "
-                                    (pad "-----" 8) " "
-                                    (pad "--------------" 24) " "
-                                    (pad "-------" 16) " -----------"))
+            (table.insert lines
+                          (.. (pad "name" 24) " " (pad "scope" 8) " "
+                              (pad "provider/model" 24) " " (pad "timeout" 16)
+                              " description"))
+            (table.insert lines
+                          (.. (pad "----" 24) " " (pad "-----" 8) " "
+                              (pad "--------------" 24) " " (pad "-------" 16)
+                              " -----------"))
             (each [_ a (ipairs shown)]
               (table.insert lines
-                (.. (pad (agent-key a) 24) " "
-                    (pad (tostring (or a.scope :unknown)) 8) " "
-                    (pad (provider-model-status a) 24) " "
-                    (pad (timeout-status a) 16) " "
-                    (fit (or a.description "") 72))))
+                            (.. (pad (agent-key a) 24) " "
+                                (pad (tostring (or a.scope :unknown)) 8) " "
+                                (pad (provider-model-status a) 24) " "
+                                (pad (timeout-status a) 16) " "
+                                (fit (or a.description "") 72))))
             (table.insert lines "```")))
       (table.concat lines "\n"))))
 
 (fn agents-command-complete [_arg-prefix _ctx]
   (let [out []]
     (each [_ a (ipairs (sorted-agents))]
-      (table.insert out {:label (agent-key a)
-                         :value (agent-key a)
-                         :description (or a.description
-                                          (tostring (or a.scope "")))}))
+      (table.insert out
+                    {:label (agent-key a)
+                     :value (agent-key a)
+                     :description (or a.description (tostring (or a.scope "")))}))
     out))
 
 (fn agents-command-handler [args _ctx api]
@@ -1095,10 +1156,8 @@
 
 (fn duration-label [run]
   (let [ms (duration-ms run)]
-    (if (not ms)
-        "-"
-        (< ms 1000)
-        (.. (tostring ms) "ms")
+    (if (not ms) "-"
+        (< ms 1000) (.. (tostring ms) "ms")
         (.. (tostring (math.floor (/ ms 1000))) "s"))))
 
 (fn artifact-label [run]
@@ -1115,36 +1174,28 @@
 (fn run-status-label [run]
   "Use the parent-facing outcome vocabulary without changing durable status
    symbols that callers already consume through structured introspection."
-  (if run.display-status
-      (tostring run.display-status)
+  (if run.display-status (tostring run.display-status)
       run.budget-limited? "budget-limited"
       (= run.status :completed) "done"
       (tostring (or run.status :unknown))))
 
 (fn run-count-label [run]
-  (.. (tostring (or run.turn-count 0)) "/" (tostring (or run.tool-call-count 0))
-      " " (artifact-label run)))
+  (.. (tostring (or run.turn-count 0)) "/"
+      (tostring (or run.tool-call-count 0)) " " (artifact-label run)))
 
 (fn render-run-table [rows]
   (let [lines ["```text"
-               (.. (pad "id" 12) " "
-                   (pad "agent" 16) " "
-                   (pad "status" 14) " "
-                   (pad "elapsed" 8) " "
-                   (pad "turns/tools/art" 16) " task")
-               (.. (pad "--" 12) " "
-                   (pad "-----" 16) " "
-                   (pad "------" 14) " "
-                   (pad "-------" 8) " "
-                   (pad "---------------" 16) " ----")]]
+               (.. (pad "id" 12) " " (pad "agent" 16) " " (pad "status" 14) " "
+                   (pad "elapsed" 8) " " (pad "turns/tools/art" 16) " task")
+               (.. (pad "--" 12) " " (pad "-----" 16) " " (pad "------" 14) " "
+                   (pad "-------" 8) " " (pad "---------------" 16) " ----")]]
     (each [_ r (ipairs rows)]
       (table.insert lines
-        (.. (pad r.id 12) " "
-            (pad r.agent 16) " "
-            (pad (run-status-label r) 14) " "
-            (pad (duration-label r) 8) " "
-            (pad (run-count-label r) 16) " "
-            (fit (or r.task-summary "") 72))))
+                    (.. (pad r.id 12) " " (pad r.agent 16) " "
+                        (pad (run-status-label r) 14) " "
+                        (pad (duration-label r) 8) " "
+                        (pad (run-count-label r) 16) " "
+                        (fit (or r.task-summary "") 72))))
     (table.insert lines "```")
     (table.concat lines "\n")))
 
@@ -1192,7 +1243,8 @@
         (table.insert lines "Repeated timeout warnings:"))
       (let [warning run.repeated-timeout-warning]
         (table.insert lines
-                      (.. "- " run.id ": " (repeated-timeout-warning-text warning))))))
+                      (.. "- " run.id ": "
+                          (repeated-timeout-warning-text warning))))))
   any?)
 
 (fn render-subagent-runs []
@@ -1206,19 +1258,23 @@
           (append-event-tail! lines rows)
           (append-timeout-warnings! lines rows)))
     (table.insert lines "")
-    (table.insert lines "Blocking is the default; set `background: true` to return immediately with a run id.")
-    (table.insert lines "Background completions are queued as follow-ups and do not start a turn automatically.")
-    (table.insert lines "Use `/subagents show RUN_ID` to inspect a stored result and details.")
-    (table.insert lines "Use `/subagents usage [RUN_ID]` to see token usage per run and workflow totals.")
-    (table.insert lines "Use `/subagents steer RUN_ID NOTE` to steer an active child at its next turn boundary.")
-    (table.insert lines "Use `/subagents cancel RUN_ID` to cancel an active child, or `/subagents cancel` for all active runs.")
+    (table.insert lines
+                  "Blocking is the default; set `background: true` to return immediately with a run id.")
+    (table.insert lines
+                  "Background completions are queued as follow-ups and do not start a turn automatically.")
+    (table.insert lines
+                  "Use `/subagents show RUN_ID` to inspect a stored result and details.")
+    (table.insert lines
+                  "Use `/subagents usage [RUN_ID]` to see token usage per run and workflow totals.")
+    (table.insert lines
+                  "Use `/subagents steer RUN_ID NOTE` to steer an active child at its next turn boundary.")
+    (table.insert lines
+                  "Use `/subagents cancel RUN_ID` to cancel an active child, or `/subagents cancel` for all active runs.")
     (table.concat lines "\n")))
 
 (fn human-tokens [n]
-  (if (not (= (type n) :number))
-      "-"
-      (>= n 1000)
-      (.. (tostring (math.floor (+ 0.5 (/ n 1000)))) "k")
+  (if (not (= (type n) :number)) "-"
+      (>= n 1000) (.. (tostring (math.floor (+ 0.5 (/ n 1000)))) "k")
       (tostring n)))
 
 (fn run-usage-view [run]
@@ -1257,8 +1313,9 @@
             (table.insert lines (.. "- " (tostring key) ": " (tostring v))))))
       (when view.turns
         (table.insert lines (.. "- turns: " (tostring view.turns))))
-      (table.insert lines (.. "- source: " (tostring (or view.source :unknown))
-                              (if (= view.complete? false) " (partial)" "")))
+      (table.insert lines
+                    (.. "- source: " (tostring (or view.source :unknown))
+                        (if (= view.complete? false) " (partial)" "")))
       (table.insert lines (.. "- provenance: " (usage-provenance-note view))))))
 
 (fn append-transcript! [lines run]
@@ -1283,7 +1340,8 @@
                    (.. "- raw-status: " (tostring run.status))
                    (.. "- elapsed: " (duration-label run))
                    (.. "- turn-count: " (tostring (or run.turn-count 0)))
-                   (.. "- tool-call-count: " (tostring (or run.tool-call-count 0)))
+                   (.. "- tool-call-count: "
+                       (tostring (or run.tool-call-count 0)))
                    (.. "- background: " (tostring (not (not run.background?))))
                    (.. "- collect: " (tostring (or run.collect :summary)))
                    (.. "- cwd: " (or run.cwd ""))
@@ -1295,41 +1353,55 @@
         (when run.max-turns
           (table.insert lines (.. "- max-turns: " (tostring run.max-turns))))
         (when run.max-tool-calls
-          (table.insert lines (.. "- max-tool-calls: " (tostring run.max-tool-calls))))
+          (table.insert lines
+                        (.. "- max-tool-calls: " (tostring run.max-tool-calls))))
         (when run.budget-finalization-requested?
           (table.insert lines "- budget-finalization-requested: true"))
         (when run.budget-finalization-reason
-          (table.insert lines (.. "- budget-finalization-reason: "
-                                  (tostring run.budget-finalization-reason))))
+          (table.insert lines
+                        (.. "- budget-finalization-reason: "
+                            (tostring run.budget-finalization-reason))))
         (when run.final-answer-produced?
           (table.insert lines "- final-answer-produced: true"))
         (when run.repeated-timeout-warning
           (let [warning run.repeated-timeout-warning]
-            (table.insert lines (.. "- repeated-timeout-warning-count: "
-                                    (tostring warning.count)))
-            (table.insert lines (.. "- repeated-timeout-warning: " warning.suggestion))
+            (table.insert lines
+                          (.. "- repeated-timeout-warning-count: "
+                              (tostring warning.count)))
+            (table.insert lines
+                          (.. "- repeated-timeout-warning: " warning.suggestion))
             (when warning.history-truncated?
               (table.insert lines "- repeated-timeout-history-truncated: true"))))
         (when (> (length (or run.repeated-inspection-warnings [])) 0)
           (table.insert lines "- repeated-inspection-warnings:")
           (each [_ warning (ipairs run.repeated-inspection-warnings)]
-            (table.insert lines (.. "  - " (tostring (or warning.summary
-                                                       warning.fingerprint
-                                                       "warning"))))))
+            (table.insert lines
+                          (.. "  - "
+                              (tostring (or warning.summary warning.fingerprint
+                                            "warning"))))))
         (when run.first-artifact-kind
-          (table.insert lines (.. "- first-artifact-kind: "
-                                  (tostring run.first-artifact-kind))))
+          (table.insert lines
+                        (.. "- first-artifact-kind: "
+                            (tostring run.first-artifact-kind))))
         (when run.first-artifact-summary
-          (table.insert lines (.. "- first-artifact-summary: "
-                                  (tostring run.first-artifact-summary))))
+          (table.insert lines
+                        (.. "- first-artifact-summary: "
+                            (tostring run.first-artifact-summary))))
         (when run.no-artifact-checkpoint-exceeded?
           (table.insert lines "- no-artifact-checkpoint-exceeded: true"))
         (when run.details
           (table.insert lines "")
           (table.insert lines "Details:")
-          (each [_ key (ipairs [:duration-ms :exit-code :signal :timed-out?
-                                :provider :model :stop-reason :event-count
-                                :event-error-count :child-exit])]
+          (each [_ key (ipairs [:duration-ms
+                                :exit-code
+                                :signal
+                                :timed-out?
+                                :provider
+                                :model
+                                :stop-reason
+                                :event-count
+                                :event-error-count
+                                :child-exit])]
             (let [v (. run.details key)]
               (when (not= v nil)
                 (table.insert lines (.. "- " (tostring key) ": " (tostring v)))))))
@@ -1350,23 +1422,13 @@
 
 (fn render-usage-table [rows]
   (let [lines ["```text"
-               (.. (pad "run" 12) " "
-                   (pad "provider" 12) " "
-                   (pad "model" 16) " "
-                   (pad "status" 10) " "
-                   (pad "turns" 6) " "
-                   (pad "input" 8) " "
-                   (pad "output" 8) " "
-                   (pad "cache-r" 8) " "
+               (.. (pad "run" 12) " " (pad "provider" 12) " " (pad "model" 16)
+                   " " (pad "status" 10) " " (pad "turns" 6) " " (pad "input" 8)
+                   " " (pad "output" 8) " " (pad "cache-r" 8) " "
                    (pad "total" 8) " src")
-               (.. (pad "---" 12) " "
-                   (pad "--------" 12) " "
-                   (pad "-----" 16) " "
-                   (pad "------" 10) " "
-                   (pad "-----" 6) " "
-                   (pad "-----" 8) " "
-                   (pad "------" 8) " "
-                   (pad "-------" 8) " "
+               (.. (pad "---" 12) " " (pad "--------" 12) " " (pad "-----" 16)
+                   " " (pad "------" 10) " " (pad "-----" 6) " " (pad "-----" 8)
+                   " " (pad "------" 8) " " (pad "-------" 8) " "
                    (pad "-----" 8) " ---")]
         totals {}
         by-group {}
@@ -1380,16 +1442,14 @@
             model (or (and r.details r.details.model) "-")
             status (tostring r.status)]
         (table.insert lines
-          (.. (pad r.id 12) " "
-              (pad (tostring provider) 12) " "
-              (pad (tostring model) 16) " "
-              (pad status 10) " "
-              (pad (tostring (or (and view view.turns) "-")) 6) " "
-              (pad (usage-cell usage :input) 8) " "
-              (pad (usage-cell usage :output) 8) " "
-              (pad (usage-cell usage :cache-read) 8) " "
-              (pad (usage-cell usage :total-tokens) 8) " "
-              (if view (tostring (or view.source "-")) "-")))
+                      (.. (pad r.id 12) " " (pad (tostring provider) 12) " "
+                          (pad (tostring model) 16) " " (pad status 10) " "
+                          (pad (tostring (or (and view view.turns) "-")) 6) " "
+                          (pad (usage-cell usage :input) 8) " "
+                          (pad (usage-cell usage :output) 8) " "
+                          (pad (usage-cell usage :cache-read) 8) " "
+                          (pad (usage-cell usage :total-tokens) 8) " "
+                          (if view (tostring (or view.source "-")) "-")))
         (when usage
           (set any-usage? true)
           (each [_ key (ipairs usage-util.USAGE-FIELDS)]
@@ -1397,7 +1457,8 @@
               (tset totals key (+ (or (. totals key) 0) (. usage key)))))
           (when (and view view.turns)
             (set grand-turns (+ grand-turns view.turns)))
-          (let [gkey (.. (tostring provider) " / " (tostring model) " / " status)
+          (let [gkey (.. (tostring provider) " / " (tostring model) " / "
+                         status)
                 bucket (or (. by-group gkey)
                            (let [b {:total 0 :turns 0}]
                              (tset by-group gkey b)
@@ -1406,23 +1467,21 @@
             (set bucket.total (+ bucket.total (or (. usage :total-tokens) 0)))
             (set bucket.turns (+ bucket.turns (or (and view view.turns) 0)))))))
     (table.insert lines
-      (.. (pad "TOTAL" 12) " "
-          (pad "" 12) " "
-          (pad "" 16) " "
-          (pad "" 10) " "
-          (pad (tostring grand-turns) 6) " "
-          (pad (usage-cell totals :input) 8) " "
-          (pad (usage-cell totals :output) 8) " "
-          (pad (usage-cell totals :cache-read) 8) " "
-          (pad (usage-cell totals :total-tokens) 8) " "))
+                  (.. (pad "TOTAL" 12) " " (pad "" 12) " " (pad "" 16) " "
+                      (pad "" 10) " " (pad (tostring grand-turns) 6) " "
+                      (pad (usage-cell totals :input) 8) " "
+                      (pad (usage-cell totals :output) 8) " "
+                      (pad (usage-cell totals :cache-read) 8) " "
+                      (pad (usage-cell totals :total-tokens) 8) " "))
     (table.insert lines "```")
     (when (> (length group-order) 0)
       (table.insert lines "")
       (table.insert lines "By provider / model / outcome:")
       (each [_ gkey (ipairs group-order)]
         (let [b (. by-group gkey)]
-          (table.insert lines (.. "- " gkey ": " (human-tokens b.total)
-                                  " total, " (tostring b.turns) " turns")))))
+          (table.insert lines
+                        (.. "- " gkey ": " (human-tokens b.total) " total, "
+                            (tostring b.turns) " turns")))))
     (when (not any-usage?)
       (table.insert lines "")
       (table.insert lines "No provider usage recorded for these runs yet."))
@@ -1476,7 +1535,7 @@
                       (when ctx (set ctx.cancel-requested? true))
                       (api.emit {:type :assistant-text
                                  :text (.. "Requested cancellation for " n
-                                           " active subagent run(s).") }))))))
+                                           " active subagent run(s).")}))))))
         (= cmd "steer")
         (let [(run-id note) (string.match trimmed "^%S+%s+(%S+)%s+(.+)$")]
           (if (or (not run-id) (= (trim note) ""))
@@ -1489,19 +1548,19 @@
                                          (fit note 120))})
                     (api.emit {:type :assistant-text
                                :text (.. "No active subagent run named " run-id)})))))
-        (api.emit {:type :assistant-text
-                   :text (render-subagent-runs)}))))
+        (api.emit {:type :assistant-text :text (render-subagent-runs)}))))
 
 (fn subagent-status-render [_ctx]
   (let [n (runs.active-count)]
     (when (> n 0)
-      {:text (.. "subagent:" n " running")
-       :style :status})))
+      {:text (.. "subagent:" n " running") :style :status})))
 
 (fn subagent-snapshot [_ctx]
   (let [snap (runs.snapshot)]
-    (each [_ r (ipairs (or snap.active-runs []))] (sanitize-run! r))
-    (each [_ r (ipairs (or snap.runs []))] (sanitize-run! r))
+    (each [_ r (ipairs (or snap.active-runs []))]
+      (sanitize-run! r))
+    (each [_ r (ipairs (or snap.runs []))]
+      (sanitize-run! r))
     snap))
 
 (fn tool-visible? [ctx name]
@@ -1523,12 +1582,14 @@
               limit (math.min (length agents) MAX-PROMPT-AGENTS)]
           (for [i 1 limit]
             (let [a (. agents i)]
-              (table.insert lines (.. "- " (agent-key a) ": "
-                                      (fit (or a.description "")
-                                           MAX-PROMPT-DESCRIPTION-BYTES)))))
+              (table.insert lines
+                            (.. "- " (agent-key a) ": "
+                                (fit (or a.description "")
+                                     MAX-PROMPT-DESCRIPTION-BYTES)))))
           (when (> (length agents) limit)
-            (table.insert lines (.. "- ... " (- (length agents) limit)
-                                    " more; run /agents for details")))
+            (table.insert lines
+                          (.. "- ... " (- (length agents) limit)
+                              " more; run /agents for details")))
           (table.concat lines "\n"))))))
 
 (fn parse-timeout-arg [raw]
@@ -1563,10 +1624,9 @@
     (set out.max-turns (or (parse-positive-budget (or args.max-turns
                                                       args.max_turns))
                            cfg.max-turns))
-    (set out.max-tool-calls
-         (or (parse-positive-budget (or args.max-tool-calls
-                                        args.max_tool_calls))
-             cfg.max-tool-calls))
+    (set out.max-tool-calls (or (parse-positive-budget (or args.max-tool-calls
+                                                           args.max_tool_calls))
+                                cfg.max-tool-calls))
     ;; Explicit per-call routing wins over named-agent frontmatter. This lets a
     ;; caller use the authenticated model inventory without rewriting an agent
     ;; definition and makes the routing visible in the launch tool call.
@@ -1625,13 +1685,11 @@
               (set supported? true)))
           supported?))))
 
-
 (fn wait-for-run [run-id args ?yield-fn]
   (let [budget (or (parse-timeout-arg args.timeout-seconds) 30)
         deadline (+ (clock.monotonic-ms) (* budget 1000))]
     (var run (runs.find run-id))
-    (while (and run (= run.status :running)
-                (< (clock.monotonic-ms) deadline))
+    (while (and run (= run.status :running) (< (clock.monotonic-ms) deadline))
       (pump-background-jobs!)
       (if ?yield-fn (?yield-fn) (clock.sleep-ms 10))
       (set run (runs.find run-id)))
@@ -1667,22 +1725,26 @@
                          :source model.source
                          :catalog-status provider.catalog.status}]
                 (table.insert rows row))))))
-    (table.sort rows #( < $1.canonical-id $2.canonical-id))
+    (table.sort rows #(< $1.canonical-id $2.canonical-id))
     (if (= (length rows) 0)
-        (table.insert lines "No models are available from authenticated or authless providers.")
+        (table.insert lines
+                      "No models are available from authenticated or authless providers.")
         (do
-          (table.insert lines "Use one exact pair below and pass both `provider` and `model` on the launch call:")
+          (table.insert lines
+                        "Use one exact pair below and pass both `provider` and `model` on the launch call:")
           (each [_ row (ipairs rows)]
             (table.insert lines
                           (.. "- " row.canonical-id
                               (if row.default? " (default)" ""))))))
     (when (> (length unavailable) 0)
       (table.insert lines "")
-      (table.insert lines "Not offered because the authenticated catalog could not be verified:")
+      (table.insert lines
+                    "Not offered because the authenticated catalog could not be verified:")
       (each [_ warning (ipairs unavailable)]
         (table.insert lines (.. "- " warning))))
     (result (table.concat lines "\n") false
-            {:models rows :model-count (length rows)
+            {:models rows
+             :model-count (length rows)
              :unavailable-providers unavailable})))
 
 (fn review-worktree-result [args]
@@ -1706,22 +1768,24 @@
                 (runs.add-review-worktrees! records)
                 (result (.. "Created " (tostring (length records))
                             " detached review worktree(s). Launch the ordinary "
-                            "read-only reviewer or scout subagent with one returned cwd."
-                            ) false
-                        {:worktrees records})))))))
+                            "read-only reviewer or scout subagent with one returned cwd.")
+                        false {:worktrees records})))))))
 
 (fn cleanup-review-worktrees-result []
-  (let [removed [] failures []]
+  (let [removed []
+        failures []]
     (each [_ record (ipairs (runs.review-worktrees))]
       (let [(ok err) (worktrees.cleanup record)]
         (if ok
-            (do (runs.remove-review-worktree! record.path)
-                (table.insert removed record.path))
+            (do
+              (runs.remove-review-worktree! record.path)
+              (table.insert removed record.path))
             (table.insert failures {:path record.path :error err}))))
     (result (.. "Removed " (tostring (length removed))
                 " unchanged review worktree(s).")
             (> (length failures) 0)
-            {:removed removed :failures failures
+            {:removed removed
+             :failures failures
              :remaining (runs.review-worktrees)})))
 
 (fn management-execute [args ctx ?yield-fn api]
@@ -1740,7 +1804,8 @@
             (result "action 'show' requires 'run-id'" true)
             (let [run (runs.find run-id)]
               (if run
-                  (result (render-run-details run) false {:run (sanitize-run! run)})
+                  (result (render-run-details run) false
+                          {:run (sanitize-run! run)})
                   (result (.. "No subagent run named " run-id) true
                           {:run-id run-id :found? false}))))
         (= action "usage")
@@ -1757,16 +1822,17 @@
                   views []]
               (each [_ r (ipairs rows)]
                 (let [v (run-usage-view r)]
-                  (table.insert views {:run-id r.id
-                                       :agent r.agent
-                                       :provider (and r.details r.details.provider)
-                                       :model (and r.details r.details.model)
-                                       :status r.status
-                                       :usage (and v v.usage)
-                                       :turns (and v v.turns)
-                                       :provenance (and v v.provenance)
-                                       :source (and v v.source)
-                                       :complete? (and v v.complete?)})))
+                  (table.insert views
+                                {:run-id r.id
+                                 :agent r.agent
+                                 :provider (and r.details r.details.provider)
+                                 :model (and r.details r.details.model)
+                                 :status r.status
+                                 :usage (and v v.usage)
+                                 :turns (and v v.turns)
+                                 :provenance (and v v.provenance)
+                                 :source (and v v.source)
+                                 :complete? (and v v.complete?)})))
               (result (render-subagent-usage nil) false
                       {:runs views :active-count (runs.active-count)})))
         (= action "wait")
@@ -1787,15 +1853,17 @@
             (let [job (runs.job run-id)
                   run (active-record run-id)]
               (if job
-                  (do (set job.job.quiet? true)
-                      (reap! [job])
-                      (result (.. "Cancelled " run-id ".") false
-                              {:run (sanitize-run! (runs.find run-id))}))
+                  (do
+                    (set job.job.quiet? true)
+                    (reap! [job])
+                    (result (.. "Cancelled " run-id ".") false
+                            {:run (sanitize-run! (runs.find run-id))}))
                   run
                   ;; A blocking run's own driver cancels and reaps it.
-                  (do (request-cancel! run)
-                      (result (.. "Requested cancellation for " run-id ".") false
-                              {:run (sanitize-run! (runs.find run-id))}))
+                  (do
+                    (request-cancel! run)
+                    (result (.. "Requested cancellation for " run-id ".") false
+                            {:run (sanitize-run! (runs.find run-id))}))
                   (result (.. "No active subagent run named " run-id) true))))
         (= action "cancel-all")
         (let [jobs (runs.jobs)
@@ -1806,8 +1874,8 @@
             (set ctx.cancel-requested? true))
           (result (if (> n 0)
                       (.. "Cancelled " n " background subagent run(s).")
-                      "No active background subagent runs to cancel.") false
-                  {:cancelled n :active-count (runs.active-count)}))
+                      "No active background subagent runs to cancel.")
+                  false {:cancelled n :active-count (runs.active-count)}))
         (= action "remove")
         (if (not (present? run-id))
             (result "action 'remove' requires 'run-id'" true)
@@ -1825,14 +1893,18 @@
                   (= old.status :running)
                   (result (.. run-id " is still running") true)
                   (not (and old.background? old.cfg old.task))
-                  (result "retry is available only for retained background runs" true)
+                  (result "retry is available only for retained background runs"
+                          true)
                   (>= (runs.active-count) MAX-BACKGROUND-RUNS)
-                  (result "cannot retry subagent: active run cap (4) reached" true)
+                  (result "cannot retry subagent: active run cap (4) reached"
+                          true)
                   (not (background-supported? ctx))
-                  (result "background subagents require a ticking presenter (use the TUI)" true)
+                  (result "background subagents require a ticking presenter (use the TUI)"
+                          true)
                   (let [r (launch-background old.cfg old.agent old.task
-                                             old.requested-cwd old.cwd old.physical-cwd
-                                             ctx (or old.collect :summary))]
+                                             old.requested-cwd old.cwd
+                                             old.physical-cwd ctx
+                                             (or old.collect :summary))]
                     (when r.details
                       (set r.details.retry-of run-id)
                       (let [retried (runs.record r.details.run-id)]
@@ -1840,7 +1912,8 @@
                     r))))
         (= action "clear")
         (if (> (runs.active-count) 0)
-            (result "cannot clear subagent history while runs are active; cancel them first" true)
+            (result "cannot clear subagent history while runs are active; cancel them first"
+                    true)
             (let [n (length (runs.runs))]
               (runs.clear!)
               (result "Cleared subagent run history." false {:cleared n})))
@@ -1849,14 +1922,16 @@
               cancelled (length jobs)]
           (when (> cancelled 0) (shutdown-background-jobs! true))
           (if (> (runs.active-count) 0)
-              (do (when ctx (set ctx.cancel-requested? true))
-                  (result "blocking subagent cancellation requested; reset again after it exits" true
-                          {:cancelled cancelled
-                           :active-count (runs.active-count)}))
+              (do
+                (when ctx (set ctx.cancel-requested? true))
+                (result "blocking subagent cancellation requested; reset again after it exits"
+                        true
+                        {:cancelled cancelled
+                         :active-count (runs.active-count)}))
               (let [cleared (length (runs.runs))]
                 (runs.clear!)
-                (result "Cancelled active jobs and cleared subagent history." false
-                        {:cancelled cancelled :cleared cleared}))))
+                (result "Cancelled active jobs and cleared subagent history."
+                        false {:cancelled cancelled :cleared cleared}))))
         (result (.. "unknown subagent action: " action) true))))
 
 (fn execute [args ctx ?yield-fn api]
@@ -1866,7 +1941,8 @@
         (not (present? task))
         (result "missing 'task'" true)
         (and (not (present? args.agent)) (not (present? args.prompt)))
-        (result "missing 'agent' or 'prompt' (provide a named agent or an inline system prompt)" true)
+        (result "missing 'agent' or 'prompt' (provide a named agent or an inline system prompt)"
+                true)
         (let [requested-cwd (if (and cwd (not= cwd "")) cwd (path.cwd))
               launch-cwd (absolute-cwd requested-cwd)]
           (if (not (path.dir-exists? launch-cwd))
@@ -1886,18 +1962,23 @@
                                         (= args.collect "full"))))
                           (result "collect must be 'summary' or 'full'" true)
                           (>= (runs.active-count) MAX-BACKGROUND-RUNS)
-                          (result "cannot launch subagent: active run cap (4) reached" true)
-                          (and args.background (not (background-supported? ctx)))
-                          (result "background subagents require a ticking presenter (use the TUI)" true)
+                          (result "cannot launch subagent: active run cap (4) reached"
+                                  true)
+                          (and args.background
+                               (not (background-supported? ctx)))
+                          (result "background subagents require a ticking presenter (use the TUI)"
+                                  true)
                           args.background
-                          (launch-background (with-call-timeout cfg args) agent-label task
-                                             requested-cwd launch-cwd physical-cwd ctx
+                          (launch-background (with-call-timeout cfg args)
+                                             agent-label task requested-cwd
+                                             launch-cwd physical-cwd ctx
                                              (if (or (= args.collect :full)
                                                      (= args.collect "full"))
-                                                 :full :summary))
-                          (run-agent (with-call-timeout cfg args) agent-label task
-                                     requested-cwd launch-cwd physical-cwd ctx
-                                     ?yield-fn))))))))))
+                                                 :full
+                                                 :summary))
+                          (run-agent (with-call-timeout cfg args) agent-label
+                                     task requested-cwd launch-cwd physical-cwd
+                                     ctx ?yield-fn))))))))))
 
 (fn M.register [api]
   ;; /reload is a cancel point for detached children: cancel and reap them
@@ -1908,124 +1989,136 @@
                           (pump-background-jobs!)
                           (runs.reconcile-background!)))
   (api.on :agent-shutdown (fn [_ev] (shutdown-background-jobs!)))
-  (api.on :reset-conversation
-          (fn [ev]
-            ;; Only /new is a hard process boundary. Resume and handoff also
-            ;; reset presenter content but must not silently destroy jobs.
-            (when (= ev.reason :new)
-              (shutdown-background-jobs! true)
-              (runs.reconcile-background!)
-              (runs.clear!))))
+  (api.on :reset-conversation (fn [ev]
+                                ;; Only /new is a hard process boundary. Resume and handoff also
+                                ;; reset presenter content but must not silently destroy jobs.
+                                (when (= ev.reason :new)
+                                  (shutdown-background-jobs! true)
+                                  (runs.reconcile-background!)
+                                  (runs.clear!))))
   (api.prompt agents-prompt-fragment
               {:order 62
                :id :available-subagents
                :title "Available subagents"
                :description "Discovered subagents that can be invoked after activating the subagent tool through tool_search."})
   (api.register :command
-    {:name :agents
-     :order 66
-     :description "List discovered subagents and their model/timeout metadata"
-     :complete agents-command-complete
-     :handler (fn [args ctx] (agents-command-handler args ctx api))})
+                {:name :agents
+                 :order 66
+                 :description "List discovered subagents and their model/timeout metadata"
+                 :complete agents-command-complete
+                 :handler (fn [args ctx] (agents-command-handler args ctx api))})
   (api.register :command
-    {:name :subagents
-     :order 67
-     :description "Show active/recent subagent runs; use show, steer, or cancel with a run id"
-     :handler (fn [args ctx] (subagents-command-handler args ctx api))})
+                {:name :subagents
+                 :order 67
+                 :description "Show active/recent subagent runs; use show, steer, or cancel with a run id"
+                 :handler (fn [args ctx]
+                            (subagents-command-handler args ctx api))})
   (api.register :status
-    {:name :subagent
-     :side :left
-     :order 36
-     :render subagent-status-render})
+                {:name :subagent
+                 :side :left
+                 :order 36
+                 :render subagent-status-render})
   (api.register :introspect
-    {:name :state
-     :description "Current subagent run state and recent child processes"
-     :snapshot subagent-snapshot})
+                {:name :state
+                 :description "Current subagent run state and recent child processes"
+                 :snapshot subagent-snapshot})
   (api.register :tool
-    {:name :subagent
-     :label "Subagent"
-     :exposure :search
-     :parallel-safe? true
-     :parallel-cap 4
-     :snippet "Delegate and manage child fen agents with isolated context"
-     :description (.. "Delegate a focused task to a child agent running in "
-                      "a fresh fen process with its own context window. Provide "
-                      "either a named `agent` (a discovered agent definition) "
-                      "or an inline `prompt` (used directly as the child's "
-                      "system prompt, so no agent file is required). By "
-                      "default the child inherits the parent provider/model "
-                      "when available; a named agent's frontmatter or the "
-                      "inline `model`/`provider` args may override model, "
-                      "provider, or both. A provider-only override passes only "
-                      "that provider and intentionally omits the parent model. "
-                      "Use this to keep long or self-contained work (research, "
-                      "a scoped edit, a review pass) out of the main "
-                      "conversation. Prefer narrow tasks and set "
-                      "`timeout-seconds`, `max-turns`, or `max-tool-calls` "
-                      "to explicit short budgets when partial progress would "
-                      "still be useful. The child normally returns final text; "
-                      "failures and empty successful results return diagnostic "
-                      "text with details, including provider/model sources. "
-                      "Run details expose time-to-first-artifact when child progress events reveal the first useful tool/text/error artifact, plus budget counters and repeated-inspection warnings. "
-                      "Set `background: true` to launch explicitly without "
-                      "blocking; completion is queued as a follow-up and the "
-                      "full stored result is available through `/subagents show`. "
-                      "Background jobs are read-only and never auto-start a turn. "
-                      "Before launching, use action=models to refresh model "
-                      "catalogs for authenticated providers, select an exact "
-                      "provider/model pair from the result, and pass both "
-                      "fields explicitly on the launch. Per-call routing "
-                      "overrides named-agent frontmatter. Do not guess model "
-                      "IDs or rely on inherited routing. Use action=list/show/"
-                      "usage/wait/steer/cancel/cancel-all/remove/retry/clear/"
-                      "reset to inspect and manage stored "
-                      "runs, including per-run and workflow token usage, "
-                      "directly; management actions do "
-                      "not launch a child. When several "
-                      "subagent tool calls in the same assistant turn; fen may "
-                      "run them concurrently, capped at 4. Named agents are "
-                      "defined as markdown files under .fen/agents/ (project), "
-                      "~/.config/fen/agents/ (user), or bundled with fen.")
-     :parameters {:type :object
-                  :properties {:action {:type :string
-                                        :enum ["models" "review-worktrees" "cleanup-review-worktrees" "list" "show" "usage" "wait" "steer" "cancel" "cancel-all"
-                                               "remove" "retry" "clear" "reset"]
-                                        :description "Use `models` before a launch to refresh exact models. `review-worktrees` creates 1–4 detached sibling worktrees for ordinary read-only subagent launches; `cleanup-review-worktrees` removes only unchanged worktrees it created. Other values inspect or manage runs."}
-                               :run-id {:type :string
-                                        :description "Run id used by show, wait, steer, cancel, remove, or retry actions."}
-                               :note {:type :string
-                                      :description "Steering note required by action=steer."}
-                               :agent {:type :string
-                                       :description "Name of a discovered agent to run (the .md filename without extension). Provide this or `prompt`."}
-                               :prompt {:type :string
-                                        :description "Inline system prompt for the child agent, used instead of a discovered agent file. Provide this or `agent`; `agent` wins if both are set."}
-                               :task {:type :string
-                                      :description "The task/prompt to hand to the child agent."}
-                               :cwd {:type :string
-                                     :description "Working directory for the child or review-worktree source; validated to exist. Defaults to the current directory."}
-                               :ref {:type :string
-                                     :description "Git revision for action=review-worktrees; defaults to HEAD and is checked out detached."}
-                               :worktree-count {:type :number
-                                                :description "Number of detached sibling review worktrees to create (1–4) for action=review-worktrees."}
-                               :model {:type :string
-                                       :description "Exact model id selected from action=models. Pass explicitly with `provider` on every launch; overrides named-agent frontmatter."}
-                               :provider {:type :string
-                                          :description "Exact provider selected from action=models. Pass explicitly with `model` on every launch; overrides named-agent frontmatter."}
-                               :timeout-seconds {:type :number
-                                                 :description "For launches, set a shorter positive child timeout capped by policy. For action=wait, set the polling budget (default 30 seconds)."}
-                               :max-turns {:type :number
-                                           :description "Optional launch budget for completed child LLM turns. When reached before a final artifact, the parent strongly steers the child to return findings now."}
-                               :max-tool-calls {:type :number
-                                                :description "Optional launch budget for child tool calls. When reached before a final artifact, the parent strongly steers the child to return findings now."}
-                               :artifact-checkpoint-seconds {:type :number
-                                                             :description "Optional no-progress budget for launches: when the child produces no useful artifact within this many seconds, the parent strongly steers it to return findings now, like max-turns/max-tool-calls. Run details and /subagents show expose time-to-first-artifact or an explicit no-artifact-yet state."}
-                               :background {:type :boolean
-                                            :description "Run detached and return immediately with a run id. Defaults to false."}
-                               :collect {:type :string
-                                         :enum ["summary" "full"]
-                                         :description "For background completion follow-ups, queue a compact summary (default) or the full final result."}}}
-     :execute (fn [args ctx ?yield-fn]
-                (execute args ctx ?yield-fn api))})
+                {:name :subagent
+                 :label "Subagent"
+                 :exposure :search
+                 :parallel-safe? true
+                 :parallel-cap 4
+                 :snippet "Delegate and manage child fen agents with isolated context"
+                 :description (.. "Delegate a focused task to a child agent running in "
+                                  "a fresh fen process with its own context window. Provide "
+                                  "either a named `agent` (a discovered agent definition) "
+                                  "or an inline `prompt` (used directly as the child's "
+                                  "system prompt, so no agent file is required). By "
+                                  "default the child inherits the parent provider/model "
+                                  "when available; a named agent's frontmatter or the "
+                                  "inline `model`/`provider` args may override model, "
+                                  "provider, or both. A provider-only override passes only "
+                                  "that provider and intentionally omits the parent model. "
+                                  "Use this to keep long or self-contained work (research, "
+                                  "a scoped edit, a review pass) out of the main "
+                                  "conversation. Prefer narrow tasks and set "
+                                  "`timeout-seconds`, `max-turns`, or `max-tool-calls` "
+                                  "to explicit short budgets when partial progress would "
+                                  "still be useful. The child normally returns final text; "
+                                  "failures and empty successful results return diagnostic "
+                                  "text with details, including provider/model sources. "
+                                  "Run details expose time-to-first-artifact when child progress events reveal the first useful tool/text/error artifact, plus budget counters and repeated-inspection warnings. "
+                                  "Set `background: true` to launch explicitly without "
+                                  "blocking; completion is queued as a follow-up and the "
+                                  "full stored result is available through `/subagents show`. "
+                                  "Background jobs are read-only and never auto-start a turn. "
+                                  "Before launching, use action=models to refresh model "
+                                  "catalogs for authenticated providers, select an exact "
+                                  "provider/model pair from the result, and pass both "
+                                  "fields explicitly on the launch. Per-call routing "
+                                  "overrides named-agent frontmatter. Do not guess model "
+                                  "IDs or rely on inherited routing. Use action=list/show/"
+                                  "usage/wait/steer/cancel/cancel-all/remove/retry/clear/"
+                                  "reset to inspect and manage stored "
+                                  "runs, including per-run and workflow token usage, "
+                                  "directly; management actions do "
+                                  "not launch a child. When several "
+                                  "subagent tool calls in the same assistant turn; fen may "
+                                  "run them concurrently, capped at 4. Named agents are "
+                                  "defined as markdown files under .fen/agents/ (project), "
+                                  "~/.config/fen/agents/ (user), or bundled with fen.")
+                 :parameters {:type :object
+                              :properties {:action {:type :string
+                                                    :enum ["models"
+                                                           "review-worktrees"
+                                                           "cleanup-review-worktrees"
+                                                           "list"
+                                                           "show"
+                                                           "usage"
+                                                           "wait"
+                                                           "steer"
+                                                           "cancel"
+                                                           "cancel-all"
+                                                           "remove"
+                                                           "retry"
+                                                           "clear"
+                                                           "reset"]
+                                                    :description "Use `models` before a launch to refresh exact models. `review-worktrees` creates 1–4 detached sibling worktrees for ordinary read-only subagent launches; `cleanup-review-worktrees` removes only unchanged worktrees it created. Other values inspect or manage runs."}
+                                           :run-id {:type :string
+                                                    :description "Run id used by show, wait, steer, cancel, remove, or retry actions."}
+                                           :note {:type :string
+                                                  :description "Steering note required by action=steer."}
+                                           :agent {:type :string
+                                                   :description "Name of a discovered agent to run (the .md filename without extension). Provide this or `prompt`."}
+                                           :prompt {:type :string
+                                                    :description "Inline system prompt for the child agent, used instead of a discovered agent file. Provide this or `agent`; `agent` wins if both are set."}
+                                           :task {:type :string
+                                                  :description "The task/prompt to hand to the child agent."}
+                                           :cwd {:type :string
+                                                 :description "Working directory for the child or review-worktree source; validated to exist. Defaults to the current directory."}
+                                           :ref {:type :string
+                                                 :description "Git revision for action=review-worktrees; defaults to HEAD and is checked out detached."}
+                                           :worktree-count {:type :number
+                                                            :description "Number of detached sibling review worktrees to create (1–4) for action=review-worktrees."}
+                                           :model {:type :string
+                                                   :description "Exact model id selected from action=models. Pass explicitly with `provider` on every launch; overrides named-agent frontmatter."}
+                                           :provider {:type :string
+                                                      :description "Exact provider selected from action=models. Pass explicitly with `model` on every launch; overrides named-agent frontmatter."}
+                                           :timeout-seconds {:type :number
+                                                             :description "For launches, set a shorter positive child timeout capped by policy. For action=wait, set the polling budget (default 30 seconds)."}
+                                           :max-turns {:type :number
+                                                       :description "Optional launch budget for completed child LLM turns. When reached before a final artifact, the parent strongly steers the child to return findings now."}
+                                           :max-tool-calls {:type :number
+                                                            :description "Optional launch budget for child tool calls. When reached before a final artifact, the parent strongly steers the child to return findings now."}
+                                           :artifact-checkpoint-seconds {:type :number
+                                                                         :description "Optional no-progress budget for launches: when the child produces no useful artifact within this many seconds, the parent strongly steers it to return findings now, like max-turns/max-tool-calls. Run details and /subagents show expose time-to-first-artifact or an explicit no-artifact-yet state."}
+                                           :background {:type :boolean
+                                                        :description "Run detached and return immediately with a run id. Defaults to false."}
+                                           :collect {:type :string
+                                                     :enum ["summary" "full"]
+                                                     :description "For background completion follow-ups, queue a compact summary (default) or the full final result."}}}
+                 :execute (fn [args ctx ?yield-fn]
+                            (execute args ctx ?yield-fn api))})
   true)
 
 M

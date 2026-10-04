@@ -27,7 +27,6 @@
     (let [(ok? err) (os.rename tmp p)]
       (when (not ok?)
         (os.remove tmp)
-        (error (.. "storage: rename " tmp " -> " p
-                   " failed: " (tostring err)))))))
+        (error (.. "storage: rename " tmp " -> " p " failed: " (tostring err)))))))
 
 {: read : write!}

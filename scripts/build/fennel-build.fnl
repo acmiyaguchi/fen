@@ -15,9 +15,12 @@
 ;; `fennel.dofile` is deterministic across fennel install flavors, unlike a
 ;; `require` that depends on how the searcher paths are configured.
 (local build
-  (let [self (or (. arg 0) "scripts/build/fennel-build.fnl")
-        root (or (string.match self "^(.-)scripts/build/fennel%-build%.fnl$") "")]
-    (fennel.dofile (.. root "packages/core/src/fen/core/extensions/build.fnl"))))
+       (let [self (or (. arg 0) "scripts/build/fennel-build.fnl")
+             root (or (string.match self
+                                    "^(.-)scripts/build/fennel%-build%.fnl$")
+                      "")]
+         (fennel.dofile (.. root
+                            "packages/core/src/fen/core/extensions/build.fnl"))))
 
 (fn read-all [path]
   (let [f (assert (io.open path :r))
@@ -55,21 +58,23 @@
                                   (if lrbuild?
                                       build.lrbuild-output-path
                                       build.workspace-output-path))
-             0
-             1)))
+               0
+               1)))
 
 (fn parse-int [s fallback]
   (or (and s (tonumber s)) fallback))
 
 (fn default-jobs []
-  (let [env-jobs (parse-int (or (os.getenv :FENNEL_BUILD_JOBS) (os.getenv :JOBS)) nil)]
+  (let [env-jobs (parse-int (or (os.getenv :FENNEL_BUILD_JOBS)
+                                (os.getenv :JOBS))
+                            nil)]
     (or env-jobs
         ;; Compile jobs are tiny; too many workers can be slower than a cap.
         (let [lines (command-lines "getconf _NPROCESSORS_ONLN 2>/dev/null || printf 4")]
           (math.min 16 (parse-int (. lines 1) 4))))))
 
 (fn chunk-files [files jobs tmpdir]
-  (let [n (math.max 1 (math.min jobs (# files)))
+  (let [n (math.max 1 (math.min jobs (length files)))
         chunks []]
     (for [i 1 n]
       (tset chunks i []))
@@ -92,11 +97,10 @@
     (each [_ list-path (ipairs chunks)]
       (let [out (.. list-path ".out")]
         (table.insert lines
-          (.. (shell-quote fennel-cmd)
-              " " (shell-quote self)
-              " --worker " (shell-quote list-path)
-              (if lrbuild? " --lrbuild" "")
-              " > " (shell-quote out) " 2>&1 &"))
+                      (.. (shell-quote fennel-cmd) " " (shell-quote self)
+                          " --worker " (shell-quote list-path)
+                          (if lrbuild? " --lrbuild" "") " > " (shell-quote out)
+                          " 2>&1 &"))
         (table.insert lines "pids=\"$pids $!\"")
         (table.insert lines (.. "outs=\"$outs " out "\""))))
     (table.insert lines "for pid in $pids; do wait \"$pid\" || rc=1; done")
@@ -110,16 +114,16 @@
   (when (= (. arg 1) :--worker)
     (worker-main (. arg 2) (= (. arg 3) :--lrbuild)))
   (let [lrbuild? (= (. arg 1) :--lrbuild)
-        files (command-lines (if lrbuild? build.lrbuild-find build.workspace-find))]
+        files (command-lines (if lrbuild? build.lrbuild-find
+                                 build.workspace-find))]
     (when lrbuild?
       (os.execute "rm -rf .lrbuild"))
     (let [ok? (run-workers files (default-jobs) lrbuild?)]
       (when ok?
-        (build.generate-bundled-skills-data
-          (if lrbuild?
-              ".lrbuild/extensions/skills/bundled_data.lua"
-              "extensions/behaviors/companions/skills/dist/fen/extensions/skills/bundled_data.lua")
-          (if lrbuild? "bundled" nil)))
+        (build.generate-bundled-skills-data (if lrbuild?
+                                                ".lrbuild/extensions/skills/bundled_data.lua"
+                                                "extensions/behaviors/companions/skills/dist/fen/extensions/skills/bundled_data.lua")
+                                            (if lrbuild? "bundled" nil)))
       (os.exit (if ok? 0 1)))))
 
 (main)

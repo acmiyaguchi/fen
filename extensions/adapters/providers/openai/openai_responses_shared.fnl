@@ -44,16 +44,16 @@
 
 (local FULL-FAILURE-DUMP (os.getenv :FEN_PROVIDER_FAILURE_DUMP_FULL))
 (local FAILURE-DIR-ENV (os.getenv :FEN_PROVIDER_FAILURE_DIR))
-(local SENSITIVE-HEADERS
-  {:authorization true
-   :cookie true
-   :set-cookie true
-   :chatgpt-account-id true
-   :openai-organization true
-   :openai-project true})
+(local SENSITIVE-HEADERS {:authorization true
+                          :cookie true
+                          :set-cookie true
+                          :chatgpt-account-id true
+                          :openai-organization true
+                          :openai-project true})
 
 (fn full-failure-dump? []
-  (and FULL-FAILURE-DUMP (not= FULL-FAILURE-DUMP "") (not= FULL-FAILURE-DUMP "0")))
+  (and FULL-FAILURE-DUMP (not= FULL-FAILURE-DUMP "")
+       (not= FULL-FAILURE-DUMP "0")))
 
 (fn table-length [xs]
   (if (= (type xs) :table) (length xs) 0))
@@ -72,8 +72,7 @@
   (if (= (type s) :string) (length s) 0))
 
 (fn contains? [s needle]
-  (and (= (type s) :string)
-       (not= (string.find s needle 1 true) nil)))
+  (and (= (type s) :string) (not= (string.find s needle 1 true) nil)))
 
 (fn repaired-output? [s]
   (contains? s "[fen: tool output sanitized:"))
@@ -87,20 +86,20 @@
       (let [entry {:type (?. p :type)}]
         (when (?. p :text) (set entry.text-length (text-len p.text)))
         (when (?. p :refusal) (set entry.refusal-length (text-len p.refusal)))
-        (when (?. p :annotations) (set entry.annotations-count (table-length p.annotations)))
+        (when (?. p :annotations)
+          (set entry.annotations-count (table-length p.annotations)))
         (table.insert out entry)))
     out))
 
 (fn input-item-summary [item index]
   "Return a redacted, index-preserving summary of one Responses input item."
-  (let [out {:index index
-             :type (?. item :type)
-             :role (?. item :role)}]
+  (let [out {:index index :type (?. item :type) :role (?. item :role)}]
     (when (?. item :id) (set out.id item.id))
     (when (?. item :call_id) (set out.call-id item.call_id))
     (when (?. item :name) (set out.name item.name))
     (when (?. item :status) (set out.status item.status))
-    (when (?. item :arguments) (set out.arguments-length (text-len item.arguments)))
+    (when (?. item :arguments)
+      (set out.arguments-length (text-len item.arguments)))
     (when (?. item :output)
       (set out.output-length (text-len item.output))
       (when (repaired-output? item.output)
@@ -108,7 +107,8 @@
       (when (truncated-output? item.output)
         (set out.output-truncated? true)))
     (when (?. item :encrypted_content) (set out.has-encrypted-content? true))
-    (when (?. item :summary) (set out.summary-count (table-length item.summary)))
+    (when (?. item :summary)
+      (set out.summary-count (table-length item.summary)))
     (when (?. item :content) (set out.content (content-summary item.content)))
     out))
 
@@ -133,7 +133,8 @@
               sanitized? (repaired-output? item.output)
               truncated? (truncated-output? item.output)]
           (set out.count (+ out.count 1))
-          (set out.cumulative-output-length (+ out.cumulative-output-length len))
+          (set out.cumulative-output-length
+               (+ out.cumulative-output-length len))
           (when (> len out.max-output-length)
             (set out.max-output-length len))
           (when sanitized?
@@ -208,10 +209,9 @@
                  dir
                  (if (ensure-dir! fallback) fallback nil))]
     (when root
-      (.. root "/"
-          (safe-name api) "-" (safe-name provider) "-" (safe-name model) "-"
-          (os.date "!%Y%m%dT%H%M%SZ") "-" (tostring (math.random 100000 999999))
-          ".json"))))
+      (.. root "/" (safe-name api) "-" (safe-name provider) "-"
+          (safe-name model) "-" (os.date "!%Y%m%dT%H%M%SZ") "-"
+          (tostring (math.random 100000 999999)) ".json"))))
 
 (fn failure-diagnostic [api provider model resp ?request-opts reason]
   "Build a JSON-serializable provider failure diagnostic. The default body
@@ -243,17 +243,23 @@
   "Persist a redacted provider failure diagnostic and return its path."
   (let [file (diagnostic-path api provider model)]
     (if (not file)
-        (do (log.error "provider failure diagnostic: could not create state or /tmp directory")
-            nil)
-        (let [doc (failure-diagnostic api provider model resp ?request-opts reason)
+        (do
+          (log.error "provider failure diagnostic: could not create state or /tmp directory")
+          nil)
+        (let [doc (failure-diagnostic api provider model resp ?request-opts
+                                      reason)
               (ok? encoded) (pcall json.encode doc)]
           (if (not ok?)
-              (do (log.error (.. "provider failure diagnostic: encode failed: " (tostring encoded)))
-                  nil)
+              (do
+                (log.error (.. "provider failure diagnostic: encode failed: "
+                               (tostring encoded)))
+                nil)
               (let [fh (io.open file "w")]
                 (if (not fh)
-                    (do (log.error (.. "provider failure diagnostic: could not open " file))
-                        nil)
+                    (do
+                      (log.error (.. "provider failure diagnostic: could not open "
+                                     file))
+                      nil)
                     (do
                       (fh:write encoded)
                       (fh:write "\n")
@@ -316,8 +322,7 @@
    them elsewhere trips OpenAI's reasoning↔call pairing validation for a
    permanent store:false 400. Conservative (see dim-differs?): missing
    request or turn identity never triggers the repair."
-  (or (dim-differs? m.model id.model)
-      (dim-differs? m.api id.api)
+  (or (dim-differs? m.model id.model) (dim-differs? m.api id.api)
       (dim-differs? m.provider id.provider)))
 
 (fn convert-assistant-block [block msg-index drop-fc-id?]
@@ -332,8 +337,7 @@
    (mirrors pi-mono openai-responses-shared.ts)."
   (if (= block.type :thinking)
       (let [sig block.thinking-signature]
-        (if (and (= (type sig) :string)
-                 (= (string.sub sig 1 1) "{"))
+        (if (and (= (type sig) :string) (= (string.sub sig 1 1) "{"))
             (let [(ok? item) (pcall json.decode sig)]
               (if ok? item nil))
             nil))
@@ -364,9 +368,7 @@
   (let [text-result (text-of-content m.content)
         repaired (text-util.scrub-tool-text text-result)
         (call-id _) (split-compound-id m.tool-call-id)]
-    {:type :function_call_output
-     :call_id call-id
-     :output repaired.text}))
+    {:type :function_call_output :call_id call-id :output repaired.text}))
 
 (fn pending-output [call-id]
   {:type :function_call_output
@@ -378,8 +380,9 @@
   (var i 1)
   (while (<= i (length pending))
     (if (= (. pending i) call-id)
-        (do (table.remove pending i)
-            (set removed? true))
+        (do
+          (table.remove pending i)
+          (set removed? true))
         (set i (+ i 1))))
   removed?)
 
@@ -481,12 +484,11 @@
    Chat Completions."
   (let [out []]
     (each [_ t (ipairs (or tools []))]
-      (table.insert out
-                    {:type :function
-                     :name t.name
-                     :description t.description
-                     :parameters t.parameters
-                     :strict json.null}))
+      (table.insert out {:type :function
+                         :name t.name
+                         :description t.description
+                         :parameters t.parameters
+                         :strict json.null}))
     out))
 
 ;; ----------------------------------------------------------------
@@ -563,17 +565,26 @@
       (let [idx (current-content-index state)]
         (if (= block.type :text)
             (let [text (stream-chunks.materialize! block :text :text-chunks)]
-              (when emit (emit {:type :text-end :content-index idx :content text})))
+              (when emit
+                (emit {:type :text-end :content-index idx :content text})))
             (= block.type :thinking)
-            (let [thinking (stream-chunks.materialize! block :thinking :thinking-chunks)]
-              (when emit (emit {:type :thinking-end :content-index idx :content thinking})))
+            (let [thinking (stream-chunks.materialize! block :thinking
+                                                       :thinking-chunks)]
+              (when emit
+                (emit {:type :thinking-end
+                       :content-index idx
+                       :content thinking})))
             (= block.type :tool-call)
             (do
-              (let [final (stream-chunks.materialize! block :partial-json :partial-json-chunks)]
+              (let [final (stream-chunks.materialize! block :partial-json
+                                                      :partial-json-chunks)]
                 (when (not= final "")
                   (set block.arguments (parse-streaming-json final))))
               (set block.partial-json nil)
-              (when emit (emit {:type :tool-call-end :content-index idx :tool-call block}))))))
+              (when emit
+                (emit {:type :tool-call-end
+                       :content-index idx
+                       :tool-call block}))))))
     (set state.current-block nil)
     (set state.current-item nil)))
 
@@ -583,16 +594,17 @@
   (let [block (types.thinking-block {:thinking ""})]
     (table.insert state.content block)
     (set state.current-block block)
-    (when emit (emit {:type :thinking-start
-                      :content-index (current-content-index state)}))
+    (when emit
+      (emit {:type :thinking-start
+             :content-index (current-content-index state)}))
     block))
 
 (fn start-text-block! [state _item emit]
   (let [block (types.text-block "")]
     (table.insert state.content block)
     (set state.current-block block)
-    (when emit (emit {:type :text-start
-                      :content-index (current-content-index state)}))))
+    (when emit
+      (emit {:type :text-start :content-index (current-content-index state)}))))
 
 (fn start-tool-call-block! [state item emit]
   (let [call-id (string-or-empty item.call_id)
@@ -602,19 +614,19 @@
                      (if (not= call-id "") call-id item-id))
         initial-args (string-or-empty item.arguments)
         block (types.tool-call-block compound (string-or-empty item.name)
-                                      (parse-streaming-json initial-args))]
+                                     (parse-streaming-json initial-args))]
     (set block.partial-json initial-args)
     (table.insert state.content block)
     (set state.current-block block)
-    (when emit (emit {:type :tool-call-start
-                      :content-index (current-content-index state)}))))
+    (when emit
+      (emit {:type :tool-call-start
+             :content-index (current-content-index state)}))))
 
 ;; Non-reasoning output item types that stream a content block. Every other
 ;; type (hosted tool items such as web_search_call) streams none, so
 ;; reconcile-dropped-reasoning! must not pair it with a streamed block.
 (local BLOCK-STARTERS
-  {:message start-text-block!
-   :function_call start-tool-call-block!})
+       {:message start-text-block! :function_call start-tool-call-block!})
 
 (fn present-string [x]
   (when (non-empty-string x) x))
@@ -623,28 +635,25 @@
   "One-line summary of a web_search_call action (upstream Codex's rules), or
    nil when the action is missing or unrecognized."
   (case (field action :type)
-    :search
-    (or (present-string (field action :query))
-        (let [queries []]
-          (each [_ q (ipairs (array-or-empty (field action :queries)))]
-            (when (present-string q) (table.insert queries q)))
-          (when (> (length queries) 0)
-            (table.concat queries ", "))))
-    :open_page
-    (present-string (field action :url))
-    :find_in_page
-    (let [pattern (present-string (field action :pattern))
-          url (present-string (field action :url))]
-      (if (and pattern url) (.. "'" pattern "' in " url)
-          pattern (.. "'" pattern "'")
-          url))
+    :search (or (present-string (field action :query))
+                (let [queries []]
+                  (each [_ q (ipairs (array-or-empty (field action :queries)))]
+                    (when (present-string q) (table.insert queries q)))
+                  (when (> (length queries) 0)
+                    (table.concat queries ", "))))
+    :open_page (present-string (field action :url))
+    :find_in_page (let [pattern (present-string (field action :pattern))
+                        url (present-string (field action :url))]
+                    (if (and pattern url) (.. "'" pattern "' in " url)
+                        pattern (.. "'" pattern "'")
+                        url))
     _ nil))
 
 ;; Server-executed (hosted) tool items: they stream no content block and are
 ;; never canonical :tool-call blocks (that would flip the stop reason to
 ;; :tool-use); the reducer reports them only as :hosted-tool activity events.
 (local HOSTED-TOOL-ITEMS
-  {:web_search_call {:name "web_search" :detail web-search-detail}})
+       {:web_search_call {:name "web_search" :detail web-search-detail}})
 
 (fn emit-hosted-tool! [item phase emit]
   (let [spec (. HOSTED-TOOL-ITEMS item.type)]
@@ -717,11 +726,12 @@
    trailing content beyond what we've already streamed, then re-parse."
   (let [block state.current-block]
     (when (and block (= block.type :tool-call))
-      (let [previous (stream-chunks.value block :partial-json :partial-json-chunks)
-            final (stream-chunks.set! block :partial-json :partial-json-chunks final-args)]
+      (let [previous (stream-chunks.value block :partial-json
+                                          :partial-json-chunks)
+            final (stream-chunks.set! block :partial-json :partial-json-chunks
+                                      final-args)]
         (set block.arguments (parse-streaming-json final))
-        (when (and emit
-                   (>= (length final) (length previous))
+        (when (and emit (>= (length final) (length previous))
                    (= (string.sub final 1 (length previous)) previous))
           (let [delta (string.sub final (+ (length previous) 1))]
             (when (not= delta "")
@@ -733,10 +743,8 @@
   (let [out []]
     (each [_ p (ipairs (array-or-empty parts))]
       (when (table? p)
-        (if (= p.type :output_text)
-            (table.insert out (string-or-empty p.text))
-            (= p.type :refusal)
-            (table.insert out (string-or-empty p.refusal)))))
+        (if (= p.type :output_text) (table.insert out (string-or-empty p.text))
+            (= p.type :refusal) (table.insert out (string-or-empty p.refusal)))))
     (table.concat out "")))
 
 (fn join-summary-parts [parts]
@@ -783,7 +791,8 @@
       (if (and (= item.type :reasoning) block (= block.type :thinking))
           (finalize-reasoning-block! block item)
           (= item.type :reasoning)
-          (finalize-reasoning-block! (start-thinking-block! state item emit) item)
+          (finalize-reasoning-block! (start-thinking-block! state item emit)
+                                     item)
           (and (= item.type :message) block (= block.type :text))
           (finalize-message-block! block item)
           (and (= item.type :function_call) block (= block.type :tool-call))
@@ -801,9 +810,7 @@
    well-tested streamed path stays a strict no-op."
   (var missing? false)
   (each [_ it (ipairs (array-or-empty output))]
-    (when (and (table? it)
-               (= (field it :type) :reasoning)
-               (field it :id)
+    (when (and (table? it) (= (field it :type) :reasoning) (field it :id)
                (not (. state.seen-reasoning-ids (field it :id))))
       (set missing? true)))
   missing?)
@@ -828,7 +835,9 @@
                 (if (and rid (. state.seen-reasoning-ids rid))
                     (let [blk (. streamed si)]
                       (if (and (table? blk) (= blk.type :thinking))
-                          (do (table.insert rebuilt blk) (set si (+ si 1)))
+                          (do
+                            (table.insert rebuilt blk)
+                            (set si (+ si 1)))
                           (set ok? false)))
                     (let [blk (types.thinking-block {:thinking ""})]
                       (finalize-reasoning-block! blk it)
@@ -836,7 +845,9 @@
               (. BLOCK-STARTERS it-type)
               (let [blk (. streamed si)]
                 (if (and (table? blk) (not= blk.type :thinking))
-                    (do (table.insert rebuilt blk) (set si (+ si 1)))
+                    (do
+                      (table.insert rebuilt blk)
+                      (set si (+ si 1)))
                     (set ok? false)))
               ;; Hosted tool items (web_search_call, ...) never stream a block.
               nil))))
@@ -853,14 +864,16 @@
     (when response.id (set state.response-id response.id))
     (let [usage (field response :usage)]
       (when (table? usage)
-        (let [cached (number-or-zero (field (field usage :input_tokens_details) :cached_tokens))
+        (let [cached (number-or-zero (field (field usage :input_tokens_details)
+                                            :cached_tokens))
               raw-input (number-or-zero usage.input_tokens)
               input (if (> raw-input cached) (- raw-input cached) 0)]
-          (set state.usage {: input
-                            :output (number-or-zero usage.output_tokens)
-                            :cache-read cached
-                            :cache-write 0
-                            :total-tokens (number-or-zero usage.total_tokens)}))))
+          (set state.usage
+               {: input
+                :output (number-or-zero usage.output_tokens)
+                :cache-read cached
+                :cache-write 0
+                :total-tokens (number-or-zero usage.total_tokens)}))))
     (let [(stop err) (map-stop-reason response.status)]
       (set state.stop-reason stop)
       (set state.error-message err))
@@ -868,8 +881,7 @@
     ;; turns, or turns following a mid-stream error): without its rs_ item
     ;; the turn's fc_ ids 400 forever on the store:false Codex backend (#132).
     (let [output (field response :output)]
-      (when (and (table? output)
-                 (> (length output) 0)
+      (when (and (table? output) (> (length output) 0)
                  (reasoning-output-missing? state output))
         (reconcile-dropped-reasoning! state output)))))
 
@@ -894,8 +906,7 @@
         message (field event :message)]
     (set state.error-message
          (if code
-             (.. "Error " (tostring code) ": "
-                 (tostring (or message "")))
+             (.. "Error " (tostring code) ": " (tostring (or message "")))
              (tostring (or message "Unknown error"))))))
 
 (fn process-event! [state event emit]
@@ -905,59 +916,43 @@
   (case (field event :type)
     :response.created
     (set state.response-id (field (field event :response) :id))
-
     :response.output_item.added
     (handle-output-item-added! state (field event :item) emit)
-
     :response.reasoning_summary_part.added
     nil
-
     :response.reasoning_summary_text.delta
     (handle-thinking-delta! state (string-or-empty (field event :delta)) emit)
-
     :response.reasoning_summary_text.done
     (handle-thinking-done! state (field event :text) emit)
-
     :response.reasoning_summary_part.done
     (handle-thinking-delta! state "\n\n" emit)
-
     :response.reasoning_text.delta
     (handle-thinking-delta! state (string-or-empty (field event :delta)) emit)
-
     :response.content_part.added
     nil
-
     :response.output_text.delta
     (handle-text-delta! state (string-or-empty (field event :delta)) emit)
-
     :response.refusal.delta
     (handle-text-delta! state (string-or-empty (field event :delta)) emit)
-
     :response.function_call_arguments.delta
     (handle-function-call-delta! state (field event :delta) emit)
-
     :response.function_call_arguments.done
     (handle-function-call-arguments-done! state (field event :arguments) emit)
-
     :response.output_item.done
     (handle-output-item-done! state (field event :item) emit)
-
     :response.completed
     (handle-completed! state (field event :response))
-
     ;; Terminal incomplete response (e.g. max_output_tokens). handle-completed!
     ;; maps response.status :incomplete -> :length. Codex aliases this to
     ;; response.completed upstream; vanilla Responses emits it directly.
     :response.incomplete
     (handle-completed! state (field event :response))
-
     :response.failed
     (handle-failed! state (field event :response))
-
     :error
     (handle-error-event! state event)
-
-    _ nil))
+    _
+    nil))
 
 ;; @doc fen.extensions.provider_openai.openai_responses_shared.finalize-stream-state
 ;; kind: function
@@ -965,10 +960,11 @@
 ;; summary: Finalize Responses reducer state into a canonical assistant message and emit the terminal done/error event.
 ;; tags: provider openai responses streaming
 (fn finalize-stream-state [state api provider emit]
-  (streaming.finalize-stream-state
-    {: api : provider :state state :emit emit
-     :finish finish-current-block!}))
-
+  (streaming.finalize-stream-state {: api
+                                    : provider
+                                    :state state
+                                    :emit emit
+                                    :finish finish-current-block!}))
 
 ;; ----------------------------------------------------------------
 ;; Shared Responses request / SSE helpers
@@ -978,8 +974,7 @@
 
 (fn ends-with? [s suffix]
   (let [n (length suffix)]
-    (and (>= (length s) n)
-         (= (string.sub s (- (length s) n -1)) suffix))))
+    (and (>= (length s) n) (= (string.sub s (- (length s) n -1)) suffix))))
 
 ;; @doc fen.extensions.provider_openai.openai_responses_shared.build-url
 ;; kind: function
@@ -1026,9 +1021,9 @@
     (when opts.temperature
       (set body.temperature opts.temperature))
     (when opts.reasoning-effort
-      (set body.reasoning
-           {:effort (clamp-reasoning-effort model opts.reasoning-effort)
-            :summary :auto}))
+      (set body.reasoning {:effort (clamp-reasoning-effort model
+                                                           opts.reasoning-effort)
+                           :summary :auto}))
     (when opts.verbosity
       (set body.text {:verbosity opts.verbosity}))
     (when (and opts.include (> (length opts.include) 0))
@@ -1040,8 +1035,7 @@
     body))
 
 (fn request-headers [api-key]
-  (let [headers {:accept "text/event-stream"
-                 :content-type "application/json"}]
+  (let [headers {:accept "text/event-stream" :content-type "application/json"}]
     (when (and api-key (not= api-key ""))
       (set headers.authorization (.. "Bearer " api-key)))
     headers))
@@ -1052,24 +1046,24 @@
    alias `response.done` / `response.incomplete` to `response.completed`)."
   (let [state (new-stream-state model)
         parser-error {:message nil}
-        parser (sse.new-parser
-                 (fn [ev]
-                   (when (and (not parser-error.message)
-                              (not= ev.data nil)
-                              (not= ev.data "")
-                              (not= ev.data "[DONE]"))
-                     (let [(ok? decoded) (pcall json.decode ev.data)]
-                       (if (not ok?)
-                           (set parser-error.message decoded)
-                           (do
-                             (trace-event! :decoded decoded)
-                             (let [mapped (if event-mapper
-                                              (event-mapper decoded)
-                                              decoded)]
-                               (when mapped
-                                 (when (not= mapped decoded)
-                                   (trace-event! :mapped mapped))
-                                 (process-event! state mapped on-event)))))))))]
+        parser (sse.new-parser (fn [ev]
+                                 (when (and (not parser-error.message)
+                                            (not= ev.data nil) (not= ev.data "")
+                                            (not= ev.data "[DONE]"))
+                                   (let [(ok? decoded) (pcall json.decode
+                                                              ev.data)]
+                                     (if (not ok?)
+                                         (set parser-error.message decoded)
+                                         (do
+                                           (trace-event! :decoded decoded)
+                                           (let [mapped (if event-mapper
+                                                            (event-mapper decoded)
+                                                            decoded)]
+                                             (when mapped
+                                               (when (not= mapped decoded)
+                                                 (trace-event! :mapped mapped))
+                                               (process-event! state mapped
+                                                               on-event)))))))))]
     (values state parser parser-error)))
 
 ;; @doc fen.extensions.provider_openai.openai_responses_shared.build-request-opts
@@ -1077,7 +1071,15 @@
 ;; signature: (build-request-opts model context options on-chunk ?headers-override ?url-override default-base-url responses-path ?id) -> table
 ;; summary: Assemble fen.util.http options for a streaming OpenAI-compatible Responses POST.
 ;; tags: provider openai responses http
-(fn build-request-opts [model context options on-chunk ?headers-override ?url-override default-base-url responses-path ?id]
+(fn build-request-opts [model
+                        context
+                        options
+                        on-chunk
+                        ?headers-override
+                        ?url-override
+                        default-base-url
+                        responses-path
+                        ?id]
   (let [opts (or options {})
         api-key opts.api-key
         base-url (or opts.base-url default-base-url)
@@ -1102,25 +1104,39 @@
 ;; signature: (finalize-stream state parser parser-error api provider model resp on-event) -> AssistantMessage
 ;; summary: Finish a Responses SSE stream, preserving the calling provider's canonical API/provider identity.
 ;; tags: provider openai responses streaming
-(fn finalize-stream [state parser parser-error api provider model resp on-event ?request-opts]
+(fn finalize-stream [state
+                     parser
+                     parser-error
+                     api
+                     provider
+                     model
+                     resp
+                     on-event
+                     ?request-opts]
   (when (not resp.error) (parser.finish))
   (if resp.error
-      (let [path (write-failure-diagnostic! api provider model resp ?request-opts :transport)
+      (let [path (write-failure-diagnostic! api provider model resp
+                                            ?request-opts :transport)
             msg (if path (.. resp.error "\nDiagnostic: " path) resp.error)
             asst (types.assistant-error api provider model msg)]
         (when on-event (on-event {:type :error :message asst}))
         asst)
       (not= parser-error.message nil)
-      (let [diag-resp {:status resp.status :body resp.body :headers resp.headers
+      (let [diag-resp {:status resp.status
+                       :body resp.body
+                       :headers resp.headers
                        :error (tostring parser-error.message)}
-            path (write-failure-diagnostic! api provider model diag-resp ?request-opts :parser)
-            msg (if path (.. (tostring parser-error.message) "\nDiagnostic: " path)
+            path (write-failure-diagnostic! api provider model diag-resp
+                                            ?request-opts :parser)
+            msg (if path (.. (tostring parser-error.message) "\nDiagnostic: "
+                             path)
                     parser-error.message)
             asst (types.assistant-error api provider model msg)]
         (when on-event (on-event {:type :error :message asst}))
         asst)
       (or (< resp.status 200) (>= resp.status 300))
-      (let [path (write-failure-diagnostic! api provider model resp ?request-opts :http)
+      (let [path (write-failure-diagnostic! api provider model resp
+                                            ?request-opts :http)
             err (.. "HTTP " resp.status ": " resp.body)
             msg (if path (.. err "\nDiagnostic: " path) err)
             asst (types.assistant-error api provider model msg)]
@@ -1134,9 +1150,12 @@
       ;; would treat as a silent natural stop. Partial content is discarded.
       (not state.saw-terminal?)
       (let [err types.INCOMPLETE-STREAM-MSG
-            diag-resp {:status resp.status :body resp.body :headers resp.headers
+            diag-resp {:status resp.status
+                       :body resp.body
+                       :headers resp.headers
                        :error err}
-            path (write-failure-diagnostic! api provider model diag-resp ?request-opts :incomplete)
+            path (write-failure-diagnostic! api provider model diag-resp
+                                            ?request-opts :incomplete)
             msg (if path (.. err "\nDiagnostic: " path) err)
             asst (types.assistant-error api provider model msg)]
         (log.error (.. "openai-responses: " err))
@@ -1144,9 +1163,12 @@
         asst)
       (let [asst (finalize-stream-state state api provider on-event)]
         (when (= asst.stop-reason :error)
-          (let [diag-resp {:status resp.status :body resp.body :headers resp.headers
+          (let [diag-resp {:status resp.status
+                           :body resp.body
+                           :headers resp.headers
                            :error asst.error-message}
-                path (write-failure-diagnostic! api provider model diag-resp ?request-opts :stream)]
+                path (write-failure-diagnostic! api provider model diag-resp
+                                                ?request-opts :stream)]
             (attach-diagnostic! asst path)))
         asst)))
 
@@ -1159,20 +1181,23 @@
 ;; signature: (clamp-reasoning-effort model effort) -> keyword
 ;; summary: Apply Codex/OpenAI per-model reasoning-effort limits so request bodies avoid unsupported effort values.
 ;; tags: provider openai codex reasoning
-(set clamp-reasoning-effort
-  (fn [model effort]
-    "Mirror pi-mono `openai-codex-responses.ts:357-367`: gpt-5.2/.3/.4/.5 do
+(set clamp-reasoning-effort (fn [model effort]
+                              "Mirror pi-mono `openai-codex-responses.ts:357-367`: gpt-5.2/.3/.4/.5 do
      not accept :minimal (downgrade to :low); gpt-5.1-codex-mini caps at
      :high or :medium; gpt-5.1 does not accept :xhigh (downgrade to :high)."
-    (let [m (tostring (or model ""))]
-      (if (or (string.match m "^gpt%-5%.2") (string.match m "^gpt%-5%.3")
-              (string.match m "^gpt%-5%.4") (string.match m "^gpt%-5%.5"))
-          (if (= effort :minimal) :low effort)
-          (string.match m "^gpt%-5%.1%-codex%-mini")
-          (if (or (= effort :high) (= effort :xhigh)) :high :medium)
-          (string.match m "^gpt%-5%.1")
-          (if (= effort :xhigh) :high effort)
-          effort))))
+                              (let [m (tostring (or model ""))]
+                                (if (or (string.match m "^gpt%-5%.2")
+                                        (string.match m "^gpt%-5%.3")
+                                        (string.match m "^gpt%-5%.4")
+                                        (string.match m "^gpt%-5%.5"))
+                                    (if (= effort :minimal) :low effort)
+                                    (string.match m "^gpt%-5%.1%-codex%-mini")
+                                    (if (or (= effort :high) (= effort :xhigh))
+                                        :high
+                                        :medium)
+                                    (string.match m "^gpt%-5%.1")
+                                    (if (= effort :xhigh) :high effort)
+                                    effort))))
 
 {: build-url
  : build-body

@@ -3,10 +3,12 @@
 
 (fn body-form [body]
   (if (= (length body) 0)
-      `(do)
+      `(do
+         )
       (= (length body) 1)
       (. body 1)
-      (let [form `(do)]
+      (let [form `(do
+                    )]
         (each [_ expr (ipairs body)]
           (table.insert form expr))
         form)))
@@ -40,5 +42,4 @@
          (helpers#.rm-file ,name)
          (if ok# result# (error result#))))))
 
-{: with-tmpdir
- : with-tmpfile}
+{: with-tmpdir : with-tmpfile}

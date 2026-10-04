@@ -34,12 +34,13 @@
                         {:__index copy
                          :__len (fn [_] (length copy))
                          :__pairs (fn [_] (pairs copy))
-                         :__newindex
-                         (fn [_ k _]
-                           (error (.. "frozen: cannot set " (tostring k))))
+                         :__newindex (fn [_ k _]
+                                       (error (.. "frozen: cannot set "
+                                                  (tostring k))))
                          :__metatable false})
           proxy)
         v))
+
   (freeze-value t))
 
 (fn M.remove-where [t pred]
@@ -86,10 +87,9 @@
     (tset record :__owner owner)
     (tset dict name record)
     (M.bump-registry-version!)
-    (values record
-            (fn []
-              (when (= (. dict name) record)
-                (tset dict name nil)
-                (M.bump-registry-version!))))))
+    (values record (fn []
+                     (when (= (. dict name) record)
+                       (tset dict name nil)
+                       (M.bump-registry-version!))))))
 
 M

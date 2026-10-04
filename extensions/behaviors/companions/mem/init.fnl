@@ -69,31 +69,40 @@
         rows [(heading "Memory")]]
     (if gc?
         (do
-          (table.insert rows (dim (.. "  lua heap before GC: " (fmt-kb before))))
+          (table.insert rows
+                        (dim (.. "  lua heap before GC: " (fmt-kb before))))
           (table.insert rows (dim (.. "  lua heap after GC:  " (fmt-kb after))))
-          (table.insert rows (dim (.. "  collected:          " (fmt-kb collected)))))
+          (table.insert rows
+                        (dim (.. "  collected:          " (fmt-kb collected)))))
         (table.insert rows (dim (.. "  lua heap:           " (fmt-kb after)))))
     (when (> after (or state.peak-kb 0))
       (set state.peak-kb after))
-    (table.insert rows (dim (.. "  peak observed heap: " (fmt-kb (or state.peak-kb 0)))))
+    (table.insert rows
+                  (dim (.. "  peak observed heap: "
+                           (fmt-kb (or state.peak-kb 0)))))
     (when proc.VmRSS
-      (table.insert rows (dim (.. "  process RSS:        " (fmt-kb proc.VmRSS)))))
+      (table.insert rows
+                    (dim (.. "  process RSS:        " (fmt-kb proc.VmRSS)))))
     (when proc.VmHWM
-      (table.insert rows (dim (.. "  process peak RSS:   " (fmt-kb proc.VmHWM)))))
+      (table.insert rows
+                    (dim (.. "  process peak RSS:   " (fmt-kb proc.VmHWM)))))
     (when proc.VmSize
-      (table.insert rows (dim (.. "  process vm size:    " (fmt-kb proc.VmSize)))))
+      (table.insert rows
+                    (dim (.. "  process vm size:    " (fmt-kb proc.VmSize)))))
     rows))
 
 (fn app-rows [api run-state]
   (let [agent (?. run-state :agent)
         session (or (and api (api.session.info)) (?. run-state :session))
         rows [(heading "App")]]
-    (table.insert rows (dim (.. "  messages: " (count-list (?. agent :messages)))))
+    (table.insert rows
+                  (dim (.. "  messages: " (count-list (?. agent :messages)))))
     (when session
       (when session.id
         (table.insert rows (dim (.. "  session id: " (tostring session.id)))))
       (when session.path
-        (table.insert rows (dim (.. "  session path: " (tostring session.path))))))
+        (table.insert rows
+                      (dim (.. "  session path: " (tostring session.path))))))
     rows))
 
 (fn registry-rows [api]
@@ -108,7 +117,8 @@
      (dim (.. "  tools: " (count-list tools)))
      (dim (.. "  commands: " (count-list commands)))
      (dim (.. "  prompt fragments: " (count-list fragments)))
-     (dim (.. "  event handlers: " event-handlers " in " event-buckets " buckets"))]))
+     (dim (.. "  event handlers: " event-handlers " in " event-buckets
+              " buckets"))]))
 
 (fn history-rows []
   (let [rows []]
@@ -116,9 +126,8 @@
       (table.insert rows (heading "History"))
       (each [i kb (ipairs state.samples)]
         (table.insert rows
-          (dim (.. "  " (string.format "%02d" i)
-                   " [" (bar kb state.peak-kb 20) "] "
-                   (fmt-kb kb))))))
+                      (dim (.. "  " (string.format "%02d" i) " ["
+                               (bar kb state.peak-kb 20) "] " (fmt-kb kb))))))
     rows))
 
 (fn append-rows! [out rows]
@@ -174,8 +183,7 @@
   ;; also invalidated when the terminal width changes so resize doesn't
   ;; leave a misaligned box on screen.
   (let [now (os.time)]
-    (when (or (not state.cached-rows)
-              (not= now state.cached-at)
+    (when (or (not state.cached-rows) (not= now state.cached-at)
               (not= w state.cached-w))
       (let [content (M.report-rows state.run-state {:gc? false} state.api)]
         (set state.cached-rows (bordered-rows w content)))
@@ -213,10 +221,9 @@
           collected (- before after)]
       (push-sample! after)
       (invalidate-cache!)
-      (api.emit
-        {:type :info
-         :text (.. "mem gc: " (fmt-kb before) " → " (fmt-kb after)
-                   " (collected " (fmt-kb collected) ")")}))))
+      (api.emit {:type :info
+                 :text (.. "mem gc: " (fmt-kb before) " → " (fmt-kb after)
+                           " (collected " (fmt-kb collected) ")")}))))
 
 (fn register! [api]
   (set state.api api)
@@ -224,35 +231,36 @@
   ;; summary: Memory diagnostics panel backing the /mem command and heap history display.
   ;; tags: panel memory commands
   (panel-toggle.install! api
-    {:name :mem
-     :command {:name :mem :order 80
-               :description "Memory diagnostics panel; /mem gc forces a GC pass, /mem help lists subcommands"}
-     :panel-spec (M.panel-spec)
-     :state state
-     :before-command (fn [run-state] (when run-state (set state.run-state run-state)))
-     :on-toggle invalidate-cache!
-     :subcommands {:gc {:description "force a GC pass and report reclaimed heap"
-                        :handler (fn [_rest _run-state] (handle-gc api))}}})
-
-    (api.register :introspect
-      {:name :diagnostics
-       :description "Current memory diagnostics panel, heap, and sample history summary"
-       :snapshot (fn [_]
-                   {:visible? state.visible?
-                    :cached-w state.cached-w
-                    :cached-at state.cached-at
-                    :heap-kb (round1 (collectgarbage :count))
-                    :peak-kb (round1 state.peak-kb)
-                    :sample-count (length state.samples)
-                    :max-samples state.max-samples
-                    :has-run-state? (not= state.run-state nil)})})
-
-    ;; Sample heap size on every llm turn end so the history bars in
-    ;; the panel reflect actual usage, decoupled from the per-frame
-    ;; render path.
-    (api.on :llm-end
-      (fn [_ev]
-        (push-sample! (collectgarbage :count))))
+                         {:name :mem
+                          :command {:name :mem
+                                    :order 80
+                                    :description "Memory diagnostics panel; /mem gc forces a GC pass, /mem help lists subcommands"}
+                          :panel-spec (M.panel-spec)
+                          :state state
+                          :before-command (fn [run-state]
+                                            (when run-state
+                                              (set state.run-state run-state)))
+                          :on-toggle invalidate-cache!
+                          :subcommands {:gc {:description "force a GC pass and report reclaimed heap"
+                                             :handler (fn [_rest _run-state]
+                                                        (handle-gc api))}}})
+  (api.register :introspect
+                {:name :diagnostics
+                 :description "Current memory diagnostics panel, heap, and sample history summary"
+                 :snapshot (fn [_]
+                             {:visible? state.visible?
+                              :cached-w state.cached-w
+                              :cached-at state.cached-at
+                              :heap-kb (round1 (collectgarbage :count))
+                              :peak-kb (round1 state.peak-kb)
+                              :sample-count (length state.samples)
+                              :max-samples state.max-samples
+                              :has-run-state? (not= state.run-state nil)})})
+  ;; Sample heap size on every llm turn end so the history bars in
+  ;; the panel reflect actual usage, decoupled from the per-frame
+  ;; render path.
+  (api.on :llm-end (fn [_ev]
+                     (push-sample! (collectgarbage :count))))
   true)
 
 ;; @doc fen.extensions.mem.register!

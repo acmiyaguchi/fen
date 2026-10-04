@@ -26,128 +26,154 @@
    :latest (fn [] nil)})
 
 (describe "embedding host headless boot"
-  (fn []
-    (local original-getenv os.getenv)
-    (local original-popen io.popen)
-    (local original-fen-http (. package.loaded :fen_http))
-    (local original-fen-http-preload (. package.preload :fen_http))
+          (fn []
+            (local original-getenv os.getenv)
+            (local original-popen io.popen)
+            (local original-fen-http (. package.loaded :fen_http))
+            (local original-fen-http-preload (. package.preload :fen_http))
+            (before_each (fn []
+                           (extensions.reset!)
+                           (h.stub-path-vfs! {:getenv (fn [name]
+                                                        (if (= name :HOME)
+                                                            "/host"
+                                                            (= name
+                                                               :XDG_CONFIG_HOME)
+                                                            "/host/config"
+                                                            nil))
+                                              :stat (fn [_] nil)
+                                              :list-dir (fn [_] [])
+                                              :pwd-physical (fn [_] "/host")})
+                           (h.stub-clock! {:monotonic-ms (fn [] 100)
+                                           :sleep-ms (fn [_] nil)})
+                           (h.stub-process! {:setenv (fn []
+                                                       (values true nil nil))})
+                           (h.stub-random! {:bytes (fn [n] (string.rep "r" n))})
+                           (h.stub-checksum! {:file-fingerprint (fn [_] nil)
+                                              :module-path (fn [_] nil)
+                                              :module-fingerprint (fn [_]
+                                                                    {:fingerprint "host-etag"})})
+                           (h.stub-storage! {:read (fn [_] nil)
+                                             :write! (fn [] nil)})
+                           (h.stub-discover-enumeration! {:enumerate (fn [] [])})
+                           (tset package.loaded :fen.util.text nil)
+                           (tset package.loaded :fen.core.agent nil)))
+            (after_each (fn []
+                          (set os.getenv original-getenv)
+                          (set io.popen original-popen)
+                          (tset package.loaded :fen_http original-fen-http)
+                          (tset package.preload :fen_http
+                                original-fen-http-preload)
+                          (session-backend.set-info! nil)
+                          (extensions.reset!)
+                          (h.restore-http!)
+                          (h.restore-path-vfs!)
+                          (h.restore-clock!)
+                          (h.restore-process!)
+                          (h.restore-random!)
+                          (h.restore-checksum!)
+                          (h.restore-storage!)
+                          (h.restore-discover-enumeration!)
+                          (tset package.loaded :fen.core.agent nil)))
 
-    (before_each
-      (fn []
-        (extensions.reset!)
-        (h.stub-path-vfs!
-          {:getenv (fn [name]
-                     (if (= name :HOME) "/host"
-                         (= name :XDG_CONFIG_HOME) "/host/config"
-                         nil))
-           :stat (fn [_] nil)
-           :list-dir (fn [_] [])
-           :pwd-physical (fn [_] "/host")})
-        (h.stub-clock! {:monotonic-ms (fn [] 100) :sleep-ms (fn [_] nil)})
-        (h.stub-process! {:setenv (fn [] (values true nil nil))})
-        (h.stub-random! {:bytes (fn [n] (string.rep "r" n))})
-        (h.stub-checksum! {:file-fingerprint (fn [_] nil)
-                           :module-path (fn [_] nil)
-                           :module-fingerprint (fn [_] {:fingerprint "host-etag"})})
-        (h.stub-storage! {:read (fn [_] nil) :write! (fn [] nil)})
-        (h.stub-discover-enumeration! {:enumerate (fn [] [])})
-        (tset package.loaded :fen.util.text nil)
-        (tset package.loaded :fen.core.agent nil)))
-
-    (after_each
-      (fn []
-        (set os.getenv original-getenv)
-        (set io.popen original-popen)
-        (tset package.loaded :fen_http original-fen-http)
-        (tset package.preload :fen_http original-fen-http-preload)
-        (session-backend.set-info! nil)
-        (extensions.reset!)
-        (h.restore-http!)
-        (h.restore-path-vfs!)
-        (h.restore-clock!)
-        (h.restore-process!)
-        (h.restore-random!)
-        (h.restore-checksum!)
-        (h.restore-storage!)
-        (h.restore-discover-enumeration!)
-        (tset package.loaded :fen.core.agent nil)))
-
-    (fn run-host-turn! []
-      "Register a provider, tool, and session backend through the runtime API,
+            (fn run-host-turn! []
+              "Register a provider, tool, and session backend through the runtime API,
        poison direct env/popen access, and run one tool-using agent.step turn."
-      (local provider-calls [])
-      (local tool-calls [])
-      (local events [])
-      (let [api (extensions.make-runtime-api :host)
-            _ (api.register :session-backend (session-spec))
-            _ (api.register :tool
-                            {:name :host_echo :description "host echo"
-                             :parameters {:type :object
-                                          :properties {:value {:type :string}}
-                                          :required [:value]}
-                             :execute (fn [args ctx]
-                                        (table.insert tool-calls {:args args :ctx ctx})
-                                        {:content [(types.text-block (.. "echo:" args.value))]
-                                         :is-error? false})})
-            _ (api.register :provider
-                            {:name :host-provider :api :host
-                             :complete
-                             (fn [model context options]
-                               (table.insert provider-calls
-                                             {:model model :context context :options options})
-                               (if (= (length provider-calls) 1)
-                                   (types.assistant-message
-                                     {:api :host :provider :host-provider :model model
-                                      :content [(types.tool-call-block "host-call" :host_echo
-                                                                        {:value "ok"})]
-                                      :stop-reason :tool-use})
-                                   (types.assistant-message
-                                     {:api :host :provider :host-provider :model model
-                                      :content [(types.text-block "host reply")]
-                                      :stop-reason :stop})))})]
-        (set os.getenv (fn [_] (error "unexpected os.getenv")))
-        (set io.popen (fn [_] (error "unexpected io.popen")))
-        (let [agent-mod (require :fen.core.agent)
-              _ (session-backend.set-active! :host-memory)
-              _ (session-backend.set-info! {:id "host-session"})
-              agent (agent-mod.make-agent
-                      {:provider-name :host-provider :model "host-model"
-                       :api-key "unused"
-                       :tools (tool-registry.merged [])
-                       :on-event (fn [event] (table.insert events event))})
-              reply (agent-mod.step agent "hello")]
-          {: reply : provider-calls : tool-calls : events : agent})))
+              (local provider-calls [])
+              (local tool-calls [])
+              (local events [])
+              (let [api (extensions.make-runtime-api :host)
+                    _ (api.register :session-backend (session-spec))
+                    _ (api.register :tool
+                                    {:name :host_echo
+                                     :description "host echo"
+                                     :parameters {:type :object
+                                                  :properties {:value {:type :string}}
+                                                  :required [:value]}
+                                     :execute (fn [args ctx]
+                                                (table.insert tool-calls
+                                                              {:args args
+                                                               :ctx ctx})
+                                                {:content [(types.text-block (.. "echo:"
+                                                                                 args.value))]
+                                                 :is-error? false})})
+                    _ (api.register :provider
+                                    {:name :host-provider
+                                     :api :host
+                                     :complete (fn [model context options]
+                                                 (table.insert provider-calls
+                                                               {:model model
+                                                                :context context
+                                                                :options options})
+                                                 (if (= (length provider-calls)
+                                                        1)
+                                                     (types.assistant-message {:api :host
+                                                                               :provider :host-provider
+                                                                               :model model
+                                                                               :content [(types.tool-call-block "host-call"
+                                                                                                                :host_echo
+                                                                                                                {:value "ok"})]
+                                                                               :stop-reason :tool-use})
+                                                     (types.assistant-message {:api :host
+                                                                               :provider :host-provider
+                                                                               :model model
+                                                                               :content [(types.text-block "host reply")]
+                                                                               :stop-reason :stop})))})]
+                (set os.getenv (fn [_] (error "unexpected os.getenv")))
+                (set io.popen (fn [_] (error "unexpected io.popen")))
+                (let [agent-mod (require :fen.core.agent)
+                      _ (session-backend.set-active! :host-memory)
+                      _ (session-backend.set-info! {:id "host-session"})
+                      agent (agent-mod.make-agent {:provider-name :host-provider
+                                                   :model "host-model"
+                                                   :api-key "unused"
+                                                   :tools (tool-registry.merged [])
+                                                   :on-event (fn [event]
+                                                               (table.insert events
+                                                                             event))})
+                      reply (agent-mod.step agent "hello")]
+                  {: reply : provider-calls : tool-calls : events : agent})))
 
-    (it "needs no OS environment, popen, or filesystem for boot plus one complete turn"
-      (fn []
-        (let [{: reply : provider-calls : tool-calls : events : agent} (run-host-turn!)]
-          (assert.are.equal "host reply" reply)
-          (assert.are.equal 2 (length provider-calls))
-          (assert.are.equal "host-session" (. provider-calls 1 :options :prompt-cache-key))
-          (assert.are.equal 1 (length tool-calls))
-          (assert.are.equal "ok" (. tool-calls 1 :args :value))
-          (assert.are.same [:llm-start :llm-end :tool-call :tool-result
-                            :llm-start :llm-end :assistant-text]
-                           (event-types events))
-          (assert.are.equal :user (. agent.messages 1 :role))
-          (assert.are.equal :tool-result (. agent.messages 3 :role))
-          (assert.are.equal "host-call" (. agent.messages 3 :tool-call-id))
-          (assert.are.equal :assistant (. agent.messages 4 :role)))))
-
-    (it "boots and completes a turn with no HTTP injection and no native transport"
-      (fn []
-        ;; A host whose providers do not use fen.util.http injects no HTTP
-        ;; backend and may not ship fen_http at all; boot must never load it.
-        (var load-attempted? false)
-        (h.restore-http!)
-        (tset package.loaded :fen_http nil)
-        ;; Record the attempt too, so a caller that pcalls the require cannot hide it.
-        (tset package.preload :fen_http
-              (fn []
-                (set load-attempted? true)
-                (error "unexpected fen_http load")))
-        (let [{: reply : provider-calls} (run-host-turn!)]
-          (assert.are.equal "host reply" reply)
-          (assert.are.equal 2 (length provider-calls))
-          (assert.is_false load-attempted?)
-          (assert.is_nil (. package.loaded :fen_http)))))))
+            (it "needs no OS environment, popen, or filesystem for boot plus one complete turn"
+                (fn []
+                  (let [{: reply
+                         : provider-calls
+                         : tool-calls
+                         : events
+                         : agent} (run-host-turn!)]
+                    (assert.are.equal "host reply" reply)
+                    (assert.are.equal 2 (length provider-calls))
+                    (assert.are.equal "host-session"
+                                      (. provider-calls 1 :options
+                                         :prompt-cache-key))
+                    (assert.are.equal 1 (length tool-calls))
+                    (assert.are.equal "ok" (. tool-calls 1 :args :value))
+                    (assert.are.same [:llm-start
+                                      :llm-end
+                                      :tool-call
+                                      :tool-result
+                                      :llm-start
+                                      :llm-end
+                                      :assistant-text]
+                                     (event-types events))
+                    (assert.are.equal :user (. agent.messages 1 :role))
+                    (assert.are.equal :tool-result (. agent.messages 3 :role))
+                    (assert.are.equal "host-call"
+                                      (. agent.messages 3 :tool-call-id))
+                    (assert.are.equal :assistant (. agent.messages 4 :role)))))
+            (it "boots and completes a turn with no HTTP injection and no native transport"
+                (fn []
+                  ;; A host whose providers do not use fen.util.http injects no HTTP
+                  ;; backend and may not ship fen_http at all; boot must never load it.
+                  (var load-attempted? false)
+                  (h.restore-http!)
+                  (tset package.loaded :fen_http nil)
+                  ;; Record the attempt too, so a caller that pcalls the require cannot hide it.
+                  (tset package.preload :fen_http
+                        (fn []
+                          (set load-attempted? true)
+                          (error "unexpected fen_http load")))
+                  (let [{: reply : provider-calls} (run-host-turn!)]
+                    (assert.are.equal "host reply" reply)
+                    (assert.are.equal 2 (length provider-calls))
+                    (assert.is_false load-attempted?)
+                    (assert.is_nil (. package.loaded :fen_http)))))))

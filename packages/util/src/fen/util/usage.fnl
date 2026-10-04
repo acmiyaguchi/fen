@@ -7,8 +7,13 @@
 ;; signature: USAGE-FIELDS -> [keyword]
 ;; summary: Canonical token fields in display order; `total-tokens` conventionally excludes cache tokens (input+output), matching provider adapters.
 ;; tags: usage tokens
-(local USAGE-FIELDS [:input :output :cache-read :cache-write :reasoning
+(local USAGE-FIELDS [:input
+                     :output
+                     :cache-read
+                     :cache-write
+                     :reasoning
                      :total-tokens])
+
 (set M.USAGE-FIELDS USAGE-FIELDS)
 
 (fn num [v]
@@ -34,15 +39,27 @@
    numeric fields plus a derived total, or nil when nothing usable is present.
    Non-token fields such as latency-ms are intentionally ignored."
   (when (= (type usage) :table)
-    (let [input (pick usage [:input :input_tokens :input-tokens
-                             :prompt_tokens :prompt-tokens])
-          output (pick usage [:output :output_tokens :output-tokens
-                              :completion_tokens :completion-tokens])
-          cache-read (pick usage [:cache-read :cache_read :cached_tokens
-                                  :cache_read_input_tokens])
-          cache-write (pick usage [:cache-write :cache_write
-                                   :cache_creation_input_tokens])
-          reasoning (pick usage [:reasoning :reasoning_tokens :reasoning-tokens])
+    (let [input (pick usage [:input
+                             :input_tokens
+                             :input-tokens
+                             :prompt_tokens
+                             :prompt-tokens])
+          output (pick usage [:output
+                              :output_tokens
+                              :output-tokens
+                              :completion_tokens
+                              :completion-tokens])
+          cache-read (pick usage
+                           [:cache-read
+                            :cache_read
+                            :cached_tokens
+                            :cache_read_input_tokens])
+          cache-write (pick usage
+                            [:cache-write
+                             :cache_write
+                             :cache_creation_input_tokens])
+          reasoning (pick usage
+                          [:reasoning :reasoning_tokens :reasoning-tokens])
           reported-total (pick usage [:total-tokens :total_tokens :total])
           total (or reported-total
                     (when (or input output)
@@ -87,7 +104,8 @@
   (when (= (type usage) :table)
     (each [_ k (ipairs USAGE-FIELDS)]
       (let [v (num (. usage k))]
-        (when v (tset totals k (+ (or (. totals k) 0) v)))))))
+        (when v
+          (tset totals k (+ (or (. totals k) 0) v)))))))
 
 ;; @doc fen.util.usage.ensure-total!
 ;; kind: function
@@ -95,8 +113,7 @@
 ;; summary: Derive total-tokens in place from input+output when absent; returns the totals table.
 ;; tags: usage tokens
 (fn M.ensure-total! [totals]
-  (when (and totals
-             (not (. totals :total-tokens))
+  (when (and totals (not (. totals :total-tokens))
              (or totals.input totals.output))
     (set totals.total-tokens (+ (or totals.input 0) (or totals.output 0))))
   totals)

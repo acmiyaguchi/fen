@@ -11,26 +11,27 @@
 (local M {})
 (local MAX-ITEMS 50)
 (local MAX-TEXT-BYTES 240)
-(local VALID-STATUS {:pending true
-                     :in_progress true
-                     :completed true})
+(local VALID-STATUS {:pending true :in_progress true :completed true})
 
 (local PROMPT
-  "For non-trivial multi-step work, activate todo_write through tool_search, keep the list current, and clear it when done.")
+       "For non-trivial multi-step work, activate todo_write through tool_search, keep the list current, and clear it when done.")
 
 ;; The model-facing tool and privileged replace action deliberately share this
 ;; schema as well as the transition below.
-(local TODO_WRITE_PARAMETERS
-  {:type :object
-   :properties {:items {:type :array
-                        :description "Complete todo list to store. This overwrites any previous list."
-                        :items {:type :object
-                                :properties {:text {:type :string
-                                                   :description "Short task description"}
-                                             :status {:type :string
-                                                      :enum ["pending" "in_progress" "completed"]}}
-                                :required [:text :status]}}}
-   :required [:items]})
+(local TODO_WRITE_PARAMETERS {:type :object
+                              :properties {:items {:type :array
+                                                   :description "Complete todo list to store. This overwrites any previous list."
+                                                   :items {:type :object
+                                                           :properties {:text {:type :string
+                                                                               :description "Short task description"}
+                                                                        :status {:type :string
+                                                                                 :enum ["pending"
+                                                                                        "in_progress"
+                                                                                        "completed"]}}
+                                                           :required [:text
+                                                                      :status]}}}
+                              :required [:items]})
+
 (local EMPTY_ACTION_PARAMETERS {:type :object :properties {}})
 
 (local text-util (require :fen.util.text))
@@ -49,9 +50,7 @@
       (let [n (length xs)]
         (var ok? true)
         (each [k _ (pairs xs)]
-          (when (not (and (= (type k) :number)
-                          (= k (math.floor k))
-                          (>= k 1)
+          (when (not (and (= (type k) :number) (= k (math.floor k)) (>= k 1)
                           (<= k n)))
             (set ok? false)))
         ok?)))
@@ -102,17 +101,26 @@
             (if (not= (type item) :table)
                 (set err (.. "items[" i "] must be an object"))
                 (if (not= (type item.text) :string)
-                    (set err (.. "items[" i "].text must be a non-empty string"))
+                    (set err
+                         (.. "items[" i "].text must be a non-empty string"))
                     (not= (type item.status) :string)
-                    (set err (.. "items[" i "].status must be pending, in_progress, or completed"))
+                    (set err
+                         (.. "items[" i
+                             "].status must be pending, in_progress, or completed"))
                     (let [text (trim item.text)
                           status (status-string item.status)]
                       (if (= text "")
-                          (set err (.. "items[" i "].text must be a non-empty string"))
+                          (set err
+                               (.. "items[" i
+                                   "].text must be a non-empty string"))
                           (> (length text) MAX-TEXT-BYTES)
-                          (set err (.. "items[" i "].text must be at most " MAX-TEXT-BYTES " bytes after trimming"))
+                          (set err
+                               (.. "items[" i "].text must be at most "
+                                   MAX-TEXT-BYTES " bytes after trimming"))
                           (not (. VALID-STATUS status))
-                          (set err (.. "items[" i "].status must be pending, in_progress, or completed"))
+                          (set err
+                               (.. "items[" i
+                                   "].status must be pending, in_progress, or completed"))
                           (do
                             (when (= status "in_progress")
                               (table.insert in-progress i))
@@ -170,8 +178,7 @@
   (let [(items validation-error) (replace-items! (?. args :items))]
     (if validation-error
         (err validation-error)
-        (result (render-text state.items)
-                false
+        (result (render-text state.items) false
                 {:items items :version state.version}))))
 
 (fn adopt-details! [details]
@@ -184,8 +191,7 @@
 (fn rebuild-from-messages! [messages]
   (var latest nil)
   (each [_ m (ipairs (or messages []))]
-    (when (and (= m.role :tool-result)
-               (= (tostring m.tool-name) "todo_write")
+    (when (and (= m.role :tool-result) (= (tostring m.tool-name) "todo_write")
                (?. m :details :items))
       (set latest m.details)))
   (if latest
@@ -196,14 +202,12 @@
 (fn heading [text] {:text text :style :assistant})
 
 (fn todo-rows []
-  (let [rows [(heading "Todos")
-              (dim (.. "  " (summary-line state.items)))] ]
+  (let [rows [(heading "Todos") (dim (.. "  " (summary-line state.items)))]]
     (if (= (length state.items) 0)
         (table.insert rows (dim "  (empty)"))
         (each [i item (ipairs state.items)]
           (table.insert rows
-                        (dim (.. "  " i ". "
-                                 (status-mark item.status) " "
+                        (dim (.. "  " i ". " (status-mark item.status) " "
                                  (truncate-line item.text 96))))))
     rows))
 
@@ -231,8 +235,7 @@
     out))
 
 (fn panel-rows [w]
-  (when (or (not state.cached-rows)
-            (not= state.cached-w w)
+  (when (or (not state.cached-rows) (not= state.cached-w w)
             (not= state.cached-version state.version))
     (set state.cached-rows (bordered-rows w (todo-rows)))
     (set state.cached-w w)
@@ -266,19 +269,16 @@
 (fn handle-command [api args]
   (let [arg (first-arg args)
         kw (and arg (string.lower arg))]
-    (if (= kw "on")
-        (set-visible! api true true)
-        (= kw "off")
-        (set-visible! api false true)
-        (= kw "show")
-        (api.emit {:type :assistant-text :text (render-text state.items)})
+    (if (= kw "on") (set-visible! api true true)
+        (= kw "off") (set-visible! api false true)
+        (= kw "show") (api.emit {:type :assistant-text
+                                 :text (render-text state.items)})
         (set-visible! api (not state.visible?) true))))
 
 (fn status-render [_ctx]
   (let [c (counts)]
     (when (> c.total 0)
-      {:text (.. "todo:" c.completed "/" c.total)
-       :style :status})))
+      {:text (.. "todo:" c.completed "/" c.total) :style :status})))
 
 (fn snapshot [_ctx]
   (let [c (counts)]
@@ -296,64 +296,60 @@
                       :title "Todo guidance"
                       :description "Guidance for using todo_write on multi-step work"
                       :order 70})
-  (api.register :tool
-    {:name :todo_write
-     :label "Todo Write"
-     :exposure :search
-     :snippet "Update the structured todo list"
-     :description "Create or update the structured todo list for this session. Use for non-trivial multi-step work. This tool overwrites the full current list; provide every item that should remain. Status must be pending, in_progress, or completed, with at most one in_progress item. Use an empty items array to clear the list."
-     :parameters TODO_WRITE_PARAMETERS
-     :execute execute})
+  (api.register :tool {:name :todo_write
+                       :label "Todo Write"
+                       :exposure :search
+                       :snippet "Update the structured todo list"
+                       :description "Create or update the structured todo list for this session. Use for non-trivial multi-step work. This tool overwrites the full current list; provide every item that should remain. Status must be pending, in_progress, or completed, with at most one in_progress item. Use an empty items array to clear the list."
+                       :parameters TODO_WRITE_PARAMETERS
+                       :execute execute})
   (api.register :action
-    {:name :replace
-     :description "Replace the complete structured todo list"
-     :parameters TODO_WRITE_PARAMETERS
-     :invoke (fn [args _ctx]
-               (let [(_items validation-error) (replace-items! args.items)]
-                 (if validation-error
-                     {:ok false :error validation-error}
-                     (snapshot nil))))})
-  (api.register :action
-    {:name :clear
-     :description "Clear the structured todo list"
-     :parameters EMPTY_ACTION_PARAMETERS
-     :invoke (fn [_args _ctx]
-               (clear!)
-               (snapshot nil))})
+                {:name :replace
+                 :description "Replace the complete structured todo list"
+                 :parameters TODO_WRITE_PARAMETERS
+                 :invoke (fn [args _ctx]
+                           (let [(_items validation-error) (replace-items! args.items)]
+                             (if validation-error
+                                 {:ok false :error validation-error}
+                                 (snapshot nil))))})
+  (api.register :action {:name :clear
+                         :description "Clear the structured todo list"
+                         :parameters EMPTY_ACTION_PARAMETERS
+                         :invoke (fn [_args _ctx]
+                                   (clear!)
+                                   (snapshot nil))})
   (api.register :command
-    {:name :todos
-     :order 55
-     :description "Toggle the todo panel; /todos show prints the current list"
-     :handler (fn [args _run-state]
-                (handle-command api args))})
+                {:name :todos
+                 :order 55
+                 :description "Toggle the todo panel; /todos show prints the current list"
+                 :handler (fn [args _run-state]
+                            (handle-command api args))})
   (api.register :panel (panel-spec))
-  (api.register :status
-    {:name :todo
-     :side :left
-     :order 35
-     :render status-render})
-  (api.register :introspect
-    {:name :state
-     :description "Current todo list counts and panel state"
-     :snapshot snapshot})
+  (api.register :status {:name :todo
+                         :side :left
+                         :order 35
+                         :render status-render})
+  (api.register :introspect {:name :state
+                             :description "Current todo list counts and panel state"
+                             :snapshot snapshot})
   (api.on :agent-started
-    (fn [ev]
-      (rebuild-from-messages! (?. ev :agent :messages))))
+          (fn [ev]
+            (rebuild-from-messages! (?. ev :agent :messages))))
   (api.on :tool-result
-    (fn [ev]
-      (when (= (tostring ev.name) "todo_write")
-        (adopt-details! (?. ev :result :details)))))
+          (fn [ev]
+            (when (= (tostring ev.name) "todo_write")
+              (adopt-details! (?. ev :result :details)))))
   (api.on :reset-conversation
-    (fn [_]
-      (clear!)
-      (set state.visible? false)))
+          (fn [_]
+            (clear!)
+            (set state.visible? false)))
   (api.on :dismiss
-    (fn [ev]
-      (when state.visible?
-        (set state.visible? false)
-        (invalidate-cache!)
-        (when ev.announce?
-          (api.emit {:type :info :text "todos panel: off"})))))
+          (fn [ev]
+            (when state.visible?
+              (set state.visible? false)
+              (invalidate-cache!)
+              (when ev.announce?
+                (api.emit {:type :info :text "todos panel: off"})))))
   true)
 
 (set M.register register!)

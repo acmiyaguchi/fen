@@ -15,7 +15,8 @@
   (when (not= (type spec.handler) :function)
     (error "register :command requires {:handler fn}"))
   (let [name spec.name
-        (record unregister) (util.set-tagged! state.commands-extra name spec owner)]
+        (record unregister) (util.set-tagged! state.commands-extra name spec
+                                              owner)]
     (handle-result :command name owner unregister)))
 
 ;; @doc fen.core.extensions.register.command.unregister-by-owner
@@ -59,7 +60,7 @@
                             :error (.. "/" name
                                        " is disabled while the agent is running")})
               (let [(ok? err) (xpcall #(rec.handler args caller-state)
-                                       debug.traceback)]
+                                      debug.traceback)]
                 (when (not ok?)
                   (events.emit {:type :error
                                 :error (.. "/" name ": " (first-line err))
@@ -73,14 +74,16 @@
 (fn M.list []
   (let [out []]
     (each [name rec (pairs state.commands-extra)]
-      (table.insert out {:name name :owner rec.__owner
-                         :description rec.description
-                         :usage rec.usage
-                         :subcommands rec.subcommands
-                         :idle-only? rec.idle-only?
-                         :order rec.order
-                         :completes? (or (= (type rec.complete) :function)
-                                         (not= rec.subcommands nil))}))
+      (table.insert out
+                    {:name name
+                     :owner rec.__owner
+                     :description rec.description
+                     :usage rec.usage
+                     :subcommands rec.subcommands
+                     :idle-only? rec.idle-only?
+                     :order rec.order
+                     :completes? (or (= (type rec.complete) :function)
+                                     (not= rec.subcommands nil))}))
     out))
 
 (fn descriptor-completions [descriptor]
@@ -89,12 +92,15 @@
     (when (and (= (type descriptor) :table)
                (= (type descriptor.subcommands) :table))
       (each [_ entry (ipairs descriptor.subcommands)]
-        (table.insert out {:label (tostring entry.name)
-                           :value (tostring entry.name)
-                           :description (tostring (or entry.description ""))}))
+        (table.insert out
+                      {:label (tostring entry.name)
+                       :value (tostring entry.name)
+                       :description (tostring (or entry.description ""))}))
       (when (not descriptor.has-help-subcommand?)
-        (table.insert out {:label "help" :value "help"
-                           :description "show this help"})))
+        (table.insert out
+                      {:label "help"
+                       :value "help"
+                       :description "show this help"})))
     out))
 
 (fn M.arg-completions [name arg-prefix ctx]

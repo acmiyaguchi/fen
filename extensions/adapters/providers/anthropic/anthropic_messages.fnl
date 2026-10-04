@@ -106,15 +106,17 @@
     (while (<= i n)
       (let [m (. messages i)]
         (if (= m.role :user)
-            (do (table.insert out
-                              {:role :user
-                               :content (user-content-to-wire m.content)})
-                (set i (+ i 1)))
+            (do
+              (table.insert out
+                            {:role :user
+                             :content (user-content-to-wire m.content)})
+              (set i (+ i 1)))
             (= m.role :assistant)
-            (do (table.insert out
-                              {:role :assistant
-                               :content (assistant-content-to-wire m.content)})
-                (set i (+ i 1)))
+            (do
+              (table.insert out
+                            {:role :assistant
+                             :content (assistant-content-to-wire m.content)})
+              (set i (+ i 1)))
             (= m.role :tool-result)
             ;; Batch this and any directly-following tool-result messages.
             (let [blocks []]
@@ -132,10 +134,9 @@
   "Canonical Tool[] → Anthropic Tool[] (flat, with input_schema)."
   (let [out []]
     (each [_ t (ipairs (or tools []))]
-      (table.insert out
-                    {:name t.name
-                     :description t.description
-                     :input_schema t.parameters}))
+      (table.insert out {:name t.name
+                         :description t.description
+                         :input_schema t.parameters}))
     out))
 
 ;; ----------------------------------------------------------------
@@ -146,16 +147,24 @@
   "Anthropic stop_reason → canonical StopReason. Mirrors pi-mono
    anthropic.ts:1146-1166."
   (case reason
-    :end_turn (values :stop nil)
-    :max_tokens (values :length nil)
-    :tool_use (values :tool-use nil)
-    :refusal (values :error "Provider stop_reason: refusal")
+    :end_turn
+    (values :stop nil)
+    :max_tokens
+    (values :length nil)
+    :tool_use
+    (values :tool-use nil)
+    :refusal
+    (values :error "Provider stop_reason: refusal")
     ;; Stop is good enough; caller can resubmit if they want.
-    :pause_turn (values :stop nil)
-    :stop_sequence (values :stop nil)
-    :sensitive (values :error "Provider stop_reason: sensitive")
+    :pause_turn
+    (values :stop nil)
+    :stop_sequence
+    (values :stop nil)
+    :sensitive
+    (values :error "Provider stop_reason: sensitive")
     ;; default — preserve the raw value rather than throwing.
-    _ (values :error (.. "Provider stop_reason: " (tostring reason)))))
+    _
+    (values :error (.. "Provider stop_reason: " (tostring reason)))))
 
 (fn parse-response [resp model]
   "Anthropic response → canonical AssistantMessage."
@@ -166,33 +175,33 @@
       (case b.type
         :text
         (table.insert content (types.text-block (or b.text "")))
-
         :thinking
         (table.insert content
-                      (types.thinking-block
-                        {:thinking (or b.thinking "")
-                         :thinking-signature b.signature
-                         :redacted false}))
-
+                      (types.thinking-block {:thinking (or b.thinking "")
+                                             :thinking-signature b.signature
+                                             :redacted false}))
         :tool_use
         (table.insert content
                       (types.tool-call-block b.id b.name (or b.input {})))
-
         ;; Unknown block type — skip with a log.
         _
         (log.warn (.. "anthropic_messages: unknown content block type: "
                       (tostring b.type)))))
-    (types.assistant-message
-      {:api API :provider PROVIDER : model
-       : content
-       :usage {:input (or usage.input_tokens 0)
-               :output (or usage.output_tokens 0)
-               :cache-read (or usage.cache_read_input_tokens 0)
-               :cache-write (or usage.cache_creation_input_tokens 0)
-               :total-tokens (+ (or usage.input_tokens 0)
-                                (or usage.output_tokens 0))}
-       : stop-reason
-       : error-message})))
+    (types.assistant-message {:api API
+                              :provider PROVIDER
+                              : model
+                              : content
+                              :usage {:input (or usage.input_tokens 0)
+                                      :output (or usage.output_tokens 0)
+                                      :cache-read (or usage.cache_read_input_tokens
+                                                      0)
+                                      :cache-write (or usage.cache_creation_input_tokens
+                                                       0)
+                                      :total-tokens (+ (or usage.input_tokens 0)
+                                                       (or usage.output_tokens
+                                                           0))}
+                              : stop-reason
+                              : error-message})))
 
 ;; ----------------------------------------------------------------
 ;; HTTP transport
@@ -206,8 +215,10 @@
     (when (> n 0)
       (let [last (. messages n)]
         (if (= (type last.content) :string)
-            (set last.content [{:type :text :text last.content
-                                :cache_control CACHE-CONTROL-1H}])
+            (set last.content
+                 [{:type :text
+                   :text last.content
+                   :cache_control CACHE-CONTROL-1H}])
             (let [blocks last.content
                   bn (length blocks)]
               (when (> bn 0)
@@ -217,20 +228,22 @@
   "Provider option normalized across providers. Defaults on; only explicit
    `:parallel-tool-calls false` disables it."
   (let [v (?. options :parallel-tool-calls)]
-    (if (= v nil) true v)))
+    (if (= v nil)
+        true
+        v)))
 
 (fn history-tool-names [wire-messages]
   "Distinct tool_use names in wire history, in first-seen order, plus whether
    any tool_use/tool_result block appears at all."
-  (let [names [] seen {}]
+  (let [names []
+        seen {}]
     (var tool-blocks? false)
     (each [_ m (ipairs wire-messages)]
       (when (= (type m.content) :table)
         (each [_ b (ipairs m.content)]
           (when (or (= b.type :tool_use) (= b.type :tool_result))
             (set tool-blocks? true))
-          (when (and (= b.type :tool_use) b.name
-                     (not (. seen b.name)))
+          (when (and (= b.type :tool_use) b.name (not (. seen b.name)))
             (tset seen b.name true)
             (table.insert names b.name)))))
     (values names tool-blocks?)))
@@ -267,8 +280,10 @@
       (if cache?
           ;; Convert string system → array form so we can attach
           ;; cache_control. Anthropic accepts both shapes.
-          (set body.system [{:type :text :text context.system-prompt
-                             :cache_control CACHE-CONTROL-1H}])
+          (set body.system
+               [{:type :text
+                 :text context.system-prompt
+                 :cache_control CACHE-CONTROL-1H}])
           (set body.system context.system-prompt)))
     (when (and context.tools (> (length context.tools) 0))
       (let [tools (convert-tools context.tools)]
@@ -313,10 +328,12 @@
         resp (http.request {:method :GET
                             :url (models-url opts.base-url)
                             :headers (request-headers opts.api-key
-                                                      (or opts.anthropic-version DEFAULT-VERSION)
+                                                      (or opts.anthropic-version
+                                                          DEFAULT-VERSION)
                                                       false)
                             :timeout-ms (or opts.timeout-ms 30000)
-                            :connect-timeout-ms (or opts.connect-timeout-ms 10000)
+                            :connect-timeout-ms (or opts.connect-timeout-ms
+                                                    10000)
                             :yield opts.yield})]
     (when resp.error
       (error {:reason :request-failed}))
@@ -335,43 +352,56 @@
   "Assemble a fen.util.http opts table for a Messages POST. When ?on-chunk
    is provided, the request is configured for streaming (`stream:true`,
    `Accept: text/event-stream`)."
-  (streaming.build-request-opts
-    {:url (fn [opts _streaming?] (or opts.base-url DEFAULT-BASE-URL))
-     :headers (fn [opts streaming?]
-                (request-headers opts.api-key
-                                 (or opts.anthropic-version DEFAULT-VERSION)
-                                 streaming?))
-     :build-body (fn [model context opts streaming?]
-                   (let [body (build-body model context (or opts.max-tokens 16384) opts)]
-                     (when streaming? (set body.stream true))
-                     body))
-     :default-timeout-ms DEFAULT-TIMEOUT-MS
-     :default-connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS}
-    model context options ?on-chunk))
+  (streaming.build-request-opts {:url (fn [opts _streaming?]
+                                        (or opts.base-url DEFAULT-BASE-URL))
+                                 :headers (fn [opts streaming?]
+                                            (request-headers opts.api-key
+                                                             (or opts.anthropic-version
+                                                                 DEFAULT-VERSION)
+                                                             streaming?))
+                                 :build-body (fn [model
+                                                  context
+                                                  opts
+                                                  streaming?]
+                                               (let [body (build-body model
+                                                                      context
+                                                                      (or opts.max-tokens
+                                                                          16384)
+                                                                      opts)]
+                                                 (when streaming?
+                                                   (set body.stream true))
+                                                 body))
+                                 :default-timeout-ms DEFAULT-TIMEOUT-MS
+                                 :default-connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS}
+                                model context options ?on-chunk))
 
 (fn response->assistant [model resp]
   (if resp.error
-      (do (log.error (.. "http transport failed: " resp.error))
-          (types.assistant-error API PROVIDER model resp.error))
+      (do
+        (log.error (.. "http transport failed: " resp.error))
+        (types.assistant-error API PROVIDER model resp.error))
       (let [raw resp.body
             (decoded? value) (pcall json.decode raw)]
         (if (not decoded?)
-            (do (log.error (.. "json decode failed: " (tostring value) " body=" raw))
-                (types.assistant-error API PROVIDER model value))
+            (do
+              (log.error (.. "json decode failed: " (tostring value) " body="
+                             raw))
+              (types.assistant-error API PROVIDER model value))
             (if (or (< resp.status 200) (>= resp.status 300))
-                (do (log.error (.. "http " resp.status ": " raw))
-                    (types.assistant-error API PROVIDER model
-                      (.. "HTTP " resp.status ": " raw)))
+                (do
+                  (log.error (.. "http " resp.status ": " raw))
+                  (types.assistant-error API PROVIDER model
+                                         (.. "HTTP " resp.status ": " raw)))
                 (parse-response value model))))))
 
 (fn decode-partial-json [s]
   (if (or (= s nil) (= s ""))
       {}
       (let [(ok? value) (pcall json.decode s)]
-        (if ok? value
-            (do (log.warn (.. "anthropic_messages: bad streamed tool args JSON: "
-                              (tostring value)))
-                {})))))
+        (if ok? value (do
+                        (log.warn (.. "anthropic_messages: bad streamed tool args JSON: "
+                                      (tostring value)))
+                        {})))))
 
 (fn usage-from-anthropic [usage]
   (let [u (or usage {})]
@@ -390,8 +420,8 @@
       (when (> u.output 0) (set state.usage.output u.output))
       (when (> u.cache-read 0) (set state.usage.cache-read u.cache-read))
       (when (> u.cache-write 0) (set state.usage.cache-write u.cache-write))
-      (set state.usage.total-tokens (+ (or state.usage.input 0)
-                                       (or state.usage.output 0))))))
+      (set state.usage.total-tokens
+           (+ (or state.usage.input 0) (or state.usage.output 0))))))
 
 (fn new-stream-state [model]
   {:model model
@@ -418,17 +448,20 @@
           (tset state.blocks wire-index block)
           (when emit (emit {:type :text-start :content-index idx}))
           (when (not= block.text "")
-            (when emit (emit {:type :text-delta :content-index idx :delta block.text}))))
+            (when emit
+              (emit {:type :text-delta :content-index idx :delta block.text}))))
         (= (?. b :type) :thinking)
-        (let [block (types.thinking-block
-                      {:thinking (or b.thinking "")
-                       :thinking-signature b.signature
-                       :redacted false})]
+        (let [block (types.thinking-block {:thinking (or b.thinking "")
+                                           :thinking-signature b.signature
+                                           :redacted false})]
           (table.insert state.content block)
           (tset state.blocks wire-index block)
           (when emit (emit {:type :thinking-start :content-index idx}))
           (when (not= block.thinking "")
-            (when emit (emit {:type :thinking-delta :content-index idx :delta block.thinking}))))
+            (when emit
+              (emit {:type :thinking-delta
+                     :content-index idx
+                     :delta block.thinking}))))
         (= (?. b :type) :tool_use)
         (let [block (types.tool-call-block b.id b.name (or b.input {}))]
           (set block.partial-json "")
@@ -444,17 +477,28 @@
         d ev.delta]
     (when (and block d)
       (if (and (= block.type :text) (= d.type :text_delta))
-          (do (stream-chunks.append! block :text :text-chunks (or d.text ""))
-              (when emit (emit {:type :text-delta :content-index idx :delta (or d.text "")})))
+          (do
+            (stream-chunks.append! block :text :text-chunks (or d.text ""))
+            (when emit
+              (emit {:type :text-delta
+                     :content-index idx
+                     :delta (or d.text "")})))
           (and (= block.type :thinking) (= d.type :thinking_delta))
-          (do (stream-chunks.append! block :thinking :thinking-chunks (or d.thinking ""))
-              (when emit (emit {:type :thinking-delta :content-index idx :delta (or d.thinking "")})))
+          (do
+            (stream-chunks.append! block :thinking :thinking-chunks
+                                   (or d.thinking ""))
+            (when emit
+              (emit {:type :thinking-delta
+                     :content-index idx
+                     :delta (or d.thinking "")})))
           (and (= block.type :thinking) (= d.type :signature_delta))
           (set block.thinking-signature d.signature)
           (and (= block.type :tool-call) (= d.type :input_json_delta))
           (let [chunk (or d.partial_json "")]
-            (stream-chunks.append! block :partial-json :partial-json-chunks chunk)
-            (when emit (emit {:type :tool-call-delta :content-index idx :delta chunk})))
+            (stream-chunks.append! block :partial-json :partial-json-chunks
+                                   chunk)
+            (when emit
+              (emit {:type :tool-call-delta :content-index idx :delta chunk})))
           nil))))
 
 (fn stop-stream-block! [state ev emit]
@@ -464,16 +508,22 @@
     (when block
       (if (= block.type :text)
           (let [text (stream-chunks.materialize! block :text :text-chunks)]
-            (when emit (emit {:type :text-end :content-index idx :content text})))
+            (when emit
+              (emit {:type :text-end :content-index idx :content text})))
           (= block.type :thinking)
-          (let [thinking (stream-chunks.materialize! block :thinking :thinking-chunks)]
-            (when emit (emit {:type :thinking-end :content-index idx :content thinking})))
+          (let [thinking (stream-chunks.materialize! block :thinking
+                                                     :thinking-chunks)]
+            (when emit
+              (emit {:type :thinking-end :content-index idx :content thinking})))
           (= block.type :tool-call)
-          (do (let [partial-json (stream-chunks.materialize! block :partial-json :partial-json-chunks)]
-                (when (not= partial-json "")
-                  (set block.arguments (decode-partial-json partial-json))))
-              (set block.partial-json nil)
-              (when emit (emit {:type :tool-call-end :content-index idx :tool-call block})))))))
+          (do
+            (let [partial-json (stream-chunks.materialize! block :partial-json
+                                                           :partial-json-chunks)]
+              (when (not= partial-json "")
+                (set block.arguments (decode-partial-json partial-json))))
+            (set block.partial-json nil)
+            (when emit
+              (emit {:type :tool-call-end :content-index idx :tool-call block})))))))
 
 (fn process-stream-event! [state ev emit]
   "Consume one decoded Anthropic Messages stream event table."
@@ -497,11 +547,12 @@
         (= etype :message_stop)
         (set state.saw-terminal? true)
         (= etype :error)
-        (do (set state.saw-terminal? true)
-            (set state.stop-reason :error)
-            (set state.error-message (or (?. ev :error :message)
-                                         (?. ev :error :type)
-                                         "Anthropic stream error")))
+        (do
+          (set state.saw-terminal? true)
+          (set state.stop-reason :error)
+          (set state.error-message
+               (or (?. ev :error :message) (?. ev :error :type)
+                   "Anthropic stream error")))
         nil))
   state)
 
@@ -511,32 +562,32 @@
 ;; summary: Finalize Anthropic streaming state into a canonical assistant message and emit the terminal done/error event.
 ;; tags: provider anthropic streaming
 (fn finalize-stream-state [state emit]
-  (streaming.finalize-stream-state
-    {:api API :provider PROVIDER :state state :emit emit}))
+  (streaming.finalize-stream-state {:api API
+                                    :provider PROVIDER
+                                    :state state
+                                    :emit emit}))
 
 (fn make-stream-pipeline [model on-event]
   "Build a fresh (state parser parser-error) tuple for one streaming POST.
    The parser feeds decoded SSE frames into process-stream-event! and
    captures JSON-decode failures into parser-error.message."
-  (streaming.make-stream-pipeline
-    {:model model
-     :on-event on-event
-     :new-state new-stream-state
-     :process-event process-stream-event!}))
+  (streaming.make-stream-pipeline {:model model
+                                   :on-event on-event
+                                   :new-state new-stream-state
+                                   :process-event process-stream-event!}))
 
 (fn finalize-stream [state parser parser-error model resp on-event]
   "Shared post-request handling for the streaming pipeline."
-  (streaming.finalize-stream
-    {:api API
-     :provider PROVIDER
-     :model model
-     :state state
-     :parser parser
-     :parser-error parser-error
-     :resp resp
-     :on-event on-event
-     :finalize-state finalize-stream-state
-     :incomplete-log-prefix "anthropic"}))
+  (streaming.finalize-stream {:api API
+                              :provider PROVIDER
+                              :model model
+                              :state state
+                              :parser parser
+                              :parser-error parser-error
+                              :resp resp
+                              :on-event on-event
+                              :finalize-state finalize-stream-state
+                              :incomplete-log-prefix "anthropic"}))
 
 (fn complete [model context options ?on-event ?yield-fn]
   "Single entry. Routes by ?on-event / ?yield-fn:
@@ -547,17 +598,16 @@
        given, blocking otherwise.
    Returns a canonical AssistantMessage in every case; on transport or
    HTTP failure the message has stop-reason :error with error-message set."
-  (streaming.complete
-    {:provider PROVIDER
-     :model model
-     :context context
-     :options options
-     :on-event ?on-event
-     :yield-fn ?yield-fn
-     :build-request-opts build-request-opts
-     :make-stream-pipeline make-stream-pipeline
-     :finalize-stream finalize-stream
-     :response->assistant response->assistant}))
+  (streaming.complete {:provider PROVIDER
+                       :model model
+                       :context context
+                       :options options
+                       :on-event ?on-event
+                       :yield-fn ?yield-fn
+                       :build-request-opts build-request-opts
+                       :make-stream-pipeline make-stream-pipeline
+                       :finalize-stream finalize-stream
+                       :response->assistant response->assistant}))
 
 ;; @doc fen.extensions.provider_anthropic.anthropic_messages.api
 ;; kind: data

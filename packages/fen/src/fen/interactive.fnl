@@ -22,9 +22,7 @@
 (local M {})
 
 (fn build-system-prompt [opts agent-tools]
-  (system-prompt.build opts
-                       (or agent-tools
-                           (tool-registry.merged []))))
+  (system-prompt.build opts (or agent-tools (tool-registry.merged []))))
 
 (fn context-status-info [agent]
   (let [context (token-util.context-token-info agent)]
@@ -69,7 +67,8 @@
   (let [cfg (resolve-provider-config opts)
         active-tool-names (or opts.active-tool-names {})
         _active (set opts.active-tool-names active-tool-names)
-        provider-options (thinking.level->provider-options opts.thinking cfg.api)]
+        provider-options (thinking.level->provider-options opts.thinking
+                                                           cfg.api)]
     (when cfg.base-url (set provider-options.base-url cfg.base-url))
     (when cfg.compat (set provider-options.compat cfg.compat))
     (when cfg.creds (set provider-options.creds cfg.creds))
@@ -84,11 +83,13 @@
       (set provider-options.web-search opts.web-search))
     (let [registered-tools (tool-registry.merged [])
           (agent-tools policy-error) (tool-policy.apply opts registered-tools)
-          (restriction restriction-error) (tool-policy.restriction-info opts registered-tools)
+          (restriction restriction-error) (tool-policy.restriction-info opts
+                                                                        registered-tools)
           _policy (when policy-error (error policy-error))
           _restriction (when restriction-error (error restriction-error))
           ;; An explicit allowlist also exposes every selected tool, including search-gated ones.
-          _allowlist (when opts.tools (activate-tools! active-tool-names agent-tools))
+          _allowlist (when opts.tools
+                       (activate-tools! active-tool-names agent-tools))
           _pin (pin-tools! active-tool-names opts.pinned-tools agent-tools)
           spec {:provider-name cfg.provider-name
                 :model cfg.model
@@ -147,8 +148,8 @@
 (fn M.run! [opts resolve-provider-config]
   (extension-loader.load! opts {:interactive? true})
   (models-mod.register-providers!)
-  (let [(_filtered policy-error)
-        (tool-policy.apply opts (tool-registry.merged []))]
+  (let [(_filtered policy-error) (tool-policy.apply opts
+                                                    (tool-registry.merged []))]
     (when policy-error
       (io.stderr:write (.. policy-error "\n"))
       (os.exit 2)))
@@ -156,7 +157,8 @@
     (reload-loader.snapshot-core!))
   (let [on-event (fn [ev] (events.emit ev))
         _state-box {:state nil}
-        make-agent (fn [o oe ex] (M.make-agent-from-opts resolve-provider-config o oe ex))
+        make-agent (fn [o oe ex]
+                     (M.make-agent-from-opts resolve-provider-config o oe ex))
         ;; Callbacks resolve through the steering module table at call time, so they stay reload-safe.
         steering (require :fen.extensions.steering.service)
         update-queue-status! (fn []
@@ -169,31 +171,35 @@
                                                    :info info})))))
         agent-extra {:get-steering (fn [] (steering.get-steering))
                      :get-follow-up (fn [] (steering.get-follow-up))
-                     :tool-context
-                     (fn [_agent]
-                       {:state _state-box.state})}
+                     :tool-context (fn [_agent]
+                                     {:state _state-box.state})}
         backend (session-lifecycle.resolve-backend opts)
         agent (make-agent opts on-event agent-extra)
         (session replayed) (session-lifecycle.start! opts agent backend)
         flush (session-lifecycle.make-flush backend agent session replayed)
         ;; Mutable container so reloadable handlers can swap agent/session after /reload or /new while on-submit keeps a live view.
-        state (run-state.make
-                {: opts : on-event : agent : session : flush
-                 :session-backend backend
-                 :make-agent-from-opts make-agent
-                 :state-box _state-box
-                 : session-lifecycle
-                 : extension-loader
-                 :models-mod models-mod
-                 :reload-modules reload-core-modules!
-                 :agent-extra agent-extra
-                 :update-queue-status update-queue-status!
-                 :submit-agent-turn! submit-agent-turn!
-                 :submit-user-turn! submit-user-turn!})
-        _steering-runtime
-        (steering.install-runtime!
-          {:is-idle? (fn [] (and (not state.busy?) (not state.turn)))
-           :start-follow-up! (fn [text] (submit-user-turn! state text))})
+        state (run-state.make {: opts
+                               : on-event
+                               : agent
+                               : session
+                               : flush
+                               :session-backend backend
+                               :make-agent-from-opts make-agent
+                               :state-box _state-box
+                               : session-lifecycle
+                               : extension-loader
+                               :models-mod models-mod
+                               :reload-modules reload-core-modules!
+                               :agent-extra agent-extra
+                               :update-queue-status update-queue-status!
+                               :submit-agent-turn! submit-agent-turn!
+                               :submit-user-turn! submit-user-turn!})
+        _steering-runtime (steering.install-runtime! {:is-idle? (fn []
+                                                                  (and (not state.busy?)
+                                                                       (not state.turn)))
+                                                      :start-follow-up! (fn [text]
+                                                                          (submit-user-turn! state
+                                                                                             text))})
         is-busy? (fn [] state.busy?)
         request-cancel (fn []
                          (when state.busy?
@@ -201,9 +207,10 @@
         on-submit (fn [line]
                     (if (= (string.sub line 1 1) "/")
                         (command-registry.dispatch line state)
-                        (let [action (input-pipeline.handle
-                                       {:kind :user-input :text line}
-                                       {:busy? state.busy? :state state})]
+                        (let [action (input-pipeline.handle {:kind :user-input
+                                                             :text line}
+                                                            {:busy? state.busy?
+                                                             :state state})]
                           (if (= action.action :start)
                               (submit-user-turn! state action.text)
                               (= action.action :error)
@@ -222,10 +229,11 @@
                   (when state.turn
                     (let [(ok? value) (coroutine.resume state.turn)]
                       (when (not ok?)
-                        (events.emit
-                          {:type :error
-                           :error (.. "agent task: " (err-first-line value))
-                           :traceback (debug.traceback state.turn (tostring value))}))
+                        (events.emit {:type :error
+                                      :error (.. "agent task: "
+                                                 (err-first-line value))
+                                      :traceback (debug.traceback state.turn
+                                                                  (tostring value))}))
                       (when (or (not ok?)
                                 (= (coroutine.status state.turn) :dead))
                         (if ok?
@@ -237,21 +245,20 @@
                         (turn-lifecycle.emit-complete! state ok? value))))
                   ;; Reload requests stay queued until the turn coroutine is gone, so modules never swap during a stream or tool call.
                   (when (and (not state.busy?) (not state.turn))
-                    (reload-request.drain!
-                      state
-                      (fn [request]
-                        (events.emit {:type :info
-                                      :text (.. "reload request> executing "
-                                                 (tostring request.scope)
-                                                 ": " request.reason)})
-                        (command-registry.dispatch
-                          (reload-request.command-line request) state)))
+                    (reload-request.drain! state
+                                           (fn [request]
+                                             (events.emit {:type :info
+                                                           :text (.. "reload request> executing "
+                                                                     (tostring request.scope)
+                                                                     ": "
+                                                                     request.reason)})
+                                             (command-registry.dispatch (reload-request.command-line request)
+                                                                        state)))
                     ;; Idle follow-ups start only after active-turn and reload work reach this boundary.
                     (steering.start-idle-follow-up!)))]
     (session-lifecycle.install! state)
     (when (> replayed 0) (state.flush))
-    (let [(init-ok? init-err)
-          (presenter-registry.init-active-presenter {:state state})]
+    (let [(init-ok? init-err) (presenter-registry.init-active-presenter {:state state})]
       (when (not init-ok?)
         (session-lifecycle.close! state.session-backend state.session)
         (emit-agent-shutdown state.agent :crashed init-err)
@@ -259,9 +266,11 @@
         (io.stderr:write (.. "fen: " (tostring init-err) "\n"))
         (os.exit 1)))
     (emit-agent-started state.agent opts)
-    (let [info {:provider opts.provider :model agent.model
+    (let [info {:provider opts.provider
+                :model agent.model
                 :thinking-status agent.thinking-status
-                :steering-queued 0 :follow-up-queued 0}]
+                :steering-queued 0
+                :follow-up-queued 0}]
       (each [k v (pairs (context-status-info agent))]
         (tset info k v))
       (events.emit {:type :set-status-info :info info}))
@@ -271,18 +280,15 @@
                          :request-cancel request-cancel
                          :is-busy? is-busy?
                          :get-turn (fn [] state.turn)}
-          (ok? run-result) (xpcall
-                      #(let [(run-ok? run-result)
-                             (presenter-registry.run-active-presenter presenter-ctx)]
-                         (if run-ok?
-                             run-result
-                             (error run-result)))
-                      debug.traceback)
-          (shutdown-ok? shutdown-err)
-          (presenter-registry.shutdown-active-presenter presenter-ctx)]
+          (ok? run-result) (xpcall #(let [(run-ok? run-result) (presenter-registry.run-active-presenter presenter-ctx)]
+                                      (if run-ok?
+                                          run-result
+                                          (error run-result)))
+                                   debug.traceback)
+          (shutdown-ok? shutdown-err) (presenter-registry.shutdown-active-presenter presenter-ctx)]
       (when (not shutdown-ok?)
         (io.stderr:write (.. "presenter shutdown failed: "
-                            (tostring shutdown-err) "\n"))
+                             (tostring shutdown-err) "\n"))
         ;; If the presenter slot was lost (e.g. botched reload), force termbox2 teardown so the terminal leaves raw/no-echo mode.
         (let [(ok-state? tui-state) (pcall require :fen.extensions.tui.state)
               (ok-tb? termbox2) (pcall require :termbox2)
@@ -293,7 +299,8 @@
             (when ok-sink? (pcall log-sink.close!)))))
       (steering.install-runtime! nil)
       (session-lifecycle.close! state.session-backend state.session)
-      (emit-agent-shutdown state.agent (if ok? :normal :crashed) (when (not ok?) run-result))
+      (emit-agent-shutdown state.agent (if ok? :normal :crashed)
+                           (when (not ok?) run-result))
       (session-lifecycle.uninstall!)
       (when (not ok?)
         (io.stderr:write (.. "presenter crashed: " (tostring run-result) "\n"))

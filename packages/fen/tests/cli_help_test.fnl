@@ -27,182 +27,203 @@
     (values out (if (= ok true) 0 (or code 1)))))
 
 (describe "CLI subcommand help"
-  (fn []
-    (it "defines focused help for all issue-340 subcommands"
-      (fn []
-        (each [_ name (ipairs [:goal :list :show :run :providers])]
-          (let [out (cli-help.for-subcommand name)]
-            (assert.is_not_nil out)
-            (assert.is_truthy (contains? out (.. "fen " (tostring name))))
-            (assert.is_truthy (contains? out "Usage:"))
-            (assert.is_truthy (contains? out "Options:"))
-            (assert.is_truthy (contains? out "Exit codes"))
-            (assert.are.equal 1 (count-literal out "Example:"))
-            (assert.is_false (contains? out "Slash commands (interactive mode):"))
-            (assert.is_false (contains? out "Subcommands:"))))))
-
-    (it "documents the goal 0/2/1 exit-code contract prominently"
-      (fn []
-        (let [out (cli-help.for-subcommand :goal)]
-          (assert.is_truthy (contains? out "Exit codes (goal contract):"))
-          (assert.is_truthy (contains? out "0  Done"))
-          (assert.is_truthy (contains? out "2  Not done"))
-          (assert.is_truthy (contains? out "1  Failure")))))
-
-    (it "uses focused run help from the script runner"
-      (fn []
-        (let [out (runner.usage)]
-          (assert.are.equal (cli-help.for-subcommand :run) out)
-          (assert.is_truthy (contains? out "fen run [--lua|--fennel] <script> [args...]"))
-          (assert.is_truthy (contains? out "--fennel"))
-          (assert.is_truthy (contains? out "Script load/runtime failure")))))
-
-    (it "dispatches `fen providers --help` to focused providers help with exit 0"
-      (fn []
-        (let [(out code) (provider-help.dispatch {0 "fen" 1 :providers 2 :--help})]
-          (assert.are.equal 0 code)
-          (assert.is_truthy (contains? out "Usage:"))
-          (assert.is_truthy (contains? out "fen providers [name]"))
-          (assert.is_truthy (contains? out "Exit codes:"))
-          (assert.is_false (contains? out "fen provider setup")))))
-
-    (it "prefers focused providers help over a provider setup page when --help follows a name"
-      (fn []
-        (let [(out code) (provider-help.dispatch {0 "fen" 1 :providers 2 :openai 3 :--help})]
-          (assert.are.equal 0 code)
-          (assert.is_truthy (contains? out "fen providers [name]"))
-          (assert.is_false (contains? out "fen provider: openai")))))
-
-    (it "renders the provider index for bare `fen providers` with exit 0"
-      (fn []
-        (let [(out code) (provider-help.dispatch {0 "fen" 1 :providers})]
-          (assert.are.equal 0 code)
-          (assert.are.equal (provider-help.render-index) out)
-          (assert.is_truthy (contains? out "fen providers openai")))))
-
-    (it "exits 2 with the index for an unknown provider name"
-      (fn []
-        (let [(out code) (provider-help.dispatch {0 "fen" 1 :providers 2 :nope})]
-          (assert.are.equal 2 code)
-          (assert.is_truthy (contains? out "unknown provider setup page: nope")))))
-
-    (it "still renders a named provider setup page without --help"
-      (fn []
-        (let [(out code) (provider-help.dispatch {0 "fen" 1 :providers 2 :openai})]
-          (assert.are.equal 0 code)
-          (assert.is_truthy (contains? out "fen provider: openai")))))
-
-    (it "short top-level help is concise, example-rich, and free of internals"
-      (fn []
-        (let [out (cli-help.top-level)]
-          (assert.is_not_nil out)
-          (assert.is_truthy (contains? out "Usage:"))
-          (assert.is_truthy (contains? out "Examples:"))
-          (assert.is_truthy (contains? out "Agent-oriented discovery:"))
-          (assert.is_truthy (contains? out "fen <command> --help"))
-          (assert.is_truthy (contains? out "fen --help-all"))
-          (assert.is_truthy (contains? out "fen --no-session --tools read,grep,find,ls --print"))
-          (assert.is_truthy (contains? out "fen goal --max-iterations 10"))
-          (assert.is_truthy (contains? out "FEN_JSON_OUTPUT_PATH=out.json fen --presenter json --print"))
-          (assert.is_truthy (contains? out "fen --provider openai-codex --model gpt-5.6-sol --print"))
-          (assert.is_truthy (contains? out "fen --continue"))
-          (assert.is_false (contains? out "--dev-path"))
-          (assert.is_false (contains? out "--extension-root"))
-          (assert.is_false (contains? out "FEN_DEV_PATH"))
-          (assert.is_false (contains? out "Slash commands (interactive mode):"))
-          (assert.is_true (< (length out) (length (cli-help.top-level-all)))))))
-
-    (it "exhaustive top-level help keeps launcher internals and env-var minutiae"
-      (fn []
-        (let [out (cli-help.top-level-all)]
-          (assert.is_not_nil out)
-          (assert.is_truthy (contains? out "--dev-path"))
-          (assert.is_truthy (contains? out "--extension-root"))
-          (assert.is_truthy (contains? out "FEN_DEV_PATH"))
-          (assert.is_truthy (contains? out "FEN_EXTENSION_ROOT"))
-          (assert.is_truthy (contains? out "Slash commands (interactive mode):"))
-          (assert.is_truthy (contains? out "Environment:"))
-          (assert.is_truthy (contains? out "Subcommands:")))))
-
-    (it "recognizes --help-all"
-      (fn []
-        (assert.is_truthy (cli-help.help-all? :--help-all))
-        (assert.is_truthy (cli-help.help-all? "--help-all"))
-        (assert.is_false (cli-help.help-all? :--help))))
-
-    (it "routes `fen --help` and `fen -h` to the short top-level help with exit 0"
-      (fn []
-        (each [_ args (ipairs ["--help" "-h"])]
-          (let [(out code) (run-main args)]
-            (assert.are.equal 0 code)
-            (assert.is_truthy (contains? out "Examples:"))
-            (assert.is_truthy (contains? out "fen --help-all"))
-            (assert.is_false (contains? out "--dev-path"))
-            (assert.is_false (contains? out "Slash commands (interactive mode):"))))))
-
-    (it "rejects --presenter rpc combined with --print with exit 2"
-      (fn []
-        (let [(out code) (run-main "--presenter rpc --print hi")]
-          (assert.are.equal 2 code)
-          (assert.is_truthy (contains? out "--presenter rpc"))
-          (assert.is_truthy (contains? out "--print")))))
-
-    (it "keeps a slashed --model whole when an explicit --provider disagrees with its prefix"
-      (fn []
-        (let [tmp (os.tmpname)
-              _ (os.remove tmp)
-              _ (os.execute (.. "mkdir -p " tmp))
-              p (assert (io.popen (.. "env XDG_CONFIG_HOME=" tmp " XDG_STATE_HOME=" tmp
-                                      " " FEN-CMD
-                                      " --extension extensions/adapters/providers/mock"
-                                      " --provider mock --model vendor/slashed-id --print hi 2>&1")))
-              out (p:read :*a)
-              (ok _why code) (p:close)]
-          (os.execute (.. "rm -rf " tmp))
-          ;; The mock catalog rejects the id, but it was validated whole
-          ;; against the explicit provider instead of being split into a
-          ;; `vendor` provider prefix.
-          (assert.are.equal 2 (if (= ok true) 0 code))
-          (assert.is_truthy (contains? out "unknown model: vendor/slashed-id for provider mock"))
-          (assert.is_false (contains? out "conflicts with")))))
-
-    (it "reads a prefix equal to the explicit --provider as canonical, keeping the rest whole"
-      (fn []
-        ;; `--provider P --model P/P/id` is how an upstream id that starts
-        ;; with its provider name (OpenRouter's `openrouter/auto`) is spelled,
-        ;; and what subagent children receive.
-        (let [tmp (os.tmpname)
-              _ (os.remove tmp)
-              _ (os.execute (.. "mkdir -p " tmp))
-              p (assert (io.popen (.. "env XDG_CONFIG_HOME=" tmp " XDG_STATE_HOME=" tmp
-                                      " " FEN-CMD
-                                      " --extension extensions/adapters/providers/mock"
-                                      " --provider mock --model mock/mock/auto --print hi 2>&1")))
-              out (p:read :*a)
-              (ok _why code) (p:close)]
-          (os.execute (.. "rm -rf " tmp))
-          (assert.are.equal 2 (if (= ok true) 0 code))
-          (assert.is_truthy (contains? out "unknown model: mock/auto for provider mock")))))
-
-    (it "routes `fen --help-all` to the exhaustive help with exit 0"
-      (fn []
-        (let [(out code) (run-main "--help-all")]
-          (assert.are.equal 0 code)
-          (assert.is_truthy (contains? out "--dev-path"))
-          (assert.is_truthy (contains? out "FEN_DEV_PATH"))
-          (assert.is_truthy (contains? out "Slash commands (interactive mode):")))))
-
-    (it "routes real subcommand --help invocations through main with exit 0"
-      (fn []
-        (each [_ scenario (ipairs [{:args "goal --help" :usage "fen goal [options] <objective>"}
-                                   {:args "list --help" :usage "fen list [surface]"}
-                                   {:args "show --help" :usage "fen show <surface> <name>"}
-                                   {:args "run --help" :usage "fen run [--lua|--fennel] <script>"}
-                                   {:args "providers --help" :usage "fen providers [name]"}])]
-          (let [(out code) (run-main scenario.args)]
-            (assert.are.equal 0 code)
-            (assert.is_truthy (contains? out scenario.usage))
-            (assert.is_truthy (contains? out "Exit codes"))
-            (assert.is_truthy (contains? out "Example:"))
-            (assert.is_false (contains? out "unknown discovery option: --help"))
-            (assert.is_false (contains? out "Slash commands (interactive mode):"))))))))
+          (fn []
+            (it "defines focused help for all issue-340 subcommands"
+                (fn []
+                  (each [_ name (ipairs [:goal :list :show :run :providers])]
+                    (let [out (cli-help.for-subcommand name)]
+                      (assert.is_not_nil out)
+                      (assert.is_truthy (contains? out
+                                                   (.. "fen " (tostring name))))
+                      (assert.is_truthy (contains? out "Usage:"))
+                      (assert.is_truthy (contains? out "Options:"))
+                      (assert.is_truthy (contains? out "Exit codes"))
+                      (assert.are.equal 1 (count-literal out "Example:"))
+                      (assert.is_false (contains? out
+                                                  "Slash commands (interactive mode):"))
+                      (assert.is_false (contains? out "Subcommands:"))))))
+            (it "documents the goal 0/2/1 exit-code contract prominently"
+                (fn []
+                  (let [out (cli-help.for-subcommand :goal)]
+                    (assert.is_truthy (contains? out
+                                                 "Exit codes (goal contract):"))
+                    (assert.is_truthy (contains? out "0  Done"))
+                    (assert.is_truthy (contains? out "2  Not done"))
+                    (assert.is_truthy (contains? out "1  Failure")))))
+            (it "uses focused run help from the script runner"
+                (fn []
+                  (let [out (runner.usage)]
+                    (assert.are.equal (cli-help.for-subcommand :run) out)
+                    (assert.is_truthy (contains? out
+                                                 "fen run [--lua|--fennel] <script> [args...]"))
+                    (assert.is_truthy (contains? out "--fennel"))
+                    (assert.is_truthy (contains? out
+                                                 "Script load/runtime failure")))))
+            (it "dispatches `fen providers --help` to focused providers help with exit 0"
+                (fn []
+                  (let [(out code) (provider-help.dispatch {0 "fen"
+                                                            1 :providers
+                                                            2 :--help})]
+                    (assert.are.equal 0 code)
+                    (assert.is_truthy (contains? out "Usage:"))
+                    (assert.is_truthy (contains? out "fen providers [name]"))
+                    (assert.is_truthy (contains? out "Exit codes:"))
+                    (assert.is_false (contains? out "fen provider setup")))))
+            (it "prefers focused providers help over a provider setup page when --help follows a name"
+                (fn []
+                  (let [(out code) (provider-help.dispatch {0 "fen"
+                                                            1 :providers
+                                                            2 :openai
+                                                            3 :--help})]
+                    (assert.are.equal 0 code)
+                    (assert.is_truthy (contains? out "fen providers [name]"))
+                    (assert.is_false (contains? out "fen provider: openai")))))
+            (it "renders the provider index for bare `fen providers` with exit 0"
+                (fn []
+                  (let [(out code) (provider-help.dispatch {0 "fen"
+                                                            1 :providers})]
+                    (assert.are.equal 0 code)
+                    (assert.are.equal (provider-help.render-index) out)
+                    (assert.is_truthy (contains? out "fen providers openai")))))
+            (it "exits 2 with the index for an unknown provider name"
+                (fn []
+                  (let [(out code) (provider-help.dispatch {0 "fen"
+                                                            1 :providers
+                                                            2 :nope})]
+                    (assert.are.equal 2 code)
+                    (assert.is_truthy (contains? out
+                                                 "unknown provider setup page: nope")))))
+            (it "still renders a named provider setup page without --help"
+                (fn []
+                  (let [(out code) (provider-help.dispatch {0 "fen"
+                                                            1 :providers
+                                                            2 :openai})]
+                    (assert.are.equal 0 code)
+                    (assert.is_truthy (contains? out "fen provider: openai")))))
+            (it "short top-level help is concise, example-rich, and free of internals"
+                (fn []
+                  (let [out (cli-help.top-level)]
+                    (assert.is_not_nil out)
+                    (assert.is_truthy (contains? out "Usage:"))
+                    (assert.is_truthy (contains? out "Examples:"))
+                    (assert.is_truthy (contains? out
+                                                 "Agent-oriented discovery:"))
+                    (assert.is_truthy (contains? out "fen <command> --help"))
+                    (assert.is_truthy (contains? out "fen --help-all"))
+                    (assert.is_truthy (contains? out
+                                                 "fen --no-session --tools read,grep,find,ls --print"))
+                    (assert.is_truthy (contains? out
+                                                 "fen goal --max-iterations 10"))
+                    (assert.is_truthy (contains? out
+                                                 "FEN_JSON_OUTPUT_PATH=out.json fen --presenter json --print"))
+                    (assert.is_truthy (contains? out
+                                                 "fen --provider openai-codex --model gpt-5.6-sol --print"))
+                    (assert.is_truthy (contains? out "fen --continue"))
+                    (assert.is_false (contains? out "--dev-path"))
+                    (assert.is_false (contains? out "--extension-root"))
+                    (assert.is_false (contains? out "FEN_DEV_PATH"))
+                    (assert.is_false (contains? out
+                                                "Slash commands (interactive mode):"))
+                    (assert.is_true (< (length out)
+                                       (length (cli-help.top-level-all)))))))
+            (it "exhaustive top-level help keeps launcher internals and env-var minutiae"
+                (fn []
+                  (let [out (cli-help.top-level-all)]
+                    (assert.is_not_nil out)
+                    (assert.is_truthy (contains? out "--dev-path"))
+                    (assert.is_truthy (contains? out "--extension-root"))
+                    (assert.is_truthy (contains? out "FEN_DEV_PATH"))
+                    (assert.is_truthy (contains? out "FEN_EXTENSION_ROOT"))
+                    (assert.is_truthy (contains? out
+                                                 "Slash commands (interactive mode):"))
+                    (assert.is_truthy (contains? out "Environment:"))
+                    (assert.is_truthy (contains? out "Subcommands:")))))
+            (it "recognizes --help-all"
+                (fn []
+                  (assert.is_truthy (cli-help.help-all? :--help-all))
+                  (assert.is_truthy (cli-help.help-all? "--help-all"))
+                  (assert.is_false (cli-help.help-all? :--help))))
+            (it "routes `fen --help` and `fen -h` to the short top-level help with exit 0"
+                (fn []
+                  (each [_ args (ipairs ["--help" "-h"])]
+                    (let [(out code) (run-main args)]
+                      (assert.are.equal 0 code)
+                      (assert.is_truthy (contains? out "Examples:"))
+                      (assert.is_truthy (contains? out "fen --help-all"))
+                      (assert.is_false (contains? out "--dev-path"))
+                      (assert.is_false (contains? out
+                                                  "Slash commands (interactive mode):"))))))
+            (it "rejects --presenter rpc combined with --print with exit 2"
+                (fn []
+                  (let [(out code) (run-main "--presenter rpc --print hi")]
+                    (assert.are.equal 2 code)
+                    (assert.is_truthy (contains? out "--presenter rpc"))
+                    (assert.is_truthy (contains? out "--print")))))
+            (it "keeps a slashed --model whole when an explicit --provider disagrees with its prefix"
+                (fn []
+                  (let [tmp (os.tmpname)
+                        _ (os.remove tmp)
+                        _ (os.execute (.. "mkdir -p " tmp))
+                        p (assert (io.popen (.. "env XDG_CONFIG_HOME=" tmp
+                                                " XDG_STATE_HOME=" tmp " "
+                                                FEN-CMD
+                                                " --extension extensions/adapters/providers/mock"
+                                                " --provider mock --model vendor/slashed-id --print hi 2>&1")))
+                        out (p:read :*a)
+                        (ok _why code) (p:close)]
+                    (os.execute (.. "rm -rf " tmp))
+                    ;; The mock catalog rejects the id, but it was validated whole
+                    ;; against the explicit provider instead of being split into a
+                    ;; `vendor` provider prefix.
+                    (assert.are.equal 2 (if (= ok true) 0 code))
+                    (assert.is_truthy (contains? out
+                                                 "unknown model: vendor/slashed-id for provider mock"))
+                    (assert.is_false (contains? out "conflicts with")))))
+            (it "reads a prefix equal to the explicit --provider as canonical, keeping the rest whole"
+                (fn []
+                  ;; `--provider P --model P/P/id` is how an upstream id that starts
+                  ;; with its provider name (OpenRouter's `openrouter/auto`) is spelled,
+                  ;; and what subagent children receive.
+                  (let [tmp (os.tmpname)
+                        _ (os.remove tmp)
+                        _ (os.execute (.. "mkdir -p " tmp))
+                        p (assert (io.popen (.. "env XDG_CONFIG_HOME=" tmp
+                                                " XDG_STATE_HOME=" tmp " "
+                                                FEN-CMD
+                                                " --extension extensions/adapters/providers/mock"
+                                                " --provider mock --model mock/mock/auto --print hi 2>&1")))
+                        out (p:read :*a)
+                        (ok _why code) (p:close)]
+                    (os.execute (.. "rm -rf " tmp))
+                    (assert.are.equal 2 (if (= ok true) 0 code))
+                    (assert.is_truthy (contains? out
+                                                 "unknown model: mock/auto for provider mock")))))
+            (it "routes `fen --help-all` to the exhaustive help with exit 0"
+                (fn []
+                  (let [(out code) (run-main "--help-all")]
+                    (assert.are.equal 0 code)
+                    (assert.is_truthy (contains? out "--dev-path"))
+                    (assert.is_truthy (contains? out "FEN_DEV_PATH"))
+                    (assert.is_truthy (contains? out
+                                                 "Slash commands (interactive mode):")))))
+            (it "routes real subcommand --help invocations through main with exit 0"
+                (fn []
+                  (each [_ scenario (ipairs [{:args "goal --help"
+                                              :usage "fen goal [options] <objective>"}
+                                             {:args "list --help"
+                                              :usage "fen list [surface]"}
+                                             {:args "show --help"
+                                              :usage "fen show <surface> <name>"}
+                                             {:args "run --help"
+                                              :usage "fen run [--lua|--fennel] <script>"}
+                                             {:args "providers --help"
+                                              :usage "fen providers [name]"}])]
+                    (let [(out code) (run-main scenario.args)]
+                      (assert.are.equal 0 code)
+                      (assert.is_truthy (contains? out scenario.usage))
+                      (assert.is_truthy (contains? out "Exit codes"))
+                      (assert.is_truthy (contains? out "Example:"))
+                      (assert.is_false (contains? out
+                                                  "unknown discovery option: --help"))
+                      (assert.is_false (contains? out
+                                                  "Slash commands (interactive mode):"))))))))

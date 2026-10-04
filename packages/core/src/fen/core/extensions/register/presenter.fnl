@@ -32,10 +32,10 @@
     (when (and tagged.active? (not state.ui.slot) tagged.ui)
       (set state.ui.slot tagged.ui))
     (handle-result :presenter spec.name owner
-      (fn []
-        (unregister)
-        (when (= state.ui.slot tagged.ui)
-          (M.promote-ui-slot!))))))
+                   (fn []
+                     (unregister)
+                     (when (= state.ui.slot tagged.ui)
+                       (M.promote-ui-slot!))))))
 
 ;; @doc fen.core.extensions.register.presenter.unregister-by-owner
 ;; kind: function
@@ -43,8 +43,7 @@
 ;; summary: Remove presenters installed by owner and promote the next active UI slot so extension APIs keep working after reload.
 ;; tags: extensions presenter reload
 (fn M.unregister-by-owner [owner]
-  (util.remove-where state.presenters
-                     (fn [p _] (= p.__owner owner)))
+  (util.remove-where state.presenters (fn [p _] (= p.__owner owner)))
   (M.promote-ui-slot!))
 
 (fn call-active-presenter [method ctx opts]
@@ -56,8 +55,9 @@
           (if (= (type f) :function)
               (pcall f ctx)
               opts.required?
-              (values false (.. "active presenter " (tostring p.name)
-                                " has no " (tostring method) " method"))
+              (values false
+                      (.. "active presenter " (tostring p.name) " has no "
+                          (tostring method) " method"))
               (values true nil))))))
 
 ;; @doc fen.core.extensions.register.presenter.init-active-presenter
@@ -85,23 +85,22 @@
   (call-active-presenter :run ctx {:required? true}))
 
 ;; No-presenter fallbacks: prompt/select log to stderr and return nil rather than block on stdin.
-(local FALLBACKS
-  {:notify (fn [text ?_opts]
-             (io.stderr:write (.. (tostring text) "\n")))
-   :prompt (fn [opts]
-             (let [opts (or opts {})]
-               (io.stderr:write
-                 (.. "fen: api.ui.prompt called with no active presenter"
-                    " (label: " (tostring (or opts.label "?"))
-                    "); returning nil\n"))
-               nil))
-   :select (fn [opts]
-             (let [opts (or opts {})]
-               (io.stderr:write
-                 (.. "fen: api.ui.select called with no active presenter"
-                    " (label: " (tostring (or opts.label "?"))
-                    "); returning nil\n"))
-               nil))})
+(local FALLBACKS {:notify (fn [text ?_opts]
+                            (io.stderr:write (.. (tostring text) "\n")))
+                  :prompt (fn [opts]
+                            (let [opts (or opts {})]
+                              (io.stderr:write (.. "fen: api.ui.prompt called with no active presenter"
+                                                   " (label: "
+                                                   (tostring (or opts.label "?"))
+                                                   "); returning nil\n"))
+                              nil))
+                  :select (fn [opts]
+                            (let [opts (or opts {})]
+                              (io.stderr:write (.. "fen: api.ui.select called with no active presenter"
+                                                   " (label: "
+                                                   (tostring (or opts.label "?"))
+                                                   "); returning nil\n"))
+                              nil))})
 
 (fn dispatch-ui [method ...]
   (if state.ui.slot
@@ -127,11 +126,14 @@
 (fn M.list []
   (let [out []]
     (each [_ p (ipairs state.presenters)]
-      (table.insert out {:name p.name :owner p.__owner :active? p.active?
-                         :idle-ticks? (not (not p.idle-ticks?))
-                         :has-init? (= (type p.init) :function)
-                         :has-run? (= (type p.run) :function)
-                         :has-shutdown? (= (type p.shutdown) :function)}))
+      (table.insert out
+                    {:name p.name
+                     :owner p.__owner
+                     :active? p.active?
+                     :idle-ticks? (not (not p.idle-ticks?))
+                     :has-init? (= (type p.init) :function)
+                     :has-run? (= (type p.run) :function)
+                     :has-shutdown? (= (type p.shutdown) :function)}))
     out))
 
 M

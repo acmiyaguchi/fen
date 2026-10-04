@@ -43,9 +43,7 @@
 ;; tags: types message
 ;; see-also: type:UserMessage
 (fn user-message [content]
-  {:role :user
-   :content content
-   :timestamp (now-ms)})
+  {:role :user :content content :timestamp (now-ms)})
 
 ;; @doc fen.core.types.assistant-message
 ;; kind: function
@@ -53,13 +51,23 @@
 ;; summary: Build a canonical AssistantMessage. Content defaults to []; usage and stop-reason fall back to safe defaults; error-message is set only when provided.
 ;; tags: types message assistant
 ;; see-also: type:AssistantMessage
-(fn assistant-message [{: content : api : provider : model : usage : stop-reason : error-message}]
+(fn assistant-message [{: content
+                        : api
+                        : provider
+                        : model
+                        : usage
+                        : stop-reason
+                        : error-message}]
   (let [m {:role :assistant
            :content (or content [])
            : api
            : provider
            : model
-           :usage (or usage {:input 0 :output 0 :cache-read 0 :cache-write 0 :total-tokens 0})
+           :usage (or usage {:input 0
+                             :output 0
+                             :cache-read 0
+                             :cache-write 0
+                             :total-tokens 0})
            :stop-reason (or stop-reason :stop)
            :timestamp (now-ms)}]
     (when error-message (set m.error-message error-message))
@@ -71,7 +79,11 @@
 ;; summary: Build a canonical ToolResultMessage. content is always an array; details is opaque presenter payload.
 ;; tags: types message tool-result
 ;; see-also: type:ToolResultMessage
-(fn tool-result-message [{: tool-call-id : tool-name : content : details : is-error?}]
+(fn tool-result-message [{: tool-call-id
+                          : tool-name
+                          : content
+                          : details
+                          : is-error?}]
   (let [m {:role :tool-result
            : tool-call-id
            : tool-name
@@ -83,11 +95,13 @@
 
 (fn assistant-error [api provider model error-message]
   "Convenience: build an AssistantMessage representing a transport/HTTP failure."
-  (assistant-message
-    {: api : provider : model
-     :content [(text-block (.. "[error] " (tostring error-message)))]
-     :stop-reason :error
-     : error-message}))
+  (assistant-message {: api
+                      : provider
+                      : model
+                      :content [(text-block (.. "[error] "
+                                                (tostring error-message)))]
+                      :stop-reason :error
+                      : error-message}))
 
 ;; @doc fen.core.types.INCOMPLETE-STREAM-MSG
 ;; kind: data

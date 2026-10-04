@@ -22,10 +22,9 @@
   "Strip execute/label → canonical Tool[] (the shape providers wrap)."
   (let [out []]
     (each [_ t (ipairs (or reg []))]
-      (table.insert out
-                    {:name t.name
-                     :description t.description
-                     :parameters t.parameters}))
+      (table.insert out {:name t.name
+                         :description t.description
+                         :parameters t.parameters}))
     out))
 
 (fn tool-error [tool-name thrown]
@@ -38,17 +37,14 @@
 
 (fn invalid-arguments-error [tool-name errors]
   (let [first (. errors 1)]
-    (err (.. "invalid arguments for " (tostring tool-name) ": "
-             first.field " " first.message)
-         {:kind :invalid-arguments
-          :tool-name tool-name
-          :errors errors})))
+    (err (.. "invalid arguments for " (tostring tool-name) ": " first.field " "
+             first.message)
+         {:kind :invalid-arguments :tool-name tool-name :errors errors})))
 
 (fn invalid-schema-error [tool-name thrown]
   (err (.. "cannot validate arguments for " (tostring tool-name)
            ": invalid tool schema: " (tostring thrown))
-       {:kind :invalid-tool-schema
-        :tool-name tool-name}))
+       {:kind :invalid-tool-schema :tool-name tool-name}))
 
 (fn call-tool [tool-name f ...]
   (let [(ok? result) (pcall f ...)]
@@ -71,8 +67,7 @@
   "Run allowlist and extension policy checks before schema validation."
   (let [restriction (restricted-tool? name ctx)]
     (if restriction
-        (blocked-error name
-                       (.. "restricted by " restriction)
+        (blocked-error name (.. "restricted by " restriction)
                        {:kind :tool-restricted
                         :tool-name name
                         :reason (.. "restricted by " restriction)
@@ -81,7 +76,8 @@
                           :arguments (shallow-copy (or args {}))
                           :tool tool
                           :cwd (or (?. ctx :cwd) (path.cwd))
-                          :source (or (?. ctx :source) (?. tool :__owner) :builtin)}
+                          :source (or (?. ctx :source) (?. tool :__owner)
+                                      :builtin)}
               decision (hook-registry.run-before-tool policy-ctx)]
           (when (and decision decision.block?)
             (blocked-error name decision.reason
@@ -113,14 +109,11 @@
         (let [blocked (check-before-tool name safe-args ctx t)]
           (if blocked
               blocked
-              (let [(validation-ok? valid? errors)
-                    (pcall json-schema.validate t.parameters safe-args)]
-                (if (not validation-ok?)
-                    (invalid-schema-error name valid?)
-                    (not valid?)
-                    (invalid-arguments-error name errors)
-                    ?yield-fn
-                    (t.execute safe-args ctx ?yield-fn)
+              (let [(validation-ok? valid? errors) (pcall json-schema.validate
+                                                          t.parameters safe-args)]
+                (if (not validation-ok?) (invalid-schema-error name valid?)
+                    (not valid?) (invalid-arguments-error name errors)
+                    ?yield-fn (t.execute safe-args ctx ?yield-fn)
                     (call-tool name t.execute safe-args ctx))))))))
 
 (fn scrub-text-block [block]
@@ -152,15 +145,15 @@
   "Execute one canonical ToolCall block and wrap the result as a
    ToolResultMessage. Cooperative when `?yield-fn` is passed."
   (let [started-at (os.time)
-        raw-result (execute reg tool-call.name tool-call.arguments ctx ?yield-fn)
+        raw-result (execute reg tool-call.name tool-call.arguments ctx
+                            ?yield-fn)
         result (scrub-result raw-result)
         duration-seconds (- (os.time) started-at)
-        msg (types.tool-result-message
-              {:tool-call-id tool-call.id
-               :tool-name tool-call.name
-               :content result.content
-               :is-error? result.is-error?
-               :details result.details})]
+        msg (types.tool-result-message {:tool-call-id tool-call.id
+                                        :tool-name tool-call.name
+                                        :content result.content
+                                        :is-error? result.is-error?
+                                        :details result.details})]
     {:message msg
      :result result
      :duration-seconds duration-seconds

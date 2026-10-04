@@ -27,15 +27,15 @@
 (fn strip-init [mod]
   (or (string.match mod "^(.+)%.init$") mod))
 
-(local EXCEPTIONS
-  {:fen.testing.pty true
-   :fen.testing.tui true
-   :fen.extensions.skills.bundled_data true})
+(local EXCEPTIONS {:fen.testing.pty true
+                   :fen.testing.tui true
+                   :fen.extensions.skills.bundled_data true})
 
 ;; Parse a rockspec (pure Lua data) in a sandbox and return its
 ;; build.install.lua table (module name -> path), or {} if absent.
 (fn declared-lua-modules [rockspec-path]
-  (let [src (assert (h.read-file rockspec-path) (.. "cannot read " rockspec-path))
+  (let [src (assert (h.read-file rockspec-path)
+                    (.. "cannot read " rockspec-path))
         env {}
         chunk (assert (load src rockspec-path :t env))]
     (chunk)
@@ -54,14 +54,13 @@
         (let [snake (manifest-name pkg-dir)
               rel (string.sub src (+ 2 (length pkg-dir)) -5)]
           (when (and snake (not (string.find rel "^src/")))
-            (strip-init (.. "fen.extensions." snake "." (string.gsub rel "/" "."))))))))
+            (strip-init (.. "fen.extensions." snake "."
+                            (string.gsub rel "/" "."))))))))
 
 (fn source-modules [pkg-dir]
   (let [cmd (.. "find " pkg-dir " -name '*.fnl' -type f"
-                " -not -path '*/tests/*'"
-                " -not -path '*/dist/*'"
-                " -not -path '*/vendor/*'"
-                " -not -path '*/.lrbuild/*'")
+                " -not -path '*/tests/*'" " -not -path '*/dist/*'"
+                " -not -path '*/vendor/*'" " -not -path '*/.lrbuild/*'")
         mods {}]
     (each [_ src (ipairs (popen-lines cmd))]
       (let [mod (source-module src pkg-dir)]
@@ -71,14 +70,13 @@
 
 ;; Discover every rockspec and resolve its (declared, sources) pair once, so
 ;; the forward and reverse checks below share the find/read work.
-(local packages
-  (let [out []]
-    (each [_ rs (ipairs (popen-lines "find packages extensions -name '*.rockspec' -type f | sort"))]
-      (table.insert out
-        {:rs rs
-         :declared (declared-lua-modules rs)
-         :sources (source-modules (path.dirname rs))}))
-    out))
+(local packages (let [out []]
+                  (each [_ rs (ipairs (popen-lines "find packages extensions -name '*.rockspec' -type f | sort"))]
+                    (table.insert out
+                                  {:rs rs
+                                   :declared (declared-lua-modules rs)
+                                   :sources (source-modules (path.dirname rs))}))
+                  out))
 
 ;; Collect drift across all packages: for each (mod -> v) in `pick pkg`, flag it
 ;; when absent from `lookup pkg` and not exempt. `msg` formats the report line.
@@ -91,24 +89,24 @@
     (doto problems (table.sort))))
 
 (describe "rockspec install lists match source modules"
-  (fn []
-    (it "discovers rockspecs to validate"
-      (fn []
-        (assert.is_true (> (length packages) 0)
-                        "expected to find at least one .rockspec")))
-
-    ;; Forward: every source module must be declared (the #164 bug class).
-    (it "declares every source module (no omitted modules)"
-      (fn []
-        (assert.are.same []
-          (drift #(. $1 :sources) #(. $1 :declared)
-                 (fn [pkg mod src]
-                   (.. pkg.rs ": missing install entry for " mod
-                       " (source " src ")"))))))
-
-    (it "has a source for every declared module (no stale entries)"
-      (fn []
-        (assert.are.same []
-          (drift #(. $1 :declared) #(. $1 :sources)
-                 (fn [pkg mod _]
-                   (.. pkg.rs ": install entry " mod " has no .fnl source"))))))))
+          (fn []
+            (it "discovers rockspecs to validate"
+                (fn []
+                  (assert.is_true (> (length packages) 0)
+                                  "expected to find at least one .rockspec")))
+            ;; Forward: every source module must be declared (the #164 bug class).
+            (it "declares every source module (no omitted modules)"
+                (fn []
+                  (assert.are.same []
+                                   (drift #(. $1 :sources) #(. $1 :declared)
+                                          (fn [pkg mod src]
+                                            (.. pkg.rs
+                                                ": missing install entry for "
+                                                mod " (source " src ")"))))))
+            (it "has a source for every declared module (no stale entries)"
+                (fn []
+                  (assert.are.same []
+                                   (drift #(. $1 :declared) #(. $1 :sources)
+                                          (fn [pkg mod _]
+                                            (.. pkg.rs ": install entry " mod
+                                                " has no .fnl source"))))))))

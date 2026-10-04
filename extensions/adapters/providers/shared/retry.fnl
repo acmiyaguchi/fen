@@ -35,25 +35,35 @@
 ;; failures; deliberately excluded examples include CURLE_COULDNT_RESOLVE_HOST
 ;; (6) and CURLE_PEER_FAILED_VERIFICATION (60), which are usually persistent
 ;; configuration/environment failures.
-(local TRANSIENT-CURL-CODES
-  {7 true    ; CURLE_COULDNT_CONNECT
-   16 true   ; CURLE_HTTP2
-   18 true   ; CURLE_PARTIAL_FILE
-   28 true   ; CURLE_OPERATION_TIMEDOUT
-   35 true   ; CURLE_SSL_CONNECT_ERROR
-   52 true   ; CURLE_GOT_NOTHING
-   55 true   ; CURLE_SEND_ERROR
-   56 true   ; CURLE_RECV_ERROR
-   92 true}) ; CURLE_HTTP2_STREAM
+(local TRANSIENT-CURL-CODES {7 true
+                             ; CURLE_COULDNT_CONNECT
+                             16 true
+                             ; CURLE_HTTP2
+                             18 true
+                             ; CURLE_PARTIAL_FILE
+                             28 true
+                             ; CURLE_OPERATION_TIMEDOUT
+                             35 true
+                             ; CURLE_SSL_CONNECT_ERROR
+                             52 true
+                             ; CURLE_GOT_NOTHING
+                             55 true
+                             ; CURLE_SEND_ERROR
+                             56 true
+                             ; CURLE_RECV_ERROR
+                             92 true})
+
+; CURLE_HTTP2_STREAM
 
 (fn transient-curl-code? [curl-code]
   (let [code (tonumber curl-code)]
-    (if (and code (. TRANSIENT-CURL-CODES code)) true false)))
+    (if (and code (. TRANSIENT-CURL-CODES code))
+        true
+        false)))
 
 (fn transient? [status err-message ?curl-code]
   "True when a provider HTTP/transport failure is worth retrying."
-  (if (or (= status 429)
-          (and status (>= status 500) (< status 600))
+  (if (or (= status 429) (and status (>= status 500) (< status 600))
           (and (not status) (transient-curl-code? ?curl-code)))
       true
       false))
@@ -68,17 +78,26 @@
           (set out v)))))
   out)
 
-(local MONTHS {:Jan 1 :Feb 2 :Mar 3 :Apr 4 :May 5 :Jun 6
-               :Jul 7 :Aug 8 :Sep 9 :Oct 10 :Nov 11 :Dec 12})
+(local MONTHS {:Jan 1
+               :Feb 2
+               :Mar 3
+               :Apr 4
+               :May 5
+               :Jun 6
+               :Jul 7
+               :Aug 8
+               :Sep 9
+               :Oct 10
+               :Nov 11
+               :Dec 12})
 
 (fn parse-http-date [s]
   ;; Parse the common IMF-fixdate form: "Wed, 21 Oct 2015 07:28:00 GMT".
   ;; Lua has os.time (local time) but no portable timegm; this is still useful
   ;; for the overwhelmingly common relative comparison, and falls back to
   ;; exponential backoff when the date shape is not recognized.
-  (let [(day mon year hour min sec)
-        (string.match (tostring (or s ""))
-                      "^%a%a%a,%s+(%d%d?)%s+(%a%a%a)%s+(%d%d%d%d)%s+(%d%d):(%d%d):(%d%d)%s+GMT$")]
+  (let [(day mon year hour min sec) (string.match (tostring (or s ""))
+                                                  "^%a%a%a,%s+(%d%d?)%s+(%a%a%a)%s+(%d%d%d%d)%s+(%d%d):(%d%d):(%d%d)%s+GMT$")]
     (when (and day mon year hour min sec (. MONTHS mon))
       (let [target (os.time {:year (tonumber year)
                              :month (. MONTHS mon)
@@ -95,12 +114,11 @@
                (header headers "retry-after-ms"))
         seconds (or (header headers :retry-after)
                     (header headers "retry-after"))]
-    (if (and ms (tonumber ms))
-        (math.max 0 (math.floor (tonumber ms)))
-        (and seconds (tonumber seconds))
-        (math.max 0 (math.floor (* (tonumber seconds) 1000)))
-        seconds
-        (parse-http-date seconds)
+    (if (and ms (tonumber ms)) (math.max 0 (math.floor (tonumber ms)))
+        (and seconds (tonumber seconds)) (math.max 0
+                                                   (math.floor (* (tonumber seconds)
+                                                                  1000)))
+        seconds (parse-http-date seconds)
         nil)))
 
 (fn backoff-delay [attempt base-ms max-ms]
@@ -115,10 +133,8 @@
         (math.random 0 (math.floor cap)))))
 
 (fn reason [resp]
-  (if resp.error
-      (.. "curl: " (tostring resp.error))
-      resp.status
-      (.. "HTTP " (tostring resp.status))
+  (if resp.error (.. "curl: " (tostring resp.error))
+      resp.status (.. "HTTP " (tostring resp.status))
       "unknown"))
 
 (fn default-sleep-ms [delay-ms ?yield!]
@@ -148,14 +164,15 @@
    with-retry treats it like a transient transport failure. The caller owns the
    provider stream state and passes the incompleteness decision. Returns resp so
    it can wrap the make-request tail call."
-  (when (and incomplete? resp (not resp.error)
-             resp.status (<= 200 resp.status) (< resp.status 300))
+  (when (and incomplete? resp (not resp.error) resp.status (<= 200 resp.status)
+             (< resp.status 300))
     (set resp.retry-incomplete-stream true))
   resp)
 
 (fn retryable-response? [resp]
-  (and resp (or (. resp :retry-incomplete-stream)
-                (transient? resp.status resp.error (. resp :curl-code)))))
+  (and resp
+       (or (. resp :retry-incomplete-stream)
+           (transient? resp.status resp.error (. resp :curl-code)))))
 
 (fn options [provider ?opts ?on-event]
   "Build with-retry options shared by provider adapters.
@@ -197,7 +214,8 @@
       (let [resp (make-request attempt)]
         (if (and (< attempt max-attempts) (retryable-response? resp))
             (let [delay (or (parse-retry-after resp.headers)
-                            (backoff-delay attempt o.base-delay-ms o.max-delay-ms))]
+                            (backoff-delay attempt o.base-delay-ms
+                                           o.max-delay-ms))]
               (when o.on-retry
                 (o.on-retry {:attempt (+ attempt 1)
                              :failed-attempt attempt

@@ -12,11 +12,8 @@
 
 (fn M.failed? [ok? messages]
   (let [assistant (M.last-assistant messages)]
-    (or (not ok?)
-        (not assistant)
-        (= assistant.stop-reason :error)
-        (= assistant.stop-reason :tool-use)
-        (= assistant.stop-reason :aborted))))
+    (or (not ok?) (not assistant) (= assistant.stop-reason :error)
+        (= assistant.stop-reason :tool-use) (= assistant.stop-reason :aborted))))
 
 (fn M.sum-usage [messages]
   (let [total {}]

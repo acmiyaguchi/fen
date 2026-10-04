@@ -27,23 +27,21 @@
 ;; it only the decide good-moment answer compacts early.
 (local SOFT-WINDOW-RATIO 0.8)
 
-(local BASE-COMPACT-PROMPT
-  (table.concat
-    ["Create a compact summary of the earlier part of this coding-agent session."
-     ""
-     "This summary will replace the old messages in the active model context."
-     "Preserve facts needed to continue the current work."
-     ""
-     "Include:"
-     "- the user's goal and current status"
-     "- decisions already made"
-     "- files inspected or changed, with paths"
-     "- commands/tests run and their results"
-     "- constraints, gotchas, and preferences"
-     "- concrete next steps"
-     ""
-     "Write only the compact summary. Be concise but complete enough that the session can continue without the old messages."]
-    "\n"))
+(local BASE-COMPACT-PROMPT (table.concat ["Create a compact summary of the earlier part of this coding-agent session."
+                                          ""
+                                          "This summary will replace the old messages in the active model context."
+                                          "Preserve facts needed to continue the current work."
+                                          ""
+                                          "Include:"
+                                          "- the user's goal and current status"
+                                          "- decisions already made"
+                                          "- files inspected or changed, with paths"
+                                          "- commands/tests run and their results"
+                                          "- constraints, gotchas, and preferences"
+                                          "- concrete next steps"
+                                          ""
+                                          "Write only the compact summary. Be concise but complete enough that the session can continue without the old messages."]
+                                         "\n"))
 
 (local trim (. (require :fen.util.text) :trim))
 
@@ -57,12 +55,10 @@
   (let [guidance (trim guidance)]
     (if (= guidance "")
         BASE-COMPACT-PROMPT
-        (table.concat
-          [BASE-COMPACT-PROMPT
-           ""
-           "Additional user guidance for this compaction:"
-           guidance]
-          "\n"))))
+        (table.concat [BASE-COMPACT-PROMPT
+                       ""
+                       "Additional user guidance for this compaction:"
+                       guidance] "\n"))))
 
 (fn content-text [content]
   (if (= (type content) :string)
@@ -81,14 +77,13 @@
 
 (fn serialize-message [m]
   (.. (string.upper (tostring (or m.role :unknown))) ":\n"
-      (content-text m.content)
-      (if (= m.role :tool-result)
-          (.. "\n[tool-result for " (tostring m.tool-name) "]")
-          "")))
+      (content-text m.content) (if (= m.role :tool-result)
+                                  (.. "\n[tool-result for "
+                                      (tostring m.tool-name) "]")
+                                  "")))
 
 (fn message-tokens [m]
-  (+ (tokens.approx-tokens m.role)
-     (tokens.content-tokens m.content)
+  (+ (tokens.approx-tokens m.role) (tokens.content-tokens m.content)
      (if (= m.role :tool-result)
          (tokens.approx-tokens m.tool-name)
          0)))
@@ -139,9 +134,8 @@
     out))
 
 (fn summary-message [summary]
-  (types.user-message
-    (.. "Compaction summary of earlier fen session context. Use this as context for the continuing conversation; do not ask me to restate it.\n\n"
-        summary)))
+  (types.user-message (.. "Compaction summary of earlier fen session context. Use this as context for the continuing conversation; do not ask me to restate it.\n\n"
+                          summary)))
 
 (fn prepare-compaction [agent keep-recent-tokens]
   (let [messages (or agent.messages [])
@@ -164,9 +158,10 @@
     (table.insert body "Messages to summarize:")
     (each [i m (ipairs messages)]
       (table.insert body (.. "\n--- message " i " ---\n" (serialize-message m))))
-    (let [asst (agent-mod.complete-messages
-                 agent [(types.user-message (table.concat body "\n"))]
-                 nil nil nil ?yield!)
+    (let [asst (agent-mod.complete-messages agent
+                                            [(types.user-message (table.concat body
+                                                                               "\n"))]
+                                            nil nil nil ?yield!)
           summary (types.assistant-text asst)]
       (when (= asst.stop-reason :error)
         (error (or asst.error-message summary "compaction model call failed")))
@@ -192,8 +187,10 @@
 
 (fn finish-compact! [api run-state guidance trigger ?yield! ?emit-error?]
   (if (not (and run-state run-state.session-backend run-state.session
-                    (. run-state.session-backend :append-entry)))
-      (compact-error api "/compact requires a session backend with append-entry support" ?emit-error?)
+                (. run-state.session-backend :append-entry)))
+      (compact-error api
+                     "/compact requires a session backend with append-entry support"
+                     ?emit-error?)
       (let [plan (prepare-compaction run-state.agent DEFAULT-KEEP-RECENT-TOKENS)]
         (if (not plan)
             (compact-error api "not enough context to compact" ?emit-error?)
@@ -204,15 +201,20 @@
               (when run-state.flush (run-state.flush))
               (let [first-kept-entry-id (. plan.first-kept :__session-entry-id)]
                 (if (not first-kept-entry-id)
-                    (compact-error api "cannot compact: kept message has no session entry id" ?emit-error?)
+                    (compact-error api
+                                   "cannot compact: kept message has no session entry id"
+                                   ?emit-error?)
                     (do
                       (api.emit {:type :llm-start})
-                      (let [(span dropped) (decide-compaction.rate-tool-results
-                                              run-state.agent.messages plan.summarize ?yield!)
-                            (summary usage) (summarize run-state.agent span guidance ?yield!)
+                      (let [(span dropped) (decide-compaction.rate-tool-results run-state.agent.messages
+                                                                                plan.summarize
+                                                                                ?yield!)
+                            (summary usage) (summarize run-state.agent span
+                                                       guidance ?yield!)
                             msg (summary-message summary)
                             new-messages []
-                            append-entry (. run-state.session-backend :append-entry)]
+                            append-entry (. run-state.session-backend
+                                            :append-entry)]
                         (table.insert new-messages msg)
                         (each [_ m (ipairs plan.kept)]
                           (table.insert new-messages m))
@@ -225,21 +227,22 @@
                                        :tool-results-dropped dropped
                                        :guidance (trim guidance)
                                        :trigger trigger}
-                              entry (append-entry
-                                      run-state.session
-                                      {:type :compaction
-                                       :summary summary
-                                       :first-kept-entry-id first-kept-entry-id
-                                       :tokens-before plan.tokens-before
-                                       :tokens-after tokens-after
-                                       :guidance details.guidance
-                                       :trigger trigger})]
+                              entry (append-entry run-state.session
+                                                  {:type :compaction
+                                                   :summary summary
+                                                   :first-kept-entry-id first-kept-entry-id
+                                                   :tokens-before plan.tokens-before
+                                                   :tokens-after tokens-after
+                                                   :guidance details.guidance
+                                                   :trigger trigger})]
                           (api.emit {:type :llm-end :usage usage})
                           (if entry
                               (do
-                                (replace-agent-messages! run-state.agent new-messages)
+                                (replace-agent-messages! run-state.agent
+                                                         new-messages)
                                 (set run-state.flush
-                                     (run-state.make-flush run-state.agent run-state.session
+                                     (run-state.make-flush run-state.agent
+                                                           run-state.session
                                                            (length run-state.agent.messages)))
                                 (let [event {}]
                                   (each [k v (pairs details)] (tset event k v))
@@ -249,23 +252,29 @@
                                 (api.emit {:type :set-status-info
                                            :info {:approx-context tokens-after}})
                                 (values true details))
-                              (compact-error api "failed to write compaction entry" ?emit-error?))))))))))))
+                              (compact-error api
+                                             "failed to write compaction entry"
+                                             ?emit-error?))))))))))))
 
 (fn start-compact! [api run-state args trigger]
   (set run-state.cancel-requested? false)
   (set run-state.turn
-       (coroutines.create
-         (fn []
-           (let [(ok? err) (xpcall #(finish-compact! api run-state (trim args) trigger
-                                                      (make-yield run-state) true)
-                                   #(if (= $1 CANCEL-MARKER)
-                                      $1
-                                      (debug.traceback (tostring $1) 2)))]
-             (when (not ok?)
-               (api.emit {:type :llm-end :usage nil})
-               (if (= err CANCEL-MARKER)
-                   (api.emit {:type :cancelled})
-                   (error err)))))))
+       (coroutines.create (fn []
+                            (let [(ok? err) (xpcall #(finish-compact! api
+                                                                      run-state
+                                                                      (trim args)
+                                                                      trigger
+                                                                      (make-yield run-state)
+                                                                      true)
+                                                    #(if (= $1 CANCEL-MARKER)
+                                                         $1
+                                                         (debug.traceback (tostring $1)
+                                                                          2)))]
+                              (when (not ok?)
+                                (api.emit {:type :llm-end :usage nil})
+                                (if (= err CANCEL-MARKER)
+                                    (api.emit {:type :cancelled})
+                                    (error err)))))))
   (set run-state.busy? true))
 
 ;; Per-instance auto-compaction bookkeeping; a reload starts fresh.
@@ -276,7 +285,8 @@
 
 (fn auto-threshold [api]
   (let [(ok? s) (pcall api.settings.extension)
-        n (when (and ok? (= (type s) :table)) s.autoCompactTokens)]
+        n (when (and ok? (= (type s) :table))
+            s.autoCompactTokens)]
     (when (and (= (type n) :number) (> n 0))
       n)))
 
@@ -296,8 +306,7 @@
         agent st.agent]
     (when (and threshold agent)
       (let [n (messages-tokens agent.messages)]
-        (when (and (>= n (* SOFT-WINDOW-RATIO threshold))
-                   st.session
+        (when (and (>= n (* SOFT-WINDOW-RATIO threshold)) st.session
                    (?. st :session-backend :append-entry)
                    (prepare-compaction agent DEFAULT-KEEP-RECENT-TOKENS))
           (values n threshold))))))
@@ -312,9 +321,10 @@
   (when (and (compact-loaded?) (idle? st) (same-turn? st key))
     (let [(n threshold) (auto-position api st)]
       (when (and n (< n threshold))
-        (start-auto! api st (.. "compact: good moment at ~" (tokens.fmt-tokens n)
-                                " of " (tokens.fmt-tokens threshold)
-                                " tokens; compacting early"))))))
+        (start-auto! api st
+                     (.. "compact: good moment at ~" (tokens.fmt-tokens n)
+                         " of " (tokens.fmt-tokens threshold)
+                         " tokens; compacting early"))))))
 
 (fn evaluate-turn! [api st key]
   (when (not (and auto.evaluated (same-turn? auto.evaluated key)))
@@ -323,12 +333,13 @@
       (if (not n)
           nil
           (>= n threshold)
-          (start-auto! api st (.. "compact: context ~" (tokens.fmt-tokens n)
-                                  " reached autoCompactTokens " (tokens.fmt-tokens threshold)
-                                  "; compacting"))
-          (decide-compaction.ask-good-moment!
-            st.agent.messages
-            (fn [] (on-good-moment api st key)))))))
+          (start-auto! api st
+                       (.. "compact: context ~" (tokens.fmt-tokens n)
+                           " reached autoCompactTokens "
+                           (tokens.fmt-tokens threshold) "; compacting"))
+          (decide-compaction.ask-good-moment! st.agent.messages
+                                              (fn []
+                                                (on-good-moment api st key)))))))
 
 (fn on-turn-complete [ev]
   ;; A deliberate cancel is not a moment to start background model work.
@@ -352,9 +363,9 @@
                             (when (not ok?)
                               (set yield-error value)
                               (error value)))))
-          (ran? ok? value) (xpcall #(finish-compact! api run-state guidance :agent
-                                                     tool-yield! false)
-                                    (fn [err] err))]
+          (ran? ok? value) (xpcall #(finish-compact! api run-state guidance
+                                                     :agent tool-yield! false)
+                                   (fn [err] err))]
       (if (not ran?)
           (do
             (api.emit {:type :llm-end :usage nil})
@@ -364,31 +375,30 @@
                 (error ok?)
                 (tool-result (.. "compaction failed: " (tostring ok?)) true)))
           ok?
-          (tool-result
-            (.. "Compacted context from ~" value.tokens-before
-                " to ~" value.tokens-after " tokens.")
-            false value)
+          (tool-result (.. "Compacted context from ~" value.tokens-before
+                           " to ~" value.tokens-after " tokens.")
+                       false value)
           (tool-result value true)))))
 
 (fn register! [api]
   (api.register :command
-    {:name :compact
-     :order 26
-     :description "Summarize older context and keep recent messages in this session"
-     :idle-only? true
-     :handler (fn [args state]
-                (start-compact! api state args :manual))})
+                {:name :compact
+                 :order 26
+                 :description "Summarize older context and keep recent messages in this session"
+                 :idle-only? true
+                 :handler (fn [args state]
+                            (start-compact! api state args :manual))})
   (api.register :tool
-    {:name :compact
-     :label "Compact"
-     :exposure :search
-     :snippet "Summarize older context and keep recent messages"
-     :description "Compact this session's model context when it is becoming too large. Summarizes older messages, keeps recent messages verbatim, and persists the compaction for session resume. Call only when substantial context can be discarded; do not call repeatedly or on short sessions."
-     :parameters {:type :object
-                  :properties {:guidance {:type :string
-                                          :description "Optional instructions about facts, files, or progress the summary must preserve."}}}
-     :execute (fn [args ctx ?yield!]
-                (execute-tool api args ctx ?yield!))})
+                {:name :compact
+                 :label "Compact"
+                 :exposure :search
+                 :snippet "Summarize older context and keep recent messages"
+                 :description "Compact this session's model context when it is becoming too large. Summarizes older messages, keeps recent messages verbatim, and persists the compaction for session resume. Call only when substantial context can be discarded; do not call repeatedly or on short sessions."
+                 :parameters {:type :object
+                              :properties {:guidance {:type :string
+                                                      :description "Optional instructions about facts, files, or progress the summary must preserve."}}}
+                 :execute (fn [args ctx ?yield!]
+                            (execute-tool api args ctx ?yield!))})
   (api.on :agent-turn-complete on-turn-complete)
   (api.on :runtime-tick (fn [_ev] (on-runtime-tick api)))
   true)

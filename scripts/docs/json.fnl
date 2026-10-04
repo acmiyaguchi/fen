@@ -9,14 +9,12 @@
 (local M {})
 
 (fn is-array [t]
-  (let [n (# t)]
+  (let [n (length t)]
     (var ok? true)
     (var keys 0)
     (each [k _ (pairs t)]
       (set keys (+ keys 1))
-      (when (or (not (= (type k) "number"))
-                (< k 1)
-                (> k n)
+      (when (or (not (= (type k) "number")) (< k 1) (> k n)
                 (not (= k (math.floor k))))
         (set ok? false)))
     (and ok? (= keys n) (> n 0))))
@@ -35,18 +33,14 @@
         out (string.gsub out "\r" "\\r")
         out (string.gsub out "\t" "\\t")
         out (string.gsub out "[%c]"
-                          (fn [c] (string.format "\\u%04x" (string.byte c))))]
+                         (fn [c] (string.format "\\u%04x" (string.byte c))))]
     out))
 
 (fn encode-value [v]
   (let [t (type v)]
-    (if (= v nil) "null"
-        (= t "boolean") (if v "true" "false")
-        (= t "number") (tostring v)
-        (= t "string") (.. "\"" (escape v) "\"")
-        (= t "table")
-        (if (empty-table? v) "{}"
-            (is-array v)
+    (if (= v nil) "null" (= t "boolean") (if v "true" "false") (= t "number")
+        (tostring v) (= t "string") (.. "\"" (escape v) "\"") (= t "table")
+        (if (empty-table? v) "{}" (is-array v)
             (let [parts []]
               (each [_ x (ipairs v)]
                 (table.insert parts (encode-value x)))
@@ -59,7 +53,7 @@
               (each [_ k (ipairs keys)]
                 (let [val (. v k)]
                   (table.insert parts
-                    (.. "\"" (escape k) "\":" (encode-value val)))))
+                                (.. "\"" (escape k) "\":" (encode-value val)))))
               (.. "{" (table.concat parts ",") "}")))
         (error (.. "json: unsupported type " t)))))
 

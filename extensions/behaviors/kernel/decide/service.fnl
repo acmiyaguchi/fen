@@ -39,8 +39,8 @@
 ;; summary: Whether the decide extension is currently loaded, resolved at call time from the loader's status record; false after it is disabled on /reload.
 ;; tags: decide service extensions
 (fn M.enabled? []
-  (and (not= store.api nil)
-       (= (?. ext-state.extensions :decide :status) :loaded)))
+  (and (not= store.api nil) (= (?. ext-state.extensions :decide :status)
+                               :loaded)))
 
 (fn log! [level msg]
   (when store.api
@@ -55,22 +55,17 @@
     s))
 
 (fn string-map? [t]
-  (and (= (type t) :table)
-       (not= (next t) nil)
+  (and (= (type t) :table) (not= (next t) nil)
        (accumulate [ok? true k v (pairs t)]
          (and ok? (= (type k) :string) (= (type v) :string)))))
 
 (fn valid-question? [q]
-  (and (= (type q) :table)
-       (or (= q.type :noul) (= q.type :choice))
-       (nonblank q.instructions)
-       (string-map? q.criteria)
-       (or (not= q.type :noul)
-           (and (. q.criteria :true) (. q.criteria :false)))))
+  (and (= (type q) :table) (or (= q.type :noul) (= q.type :choice))
+       (nonblank q.instructions) (string-map? q.criteria)
+       (or (not= q.type :noul) (and (. q.criteria :true) (. q.criteria :false)))))
 
 (fn valid-questions? [questions]
-  (and (= (type questions) :table)
-       (not= (next questions) nil)
+  (and (= (type questions) :table) (not= (next questions) nil)
        (accumulate [ok? true id q (pairs questions)]
          (and ok? (= (type id) :string) (valid-question? q)))))
 
@@ -102,10 +97,8 @@
                         (set yield-error {:value err})
                         (error err 0)))))
         (ok? resp) (pcall jev.post body key timeout-ms wrapped)]
-    (if ok?
-        resp
-        yield-error
-        (error yield-error.value 0)
+    (if ok? resp
+        yield-error (error yield-error.value 0)
         {:error (tostring resp)})))
 
 ;; @doc fen.extensions.decide.service.ask
@@ -117,29 +110,39 @@
   (if (not (M.enabled?))
       nil
       (not (valid-questions? questions))
-      (fail :warn "decide: invalid questions; each needs :type :noul|:choice, :instructions, and string :criteria (noul: true/false)")
+      (fail :warn
+            "decide: invalid questions; each needs :type :noul|:choice, :instructions, and string :criteria (noul: true/false)")
       (let [key (api-key)]
         (if (not key)
-            (fail :warn "decide: no OpenRouter API key (the openrouter provider's OPENROUTER_API_KEY)")
+            (fail :warn
+                  "decide: no OpenRouter API key (the openrouter provider's OPENROUTER_API_KEY)")
             (let [settings (read-settings)
-                  (encoded? body) (pcall jev.encode-request settings.model state questions)]
+                  (encoded? body) (pcall jev.encode-request settings.model
+                                         state questions)]
               (if (not encoded?)
-                  (fail :warn (.. "decide: state is not JSON-encodable: " (tostring body)))
+                  (fail :warn
+                        (.. "decide: state is not JSON-encodable: "
+                            (tostring body)))
                   (> (length body) M.max-request-bytes)
-                  (fail :debug (.. "decide: skipped a " (length body) "-byte request over the "
-                                   M.max-request-bytes "-byte guard"))
+                  (fail :debug
+                        (.. "decide: skipped a " (length body)
+                            "-byte request over the " M.max-request-bytes
+                            "-byte guard"))
                   (let [started (clock.monotonic-ms)
-                        resp (post! body key settings.timeout-ms (?. ?opts :yield))
+                        resp (post! body key settings.timeout-ms
+                                    (?. ?opts :yield))
                         (answers info) (jev.parse-response resp questions)]
                     (if answers
                         (do
-                          (log! :debug {:event :decision
-                                        :model settings.model
-                                        :elapsed-ms (- (clock.monotonic-ms) started)
-                                        :request-bytes (length body)
-                                        :usage (when (= (type info) :table) info)})
+                          (log! :debug
+                                {:event :decision
+                                 :model settings.model
+                                 :elapsed-ms (- (clock.monotonic-ms) started)
+                                 :request-bytes (length body)
+                                 :usage (when (= (type info) :table) info)})
                           answers)
-                        (fail (if (?. resp :error) :debug :warn) (.. "decide: " (tostring info)))))))))))
+                        (fail (if (?. resp :error) :debug :warn)
+                              (.. "decide: " (tostring info)))))))))))
 
 ;; @doc fen.extensions.decide.service.ask-async!
 ;; kind: function
@@ -150,8 +153,9 @@
   (if (not (M.enabled?))
       (on-done nil)
       (table.insert store.tasks
-                    {:co (coroutines.create
-                           (fn [] (M.ask state questions {:yield coroutine.yield})))
+                    {:co (coroutines.create (fn []
+                                              (M.ask state questions
+                                                     {:yield coroutine.yield})))
                      :on-done on-done}))
   nil)
 
@@ -178,8 +182,9 @@
       (each [_ task (ipairs tasks)]
         (let [(ok? value) (coroutine.resume task.co)]
           (if (not ok?)
-              (do (log! :warn (.. "decide: task failed: " (tostring value)))
-                  (finish! task nil))
+              (do
+                (log! :warn (.. "decide: task failed: " (tostring value)))
+                (finish! task nil))
               (= (coroutine.status task.co) :dead)
               (finish! task value)
               (table.insert store.tasks task)))))))

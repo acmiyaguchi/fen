@@ -8,8 +8,7 @@
     (if (and n (> n 0)) n fallback)))
 
 (fn start-from-environment! []
-  (when (and (= (os.getenv :FEN_PROFILE) "1")
-             (not state.env-started?))
+  (when (and (= (os.getenv :FEN_PROFILE) "1") (not state.env-started?))
     (set state.env-started? true)
     (state.start! {:period (env-number :FEN_PROFILE_PERIOD 25000)
                    :wall-gap-ms (env-number :FEN_PROFILE_WALL_GAP_MS 25)})))

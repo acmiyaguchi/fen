@@ -6,14 +6,12 @@
 ;; currently uses the ids/default here and leaves richer catalog metadata out
 ;; of the provider spec.
 
-(local sakana-responses (require :fen.extensions.provider_sakana.sakana_responses))
+(local sakana-responses
+       (require :fen.extensions.provider_sakana.sakana_responses))
 
 ;; Sakana's published model catalog. Order matters: the first entry is the
 ;; provider default when no `--model` / saved model is given.
-(local MODELS
-  [{:id :fugu-ultra}
-   {:id :fugu}
-   {:id :fugu-ultra-20260615}])
+(local MODELS [{:id :fugu-ultra} {:id :fugu} {:id :fugu-ultra-20260615}])
 
 (fn provider-spec [provider name default-model api-key-var models]
   (let [spec {}]
@@ -27,14 +25,12 @@
 (local M {})
 
 (fn M.register [api]
-
-;; @doc register-site:provider:sakana
-;; summary: Sakana AI Responses provider using SAKANA_API_KEY and the default fugu-ultra model.
-;; tags: provider sakana responses
-(api.register :provider
-              (provider-spec sakana-responses :sakana :fugu-ultra
-                             :SAKANA_API_KEY MODELS))
-
+  ;; @doc register-site:provider:sakana
+  ;; summary: Sakana AI Responses provider using SAKANA_API_KEY and the default fugu-ultra model.
+  ;; tags: provider sakana responses
+  (api.register :provider
+                (provider-spec sakana-responses :sakana :fugu-ultra
+                               :SAKANA_API_KEY MODELS))
   true)
 
 M

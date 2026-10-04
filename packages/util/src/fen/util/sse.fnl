@@ -3,8 +3,7 @@
 (local json (require :fen.util.json))
 
 (fn strip-trailing-cr [s]
-  (if (and (> (length s) 0)
-           (= (string.sub s -1) "\r"))
+  (if (and (> (length s) 0) (= (string.sub s -1) "\r"))
       (string.sub s 1 (- (length s) 1))
       s))
 
@@ -28,11 +27,7 @@
 
    `on-event` receives an event table with :event, :data, and optional :id
    / :retry fields. The default event type follows the SSE spec: message."
-  (let [state {:buffer ""
-               :event nil
-               :data-lines []
-               :id nil
-               :retry nil}]
+  (let [state {:buffer "" :event nil :data-lines [] :id nil :retry nil}]
     (fn reset-event! []
       (set state.event nil)
       (set state.data-lines [])
@@ -40,7 +35,8 @@
       (set state.retry nil))
 
     (fn dispatch! []
-      (when (or (> (length state.data-lines) 0) state.event state.id state.retry)
+      (when (or (> (length state.data-lines) 0) state.event state.id
+                state.retry)
         (let [ev {:event (or state.event "message")
                   :data (table.concat state.data-lines "\n")}]
           (when state.id (set ev.id state.id))
@@ -105,6 +101,4 @@
         (table.insert out (json.decode ev.data))))
     out))
 
-{: new-parser
- : parse
- : json-events}
+{: new-parser : parse : json-events}

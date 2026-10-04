@@ -22,23 +22,26 @@
   "Backfill transcript-region state fields that may be missing on a
    live state table predating their introduction (e.g. after /reload)."
   (when (= state.transcript nil) (set state.transcript []))
-  (when (= state.streaming-assistant-rows nil) (set state.streaming-assistant-rows {}))
-  (when (= state.transcript-layout-cache nil) (set state.transcript-layout-cache nil))
+  (when (= state.streaming-assistant-rows nil)
+    (set state.streaming-assistant-rows {}))
+  (when (= state.transcript-layout-cache nil)
+    (set state.transcript-layout-cache nil))
   (when (= state.scroll-offset nil) (set state.scroll-offset 0))
   (when (= state.new-content-below? nil) (set state.new-content-below? false))
   (when (= state.last-user-jump-index nil) (set state.last-user-jump-index nil))
-  (when (= state.expand-tool-results? nil) (set state.expand-tool-results? false))
+  (when (= state.expand-tool-results? nil)
+    (set state.expand-tool-results? false))
   (when (= state.markdown? nil) (set state.markdown? true))
-  (when (= state.hide-thinking-block? nil) (set state.hide-thinking-block? false)))
+  (when (= state.hide-thinking-block? nil)
+    (set state.hide-thinking-block? false)))
 
-(local C
-  {:user      (bor (or tb.BLACK tb.DEFAULT) tb.BOLD)
-   :user-bg   tb.CYAN
-   :assistant tb.GREEN
-   :tool      tb.YELLOW
-   :err       (bor tb.RED tb.BOLD)
-   :dim       (bor tb.WHITE tb.DIM)
-   :normal    tb.DEFAULT})
+(local C {:user (bor (or tb.BLACK tb.DEFAULT) tb.BOLD)
+          :user-bg tb.CYAN
+          :assistant tb.GREEN
+          :tool tb.YELLOW
+          :err (bor tb.RED tb.BOLD)
+          :dim (bor tb.WHITE tb.DIM)
+          :normal tb.DEFAULT})
 
 ;; @doc fen.extensions.tui.panels.transcript.args-
 ;; kind: function
@@ -53,12 +56,11 @@
 
 (fn M.content->text [content]
   "Concatenate text blocks of an AgentToolResult content list."
-  (if (= content nil) ""
-      (let [parts []]
-        (each [_ b (ipairs content)]
-          (when (= b.type :text)
-            (table.insert parts (or b.text ""))))
-        (table.concat parts ""))))
+  (if (= content nil) "" (let [parts []]
+                           (each [_ b (ipairs content)]
+                             (when (= b.type :text)
+                               (table.insert parts (or b.text ""))))
+                           (table.concat parts ""))))
 
 ;; @doc fen.extensions.tui.panels.transcript.truncate
 ;; kind: function
@@ -66,34 +68,31 @@
 ;; summary: Return text capped to n bytes with a visible truncation marker for tool-result previews.
 ;; tags: tui transcript truncate tools
 (fn M.truncate [s n]
-  (if (<= (length s) n) s
-      (.. (string.sub s 1 n) " …(truncated)")))
+  (if (<= (length s) n) s (.. (string.sub s 1 n) " …(truncated)")))
 
 (fn M.count-lines [s]
   "Count \\n-terminated lines plus a trailing partial line if present."
-  (if (or (= s nil) (= s "")) 0
-      (do (var n 0)
-          (var i 1)
-          (let [len (length s)]
-            (while (<= i len)
-              (let [j (string.find s "\n" i true)]
-                (set n (+ n 1))
-                (if j
-                    (set i (+ j 1))
-                    (set i (+ len 1))))))
-          n)))
+  (if (or (= s nil) (= s "")) 0 (do
+                                  (var n 0)
+                                  (var i 1)
+                                  (let [len (length s)]
+                                    (while (<= i len)
+                                      (let [j (string.find s "\n" i true)]
+                                        (set n (+ n 1))
+                                        (if j
+                                            (set i (+ j 1))
+                                            (set i (+ len 1))))))
+                                  n)))
 
 (fn fmt-bytes [n]
   (let [n (or n 0)]
-    (if (< n 1024) (.. (tostring n) "B")
-        (< n (* 1024 1024)) (string.format "%.1fKB" (/ n 1024))
+    (if (< n 1024) (.. (tostring n) "B") (< n (* 1024 1024))
+        (string.format "%.1fKB" (/ n 1024))
         (string.format "%.1fMB" (/ n (* 1024 1024))))))
 
 (fn fmt-duration [seconds]
   (let [s (tonumber seconds)]
-    (if (= s nil) ""
-        (<= s 0) "<1s"
-        (< s 60) (.. (tostring (math.floor s)) "s")
+    (if (= s nil) "" (<= s 0) "<1s" (< s 60) (.. (tostring (math.floor s)) "s")
         (string.format "%dm%02ds" (math.floor (/ s 60)) (% (math.floor s) 60)))))
 
 (fn fmt-tokens [n]
@@ -104,9 +103,8 @@
     (.. (tostring n) " " (if (= n 1) "line" "lines"))))
 
 (fn compaction-summary-line [ev]
-  (.. "Compacted ~" (fmt-tokens ev.tokens-before)
-      " → ~" (fmt-tokens ev.tokens-after)
-      " tokens ("
+  (.. "Compacted ~" (fmt-tokens ev.tokens-before) " → ~"
+      (fmt-tokens ev.tokens-after) " tokens ("
       (tostring (or ev.messages-summarized 0)) " summarized, "
       (tostring (or ev.messages-kept 0)) " kept)"))
 
@@ -119,8 +117,7 @@
     (while (and (> i 0) (= found nil))
       (let [ev (. state.transcript i)]
         (when (and (= ev.type :tool-call)
-                   (or (= ev.id tool-call-id)
-                       (= ev.tool-call-id tool-call-id)))
+                   (or (= ev.id tool-call-id) (= ev.tool-call-id tool-call-id)))
           (set found ev)))
       (set i (- i 1)))
     found))
@@ -132,10 +129,12 @@
       (while (<= i n)
         (let [j (string.find s "\n" i true)]
           (if j
-              (do (table.insert out (string.sub s i (- j 1)))
-                  (set i (+ j 1)))
-              (do (table.insert out (string.sub s i n))
-                  (set i (+ n 1))))))
+              (do
+                (table.insert out (string.sub s i (- j 1)))
+                (set i (+ j 1)))
+              (do
+                (table.insert out (string.sub s i n))
+                (set i (+ n 1))))))
       (when (or (= n 0) (= (string.sub s n n) "\n"))
         (table.insert out "")))
     out))
@@ -184,8 +183,8 @@
 (fn fmt-write [a] (.. "write " (or a.path "?")))
 
 (fn fmt-ls [a]
-  (.. "ls " (or a.path ".")
-      (if a.limit (.. " (limit " (tostring a.limit) ")") "")))
+  (.. "ls " (or a.path ".") (if a.limit (.. " (limit " (tostring a.limit) ")")
+                                "")))
 
 (fn fmt-grep [a]
   (.. "grep /" (or a.pattern "") "/ in " (or a.path ".")
@@ -234,8 +233,7 @@
     (.. status " " name path-part (tool-result-meta ev))))
 
 (fn tool-call-label [ev]
-  (or ev.short
-      (.. (tostring ev.name) " " (or ev.args-pretty "{}"))))
+  (or ev.short (.. (tostring ev.name) " " (or ev.args-pretty "{}"))))
 
 (fn paired-tool-call-summary [ev]
   (let [result ev.paired-result
@@ -247,18 +245,20 @@
    O(n²) append-time string concatenation; materialize lazily when rendering or
    when tests/inspection ask for `ev.text` after stream end."
   (if (and ev.text-dirty? ev.text-chunks)
-      (do (set ev.text (table.concat ev.text-chunks ""))
-          (set ev.text-dirty? false)
-          ev.text)
+      (do
+        (set ev.text (table.concat ev.text-chunks ""))
+        (set ev.text-dirty? false)
+        ev.text)
       (or ev.text "")))
 
 (fn render-lines-for-event [ev width]
   (let [rows []
         push (fn [text attr indent? bg]
                (each [_ chunk (ipairs (wrap-text text width))]
-                 (table.insert rows {:text (if indent? (.. "     " chunk) chunk)
-                                     :attr attr
-                                     :bg bg})))
+                 (table.insert rows
+                               {:text (if indent? (.. "     " chunk) chunk)
+                                :attr attr
+                                :bg bg})))
         push-hanging (fn [prefix text attr]
                        (let [p (or prefix "")
                              body-w (math.max 1 (- width (length p)))
@@ -271,7 +271,6 @@
                            (set first? false))))]
     (if (= ev.type :user)
         (push (.. "you> " (or ev.text "")) C.user false C.user-bg)
-
         (= ev.type :assistant-text)
         (do
           (if state.markdown?
@@ -302,7 +301,6 @@
               (push (.. "ai>  " (M.event-text ev)) C.assistant false))
           (when ev.spacer-after?
             (table.insert rows {:text "" :attr C.dim})))
-
         (= ev.type :assistant-thinking)
         (do
           (if state.hide-thinking-block?
@@ -324,33 +322,29 @@
               (push (.. "…   " (M.event-text ev)) C.dim false))
           (when ev.spacer-after?
             (table.insert rows {:text "" :attr C.dim})))
-
         (= ev.type :info)
         (push (or ev.text "") C.dim false)
-
         (= ev.type :queued)
-        (push (.. "queued> " (tostring (or ev.queue "")) ": " (or ev.text "")) C.dim false)
-
+        (push (.. "queued> " (tostring (or ev.queue "")) ": " (or ev.text ""))
+              C.dim false)
         (= ev.type :steering-injected)
         (push (.. "steer> " (or ev.text "")) C.user false C.user-bg)
-
         (= ev.type :follow-up-injected)
         (push (.. "next> " (or ev.text "")) C.user false C.user-bg)
-
         (= ev.type :tool-call)
         (if ev.paired-result
-            (do (push-hanging "tool> " (paired-tool-call-summary ev) C.tool)
-                (when (or state.expand-tool-results? ev.expanded?)
-                  (push (or ev.paired-result.body-pretty "") C.dim true)))
+            (do
+              (push-hanging "tool> " (paired-tool-call-summary ev) C.tool)
+              (when (or state.expand-tool-results? ev.expanded?)
+                (push (or ev.paired-result.body-pretty "") C.dim true)))
             (push-hanging "tool> " (.. "run " (tool-call-label ev)) C.tool))
-
         (= ev.type :tool-result)
         (when (not ev.suppressed?)
           (if (or state.expand-tool-results? ev.expanded?)
-              (do (push-hanging "tool< " (tool-result-summary ev) C.dim)
-                  (push (or ev.body-pretty "") C.dim true))
+              (do
+                (push-hanging "tool< " (tool-result-summary ev) C.dim)
+                (push (or ev.body-pretty "") C.dim true))
               (push-hanging "tool< " (tool-result-summary ev) C.dim)))
-
         (= ev.type :compaction-summary)
         (do
           (push-hanging "compact> " (compaction-summary-line ev) C.dim)
@@ -369,16 +363,12 @@
                                   {:text (.. "     " (or ml.text ""))
                                    :attr (or ml.attr C.dim)})))
                 (push (or ev.summary "") C.dim true))))
-
         (= ev.type :error)
         (push (.. "err> " (tostring ev.error)) C.err false)
-
         (= ev.type :cancelled)
         (push "⊘  cancelled by user" C.dim false)
-
         (= ev.type :extension-loaded)
         (push (.. "extension-loaded: " (tostring (or ev.name ""))) C.dim false)
-
         (push (.. (tostring ev.type) ": "
                   (tostring (or ev.text ev.error ev.name "")))
               C.dim false))
@@ -388,10 +378,8 @@
 ;; clear-event-render-cache!, the sole post-insert mutation choke point) plus
 ;; toggle-bits folding all display toggles into one integer.
 (fn toggle-bits [ev]
-  (+ (if state.markdown? 1 0)
-     (if state.hide-thinking-block? 2 0)
-     (if state.expand-tool-results? 4 0)
-     (if ev.expanded? 8 0)))
+  (+ (if state.markdown? 1 0) (if state.hide-thinking-block? 2 0)
+     (if state.expand-tool-results? 4 0) (if ev.expanded? 8 0)))
 
 (fn M.invalidate-layout-cache! []
   "Drop the transcript-wide row-count/index cache. Call when events are
@@ -415,8 +403,7 @@
    Markdown or rewrapping stable historical events."
   (let [bits (toggle-bits ev)
         version (or ev.render-version 0)]
-    (if (and ev.render-cache-lines
-             (= ev.render-cache-width width)
+    (if (and ev.render-cache-lines (= ev.render-cache-width width)
              (= ev.render-cache-version version)
              (= ev.render-cache-toggles bits))
         ev.render-cache-lines
@@ -471,15 +458,12 @@
    :events (length state.transcript)})
 
 (fn same-layout-render-key? [a b]
-  (and a b
-       (= a.width b.width)
-       (= a.markdown? b.markdown?)
+  (and a b (= a.width b.width) (= a.markdown? b.markdown?)
        (= a.hide-thinking-block? b.hide-thinking-block?)
        (= a.expand-tool-results? b.expand-tool-results?)))
 
 (fn same-layout-key? [a b]
-  (and (same-layout-render-key? a b)
-       (= a.events b.events)))
+  (and (same-layout-render-key? a b) (= a.events b.events)))
 
 (fn build-layout-cache [width]
   (let [counts []
@@ -490,10 +474,7 @@
         (tset counts i n)
         (tset starts i (+ total 1))
         (set total (+ total n))))
-    {:key (layout-cache-key width)
-     :counts counts
-     :starts starts
-     :total total}))
+    {:key (layout-cache-key width) :counts counts :starts starts :total total}))
 
 (fn extend-layout-cache! [cache key width]
   "Extend a valid historical layout index for append-only transcript growth.
@@ -515,9 +496,7 @@
     (if (and c (same-layout-key? c.key key))
         c
         ;; Append-only growth: extend the index instead of rebuilding it.
-        (and c
-             (same-layout-render-key? c.key key)
-             (< c.key.events key.events))
+        (and c (same-layout-render-key? c.key key) (< c.key.events key.events))
         (extend-layout-cache! c key width)
         (let [fresh (build-layout-cache width)]
           (set state.transcript-layout-cache fresh)
@@ -536,8 +515,9 @@
             start (. starts mid)
             finish (+ start (. counts mid) -1)]
         (if (>= finish row)
-            (do (set found mid)
-                (set hi (- mid 1)))
+            (do
+              (set found mid)
+              (set hi (- mid 1)))
             (set lo (+ mid 1)))))
     found))
 
@@ -581,7 +561,8 @@
   (var total 0)
   (var idx (length state.transcript))
   (while (and (> idx 0) (< total limit))
-    (set total (+ total (length (lines-for-event (. state.transcript idx) width))))
+    (set total
+         (+ total (length (lines-for-event (. state.transcript idx) width))))
     (set idx (- idx 1)))
   total)
 
@@ -611,7 +592,8 @@
             ;; Never cold-build the full layout index for shallow scrolling.
             cache (if (and (not (and existing
                                      (same-layout-key? existing.key key)))
-                           (> (length state.transcript) LAZY-VIEWPORT-ROW-BUDGET)
+                           (> (length state.transcript)
+                              LAZY-VIEWPORT-ROW-BUDGET)
                            (<= (+ h offset) LAZY-VIEWPORT-ROW-BUDGET))
                       nil
                       (layout-cache width))]
@@ -620,13 +602,18 @@
                   max-offset (math.max 0 (- total h))]
               (when (> max-offset 0)
                 (let [clamped-offset (math.min offset max-offset)
-                      thumb-h (math.max 1 (math.min h (math.floor (/ (* h h) total))))
+                      thumb-h (math.max 1
+                                        (math.min h
+                                                  (math.floor (/ (* h h) total))))
                       travel (- h thumb-h)
                       viewport-top (- max-offset clamped-offset)
                       thumb-top (if (= travel 0) 0
-                                    (math.floor (/ (* viewport-top travel) max-offset)))]
-                  {:top thumb-top :height thumb-h
-                   :total total :max-scroll max-offset})))
+                                    (math.floor (/ (* viewport-top travel)
+                                                   max-offset)))]
+                  {:top thumb-top
+                   :height thumb-h
+                   :total total
+                   :max-scroll max-offset})))
             ;; Approximate one-cell marker until deep scroll builds the index.
             {:top (- h 1) :height 1 :approximate? true})))))
 
@@ -640,8 +627,7 @@
     (math.max 0 (- cache.total (math.max 1 h)))))
 
 (fn user-message-event? [ev]
-  (or (= ev.type :user)
-      (= ev.type :steering-injected)
+  (or (= ev.type :user) (= ev.type :steering-injected)
       (= ev.type :follow-up-injected)))
 
 (fn M.jump-to-user-message! [input-rows]
@@ -674,9 +660,7 @@
           (while (and (> idx 0) (= found nil))
             (let [ev (. state.transcript idx)
                   start (. cache.starts idx)]
-              (when (and (user-message-event? ev)
-                         start
-                         (<= start anchor-row))
+              (when (and (user-message-event? ev) start (<= start anchor-row))
                 (set found idx)))
             (set idx (- idx 1)))
           (when (and (= found nil) (> state.scroll-offset 0))
@@ -684,16 +668,15 @@
             (while (and (> idx 0) (= found nil))
               (let [ev (. state.transcript idx)
                     start (. cache.starts idx)]
-                (when (and (user-message-event? ev)
-                           start
-                           (<= start end-row))
+                (when (and (user-message-event? ev) start (<= start end-row))
                   (set found idx)))
               (set idx (- idx 1))))))
     (if found
         (let [target-start (. cache.starts found)
               desired-offset (- total (+ target-start h -1))
               max-offset (M.max-scroll input-rows)]
-          (set state.scroll-offset (math.max 0 (math.min max-offset desired-offset)))
+          (set state.scroll-offset
+               (math.max 0 (math.min max-offset desired-offset)))
           (set state.last-user-jump-index found)
           (when (= state.scroll-offset 0)
             (set state.new-content-below? false))

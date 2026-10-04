@@ -60,129 +60,155 @@
   (. r :content 1 :text))
 
 (describe "subagent over a live rpc child #slow"
-  (fn []
-    (var tmp nil)
-    (var saved {})
-    (var spawns 0)
-    (local env-names [:FEN_MOCK_SCRIPT :XDG_STATE_HOME :XDG_CONFIG_HOME])
+          (fn []
+            (var tmp nil)
+            (var saved {})
+            (var spawns 0)
+            (local env-names [:FEN_MOCK_SCRIPT
+                              :XDG_STATE_HOME
+                              :XDG_CONFIG_HOME])
+            (before_each (fn []
+                           (set tmp (.. (os.tmpname) ".d"))
+                           (assert (os.execute (.. "mkdir -p "
+                                                   (testing.shellquote tmp)
+                                                   "/state "
+                                                   (testing.shellquote tmp)
+                                                   "/config")))
+                           (testing.write-file (.. tmp "/fact.txt")
+                                               (.. UNIQUE-FACT "\n"))
+                           (testing.write-file (.. tmp "/mock.fnl") MOCK-SCRIPT)
+                           (set saved
+                                {:env (collect [_ k (ipairs env-names)]
+                                        (values k (or (os.getenv k) false)))
+                                 :process (. package.loaded :fen.util.process)
+                                 :runtime (. package.loaded :fen.runtime)
+                                 :discover (. package.loaded
+                                              :fen.extensions.subagent.discover)})
+                           (process.setenv! :FEN_MOCK_SCRIPT
+                                            (.. tmp "/mock.fnl"))
+                           (process.setenv! :XDG_STATE_HOME (.. tmp "/state"))
+                           (process.setenv! :XDG_CONFIG_HOME (.. tmp "/config"))
+                           (set spawns 0)
+                           (tset package.loaded :fen.util.process
+                                 {:start-captured (fn [opts]
+                                                    (set spawns (+ spawns 1))
+                                                    (process.start-captured opts))})
+                           (let [mock-runner (.. tmp "/fen-with-mock")
+                                 root (command-output "pwd")
+                                 fen-src (testing.shellquote (.. root
+                                                                 "/scripts/test/fen-src"))
+                                 mock-extension (testing.shellquote (.. root
+                                                                        "/extensions/adapters/providers/mock"))]
+                             (testing.write-file mock-runner
+                                                 (.. "#!/bin/sh\nexec " fen-src
+                                                     " --extension "
+                                                     mock-extension " \"$@\"\n"))
+                             (assert (os.execute (.. "chmod +x "
+                                                     (testing.shellquote mock-runner))))
+                             (tset package.loaded :fen.runtime
+                                   {:binary-path (fn [] mock-runner)}))
+                           (tset package.loaded
+                                 :fen.extensions.subagent.discover
+                                 {:find-agent (fn [_]
+                                                {:name "e2e"
+                                                 :description "e2e"
+                                                 :provider "mock"
+                                                 :model "mock"
+                                                 :body "You are a test child."})
+                                  :list (fn [] [])
+                                  :roots (fn [] [])})
+                           (test-api.reset!)
+                           (each [_ m (ipairs [:fen.extensions.subagent
+                                               :fen.extensions.subagent.runs
+                                               :fen.extensions.subagent.state])]
+                             (tset package.loaded m nil))
+                           ((. (require :fen.extensions.subagent) :register) (test-api.make-runtime-api :subagent))))
+            (after_each (fn []
+                          (each [k v (pairs saved.env)]
+                            (process.setenv! k (or v nil)))
+                          (tset package.loaded :fen.util.process saved.process)
+                          (tset package.loaded :fen.runtime saved.runtime)
+                          (tset package.loaded
+                                :fen.extensions.subagent.discover saved.discover)
+                          (tset package.loaded :fen.extensions.subagent nil)
+                          (os.execute (.. "rm -rf " (testing.shellquote tmp)))))
 
-    (before_each
-      (fn []
-        (set tmp (.. (os.tmpname) ".d"))
-        (assert (os.execute (.. "mkdir -p " (testing.shellquote tmp) "/state "
-                                (testing.shellquote tmp) "/config")))
-        (testing.write-file (.. tmp "/fact.txt") (.. UNIQUE-FACT "\n"))
-        (testing.write-file (.. tmp "/mock.fnl") MOCK-SCRIPT)
-        (set saved {:env (collect [_ k (ipairs env-names)] (values k (or (os.getenv k) false)))
-                    :process (. package.loaded :fen.util.process)
-                    :runtime (. package.loaded :fen.runtime)
-                    :discover (. package.loaded :fen.extensions.subagent.discover)})
-        (process.setenv! :FEN_MOCK_SCRIPT (.. tmp "/mock.fnl"))
-        (process.setenv! :XDG_STATE_HOME (.. tmp "/state"))
-        (process.setenv! :XDG_CONFIG_HOME (.. tmp "/config"))
-        (set spawns 0)
-        (tset package.loaded :fen.util.process
-              {:start-captured (fn [opts]
-                                 (set spawns (+ spawns 1))
-                                 (process.start-captured opts))})
-        (let [mock-runner (.. tmp "/fen-with-mock")
-              root (command-output "pwd")
-              fen-src (testing.shellquote (.. root "/scripts/test/fen-src"))
-              mock-extension
-              (testing.shellquote (.. root "/extensions/adapters/providers/mock"))]
-          (testing.write-file
-            mock-runner
-            (.. "#!/bin/sh\nexec " fen-src " --extension " mock-extension " \"$@\"\n"))
-          (assert (os.execute (.. "chmod +x " (testing.shellquote mock-runner))))
-          (tset package.loaded :fen.runtime
-                {:binary-path (fn [] mock-runner)}))
-        (tset package.loaded :fen.extensions.subagent.discover
-              {:find-agent (fn [_] {:name "e2e" :description "e2e"
-                                    :provider "mock" :model "mock"
-                                    :body "You are a test child."})
-               :list (fn [] []) :roots (fn [] [])})
-        (test-api.reset!)
-        (each [_ m (ipairs [:fen.extensions.subagent :fen.extensions.subagent.runs
-                            :fen.extensions.subagent.state])]
-          (tset package.loaded m nil))
-        ((. (require :fen.extensions.subagent) :register)
-         (test-api.make-runtime-api :subagent))))
+            (fn tool []
+              (accumulate [found nil _ rec (ipairs (tool-registry.merged []))
+                           &until found]
+                (when (= rec.name :subagent) rec)))
 
-    (after_each
-      (fn []
-        (each [k v (pairs saved.env)]
-          (process.setenv! k (or v nil)))
-        (tset package.loaded :fen.util.process saved.process)
-        (tset package.loaded :fen.runtime saved.runtime)
-        (tset package.loaded :fen.extensions.subagent.discover saved.discover)
-        (tset package.loaded :fen.extensions.subagent nil)
-        (os.execute (.. "rm -rf " (testing.shellquote tmp)))))
+            (fn run-record [id]
+              ((. (require :fen.extensions.subagent.runs) :find) id))
 
-    (fn tool []
-      (accumulate [found nil _ rec (ipairs (tool-registry.merged [])) &until found]
-        (when (= rec.name :subagent) rec)))
+            (fn saw-event? [id typ]
+              (accumulate [found? false _ ev (ipairs (or (?. (run-record id)
+                                                             :events)
+                                                         []))
+                           &until found?]
+                (= ev.type typ)))
 
-    (fn run-record [id]
-      ((. (require :fen.extensions.subagent.runs) :find) id))
-
-    (fn saw-event? [id typ]
-      (accumulate [found? false _ ev (ipairs (or (?. (run-record id) :events) []))
-                   &until found?]
-        (= ev.type typ)))
-
-    (it "carries a first-turn tool fact into the in-conversation finalize turn"
-      (fn []
-        (let [r ((. (tool) :execute)
-                 {:agent :e2e :task "Find the loader bug." :cwd tmp
-                  :max-tool-calls 2 :timeout-seconds 60}
-                 {}
-                 (fn [] (clock.sleep-ms 30)))]
-          (assert.is_false r.is-error? (first-text r))
-          (assert.are.equal 1 spawns)
-          (assert.are.equal "FINAL saw ZEBRA-7741 users=2" (first-text r))
-          (assert.is_true (. r.details :budget-finalization-requested?))
-          (assert.are.equal :done (. r.details :child-exit)))))
-
-    (it "steers a live background child without restarting it"
-      (fn []
-        (let [launched ((. (tool) :execute)
-                        {:agent :e2e :task "Investigate." :cwd tmp
-                         :timeout-seconds 60 :background true}
-                        {})
-              id launched.details.run-id
-              runs (require :fen.extensions.subagent.runs)]
-          (var steered? false)
-          (for [_ 1 1500 &until (not= :running (. (run-record id) :status))]
-            (events.emit {:type :runtime-tick})
-            (when (and (not steered?) (saw-event? id :tool-result))
-              (set steered? true)
-              (runs.request-steer! id "STEER-NOTE-42: wrap up" :user))
-            (clock.sleep-ms 20))
-          (let [run (run-record id)]
-            (assert.are.equal :completed run.status)
-            (assert.are.equal "FINAL steered" run.result)
-            (assert.are.equal 1 spawns)
-            ;; The steer is visible in the child's own conversation.
-            (assert.is_true (saw-event? id :steering-injected))))))
-
-    (it "cancels mid-tool and leaves no orphan process"
-      (fn []
-        (let [cancel {:type :cancel-marker}
-              seen {:tool? false}
-              (ok? err) (pcall (. (tool) :execute)
-                               {:agent :e2e :task "ORPHAN-CHECK" :cwd tmp
-                                :timeout-seconds 60}
-                               {}
-                               (fn []
-                                 (clock.sleep-ms 30)
-                                 ;; Cancel only once the scan sees the tool's
-                                 ;; `sleep`, which proves the check works.
-                                 (when (> (length (orphan-pids)) 0)
-                                   (set seen.tool? true)
-                                   (error cancel))))]
-          (assert.is_true seen.tool? "orphan scan never saw the tool process")
-          (assert.is_false ok?)
-          (assert.are.equal cancel err)
-          (assert.are.equal :cancelled (. (run-record "subagent-1") :status))
-          (clock.sleep-ms 200)
-          (assert.are.same [] (orphan-pids)))))))
+            (it "carries a first-turn tool fact into the in-conversation finalize turn"
+                (fn []
+                  (let [r ((. (tool) :execute) {:agent :e2e
+                                                :task "Find the loader bug."
+                                                :cwd tmp
+                                                :max-tool-calls 2
+                                                :timeout-seconds 60}
+                                               {} (fn [] (clock.sleep-ms 30)))]
+                    (assert.is_false r.is-error? (first-text r))
+                    (assert.are.equal 1 spawns)
+                    (assert.are.equal "FINAL saw ZEBRA-7741 users=2"
+                                      (first-text r))
+                    (assert.is_true (. r.details
+                                       :budget-finalization-requested?))
+                    (assert.are.equal :done (. r.details :child-exit)))))
+            (it "steers a live background child without restarting it"
+                (fn []
+                  (let [launched ((. (tool) :execute) {:agent :e2e
+                                                       :task "Investigate."
+                                                       :cwd tmp
+                                                       :timeout-seconds 60
+                                                       :background true}
+                                                      {})
+                        id launched.details.run-id
+                        runs (require :fen.extensions.subagent.runs)]
+                    (var steered? false)
+                    (for [_ 1 1500
+                          &until (not= :running (. (run-record id) :status))]
+                      (events.emit {:type :runtime-tick})
+                      (when (and (not steered?) (saw-event? id :tool-result))
+                        (set steered? true)
+                        (runs.request-steer! id "STEER-NOTE-42: wrap up" :user))
+                      (clock.sleep-ms 20))
+                    (let [run (run-record id)]
+                      (assert.are.equal :completed run.status)
+                      (assert.are.equal "FINAL steered" run.result)
+                      (assert.are.equal 1 spawns)
+                      ;; The steer is visible in the child's own conversation.
+                      (assert.is_true (saw-event? id :steering-injected))))))
+            (it "cancels mid-tool and leaves no orphan process"
+                (fn []
+                  (let [cancel {:type :cancel-marker}
+                        seen {:tool? false}
+                        (ok? err) (pcall (. (tool) :execute)
+                                         {:agent :e2e
+                                          :task "ORPHAN-CHECK"
+                                          :cwd tmp
+                                          :timeout-seconds 60}
+                                         {}
+                                         (fn []
+                                           (clock.sleep-ms 30)
+                                           ;; Cancel only once the scan sees the tool's
+                                           ;; `sleep`, which proves the check works.
+                                           (when (> (length (orphan-pids)) 0)
+                                             (set seen.tool? true)
+                                             (error cancel))))]
+                    (assert.is_true seen.tool?
+                                    "orphan scan never saw the tool process")
+                    (assert.is_false ok?)
+                    (assert.are.equal cancel err)
+                    (assert.are.equal :cancelled
+                                      (. (run-record "subagent-1") :status))
+                    (clock.sleep-ms 200)
+                    (assert.are.same [] (orphan-pids)))))))

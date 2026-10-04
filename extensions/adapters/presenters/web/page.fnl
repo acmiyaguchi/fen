@@ -19,27 +19,33 @@
   (let [parts []]
     (each [k v (pairs (or attrs {}))]
       (when (and v (not= v false))
-        (table.insert parts
-                      (if (= v true)
-                          (.. " " (attr-name k))
-                          (.. " " (attr-name k) "=\"" (escape-html v) "\"")))))
+        (table.insert parts (if (= v true)
+                                (.. " " (attr-name k))
+                                (.. " " (attr-name k) "=\"" (escape-html v)
+                                    "\"")))))
     (table.concat parts "")))
 
-(local VOID-TAGS
-  {:area true :base true :br true :col true :embed true :hr true :img true
-   :input true :link true :meta true :param true :source true :track true
-   :wbr true})
+(local VOID-TAGS {:area true
+                  :base true
+                  :br true
+                  :col true
+                  :embed true
+                  :hr true
+                  :img true
+                  :input true
+                  :link true
+                  :meta true
+                  :param true
+                  :source true
+                  :track true
+                  :wbr true})
 
 (fn attrs-table? [x]
-  (and (= (type x) :table)
-       (= (. x 1) nil)))
+  (and (= (type x) :table) (= (. x 1) nil)))
 
 (fn render-node [node]
-  (if (= node nil) ""
-      (or (= (type node) :string) (= (type node) :number))
-      (escape-html node)
-      (not= (type node) :table)
-      (escape-html (tostring node))
+  (if (= node nil) "" (or (= (type node) :string) (= (type node) :number))
+      (escape-html node) (not= (type node) :table) (escape-html (tostring node))
       (let [tag (. node 1)]
         (if (= tag :raw)
             (tostring (or (. node 2) ""))
@@ -75,8 +81,7 @@
 ;; tags: web page html render tests
 (set M.render-node render-node)
 
-(local CSS
-":root { color-scheme: dark; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+(local CSS ":root { color-scheme: dark; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 body { margin: 0; background: #111; color: #ddd; height: 100vh; overflow: hidden; }
 #app { display: grid; grid-template-rows: auto 1fr auto auto; height: 100vh; }
 #status { display: flex; justify-content: space-between; gap: 1rem; padding: .35rem .6rem; background: #ddd; color: #111; white-space: pre; }
@@ -108,7 +113,7 @@ button { background: #333; color: #eee; border: 1px solid #666; padding: .35rem 
 .style-tool { color: #ffd54f; }")
 
 (local JS
-"const $ = id => document.getElementById(id);
+       "const $ = id => document.getElementById(id);
 let currentSelect = null;
 let currentSelectId = null;
 let selectCursor = 0;
@@ -234,34 +239,48 @@ es.onerror = () => { $('status-right').textContent = 'disconnected'; };")
 ;; summary: Render the static browser presenter page with embedded CSS and JavaScript for HTTP/SSE interaction.
 ;; tags: web page html browser
 (fn M.html []
-  (render
-    [[:!doctype :html]
-     [:html
-      [:head
-       [:meta {:charset :utf-8}]
-       [:meta {:name :viewport :content "width=device-width, initial-scale=1"}]
-       [:title "fen"]
-       [:style [:raw CSS]]]
-      [:body
-       [:div {:id :app}
-        [:div {:id :status}
-         [:div {:id :status-left} "fen"]
-         [:div {:id :status-right}]]
-        [:div {:id :transcript}]
-        [:div {:id :panels-wrap}
-         [:button {:id :dismiss-panels :type :button
-                   :title "Dismiss panels (Esc)"} "Dismiss"]
-         [:div {:id :panels}]]
-        [:form {:id :inputbar}
-         [:textarea {:id :input :autofocus true
-                     :placeholder "Type a message. Enter submits, Shift+Enter inserts newline."}]
-         [:button {:type :submit} "Send"]]
-        [:div {:id :select-overlay}
-         [:div {:id :select-box}
-          [:div {:id :select-title} "select"]
-          [:input {:id :select-filter :type :text :placeholder "type to filter"}]
-          [:ul {:id :select-list}]
-          [:div {:id :select-hint} "enter/click select · esc cancel · type to filter"]]]]
-       [:script [:raw JS]]]]]))
+  (render [[:!doctype :html]
+           [:html
+            [:head
+             [:meta {:charset :utf-8}]
+             [:meta
+              {:name :viewport :content "width=device-width, initial-scale=1"}]
+             [:title "fen"]
+             [:style [:raw CSS]]]
+            [:body
+             [:div
+              {:id :app}
+              [:div
+               {:id :status}
+               [:div {:id :status-left} "fen"]
+               [:div {:id :status-right}]]
+              [:div {:id :transcript}]
+              [:div
+               {:id :panels-wrap}
+               [:button
+                {:id :dismiss-panels
+                 :type :button
+                 :title "Dismiss panels (Esc)"}
+                "Dismiss"]
+               [:div {:id :panels}]]
+              [:form
+               {:id :inputbar}
+               [:textarea
+                {:id :input
+                 :autofocus true
+                 :placeholder "Type a message. Enter submits, Shift+Enter inserts newline."}]
+               [:button {:type :submit} "Send"]]
+              [:div
+               {:id :select-overlay}
+               [:div
+                {:id :select-box}
+                [:div {:id :select-title} "select"]
+                [:input
+                 {:id :select-filter :type :text :placeholder "type to filter"}]
+                [:ul {:id :select-list}]
+                [:div
+                 {:id :select-hint}
+                 "enter/click select · esc cancel · type to filter"]]]]
+             [:script [:raw JS]]]]]))
 
 M

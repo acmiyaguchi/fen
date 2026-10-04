@@ -4,17 +4,18 @@
 
 (local M {})
 
-(local bool #(if $1 true false))
+(local bool #(if $1
+                 true
+                 false))
 
-(local RUNTIME-FIELDS
-  [[:version tostring]
-   [:gitRev tostring]
-   [:gitShortRev tostring]
-   [:dirty bool]
-   [:source tostring]
-   [:targetSystem tostring]
-   [:buildSystem tostring]
-   [:lastModified nil]])
+(local RUNTIME-FIELDS [[:version tostring]
+                       [:gitRev tostring]
+                       [:gitShortRev tostring]
+                       [:dirty bool]
+                       [:source tostring]
+                       [:targetSystem tostring]
+                       [:buildSystem tostring]
+                       [:lastModified nil]])
 
 (fn sanitize-runtime-info [info]
   (when (= (type info) :table)

@@ -9,8 +9,7 @@
    or before the first turn completes)."
   (var found nil)
   (each [_ msg (ipairs (or messages []))]
-    (when (and (= msg.role :assistant)
-               msg.usage
+    (when (and (= msg.role :assistant) msg.usage
                (= (type msg.usage.latency-ms) :number))
       (set found msg.usage)))
   (when found
@@ -26,10 +25,9 @@
     (if (and ok? (= (type v) :table) (= (type v.format) :function))
         (v.format)
         (and ok? (= (type v) :table))
-        (.. (tostring (or v.version "unknown"))
-            " (" (tostring (or v.source "unknown"))
-            (if v.targetSystem (.. ", " (tostring v.targetSystem)) "")
-            ")")
+        (.. (tostring (or v.version "unknown")) " ("
+            (tostring (or v.source "unknown"))
+            (if v.targetSystem (.. ", " (tostring v.targetSystem)) "") ")")
         (and ok? v)
         (tostring v)
         "unknown")))

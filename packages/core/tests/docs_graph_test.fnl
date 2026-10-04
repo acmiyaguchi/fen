@@ -4,58 +4,62 @@
 (local graph (require :docs.graph))
 (local scanner (require :docs.scanner))
 
-(describe "docs graph helpers #slow" (fn []
-  (it "escapes DOT strings" (fn []
-    (assert.are.equal "a\\\"b\\\\c\\nd" (graph.dot-escape "a\"b\\c\nd"))))
-
-  (it "finds strongly connected components" (fn []
-    (let [components (graph.scc ["a" "b" "c"]
-                                [{:from "a" :to "b"}
-                                 {:from "b" :to "a"}
-                                 {:from "b" :to "c"}])]
-      (assert.are.equal 1 (# components))
-      (assert.are.same ["a" "b"] (. components 1)))))
-
-  (it "extracts literal require dependencies" (fn []
-    (let [deps (scanner.scan-dependencies "(local agent (require :fen.core.agent))\n(import-macros :fen.testing.macros)\n")]
-      (assert.are.equal 2 (# deps))
-      (assert.are.equal "fen.core.agent" (. deps 1 :module))
-      (assert.are.equal :require (. deps 1 :kind))
-      (assert.are.equal "fen.testing.macros" (. deps 2 :module))
-      (assert.are.equal :macro (. deps 2 :kind)))))
-
-  (it "classifies requires by function scope, not indentation" (fn []
-    (let [kinds {}]
-      (each [_ dep (ipairs (scanner.scan-dependencies
-                             (.. "(local wrapped\n       (require :eager.wrapped))\n"
-                                 "(when debug?\n  (require :eager.nested))\n"
-                                 "(fn load [] (require :late.fn))\n"
-                                 "(local f #(require :late.hashfn))\n"
-                                 "(local g (lambda []\n  \"(\" (require :late.lambda)))\n")))]
-        (tset kinds dep.module dep.kind))
-      (assert.are.same {:eager.wrapped :require
-                        :eager.nested :require
-                        :late.fn :late-require
-                        :late.hashfn :late-require
-                        :late.lambda :late-require}
-                       kinds))))
-
-  (it "derives nested first-party extension modules from manifests" (fn []
-    (let [init (scanner.module-from-path "extensions/behaviors/kernel/builtin-tools/init.fnl")
-          tool (scanner.module-from-path "extensions/behaviors/kernel/builtin-tools/bash.fnl")]
-      (assert.are.equal "fen.extensions.builtin_tools" init.module)
-      (assert.are.equal "extensions/behaviors/kernel/builtin-tools" init.pkg)
-      (assert.are.equal :extension init.scope)
-      (assert.are.equal "fen.extensions.builtin_tools.bash" tool.module))))
-
-  (it "runtime modules do not require the core extension facade" (fn []
-    ;; Only files naming the facade can depend on it; skip the full doc scan.
-    (let [offenders []]
-      (each [_ path (ipairs (scanner.source-paths))]
-        (let [text (scanner.read-file path)]
-          (when (string.find text "fen.core.extensions" 1 true)
-            (each [_ dep (ipairs (scanner.scan-dependencies text))]
-              (when (= dep.module "fen.core.extensions")
-                (table.insert offenders path))))))
-      (assert.are.same [] offenders)))))
-)
+(describe "docs graph helpers #slow"
+          (fn []
+            (it "escapes DOT strings"
+                (fn []
+                  (assert.are.equal "a\\\"b\\\\c\\nd"
+                                    (graph.dot-escape "a\"b\\c\nd"))))
+            (it "finds strongly connected components"
+                (fn []
+                  (let [components (graph.scc ["a" "b" "c"]
+                                              [{:from "a" :to "b"}
+                                               {:from "b" :to "a"}
+                                               {:from "b" :to "c"}])]
+                    (assert.are.equal 1 (length components))
+                    (assert.are.same ["a" "b"] (. components 1)))))
+            (it "extracts literal require dependencies"
+                (fn []
+                  (let [deps (scanner.scan-dependencies "(local agent (require :fen.core.agent))\n(import-macros :fen.testing.macros)\n")]
+                    (assert.are.equal 2 (length deps))
+                    (assert.are.equal "fen.core.agent" (. deps 1 :module))
+                    (assert.are.equal :require (. deps 1 :kind))
+                    (assert.are.equal "fen.testing.macros" (. deps 2 :module))
+                    (assert.are.equal :macro (. deps 2 :kind)))))
+            (it "classifies requires by function scope, not indentation"
+                (fn []
+                  (let [kinds {}]
+                    (each [_ dep (ipairs (scanner.scan-dependencies (.. "(local wrapped\n       (require :eager.wrapped))\n"
+                                                                        "(when debug?\n  (require :eager.nested))\n"
+                                                                        "(fn load [] (require :late.fn))\n"
+                                                                        "(local f #(require :late.hashfn))\n"
+                                                                        "(local g (lambda []\n  \"(\" (require :late.lambda)))\n")))]
+                      (tset kinds dep.module dep.kind))
+                    (assert.are.same {:eager.wrapped :require
+                                      :eager.nested :require
+                                      :late.fn :late-require
+                                      :late.hashfn :late-require
+                                      :late.lambda :late-require}
+                                     kinds))))
+            (it "derives nested first-party extension modules from manifests"
+                (fn []
+                  (let [init (scanner.module-from-path "extensions/behaviors/kernel/builtin-tools/init.fnl")
+                        tool (scanner.module-from-path "extensions/behaviors/kernel/builtin-tools/bash.fnl")]
+                    (assert.are.equal "fen.extensions.builtin_tools"
+                                      init.module)
+                    (assert.are.equal "extensions/behaviors/kernel/builtin-tools"
+                                      init.pkg)
+                    (assert.are.equal :extension init.scope)
+                    (assert.are.equal "fen.extensions.builtin_tools.bash"
+                                      tool.module))))
+            (it "runtime modules do not require the core extension facade"
+                (fn []
+                  ;; Only files naming the facade can depend on it; skip the full doc scan.
+                  (let [offenders []]
+                    (each [_ path (ipairs (scanner.source-paths))]
+                      (let [text (scanner.read-file path)]
+                        (when (string.find text "fen.core.extensions" 1 true)
+                          (each [_ dep (ipairs (scanner.scan-dependencies text))]
+                            (when (= dep.module "fen.core.extensions")
+                              (table.insert offenders path))))))
+                    (assert.are.same [] offenders))))))

@@ -8,9 +8,8 @@
     (assert path)))
 
 (fn write-models [dir]
-  (h.write-file
-    (.. dir "/config/fen/models.json")
-    "{\"providers\":{\"pty-smoke\":{\"api\":\"openai-completions\",\"baseUrl\":\"http://127.0.0.1:9/v1\",\"apiKey\":\"dummy\",\"models\":[{\"id\":\"pty-smoke\"}]}}}\n"))
+  (h.write-file (.. dir "/config/fen/models.json")
+                "{\"providers\":{\"pty-smoke\":{\"api\":\"openai-completions\",\"baseUrl\":\"http://127.0.0.1:9/v1\",\"apiKey\":\"dummy\",\"models\":[{\"id\":\"pty-smoke\"}]}}}\n"))
 
 (fn fixture-extension [root]
   (.. root "/packages/testing/tests/fixtures/pty-driver"))
@@ -31,10 +30,14 @@
              :COLUMNS false
              :COLORTERM false
              :FEN_LOG "error"}
-        argv ["/bin/sh" "./scripts/dev/fen-dev"
-              "--provider" "pty-smoke"
-              "--model" "pty-smoke"
-              "--presenter" "tui"
+        argv ["/bin/sh"
+              "./scripts/dev/fen-dev"
+              "--provider"
+              "pty-smoke"
+              "--model"
+              "pty-smoke"
+              "--presenter"
+              "tui"
               "--no-session"]]
     (when (and opts opts.extension)
       (table.insert argv "--extension")
@@ -62,7 +65,11 @@
                    :markers {}
                    :child nil}]
       (tset session :child
-            (assert (pty.spawn {:argv argv :cwd root :env env :cols cols :rows rows})))
+            (assert (pty.spawn {:argv argv
+                                :cwd root
+                                :env env
+                                :cols cols
+                                :rows rows})))
       session)))
 
 (fn on-chunk [session chunk]
@@ -79,15 +86,19 @@
 (fn wait-marker [session marker timeout-ms start-at]
   (if (string.find (or session.output "") marker (or start-at 1) true)
       (do
-        (tset session.markers marker (math.floor (* (- (pty.now) session.started) 1000)))
+        (tset session.markers marker
+              (math.floor (* (- (pty.now) session.started) 1000)))
         session.output)
-      (let [(out captured) (pty.read-until session.child marker (or timeout-ms 3000)
-                           {:on-chunk (fn [chunk] (on-chunk session chunk))})]
+      (let [(out captured) (pty.read-until session.child marker
+                                           (or timeout-ms 3000)
+                                           {:on-chunk (fn [chunk]
+                                                        (on-chunk session chunk))})]
         (when (not out)
           (error (.. "marker not seen for " session.scenario ": " marker
                      "; captured " (tostring (length (or captured "")))
                      " bytes in " session.artifacts)))
-        (tset session.markers marker (math.floor (* (- (pty.now) session.started) 1000)))
+        (tset session.markers marker
+              (math.floor (* (- (pty.now) session.started) 1000)))
         out)))
 
 (fn wait-first-paint [session]
@@ -95,7 +106,8 @@
 
 (fn close-with-ctrl-d [session]
   (write-input session "\004")
-  (pty.drain session.child 500 {:on-chunk (fn [chunk] (on-chunk session chunk))})
+  (pty.drain session.child 500
+             {:on-chunk (fn [chunk] (on-chunk session chunk))})
   (let [(status wait-err) (session.child:wait 3000)]
     (when (not status)
       (session.child:kill)
@@ -106,32 +118,33 @@
 
 (fn write-metrics [session status]
   (pty.write-file session.metrics-path
-    (.. (pty.encode-json {:scenario session.scenario
-                          :cols session.cols
-                          :rows session.rows
-                          :elapsed_ms (math.floor (* (- (pty.now) session.started) 1000))
-                          :markers session.markers
-                          :phases session.phases
-                          :profile session.profile
-                          :bytes_read session.bytes-read
-                          :bytes_written session.bytes-written
-                          :exit_code (and status status.code)
-                          :exit_signal (and status status.signal)
-                          :artifacts session.artifacts})
-        "\n")))
+                  (.. (pty.encode-json {:scenario session.scenario
+                                        :cols session.cols
+                                        :rows session.rows
+                                        :elapsed_ms (math.floor (* (- (pty.now)
+                                                                      session.started)
+                                                                   1000))
+                                        :markers session.markers
+                                        :phases session.phases
+                                        :profile session.profile
+                                        :bytes_read session.bytes-read
+                                        :bytes_written session.bytes-written
+                                        :exit_code (and status status.code)
+                                        :exit_signal (and status status.signal)
+                                        :artifacts session.artifacts})
+                      "\n")))
 
 (fn with-session [scenario f opts]
   (let [session (make-session scenario opts)]
     (var status nil)
-    (let [(ok? err) (xpcall
-                      (fn []
-                        (wait-first-paint session)
-                        (set status (f session))
-                        (when (not status)
-                          (set status (close-with-ctrl-d session)))
-                        (assert.are.equal true status.exited)
-                        (assert.are.equal 0 status.code))
-                      debug.traceback)]
+    (let [(ok? err) (xpcall (fn []
+                              (wait-first-paint session)
+                              (set status (f session))
+                              (when (not status)
+                                (set status (close-with-ctrl-d session)))
+                              (assert.are.equal true status.exited)
+                              (assert.are.equal 0 status.code))
+                            debug.traceback)]
       (when (not ok?)
         (when session.child
           (session.child:kill)
@@ -142,316 +155,320 @@
         (error err)))))
 
 (describe "TUI PTY smoke #smoke #pty"
-  (fn []
-    (it "paints the TUI in a real PTY and exits on Ctrl-D"
-      (fn []
-        (with-session :startup (fn [_session] nil))))
-
-    (it "runs provider-free slash command workflows"
-      (fn []
-        (with-session :commands
-          (fn [session]
-            (write-input session "/help\r")
-            ;; The short PTY viewport paints only /help's tail; wait for the final Controls line.
-            (wait-marker session "Suspend to the shell" 3000)
-
-            (write-input session "/markdown off\r")
-            (wait-marker session "markdown rendering: off" 3000)
-            (write-input session "/markdown on\r")
-            (wait-marker session "markdown rendering: on" 3000)
-
-            (write-input session "/expand on\r")
-            (wait-marker session "tool results: expanded" 3000)
-            (write-input session "/expand off\r")
-            (wait-marker session "tool results: collapsed" 3000)
-
-            (write-input session "/animations off\r")
-            (wait-marker session "animations: off" 3000)
-            (write-input session "/thinking blocks off\r")
-            (wait-marker session "thinking blocks: hidden" 3000)
-
-            (write-input session "/reload\r")
-            (wait-marker session "/reload core" 5000)
-            nil))))
-
-    (it "handles real input editing keys before submitting commands"
-      (fn []
-        (with-session :editing
-          (fn [session]
-            (write-input session "abc\003/help\r")
-            (wait-marker session "Suspend to the shell" 3000)
-
-            (write-input session "/\009")
-            (wait-marker session "commands (" 3000)
-            (write-input session "\003")
-            nil))))
-
-    (it "submits commands after edit chords mutate the input buffer"
-      (fn []
-        (let [root (repo-root)]
-          (with-session :editing-chords
-            (fn [session]
-              (write-input session "/smoke-emit markx\127down\r")
-              (wait-marker session "smoke-emit markdown done" 3000)
-
-              (let [after-backspace (+ (length session.output) 1)]
-                (write-input session "/smoke-emit markdown junk\023\r")
-                (wait-marker session "smoke-emit markdown done" 3000 after-backspace))
-
-              (let [after-ctrl-w (+ (length session.output) 1)]
-                (write-input session "junk\021/smoke-emit markdown\r")
-                (wait-marker session "smoke-emit markdown done" 3000 after-ctrl-w))
-
-              (let [after-ctrl-u (+ (length session.output) 1)]
-                (write-input session "/smoke-emit markown\027[D\027[D\027[Dd\r")
-                (wait-marker session "smoke-emit markdown done" 3000 after-ctrl-u))
-
-              (let [after-arrows (+ (length session.output) 1)]
-                (write-input session "/smoke-emit markdwn\002\002o\006\r")
-                (wait-marker session "smoke-emit markdown done" 3000 after-arrows))
-
-              (let [after-ctrl-f (+ (length session.output) 1)]
-                (write-input session "/smoke-emit mark\001\005down\r")
-                (wait-marker session "smoke-emit markdown done" 3000 after-ctrl-f))
-              nil)
-            {:extension (fixture-extension root)}))))
-
-    (it "submits a multiline command after prompt growth"
-      (fn []
-        (let [root (repo-root)]
-          (with-session :multiline-input
-            (fn [session]
-              (write-input session "/smoke-emit markdown\010ignored continuation\r")
-              (wait-marker session "smoke-emit markdown done" 3000)
-              nil)
-            {:extension (fixture-extension root)}))))
-
-    (it "renders fixture markdown in raw and markdown modes"
-      (fn []
-        (let [root (repo-root)]
-          (with-session :fixture-markdown-mode
-            (fn [session]
-              (write-input session "/markdown off\r")
-              (wait-marker session "markdown rendering: off" 3000)
-              (write-input session "/smoke-emit markdown\r")
-              (wait-marker session "## smoke markdown heading" 3000)
-              (write-input session "/markdown on\r")
-              (wait-marker session "markdown rendering: on" 3000)
-              (let [after-on (+ (length session.output) 1)]
-                (write-input session "/smoke-emit markdown\r")
-                (wait-marker session "ai>  smoke markdown heading" 3000 after-on))
-              nil)
-            {:extension (fixture-extension root)}))))
-
-    (it "renders UTF-8 fixture text without corrupting input handling"
-      (fn []
-        (let [root (repo-root)]
-          (with-session :fixture-utf8
-            (fn [session]
-              (write-input session "/smoke-emit utf8\r")
-              (wait-marker session "smoke utf8" 3000)
-              ;; Cursor motion can split wide glyphs in raw PTY bytes; match stable fragments.
-              (wait-marker session "漢" 3000)
-              (wait-marker session "café" 3000)
-              (wait-marker session "smoke-emit utf8 done" 3000)
-              nil)
-            {:extension (fixture-extension root)}))))
-
-    (it "repaints after a PTY resize"
-      (fn []
-        (with-session :resize
-          (fn [session]
-            (let [after-first-paint (+ (length session.output) 1)]
-              (assert (session.child:resize 60 20))
-              (wait-marker session "pty-smoke:pty-smoke" 3000 after-first-paint))
-            (let [after-first-resize (+ (length session.output) 1)]
-              (assert (session.child:resize 120 40))
-              (wait-marker session "pty-smoke:pty-smoke" 3000 after-first-resize))
-            nil))))
-
-    (it "exits cleanly after the idle Ctrl-C confirmation chord"
-      (fn []
-        (with-session :ctrl-c-exit
-          (fn [session]
-            (write-input session "\003")
-            (wait-marker session "again" 3000)
-            (write-input session "\003")
-            (let [(status wait-err) (session.child:wait 3000)]
-              (when (not status)
-                (error (.. "fen did not exit after Ctrl-C chord: " (tostring wait-err))))
-              (session.child:close)
-              status)))))
-
-    (it "renders fixture-driven tool results and expanded bodies"
-      (fn []
-        (let [root (repo-root)]
-          (with-session :fixture-tool
-            (fn [session]
-              (write-input session "/smoke-emit tool\r")
-              (wait-marker session "read README.md" 3000)
-              (write-input session "\015")
-              (wait-marker session "smoke tool body line one" 3000)
-              nil)
-            {:extension (fixture-extension root)}))))
-
-    (it "surfaces fixture errors in the TUI errors panel"
-      (fn []
-        (let [root (repo-root)]
-          (with-session :fixture-error-panel
-            (fn [session]
-              (write-input session "/smoke-emit error\r")
-              (wait-marker session "smoke fixture error" 3000)
-              (write-input session "/errors on\r")
-              (wait-marker session "Errors" 3000)
-              (wait-marker session "deterministic error from pty-driver" 3000)
-              (write-input session "/errors clear\r")
-              (wait-marker session "errors: cleared" 3000)
-              nil)
-            {:extension (fixture-extension root)}))))
-
-    (it "scrolls through fixture-driven long transcript content"
-      (fn []
-        (let [root (repo-root)]
-          (with-session :fixture-scroll
-            (fn [session]
-              (write-input session "/smoke-emit long 80\r")
-              (wait-marker session "smoke-emit long 80 done" 5000)
-              (write-input session "\27[5~")
-              (wait-marker session "ctrl-y" 3000)
-              (write-input session "\27[6~")
-              nil)
-            {:extension (fixture-extension root)}))))
-
-    (it "automates an instrumented rapid-scroll profile #scrollprofile"
-      (fn []
-        (let [root (repo-root)
-              event-count (or (tonumber (os.getenv :FEN_SCROLL_PROFILE_EVENTS)) 1000)
-              wheel-count (or (tonumber (os.getenv :FEN_SCROLL_PROFILE_WHEELS)) 30)
-              period (or (tonumber (os.getenv :FEN_SCROLL_PROFILE_PERIOD)) 100000)
-              max-ms (tonumber (os.getenv :FEN_SCROLL_PROFILE_MAX_MS))]
-          (with-session :scroll-profile
-            (fn [session]
-              (write-input session (.. "/smoke-emit long " event-count "\r"))
-              (wait-marker session (.. "smoke-emit long " event-count " done") 60000)
-              (write-input session (.. "/profile start --period " period
-                                       " --mode functions\r"))
-              (wait-marker session "instruction samples, not wall time)" 5000)
-
-              ;; The trailing Ctrl-Y + fixture command are an in-band fence exposing one-redraw-per-event behavior.
-              (let [started (pty.now)
-                    bytes-before session.bytes-read
-                    output-start (+ (length session.output) 1)
-                    wheel-up "\27[<64;10;10M"]
-                (write-input session
-                             (.. (string.rep wheel-up wheel-count)
-                                 "\025/smoke-emit markdown\r"))
-                (wait-marker session "smoke markdown body" 60000 output-start)
-                (tset session.phases :scroll-burst
-                      {:elapsed_ms (math.floor (* (- (pty.now) started) 1000))
-                       :output_bytes (- session.bytes-read bytes-before)
-                       :wheel_events wheel-count}))
-
-              (let [profile-dir (.. session.artifacts "/profile")]
-                (set session.profile {:dir profile-dir
-                                      :period period
-                                      :events event-count
-                                      :max-ms max-ms})
-                (write-input session (.. "/profile save " profile-dir "\r"))
-                (wait-marker session "capture stopped before export)" 60000)
-                (io.stdout:write
-                  (string.format
-                    "\nscroll-profile: %d wheel events, %d ms, %d output bytes; artifacts: %s\n"
-                    wheel-count
-                    (. session.phases :scroll-burst :elapsed_ms)
-                    (. session.phases :scroll-burst :output_bytes)
-                    session.artifacts))
-                (when max-ms
-                  (assert.is_true
-                    (<= (. session.phases :scroll-burst :elapsed_ms) max-ms)
-                    (string.format "scroll burst exceeded budget: %dms > %dms"
-                                   (. session.phases :scroll-burst :elapsed_ms)
-                                   max-ms))))
-              nil)
-            {:extension (fixture-extension root)
-             ;; Source-overlay compilation can exceed the 5s startup fence on slow hosts.
-             :startup-timeout-ms 60000}))))
-
-    (it "summarizes bracketed paste without submitting provider input"
-      (fn []
-        (with-session :paste
-          (fn [session]
-            (let [pasted "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve"]
-              (write-input session (.. "\27[200~" pasted "\27[201~"))
-              ;; Raw PTY bytes are not a screen grid; assert one contiguous marker fragment.
-              (wait-marker session "lines]" 3000)
-              (write-input session "\003")
-              nil)))))
-
-    (it "recalls prior slash commands through input history"
-      (fn []
-        (let [root (repo-root)]
-          (with-session :history
-            (fn [session]
-              (write-input session "/smoke-emit markdown\r")
-              (wait-marker session "smoke-emit markdown done" 3000)
-              (let [after-submit (+ (length session.output) 1)]
-                (write-input session "draft-text\27[A")
-                (wait-marker session "markdown" 3000 after-submit))
-              (let [after-prev (+ (length session.output) 1)]
-                (write-input session "\27[B")
-                (wait-marker session "draft-t" 3000 after-prev))
-              (write-input session "\003")
-              nil)
-            {:extension (fixture-extension root)}))))
-
-    (it "scrolls long transcript content with mouse wheel input"
-      (fn []
-        (let [root (repo-root)]
-          (with-session :mouse-scroll
-            (fn [session]
-              (write-input session "/smoke-emit long 80\r")
-              (wait-marker session "smoke-emit long 80 done" 5000)
-              ;; Xterm SGR mouse wheel-up/down at column 10,row 10.
-              (write-input session "\27[<64;10;10M")
-              (wait-marker session "ctrl-y" 3000)
-              (write-input session "\27[<65;10;10M")
-              nil)
-            {:extension (fixture-extension root)}))))
-
-    (it "drives the TUI select overlay"
-      (fn []
-        (let [root (repo-root)]
-          (with-session :select
-            (fn [session]
-              (write-input session "/smoke-select\r")
-              (wait-marker session "smoke select" 3000)
-              (write-input session "be\r")
-              (wait-marker session "smoke-select picked: beta" 3000)
-              nil)
-            {:extension (fixture-extension root)}))))
-
-    (it "cancels the TUI select overlay"
-      (fn []
-        (let [root (repo-root)]
-          (with-session :select-cancel
-            (fn [session]
-              (write-input session "/smoke-select\r")
-              (wait-marker session "smoke select" 3000)
-              (write-input session "\003")
-              (wait-marker session "smoke-select cancelled" 3000)
-              nil)
-            {:extension (fixture-extension root)}))))
-
-    (it "recovers TUI select filtering after no matches"
-      (fn []
-        (let [root (repo-root)]
-          (with-session :select-no-match
-            (fn [session]
-              (write-input session "/smoke-select\r")
-              (wait-marker session "smoke select" 3000)
-              (write-input session "zzz")
-              (wait-marker session "(no matches)" 3000)
-              (write-input session "\127\127\127ga\r")
-              (wait-marker session "smoke-select picked: gamma" 3000)
-              nil)
-            {:extension (fixture-extension root)}))))))
+          (fn []
+            (it "paints the TUI in a real PTY and exits on Ctrl-D"
+                (fn []
+                  (with-session :startup (fn [_session] nil))))
+            (it "runs provider-free slash command workflows"
+                (fn []
+                  (with-session :commands
+                    (fn [session]
+                      (write-input session "/help\r")
+                      ;; The short PTY viewport paints only /help's tail; wait for the final Controls line.
+                      (wait-marker session "Suspend to the shell" 3000)
+                      (write-input session "/markdown off\r")
+                      (wait-marker session "markdown rendering: off" 3000)
+                      (write-input session "/markdown on\r")
+                      (wait-marker session "markdown rendering: on" 3000)
+                      (write-input session "/expand on\r")
+                      (wait-marker session "tool results: expanded" 3000)
+                      (write-input session "/expand off\r")
+                      (wait-marker session "tool results: collapsed" 3000)
+                      (write-input session "/animations off\r")
+                      (wait-marker session "animations: off" 3000)
+                      (write-input session "/thinking blocks off\r")
+                      (wait-marker session "thinking blocks: hidden" 3000)
+                      (write-input session "/reload\r")
+                      (wait-marker session "/reload core" 5000)
+                      nil))))
+            (it "handles real input editing keys before submitting commands"
+                (fn []
+                  (with-session :editing
+                    (fn [session]
+                      (write-input session "abc\003/help\r")
+                      (wait-marker session "Suspend to the shell" 3000)
+                      (write-input session "/\009")
+                      (wait-marker session "commands (" 3000)
+                      (write-input session "\003")
+                      nil))))
+            (it "submits commands after edit chords mutate the input buffer"
+                (fn []
+                  (let [root (repo-root)]
+                    (with-session :editing-chords
+                      (fn [session]
+                        (write-input session "/smoke-emit markx\127down\r")
+                        (wait-marker session "smoke-emit markdown done" 3000)
+                        (let [after-backspace (+ (length session.output) 1)]
+                          (write-input session
+                                       "/smoke-emit markdown junk\023\r")
+                          (wait-marker session "smoke-emit markdown done" 3000
+                                       after-backspace))
+                        (let [after-ctrl-w (+ (length session.output) 1)]
+                          (write-input session "junk\021/smoke-emit markdown\r")
+                          (wait-marker session "smoke-emit markdown done" 3000
+                                       after-ctrl-w))
+                        (let [after-ctrl-u (+ (length session.output) 1)]
+                          (write-input session
+                                       "/smoke-emit markown\027[D\027[D\027[Dd\r")
+                          (wait-marker session "smoke-emit markdown done" 3000
+                                       after-ctrl-u))
+                        (let [after-arrows (+ (length session.output) 1)]
+                          (write-input session
+                                       "/smoke-emit markdwn\002\002o\006\r")
+                          (wait-marker session "smoke-emit markdown done" 3000
+                                       after-arrows))
+                        (let [after-ctrl-f (+ (length session.output) 1)]
+                          (write-input session "/smoke-emit mark\001\005down\r")
+                          (wait-marker session "smoke-emit markdown done" 3000
+                                       after-ctrl-f))
+                        nil)
+                      {:extension (fixture-extension root)}))))
+            (it "submits a multiline command after prompt growth"
+                (fn []
+                  (let [root (repo-root)]
+                    (with-session :multiline-input
+                      (fn [session]
+                        (write-input session
+                                     "/smoke-emit markdown\010ignored continuation\r")
+                        (wait-marker session "smoke-emit markdown done" 3000)
+                        nil)
+                      {:extension (fixture-extension root)}))))
+            (it "renders fixture markdown in raw and markdown modes"
+                (fn []
+                  (let [root (repo-root)]
+                    (with-session :fixture-markdown-mode
+                      (fn [session]
+                        (write-input session "/markdown off\r")
+                        (wait-marker session "markdown rendering: off" 3000)
+                        (write-input session "/smoke-emit markdown\r")
+                        (wait-marker session "## smoke markdown heading" 3000)
+                        (write-input session "/markdown on\r")
+                        (wait-marker session "markdown rendering: on" 3000)
+                        (let [after-on (+ (length session.output) 1)]
+                          (write-input session "/smoke-emit markdown\r")
+                          (wait-marker session "ai>  smoke markdown heading"
+                                       3000 after-on))
+                        nil)
+                      {:extension (fixture-extension root)}))))
+            (it "renders UTF-8 fixture text without corrupting input handling"
+                (fn []
+                  (let [root (repo-root)]
+                    (with-session :fixture-utf8
+                      (fn [session]
+                        (write-input session "/smoke-emit utf8\r")
+                        (wait-marker session "smoke utf8" 3000)
+                        ;; Cursor motion can split wide glyphs in raw PTY bytes; match stable fragments.
+                        (wait-marker session "漢" 3000)
+                        (wait-marker session "café" 3000)
+                        (wait-marker session "smoke-emit utf8 done" 3000)
+                        nil)
+                      {:extension (fixture-extension root)}))))
+            (it "repaints after a PTY resize"
+                (fn []
+                  (with-session :resize
+                    (fn [session]
+                      (let [after-first-paint (+ (length session.output) 1)]
+                        (assert (session.child:resize 60 20))
+                        (wait-marker session "pty-smoke:pty-smoke" 3000
+                                     after-first-paint))
+                      (let [after-first-resize (+ (length session.output) 1)]
+                        (assert (session.child:resize 120 40))
+                        (wait-marker session "pty-smoke:pty-smoke" 3000
+                                     after-first-resize))
+                      nil))))
+            (it "exits cleanly after the idle Ctrl-C confirmation chord"
+                (fn []
+                  (with-session :ctrl-c-exit
+                    (fn [session]
+                      (write-input session "\003")
+                      (wait-marker session "again" 3000)
+                      (write-input session "\003")
+                      (let [(status wait-err) (session.child:wait 3000)]
+                        (when (not status)
+                          (error (.. "fen did not exit after Ctrl-C chord: "
+                                     (tostring wait-err))))
+                        (session.child:close)
+                        status)))))
+            (it "renders fixture-driven tool results and expanded bodies"
+                (fn []
+                  (let [root (repo-root)]
+                    (with-session :fixture-tool
+                      (fn [session]
+                        (write-input session "/smoke-emit tool\r")
+                        (wait-marker session "read README.md" 3000)
+                        (write-input session "\015")
+                        (wait-marker session "smoke tool body line one" 3000)
+                        nil)
+                      {:extension (fixture-extension root)}))))
+            (it "surfaces fixture errors in the TUI errors panel"
+                (fn []
+                  (let [root (repo-root)]
+                    (with-session :fixture-error-panel
+                      (fn [session]
+                        (write-input session "/smoke-emit error\r")
+                        (wait-marker session "smoke fixture error" 3000)
+                        (write-input session "/errors on\r")
+                        (wait-marker session "Errors" 3000)
+                        (wait-marker session
+                                     "deterministic error from pty-driver" 3000)
+                        (write-input session "/errors clear\r")
+                        (wait-marker session "errors: cleared" 3000)
+                        nil)
+                      {:extension (fixture-extension root)}))))
+            (it "scrolls through fixture-driven long transcript content"
+                (fn []
+                  (let [root (repo-root)]
+                    (with-session :fixture-scroll
+                      (fn [session]
+                        (write-input session "/smoke-emit long 80\r")
+                        (wait-marker session "smoke-emit long 80 done" 5000)
+                        (write-input session "\27[5~")
+                        (wait-marker session "ctrl-y" 3000)
+                        (write-input session "\27[6~")
+                        nil)
+                      {:extension (fixture-extension root)}))))
+            (it "automates an instrumented rapid-scroll profile #scrollprofile"
+                (fn []
+                  (let [root (repo-root)
+                        event-count (or (tonumber (os.getenv :FEN_SCROLL_PROFILE_EVENTS))
+                                        1000)
+                        wheel-count (or (tonumber (os.getenv :FEN_SCROLL_PROFILE_WHEELS))
+                                        30)
+                        period (or (tonumber (os.getenv :FEN_SCROLL_PROFILE_PERIOD))
+                                   100000)
+                        max-ms (tonumber (os.getenv :FEN_SCROLL_PROFILE_MAX_MS))]
+                    (with-session :scroll-profile
+                      (fn [session]
+                        (write-input session
+                                     (.. "/smoke-emit long " event-count "\r"))
+                        (wait-marker session
+                                     (.. "smoke-emit long " event-count " done")
+                                     60000)
+                        (write-input session
+                                     (.. "/profile start --period " period
+                                         " --mode functions\r"))
+                        (wait-marker session
+                                     "instruction samples, not wall time)" 5000)
+                        ;; The trailing Ctrl-Y + fixture command are an in-band fence exposing one-redraw-per-event behavior.
+                        (let [started (pty.now)
+                              bytes-before session.bytes-read
+                              output-start (+ (length session.output) 1)
+                              wheel-up "\27[<64;10;10M"]
+                          (write-input session
+                                       (.. (string.rep wheel-up wheel-count)
+                                           "\025/smoke-emit markdown\r"))
+                          (wait-marker session "smoke markdown body" 60000
+                                       output-start)
+                          (tset session.phases :scroll-burst
+                                {:elapsed_ms (math.floor (* (- (pty.now)
+                                                               started)
+                                                            1000))
+                                 :output_bytes (- session.bytes-read
+                                                  bytes-before)
+                                 :wheel_events wheel-count}))
+                        (let [profile-dir (.. session.artifacts "/profile")]
+                          (set session.profile
+                               {:dir profile-dir
+                                :period period
+                                :events event-count
+                                :max-ms max-ms})
+                          (write-input session
+                                       (.. "/profile save " profile-dir "\r"))
+                          (wait-marker session "capture stopped before export)"
+                                       60000)
+                          (io.stdout:write (string.format "\nscroll-profile: %d wheel events, %d ms, %d output bytes; artifacts: %s\n"
+                                                          wheel-count
+                                                          (. session.phases
+                                                             :scroll-burst
+                                                             :elapsed_ms)
+                                                          (. session.phases
+                                                             :scroll-burst
+                                                             :output_bytes)
+                                                          session.artifacts))
+                          (when max-ms
+                            (assert.is_true (<= (. session.phases :scroll-burst
+                                                   :elapsed_ms)
+                                                max-ms)
+                                            (string.format "scroll burst exceeded budget: %dms > %dms"
+                                                           (. session.phases
+                                                              :scroll-burst
+                                                              :elapsed_ms)
+                                                           max-ms))))
+                        nil)
+                      {:extension (fixture-extension root)
+                       ;; Source-overlay compilation can exceed the 5s startup fence on slow hosts.
+                       :startup-timeout-ms 60000}))))
+            (it "summarizes bracketed paste without submitting provider input"
+                (fn []
+                  (with-session :paste
+                    (fn [session]
+                      (let [pasted "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve"]
+                        (write-input session (.. "\27[200~" pasted "\27[201~"))
+                        ;; Raw PTY bytes are not a screen grid; assert one contiguous marker fragment.
+                        (wait-marker session "lines]" 3000)
+                        (write-input session "\003")
+                        nil)))))
+            (it "recalls prior slash commands through input history"
+                (fn []
+                  (let [root (repo-root)]
+                    (with-session :history
+                      (fn [session]
+                        (write-input session "/smoke-emit markdown\r")
+                        (wait-marker session "smoke-emit markdown done" 3000)
+                        (let [after-submit (+ (length session.output) 1)]
+                          (write-input session "draft-text\27[A")
+                          (wait-marker session "markdown" 3000 after-submit))
+                        (let [after-prev (+ (length session.output) 1)]
+                          (write-input session "\27[B")
+                          (wait-marker session "draft-t" 3000 after-prev))
+                        (write-input session "\003")
+                        nil)
+                      {:extension (fixture-extension root)}))))
+            (it "scrolls long transcript content with mouse wheel input"
+                (fn []
+                  (let [root (repo-root)]
+                    (with-session :mouse-scroll
+                      (fn [session]
+                        (write-input session "/smoke-emit long 80\r")
+                        (wait-marker session "smoke-emit long 80 done" 5000)
+                        ;; Xterm SGR mouse wheel-up/down at column 10,row 10.
+                        (write-input session "\27[<64;10;10M")
+                        (wait-marker session "ctrl-y" 3000)
+                        (write-input session "\27[<65;10;10M")
+                        nil)
+                      {:extension (fixture-extension root)}))))
+            (it "drives the TUI select overlay"
+                (fn []
+                  (let [root (repo-root)]
+                    (with-session :select
+                      (fn [session]
+                        (write-input session "/smoke-select\r")
+                        (wait-marker session "smoke select" 3000)
+                        (write-input session "be\r")
+                        (wait-marker session "smoke-select picked: beta" 3000)
+                        nil)
+                      {:extension (fixture-extension root)}))))
+            (it "cancels the TUI select overlay"
+                (fn []
+                  (let [root (repo-root)]
+                    (with-session :select-cancel
+                      (fn [session]
+                        (write-input session "/smoke-select\r")
+                        (wait-marker session "smoke select" 3000)
+                        (write-input session "\003")
+                        (wait-marker session "smoke-select cancelled" 3000)
+                        nil)
+                      {:extension (fixture-extension root)}))))
+            (it "recovers TUI select filtering after no matches"
+                (fn []
+                  (let [root (repo-root)]
+                    (with-session :select-no-match
+                      (fn [session]
+                        (write-input session "/smoke-select\r")
+                        (wait-marker session "smoke select" 3000)
+                        (write-input session "zzz")
+                        (wait-marker session "(no matches)" 3000)
+                        (write-input session "\127\127\127ga\r")
+                        (wait-marker session "smoke-select picked: gamma" 3000)
+                        nil)
+                      {:extension (fixture-extension root)}))))))

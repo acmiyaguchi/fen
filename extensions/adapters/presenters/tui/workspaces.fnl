@@ -9,47 +9,55 @@
 
 ;; Single dispatch point for workspace kinds; new kinds add policy here, not
 ;; in individual TUI surfaces. input-mode is derived from capabilities.
-(local KINDS
-  {:main-session
-   {:capabilities-for (fn [_ws _status]
-                        {:edit true :input true :submit true :steer false})
-    :closable? false
-    :sort-rank 0
-    :submit! (fn [_ws handlers line] (handlers.main line))}
-   :side-chat
-   {:capabilities-for (fn [_ws status]
-                        {:edit true :input true
-                         :submit (not= status :running) :steer false})
-    :agent? true
-    :closable? true
-    :input-mode :side
-    :sort-rank 1
-    :status? true
-    :submit! (fn [ws handlers line]
-               ;; Only /btw-use may reach parent command dispatch; all other
-               ;; slash lines stay side-agent input.
-               (if (or (= line "/btw-use")
-                       (string.match line "^/btw%-use%s+.*$"))
-                   (handlers.command line)
-                   (handlers.side ws line)))
-    :cancel! (fn [ws]
-               (let [(ok? side-chat)
-                     (pcall require :fen.extensions.tui.side_chat)]
-                 (and ok? (side-chat.request-cancel! ws))))
-    :close! (fn [ws]
-              (let [(ok? side-chat)
-                    (pcall require :fen.extensions.tui.side_chat)]
-                (when ok? (side-chat.cancel! ws))))}
-   :subagent-job
-   {:capabilities-for (fn [_ws status]
-                        (let [running? (= status :running)]
-                          {:edit false :input running? :submit false :steer running?}))
-    :agent? true
-    :closable? true
-    :sort-rank 2
-    :status? true
-    :subagent? true
-    :submit! (fn [_ws handlers line] (handlers.steer line))}})
+(local KINDS {:main-session {:capabilities-for (fn [_ws _status]
+                                                 {:edit true
+                                                  :input true
+                                                  :submit true
+                                                  :steer false})
+                             :closable? false
+                             :sort-rank 0
+                             :submit! (fn [_ws handlers line]
+                                        (handlers.main line))}
+              :side-chat {:capabilities-for (fn [_ws status]
+                                              {:edit true
+                                               :input true
+                                               :submit (not= status :running)
+                                               :steer false})
+                          :agent? true
+                          :closable? true
+                          :input-mode :side
+                          :sort-rank 1
+                          :status? true
+                          :submit! (fn [ws handlers line]
+                                     ;; Only /btw-use may reach parent command dispatch; all other
+                                     ;; slash lines stay side-agent input.
+                                     (if (or (= line "/btw-use")
+                                             (string.match line
+                                                           "^/btw%-use%s+.*$"))
+                                         (handlers.command line)
+                                         (handlers.side ws line)))
+                          :cancel! (fn [ws]
+                                     (let [(ok? side-chat) (pcall require
+                                                                  :fen.extensions.tui.side_chat)]
+                                       (and ok? (side-chat.request-cancel! ws))))
+                          :close! (fn [ws]
+                                    (let [(ok? side-chat) (pcall require
+                                                                 :fen.extensions.tui.side_chat)]
+                                      (when ok? (side-chat.cancel! ws))))}
+              :subagent-job {:capabilities-for (fn [_ws status]
+                                                 (let [running? (= status
+                                                                   :running)]
+                                                   {:edit false
+                                                    :input running?
+                                                    :submit false
+                                                    :steer running?}))
+                             :agent? true
+                             :closable? true
+                             :sort-rank 2
+                             :status? true
+                             :subagent? true
+                             :submit! (fn [_ws handlers line]
+                                        (handlers.steer line))}})
 
 (set M.KINDS KINDS)
 
@@ -105,12 +113,23 @@
     (or (and spec spec.sort-rank) 99)))
 
 ;; state.* projects the active record so shared render modules stay unforked.
-(local VIEW-KEYS [:transcript :streaming-assistant-rows :transcript-layout-cache
-                  :scroll-offset :new-content-below? :last-user-jump-index
-                  :selection :selection-paint
-                  :input-buf :input-cursor
-                  :paste-active? :paste-buffer :paste-counter :pastes
-                  :history :history-pos :history-draft])
+(local VIEW-KEYS [:transcript
+                  :streaming-assistant-rows
+                  :transcript-layout-cache
+                  :scroll-offset
+                  :new-content-below?
+                  :last-user-jump-index
+                  :selection
+                  :selection-paint
+                  :input-buf
+                  :input-cursor
+                  :paste-active?
+                  :paste-buffer
+                  :paste-counter
+                  :pastes
+                  :history
+                  :history-pos
+                  :history-draft])
 
 ;; One normalization sweep per reload/registry replacement, not per frame.
 (var ensured-workspaces nil)
@@ -122,17 +141,15 @@
       (or (= key :transcript-layout-cache) (= key :selection)
           (= key :selection-paint) (= key :last-user-jump-index)) nil
       (or (= key :new-content-below?) (= key :paste-active?)) false
-      (or (= key :scroll-offset) (= key :input-cursor)
-          (= key :paste-counter) (= key :history-pos)) 0
-      ""))
+      (or (= key :scroll-offset) (= key :input-cursor) (= key :paste-counter)
+          (= key :history-pos)) 0 ""))
 
 (fn ensure-view! [ws ?source]
   (each [_ key (ipairs VIEW-KEYS)]
     (when (= (. ws key) nil)
-      (tset ws key
-            (if (and ?source (not= (. ?source key) nil))
-                (. ?source key)
-                (fresh-value key)))))
+      (tset ws key (if (and ?source (not= (. ?source key) nil))
+                       (. ?source key)
+                       (fresh-value key)))))
   ws)
 
 (fn save-view! [ws]
@@ -154,10 +171,15 @@
   ws)
 
 (fn main-workspace []
-  (let [ws {:id :main-session :kind :main-session :title "main"
-            :cwd nil :session-id nil :job-id nil
+  (let [ws {:id :main-session
+            :kind :main-session
+            :title "main"
+            :cwd nil
+            :session-id nil
+            :job-id nil
             :source {:kind :interactive-session}
-            :activity-count 0 :dirty? false}]
+            :activity-count 0
+            :dirty? false}]
     (ensure-view! ws state)))
 
 (fn find-workspace [id]
@@ -214,18 +236,18 @@
     (set view-depth 1)
     ;; Guard stays live for the whole swap so a malformed workspace cannot
     ;; permanently poison future view swaps.
-    (let [(ok? result)
-          (xpcall
-            #(do
-               (when (not (rawequal shown ws))
-                 (save-view! shown)
-                 (load-view! ws))
-               (let [(callback-ok? callback-result) (xpcall f debug.traceback)]
-                 (save-view! ws)
-                 (when (not (rawequal shown ws))
-                   (load-view! shown))
-                 (if callback-ok? callback-result (error callback-result))))
-            debug.traceback)]
+    (let [(ok? result) (xpcall #(do
+                                  (when (not (rawequal shown ws))
+                                    (save-view! shown)
+                                    (load-view! ws))
+                                  (let [(callback-ok? callback-result) (xpcall f
+                                                                               debug.traceback)]
+                                    (save-view! ws)
+                                    (when (not (rawequal shown ws))
+                                      (load-view! shown))
+                                    (if callback-ok? callback-result
+                                        (error callback-result))))
+                               debug.traceback)]
       (set view-depth 0)
       (if ok? result (error result)))))
 
@@ -252,15 +274,14 @@
   (M.capture-active!)
   (let [id spec.id]
     (assert id "workspace id is required")
-    (or (find-workspace id)
-        (let [ws {}]
-          (each [k v (pairs spec)] (tset ws k v))
-          (ensure-metadata! ws)
-          (ensure-view! ws)
-          (table.insert state.workspaces ws)
-          (M.sort-workspaces!)
-          (redraw.invalidate-full!)
-          ws))))
+    (or (find-workspace id) (let [ws {}]
+                              (each [k v (pairs spec)] (tset ws k v))
+                              (ensure-metadata! ws)
+                              (ensure-view! ws)
+                              (table.insert state.workspaces ws)
+                              (M.sort-workspaces!)
+                              (redraw.invalidate-full!)
+                              ws))))
 
 (fn M.with-main! [f]
   "Run F against the main transcript without changing the tab being viewed."
@@ -310,12 +331,12 @@
     {:label (.. (if (= ws.id state.active-workspace-id) "● " "  ")
                 (or ws.title (tostring ws.id)))
      :value ws.id
-     :description (table.concat
-                    (icollect [_ part (ipairs [(tostring ws.kind)
-                                              (and ws.status (tostring ws.status))
-                                              ws.cwd])]
-                      (when (and part (not= part "")) part))
-                    " · ")}))
+     :description (table.concat (icollect [_ part (ipairs [(tostring ws.kind)
+                                                           (and ws.status
+                                                                (tostring ws.status))
+                                                           ws.cwd])]
+                                  (when (and part (not= part "")) part))
+                                " · ")}))
 
 (fn M.submit! [line handlers]
   "Dispatch submission through the active kind's single policy entry."
@@ -340,13 +361,21 @@
               (values nil (.. "subagent run is not active: "
                               (tostring ws.job-id))))))))
 
-(local CANONICAL-EVENTS
-  {:user true :steering-injected true :follow-up-injected true
-   :tool-call true :tool-result true :assistant-text true
-   :assistant-thinking true :assistant-text-delta true
-   :assistant-thinking-delta true :assistant-stream-end true
-   :llm-start true :llm-end true :provider-retry true
-   :error true :cancelled true})
+(local CANONICAL-EVENTS {:user true
+                         :steering-injected true
+                         :follow-up-injected true
+                         :tool-call true
+                         :tool-result true
+                         :assistant-text true
+                         :assistant-thinking true
+                         :assistant-text-delta true
+                         :assistant-thinking-delta true
+                         :assistant-stream-end true
+                         :llm-start true
+                         :llm-end true
+                         :provider-retry true
+                         :error true
+                         :cancelled true})
 
 (fn info-event [ev]
   {:type :info
@@ -382,8 +411,9 @@
       (ingest-into! ws ev)
       (if (= state.active-workspace-id id)
           (M.capture-active!)
-          (do (set ws.activity-count (+ (or ws.activity-count 0) 1))
-              (set ws.dirty? true)))
+          (do
+            (set ws.activity-count (+ (or ws.activity-count 0) 1))
+            (set ws.dirty? true)))
       ws)))
 
 (fn M.refresh! [ws]
@@ -400,25 +430,24 @@
   (find-workspace (.. "subagent:" run.id)))
 
 (fn make-run-workspace [run]
-  (M.create!
-    {:id (.. "subagent:" run.id)
-     :kind :subagent-job
-     :title (run-title run)
-     :cwd run.cwd
-     :session-id nil
-     :job-id run.id
-     :source {:kind :subagent-run :run-id run.id}
-     :status run.status
-     :activity-count 0
-     :dirty? false
-     :source-event-seq 0
-     :header-added? false
-     :result-added? false
-     :subagent-seq run.seq
-     :started-at run.started-at
-     :provider nil
-     :model nil
-     :usage nil}))
+  (M.create! {:id (.. "subagent:" run.id)
+              :kind :subagent-job
+              :title (run-title run)
+              :cwd run.cwd
+              :session-id nil
+              :job-id run.id
+              :source {:kind :subagent-run :run-id run.id}
+              :status run.status
+              :activity-count 0
+              :dirty? false
+              :source-event-seq 0
+              :header-added? false
+              :result-added? false
+              :subagent-seq run.seq
+              :started-at run.started-at
+              :provider nil
+              :model nil
+              :usage nil}))
 
 (fn copy-table [tbl]
   (when tbl
@@ -437,8 +466,7 @@
 
 (fn run-usage [run]
   (or (copy-table (?. run :details :usage))
-      (copy-table (?. run :usage-acc :totals))
-      (usage-from-events run.events)))
+      (copy-table (?. run :usage-acc :totals)) (usage-from-events run.events)))
 
 (fn run-provider-model [run]
   (var provider (?. run :details :provider))
@@ -454,22 +482,23 @@
         (provider model) (run-provider-model run)
         usage (run-usage run)
         status-changed? (not= ws.status run.status)
-        metadata-changed? (or (not= ws.provider provider)
-                              (not= ws.model model)
+        metadata-changed? (or (not= ws.provider provider) (not= ws.model model)
                               (not= (usage-util.usage-total ws.usage)
                                     (usage-util.usage-total usage)))]
     (var changed? false)
     (var old-seq (or ws.source-event-seq 0))
     (when (not ws.header-added?)
-      (ingest-into! ws {:type :info
-                        :text (.. "subagent " run.id " — " (or run.cwd ""))})
+      (ingest-into! ws
+                    {:type :info
+                     :text (.. "subagent " run.id " — " (or run.cwd ""))})
       (set ws.header-added? true)
       (set changed? true))
     (let [first-seq (+ (- count (length events)) 1)]
       (when (< old-seq (- first-seq 1))
-        (ingest-into! ws {:type :info
-                          :text (.. "[" (- (- first-seq 1) old-seq)
-                                    " earlier child events omitted by retention limit]")})
+        (ingest-into! ws
+                      {:type :info
+                       :text (.. "[" (- (- first-seq 1) old-seq)
+                                 " earlier child events omitted by retention limit]")})
         (set old-seq (- first-seq 1))
         (set changed? true))
       (each [i ev (ipairs events)]
@@ -499,8 +528,9 @@
     (when (or changed? status-changed? metadata-changed?)
       (if (= state.active-workspace-id ws.id)
           (M.capture-active!)
-          (do (set ws.activity-count (+ (or ws.activity-count 0) 1))
-              (set ws.dirty? true)))
+          (do
+            (set ws.activity-count (+ (or ws.activity-count 0) 1))
+            (set ws.dirty? true)))
       (redraw.invalidate!))
     ws))
 
@@ -509,8 +539,10 @@
         b-rank (M.sort-rank b)]
     (if (< a-rank b-rank) true
         (> a-rank b-rank) false
-        (not= (or a.subagent-seq 0) (or b.subagent-seq 0))
-        (> (or a.subagent-seq 0) (or b.subagent-seq 0))
+        (not= (or a.subagent-seq 0) (or b.subagent-seq 0)) (> (or a.subagent-seq
+                                                                  0)
+                                                              (or b.subagent-seq
+                                                                  0))
         ;; table.sort is unstable; fall back to the pre-sort position.
         (< (or a._workspace-order 0) (or b._workspace-order 0)))))
 

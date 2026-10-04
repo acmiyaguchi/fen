@@ -15,8 +15,15 @@
 ;; signature: [state]
 ;; summary: Every run state in lifecycle order: starting, ready, running, closing, finalizing, then the terminal done, cancelled, failed, and timed-out.
 ;; tags: wire subagent protocol state
-(local STATES [:starting :ready :running :closing :finalizing
-               :done :cancelled :failed :timed-out])
+(local STATES [:starting
+               :ready
+               :running
+               :closing
+               :finalizing
+               :done
+               :cancelled
+               :failed
+               :timed-out])
 
 (local TERMINAL {:done true :cancelled true :failed true :timed-out true})
 
@@ -43,37 +50,36 @@
 ;; signature: {state {control {:status :action :next :reason}}}
 ;; summary: The (state, control) table. :status is the control-ack status (accepted, applied, or rejected), :next the state after the control (absent when rejected), and :action what the child does.
 ;; tags: wire subagent protocol state
-(local TRANSITIONS
-  {:starting {:prompt (reject "child is not ready")
-              :steer (reject "child is not ready")
-              :follow-up (reject "child is not ready")
-              :finalize (reject "child is not ready")
-              :close (reject "child is not ready")
-              :cancel CANCEL}
-   :ready {:prompt (accept :start-turn :running)
-           :steer (accept :start-turn :running)
-           :follow-up (accept :start-turn :running)
-           :finalize (accept :start-finalize-turn :finalizing)
-           :close (accept :finish :done)
-           :cancel CANCEL}
-   :running {:prompt (reject "a turn is running; send steer or follow-up")
-             :steer (accept :queue-steering :running)
-             :follow-up (accept :queue-follow-up :running)
-             :finalize (accept :interrupt-turn :finalizing)
-             :close (accept :none :closing)
-             :cancel CANCEL}
-   :closing {:prompt (reject "run is closing")
-             :steer (reject "run is closing")
-             :follow-up (reject "run is closing")
-             :finalize (accept :interrupt-turn :finalizing)
-             :close (apply :closing)
-             :cancel CANCEL}
-   :finalizing {:prompt (reject "run is finalizing")
-                :steer (reject "run is finalizing")
-                :follow-up (reject "run is finalizing")
-                :finalize (apply :finalizing)
-                :close (apply :finalizing)
-                :cancel CANCEL}})
+(local TRANSITIONS {:starting {:prompt (reject "child is not ready")
+                               :steer (reject "child is not ready")
+                               :follow-up (reject "child is not ready")
+                               :finalize (reject "child is not ready")
+                               :close (reject "child is not ready")
+                               :cancel CANCEL}
+                    :ready {:prompt (accept :start-turn :running)
+                            :steer (accept :start-turn :running)
+                            :follow-up (accept :start-turn :running)
+                            :finalize (accept :start-finalize-turn :finalizing)
+                            :close (accept :finish :done)
+                            :cancel CANCEL}
+                    :running {:prompt (reject "a turn is running; send steer or follow-up")
+                              :steer (accept :queue-steering :running)
+                              :follow-up (accept :queue-follow-up :running)
+                              :finalize (accept :interrupt-turn :finalizing)
+                              :close (accept :none :closing)
+                              :cancel CANCEL}
+                    :closing {:prompt (reject "run is closing")
+                              :steer (reject "run is closing")
+                              :follow-up (reject "run is closing")
+                              :finalize (accept :interrupt-turn :finalizing)
+                              :close (apply :closing)
+                              :cancel CANCEL}
+                    :finalizing {:prompt (reject "run is finalizing")
+                                 :steer (reject "run is finalizing")
+                                 :follow-up (reject "run is finalizing")
+                                 :finalize (apply :finalizing)
+                                 :close (apply :finalizing)
+                                 :cancel CANCEL}})
 
 (each [state _ (pairs TERMINAL)]
   (let [row {}]
@@ -97,13 +103,12 @@
 ;; signature: {state {event {:action :next}}}
 ;; summary: The (state, internal event) table for turn ends, the deadline, and fatal errors; a missing entry means the event cannot happen in that state.
 ;; tags: wire subagent protocol state
-(local EVENTS
-  {:starting {:started (go :none :ready)}
-   :ready {}
-   :running {:turn-done (go :none :ready)}
-   :closing {:turn-done (go :finish :done)}
-   :finalizing {:turn-done (go :start-finalize-turn :finalizing)
-                :final-turn-done (go :finish :done)}})
+(local EVENTS {:starting {:started (go :none :ready)}
+               :ready {}
+               :running {:turn-done (go :none :ready)}
+               :closing {:turn-done (go :finish :done)}
+               :finalizing {:turn-done (go :start-finalize-turn :finalizing)
+                            :final-turn-done (go :finish :done)}})
 
 (each [state row (pairs EVENTS)]
   (each [event entry (pairs ABORT-EVENTS)]
@@ -132,8 +137,8 @@
   (let [entry (?. TRANSITIONS state control-type)]
     (if entry
         (copy entry)
-        (reject (.. "no transition for " (tostring control-type)
-                    " in state " (tostring state))))))
+        (reject (.. "no transition for " (tostring control-type) " in state "
+                    (tostring state))))))
 
 ;; @doc fen.util.wire_session.advance
 ;; kind: function
@@ -154,8 +159,12 @@
 
 ;; Wire event types that belong to the run lifecycle rather than the
 ;; forwarded display stream; a child never forwards bus events of these types.
-(local LIFECYCLE-EVENTS {:ready true :turn-started true :turn-complete true
-                         :control-ack true :result true :exit true})
+(local LIFECYCLE-EVENTS {:ready true
+                         :turn-started true
+                         :turn-complete true
+                         :control-ack true
+                         :result true
+                         :exit true})
 
 ;; @doc fen.util.wire_session.lifecycle-event?
 ;; kind: function

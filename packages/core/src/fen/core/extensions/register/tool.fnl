@@ -32,13 +32,13 @@
 ;; summary: Remove every tool contribution installed by owner from the extension tool registry.
 ;; tags: extensions register tools reload
 (fn M.unregister-by-owner [owner]
-  (util.remove-where state.tools-extra
-                     (fn [t _] (= t.__owner owner))))
+  (util.remove-where state.tools-extra (fn [t _] (= t.__owner owner))))
 
 (fn M.merged [base]
   "Return base ++ extension-contributed tools."
   (let [out []]
-    (each [_ t (ipairs (or base []))] (table.insert out t))
+    (each [_ t (ipairs (or base []))]
+      (table.insert out t))
     (each [_ t (ipairs state.tools-extra)] (table.insert out t))
     out))
 
@@ -51,8 +51,13 @@
   (let [out []]
     (each [_ t (ipairs state.tools-extra)]
       (let [rec {:name t.name :owner t.__owner}]
-        (each [_ k (ipairs [:label :snippet :description :parameters :exposure
-                            :parallel-safe? :parallel-cap])]
+        (each [_ k (ipairs [:label
+                            :snippet
+                            :description
+                            :parameters
+                            :exposure
+                            :parallel-safe?
+                            :parallel-cap])]
           (when (not= (. t k) nil)
             (tset rec k (. t k))))
         (table.insert out rec)))

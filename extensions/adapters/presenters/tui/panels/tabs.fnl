@@ -6,10 +6,9 @@
 
 (local M {})
 
-(local TC
-  {:inactive (bor tb.WHITE tb.DIM)
-   :active (bor tb.WHITE tb.REVERSE)
-   :separator tb.DEFAULT})
+(local TC {:inactive (bor tb.WHITE tb.DIM)
+           :active (bor tb.WHITE tb.REVERSE)
+           :separator tb.DEFAULT})
 
 (fn closable? [ws]
   (workspaces.closable? ws))
@@ -18,8 +17,7 @@
   (= ws.id state.active-workspace-id))
 
 (fn has-activity? [ws]
-  (and (not (active? ws))
-       (or ws.dirty? (> (or ws.activity-count 0) 0))))
+  (and (not (active? ws)) (or ws.dirty? (> (or ws.activity-count 0) 0))))
 
 (fn truncate [text width]
   (let [s (tostring (or text ""))
@@ -30,8 +28,7 @@
         (.. (string.sub s 1 (- width 1)) "~"))))
 
 (fn desired-width [ws]
-  (+ 2 (length (or ws.title (tostring ws.id)))
-     (if (has-activity? ws) 1 0)
+  (+ 2 (length (or ws.title (tostring ws.id))) (if (has-activity? ws) 1 0)
      (if (closable? ws) 2 0)))
 
 (fn tab-model [ws max-width]
@@ -47,8 +44,7 @@
       (set activity? false)
       (set fixed 2))
     (let [title (truncate (or ws.title (tostring ws.id)) (- max-width fixed))
-          text (.. "[" title (if activity? "*" "")
-                   (if close? " x" "") "]")
+          text (.. "[" title (if activity? "*" "") (if close? " x" "") "]")
           close-pos (and close? (string.find text " x]" 1 true))]
       {:text text
        ;; string.find is 1-based and points at the preceding space, so close-pos is already the 0-based column.
@@ -92,15 +88,17 @@
                 attr (if (active? ws) TC.active TC.inactive)]
             (table.insert segments {:text text :attr attr})
             (when (> visible 0)
-              (table.insert hits {:x0 x :x1 (+ x visible -1)
-                                  :workspace-id ws.id
-                                  :action :activate})
-              (when (and model.close-offset
-                         (< model.close-offset visible))
-                (table.insert hits {:x0 (+ x model.close-offset)
-                                    :x1 (+ x model.close-offset)
-                                    :workspace-id ws.id
-                                    :action :close})))
+              (table.insert hits
+                            {:x0 x
+                             :x1 (+ x visible -1)
+                             :workspace-id ws.id
+                             :action :activate})
+              (when (and model.close-offset (< model.close-offset visible))
+                (table.insert hits
+                              {:x0 (+ x model.close-offset)
+                               :x1 (+ x model.close-offset)
+                               :workspace-id ws.id
+                               :action :close})))
             (set x (+ x visible))))))
     {:segments segments :hits hits :width x}))
 
@@ -121,7 +119,10 @@
     [{:segments model.segments}]))
 
 (fn M.spec []
-  {:name :tabs :placement :below-status :order 5
-   :height M.height :render M.render})
+  {:name :tabs
+   :placement :below-status
+   :order 5
+   :height M.height
+   :render M.render})
 
 M

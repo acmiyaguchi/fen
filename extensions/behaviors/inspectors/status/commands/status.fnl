@@ -36,9 +36,12 @@
           (each [_ row (ipairs rows)]
             (when (and row.label row.value)
               (table.insert out
-                (dim (.. "    " row.label ": "
-                         (string.rep " " (math.max 0 (- 9 (length row.label))))
-                         row.value))))))))
+                            (dim (.. "    " row.label ": "
+                                     (string.rep " "
+                                                 (math.max 0
+                                                           (- 9
+                                                              (length row.label))))
+                                     row.value))))))))
     out))
 
 (fn thinking-label [state agent]
@@ -48,16 +51,15 @@
              (.. "effort:" (tostring opts.reasoning-effort)))
         (and opts.thinking-budget
              (.. "budget:" (tostring opts.thinking-budget)))
-        (and agent.thinking-status :custom)
-        :off)))
+        (and agent.thinking-status :custom) :off)))
 
 (fn tool-status [agent]
   (let [restriction agent.tool-restriction]
     (if restriction
-        (.. (table.concat (or restriction.active-names []) ", ")
-            " (" (tostring (length (or restriction.active-names [])))
-            " of " (tostring restriction.total)
-            "; restricted by " (tostring restriction.flag) ")")
+        (.. (table.concat (or restriction.active-names []) ", ") " ("
+            (tostring (length (or restriction.active-names []))) " of "
+            (tostring restriction.total) "; restricted by "
+            (tostring restriction.flag) ")")
         (tostring (length (or agent.tools []))))))
 
 (fn status-rows [api state]
@@ -74,41 +76,58 @@
     (table.insert rows (heading "Status"))
     (table.insert rows (dim (.. "  version:        " (util.runtime-version))))
     (table.insert rows (dim (.. "  model:          " (tostring agent.model))))
-    (table.insert rows (dim (.. "  provider:       " (tostring agent.provider-name))))
-    (table.insert rows (dim (.. "  thinking:       " (tostring (thinking-label state agent))
-                                " (" (tostring (or agent.thinking-status "off")) ")")))
+    (table.insert rows
+                  (dim (.. "  provider:       " (tostring agent.provider-name))))
+    (table.insert rows
+                  (dim (.. "  thinking:       "
+                           (tostring (thinking-label state agent)) " ("
+                           (tostring (or agent.thinking-status "off")) ")")))
     (table.insert rows (dim (.. "  auth:           " (format-auth state))))
     (each [_ row (ipairs (auth-detail-rows api state))]
       (table.insert rows row))
     (table.insert rows (dim (.. "  tools:          " (tool-status agent))))
-    (table.insert rows (dim (.. "  messages:       " (tostring (length (or agent.messages []))))))
-    (table.insert rows (dim (.. "  context:        " context-prefix
-                                (tostring context-n) " tokens ("
-                                (tostring context.source) ")")))
-    (table.insert rows (dim (.. "  reported usage: " (tostring usage.total-tokens) " tokens")))
+    (table.insert rows
+                  (dim (.. "  messages:       "
+                           (tostring (length (or agent.messages []))))))
+    (table.insert rows
+                  (dim (.. "  context:        " context-prefix
+                           (tostring context-n) " tokens ("
+                           (tostring context.source) ")")))
+    (table.insert rows
+                  (dim (.. "  reported usage: " (tostring usage.total-tokens)
+                           " tokens")))
     (table.insert rows (dim (.. "    input:        " (tostring usage.input))))
     (table.insert rows (dim (.. "    output:       " (tostring usage.output))))
-    (table.insert rows (dim (.. "    cache read:   " (tostring usage.cache-read))))
-    (table.insert rows (dim (.. "    cache write:  " (tostring usage.cache-write))))
-    (table.insert rows (dim (.. "  tokens:         "
-                                (tokens.format-token-summary usage context-n
-                                                             context.estimated?))))
+    (table.insert rows
+                  (dim (.. "    cache read:   " (tostring usage.cache-read))))
+    (table.insert rows
+                  (dim (.. "    cache write:  " (tostring usage.cache-write))))
+    (table.insert rows
+                  (dim (.. "  tokens:         "
+                           (tokens.format-token-summary usage context-n
+                                                        context.estimated?))))
     (let [last-turn (util.last-turn-latency agent.messages)]
       (when last-turn
         (table.insert rows (dim (.. "  last turn:      " last-turn)))))
-    (table.insert rows (dim (.. "  reply cap:      " (tostring agent.max-tokens) " tokens")))
-    (table.insert rows (dim (.. "  session:        " (or session-path "disabled"))))
-    (table.insert rows (dim (.. "  session id:     " (or session-id "disabled"))))
-    (table.insert rows (dim (.. "  session backend: " (or session-backend "disabled"))))
+    (table.insert rows
+                  (dim (.. "  reply cap:      " (tostring agent.max-tokens)
+                           " tokens")))
+    (table.insert rows
+                  (dim (.. "  session:        " (or session-path "disabled"))))
+    (table.insert rows
+                  (dim (.. "  session id:     " (or session-id "disabled"))))
+    (table.insert rows
+                  (dim (.. "  session backend: "
+                           (or session-backend "disabled"))))
     rows))
 
 (fn panel-rows [api w]
   ;; Throttle to 1 Hz; cache invalidates on width change.
   (panel.throttled-rows panel-state w "status"
-    (fn []
-      (if panel-state.run-state
-          (status-rows api panel-state.run-state)
-          [(heading "Status") (dim "  (no run state)")]))))
+                        (fn []
+                          (if panel-state.run-state
+                              (status-rows api panel-state.run-state)
+                              [(heading "Status") (dim "  (no run state)")]))))
 
 (fn panel-spec [api]
   {:name :status
@@ -133,32 +152,35 @@
   ;; summary: Runtime status details panel backing the /status command.
   ;; tags: panel status commands
   (panel-toggle.install! api
-    {:name :status
-     :command {:name :status :order 10
-               :description "Toggle the status panel (model, provider, tokens, session)"}
-     :panel-spec (panel-spec api)
-     :state panel-state
-     :before-command (fn [state] (when state (set panel-state.run-state state)))
-     :on-toggle (fn [] (panel.invalidate-cache! panel-state))})
-
+                         {:name :status
+                          :command {:name :status
+                                    :order 10
+                                    :description "Toggle the status panel (model, provider, tokens, session)"}
+                          :panel-spec (panel-spec api)
+                          :state panel-state
+                          :before-command (fn [state]
+                                            (when state
+                                              (set panel-state.run-state state)))
+                          :on-toggle (fn []
+                                       (panel.invalidate-cache! panel-state))})
   (api.register :introspect
-    {:name :panel
-     :description "Current status panel cache and last captured run-state summary"
-     :snapshot (fn [_]
-                 (let [rs panel-state.run-state
-                       agent (?. rs :agent)
-                       session (or (api.session.info) (?. rs :session))]
-                   {:visible? panel-state.visible?
-                    :cached-w panel-state.cached-w
-                    :cached-at panel-state.cached-at
-                    :has-run-state? (not= rs nil)
-                    :provider (?. agent :provider-name)
-                    :model (?. agent :model)
-                    :message-count (length (or (?. agent :messages) []))
-                    :session-backend (?. session :backend)
-                    :session-id (?. session :id)}))})
-
-  (api.on :llm-end
-    (fn [_ev] (panel.invalidate-cache! panel-state))))
+                {:name :panel
+                 :description "Current status panel cache and last captured run-state summary"
+                 :snapshot (fn [_]
+                             (let [rs panel-state.run-state
+                                   agent (?. rs :agent)
+                                   session (or (api.session.info)
+                                               (?. rs :session))]
+                               {:visible? panel-state.visible?
+                                :cached-w panel-state.cached-w
+                                :cached-at panel-state.cached-at
+                                :has-run-state? (not= rs nil)
+                                :provider (?. agent :provider-name)
+                                :model (?. agent :model)
+                                :message-count (length (or (?. agent :messages)
+                                                           []))
+                                :session-backend (?. session :backend)
+                                :session-id (?. session :id)}))})
+  (api.on :llm-end (fn [_ev] (panel.invalidate-cache! panel-state))))
 
 M

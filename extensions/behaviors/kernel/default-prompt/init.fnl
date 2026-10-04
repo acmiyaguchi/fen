@@ -11,7 +11,7 @@
 (local M {})
 
 (local DEFAULT-PROMPT
-  "You are fen, a concise AI coding assistant. Help the user by reading files, running commands, editing code, and explaining changes clearly.")
+       "You are fen, a concise AI coding assistant. Help the user by reading files, running commands, editing code, and explaining changes clearly.")
 
 (var loader nil)
 
@@ -35,21 +35,25 @@
 (fn M.guidelines-section [tools]
   (let [lines ["Guidelines:"]
         has-bash? (tool-has? tools :bash)
-        has-file-tool? (or (tool-has? tools :grep)
-                           (tool-has? tools :find)
+        has-file-tool? (or (tool-has? tools :grep) (tool-has? tools :find)
                            (tool-has? tools :ls))]
     (if (and has-bash? has-file-tool?)
-        (table.insert lines "- Prefer dedicated file tools over shell commands when practical.")
+        (table.insert lines
+                      "- Prefer dedicated file tools over shell commands when practical.")
         has-bash?
         (table.insert lines "- Use bash for file operations."))
     (when (tool-has? tools :tool_search)
-      (table.insert lines "- Specialized extension tools are available through tool_search; activate one when its capability matches the task."))
+      (table.insert lines
+                    "- Specialized extension tools are available through tool_search; activate one when its capability matches the task."))
     (when (and (tool-has? tools :agent_state)
                (not (tool-has? tools :tool_search)))
-      (table.insert lines "- Use agent_state for narrow inspection of the running agent."))
+      (table.insert lines
+                    "- Use agent_state for narrow inspection of the running agent."))
     (when (or (tool-has? tools :read) (tool-has? tools :edit))
-      (table.insert lines "- Batch independent tool calls and related file reads or edits."))
-    (table.insert lines "- Keep user-facing output brief. Do not restate requests, narrate routine work, or repeat tool output. For completed work, report the outcome, key files, validation, and material caveats; expand only when asked or necessary.")
+      (table.insert lines
+                    "- Batch independent tool calls and related file reads or edits."))
+    (table.insert lines
+                  "- Keep user-facing output brief. Do not restate requests, narrate routine work, or repeat tool output. For completed work, report the outcome, key files, validation, and material caveats; expand only when asked or necessary.")
     (table.concat lines "\n")))
 
 (fn M.available-tools-section [tools]
@@ -61,8 +65,9 @@
       (each [_ t (ipairs (or tools []))]
         (when (and (= t.exposure :search)
                    (not= (tostring t.name) "tool_search"))
-          (table.insert lines (.. "- " (tostring t.name) " — "
-                                  (tostring (or t.snippet t.description ""))))))
+          (table.insert lines
+                        (.. "- " (tostring t.name) " — "
+                            (tostring (or t.snippet t.description ""))))))
       (when (> (length lines) 1)
         (table.concat lines "\n")))))
 
@@ -81,9 +86,7 @@
 
 (fn body-section [ctx]
   (let [r (current-loader)]
-    (or (?. ctx :opts :system)
-        (?. r :system-md :content)
-        DEFAULT-PROMPT)))
+    (or (?. ctx :opts :system) (?. r :system-md :content) DEFAULT-PROMPT)))
 
 (fn append-section [_ctx]
   (?. (current-loader) :append-system-md :content))
@@ -95,8 +98,7 @@
   (M.available-tools-section ctx.tools))
 
 (fn current-date-section [ctx]
-  (.. "Current date: " (or (?. ctx :opts :current-date)
-                           (os.date "%Y-%m-%d"))))
+  (.. "Current date: " (or (?. ctx :opts :current-date) (os.date "%Y-%m-%d"))))
 
 (fn cwd-section [_ctx]
   (.. "Current working directory: " (path.cwd)))

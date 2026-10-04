@@ -119,8 +119,9 @@
           (set victim k)
           (set victim-tick tick))))
     (if victim
-        (do (tset cache-state.record-cache victim nil)
-            (set size (- size 1)))
+        (do
+          (tset cache-state.record-cache victim nil)
+          (set size (- size 1)))
         (set size 0))))
 
 (fn cache-get [p sig]
@@ -163,23 +164,27 @@
                         mtime (or (l.attributes p :modification) 0)]
                     (table.insert items {:name name :mtime mtime})
                     (maybe-yield ?yield-fn)))))
+
             (if ?yield-fn
                 (scan!)
                 (let [(ok? err) (xpcall scan! debug.traceback)]
                   (when (not ok?)
-                    (log.warn (.. "session: cannot list " dir ": " (tostring err)))))))
-          (table.sort items (fn [a b]
-                              (if (= a.mtime b.mtime)
-                                  (> a.name b.name)
-                                  (> a.mtime b.mtime))))
+                    (log.warn (.. "session: cannot list " dir ": "
+                                  (tostring err)))))))
+          (table.sort items
+                      (fn [a b]
+                        (if (= a.mtime b.mtime)
+                            (> a.name b.name)
+                            (> a.mtime b.mtime))))
           (let [out []]
             (each [_ item (ipairs items)]
               (table.insert out item.name))
             out))
         (let [out []]
-          (each [_ name (ipairs (command-output-lines
-                                  (.. "ls -1t " (path.shell-quote dir) " 2>/dev/null")
-                                  ?yield-fn))]
+          (each [_ name (ipairs (command-output-lines (.. "ls -1t "
+                                                          (path.shell-quote dir)
+                                                          " 2>/dev/null")
+                                                      ?yield-fn))]
             (when (session-file? name)
               (table.insert out name)))
           out))))
@@ -198,32 +203,41 @@
         entries []
         first-entry? {:value true}]
     (if (not f)
-        (do (log.warn (.. "session: cannot read " p ": " (tostring open-err)))
-            entries)
-        (let [(ok? err)
-              (xpcall
-                (fn []
-                  (var scanned 0)
-                  (each [line (f:lines)]
-                    (when (not= line "")
-                      (let [(ok? entry) (pcall json.decode line)
-                            valid-table? (and ok? (= (type entry) :table))
-                            valid-header? (or (not first-entry?.value)
-                                              (and valid-table? (= entry.type :session)))
-                            valid-message? (or (not valid-table?)
-                                               (not= entry.type :message)
-                                               (= (type entry.message) :table))]
-                        (if (and valid-table? valid-header? valid-message?)
-                            (table.insert entries entry)
-                            ?strict?
-                            (error (.. "malformed session transcript: " p))
-                            (log.warn (.. "session: skipping malformed line in " p)))
-                        (set first-entry?.value false)))
-                    (set scanned (+ scanned 1))
-                    (when (and ?yield-fn (>= scanned LINES-BEFORE-YIELD))
-                      (set scanned 0)
-                      (?yield-fn))))
-                debug.traceback)]
+        (do
+          (log.warn (.. "session: cannot read " p ": " (tostring open-err)))
+          entries)
+        (let [(ok? err) (xpcall (fn []
+                                  (var scanned 0)
+                                  (each [line (f:lines)]
+                                    (when (not= line "")
+                                      (let [(ok? entry) (pcall json.decode line)
+                                            valid-table? (and ok?
+                                                              (= (type entry)
+                                                                 :table))
+                                            valid-header? (or (not first-entry?.value)
+                                                              (and valid-table?
+                                                                   (= entry.type
+                                                                      :session)))
+                                            valid-message? (or (not valid-table?)
+                                                               (not= entry.type
+                                                                     :message)
+                                                               (= (type entry.message)
+                                                                  :table))]
+                                        (if (and valid-table? valid-header?
+                                                 valid-message?)
+                                            (table.insert entries entry)
+                                            ?strict?
+                                            (error (.. "malformed session transcript: "
+                                                       p))
+                                            (log.warn (.. "session: skipping malformed line in "
+                                                          p)))
+                                        (set first-entry?.value false)))
+                                    (set scanned (+ scanned 1))
+                                    (when (and ?yield-fn
+                                               (>= scanned LINES-BEFORE-YIELD))
+                                      (set scanned 0)
+                                      (?yield-fn))))
+                                debug.traceback)]
           (f:close)
           (if ok? entries (error err))))))
 
@@ -239,11 +253,15 @@
 (fn open-file [p cwd id ?yield-fn ?last-entry-id]
   (let [(f open-err) (io.open p :a)]
     (if (not f)
-        (do (log.warn (.. "session: cannot open " p ": " (tostring open-err)))
-            nil)
+        (do
+          (log.warn (.. "session: cannot open " p ": " (tostring open-err)))
+          nil)
         (do
           (f:setvbuf :line)
-          {:id (or id (id-from-path p)) :path p :cwd cwd :file f
+          {:id (or id (id-from-path p))
+           :path p
+           :cwd cwd
+           :file f
            :last-entry-id (if (not= ?last-entry-id nil)
                               ?last-entry-id
                               (last-entry-id p ?yield-fn))
@@ -273,9 +291,10 @@
         (ensure-dir (path.dirname session.path))
         (let [(f open-err) (io.open session.path :a)]
           (if (not f)
-              (do (log.warn (.. "session: cannot open " session.path ": "
+              (do
+                (log.warn (.. "session: cannot open " session.path ": "
                               (tostring open-err)))
-                  false)
+                false)
               (do
                 (f:setvbuf :line)
                 (set session.file f)
@@ -312,11 +331,13 @@
         (set out.timestamp (iso-timestamp)))
       (let [(ok? err) (pcall #(session.file:write (.. (json.encode out) "\n")))]
         (if ok?
-            (do (set session.last-entry-id out.id)
-                (cache-invalidate! session.path)
-                out)
-            (do (log.warn (.. "session: append failed: " (tostring err)))
-                nil))))))
+            (do
+              (set session.last-entry-id out.id)
+              (cache-invalidate! session.path)
+              out)
+            (do
+              (log.warn (.. "session: append failed: " (tostring err)))
+              nil))))))
 
 (fn clone-message-for-storage [msg]
   "Copy a message while dropping in-memory session metadata fields."
@@ -328,8 +349,9 @@
 
 (fn append [session msg]
   "Append one canonical AgentMessage as a :message entry."
-  (let [entry (append-entry session {:type :message
-                                     :message (clone-message-for-storage msg)})]
+  (let [entry (append-entry session
+                            {:type :message
+                             :message (clone-message-for-storage msg)})]
     (when (and entry msg)
       (tset msg :__session-entry-id entry.id))
     entry))
@@ -360,11 +382,9 @@
           (table.concat parts " ")))))
 
 (fn valid-extension-state-entry? [entry]
-  (and (= entry.type :extension-state)
-       entry.extension
+  (and (= entry.type :extension-state) entry.extension
        (= (type entry.version) :number)
-       (= entry.version (math.floor entry.version))
-       (>= entry.version 1)
+       (= entry.version (math.floor entry.version)) (>= entry.version 1)
        (= (type entry.state) :table)))
 
 (fn replayable-entry? [entry]
@@ -383,66 +403,78 @@
         ;; ENOENT is the normal state of a lazily created session that has no assistant turn yet.
         (if (= open-code ENOENT)
             (values (empty-metadata-record p) true)
-            (do (log.warn (.. "session: cannot read metadata " p ": " (tostring open-err)))
-                (values (empty-metadata-record p) false)))
+            (do
+              (log.warn (.. "session: cannot read metadata " p ": "
+                            (tostring open-err)))
+              (values (empty-metadata-record p) false)))
         (let [rec {:path p
                    :id (id-from-path p)
                    :timestamp (string.match (path.basename p) "^([^_]+)")
                    :message-count 0
                    :raw-entry-count 0
                    :extension-state-entries {}}
-              (ok? err)
-              (xpcall
-                (fn []
-                  (let [header-line (f:read :*l)]
-                    (when (and header-line (not= header-line ""))
-                      (let [(ok? h) (pcall json.decode header-line)]
-                        (when (and ok? (= (type h) :table) (= h.type :session))
-                          (set rec.id (or h.id rec.id))
-                          (set rec.cwd h.cwd)
-                          (set rec.timestamp (or h.timestamp rec.timestamp))
-                          (set rec.version h.version)))))
-                  (var fallback nil)
-                  (var found nil)
-                  (var scanned 0)
-                  (each [line (f:lines)]
-                    (when (not= line "")
-                      (let [(ok? entry) (pcall json.decode line)]
-                        (when (and ok? (= (type entry) :table))
-                          (set rec.raw-entry-count (+ rec.raw-entry-count 1))
-                          (when (replayable-entry? entry)
-                            (set rec.entry-count (+ (or rec.entry-count 0) 1)))
-                          ;; Retain only the latest valid entry per owner so a
-                          ;; long-lived cache never pins whole :state payloads
-                          ;; for hundreds of transcripts (#426). A caller's
-                          ;; ?accept predicate is not in scope here, so this
-                          ;; keeps the newest structurally valid entry;
-                          ;; latest-extension-state streams older entries from
-                          ;; disk when ?accept rejects the cached one.
-                          (when (and (= entry.type :extension-state) entry.extension
-                                     (valid-extension-state-entry? entry))
-                            (tset rec.extension-state-entries
-                                  (tostring entry.extension) entry))
-                          (when entry.id
-                            (set rec.last-entry-id entry.id))
-                          (let [msg (and (= entry.type :message)
-                                         (= (type entry.message) :table)
-                                         entry.message)]
-                            (when msg
-                              (set rec.message-count (+ rec.message-count 1))
-                              (when (not found)
-                                (let [text (first-text msg)]
-                                  (when text
-                                    (if (= msg.role :user)
-                                        (set found text)
-                                        (when (not fallback)
-                                          (set fallback text)))))))))))
-                    (set scanned (+ scanned 1))
-                    (when (and ?yield-fn (>= scanned LINES-BEFORE-YIELD))
-                      (set scanned 0)
-                      (?yield-fn)))
-                  (set rec.title (or found fallback)))
-                debug.traceback)]
+              (ok? err) (xpcall (fn []
+                                  (let [header-line (f:read :*l)]
+                                    (when (and header-line
+                                               (not= header-line ""))
+                                      (let [(ok? h) (pcall json.decode
+                                                           header-line)]
+                                        (when (and ok? (= (type h) :table)
+                                                   (= h.type :session))
+                                          (set rec.id (or h.id rec.id))
+                                          (set rec.cwd h.cwd)
+                                          (set rec.timestamp
+                                               (or h.timestamp rec.timestamp))
+                                          (set rec.version h.version)))))
+                                  (var fallback nil)
+                                  (var found nil)
+                                  (var scanned 0)
+                                  (each [line (f:lines)]
+                                    (when (not= line "")
+                                      (let [(ok? entry) (pcall json.decode line)]
+                                        (when (and ok? (= (type entry) :table))
+                                          (set rec.raw-entry-count
+                                               (+ rec.raw-entry-count 1))
+                                          (when (replayable-entry? entry)
+                                            (set rec.entry-count
+                                                 (+ (or rec.entry-count 0) 1)))
+                                          ;; Retain only the latest valid entry per owner so a
+                                          ;; long-lived cache never pins whole :state payloads
+                                          ;; for hundreds of transcripts (#426). A caller's
+                                          ;; ?accept predicate is not in scope here, so this
+                                          ;; keeps the newest structurally valid entry;
+                                          ;; latest-extension-state streams older entries from
+                                          ;; disk when ?accept rejects the cached one.
+                                          (when (and (= entry.type
+                                                        :extension-state)
+                                                     entry.extension
+                                                     (valid-extension-state-entry? entry))
+                                            (tset rec.extension-state-entries
+                                                  (tostring entry.extension)
+                                                  entry))
+                                          (when entry.id
+                                            (set rec.last-entry-id entry.id))
+                                          (let [msg (and (= entry.type :message)
+                                                         (= (type entry.message)
+                                                            :table)
+                                                         entry.message)]
+                                            (when msg
+                                              (set rec.message-count
+                                                   (+ rec.message-count 1))
+                                              (when (not found)
+                                                (let [text (first-text msg)]
+                                                  (when text
+                                                    (if (= msg.role :user)
+                                                        (set found text)
+                                                        (when (not fallback)
+                                                          (set fallback text)))))))))))
+                                    (set scanned (+ scanned 1))
+                                    (when (and ?yield-fn
+                                               (>= scanned LINES-BEFORE-YIELD))
+                                      (set scanned 0)
+                                      (?yield-fn)))
+                                  (set rec.title (or found fallback)))
+                                debug.traceback)]
           (f:close)
           (if ok? rec (error err))))))
 
@@ -482,8 +514,10 @@
   (maybe-yield ?yield-fn)
   (let [(f open-err) (io.open p :r)]
     (if (not f)
-        (do (log.warn (.. "session: cannot read header " p ": " (tostring open-err)))
-            nil)
+        (do
+          (log.warn (.. "session: cannot read header " p ": "
+                        (tostring open-err)))
+          nil)
         (let [line (f:read :*l)]
           (f:close)
           (when (and line (not= line ""))
@@ -514,8 +548,7 @@
     {:path p
      :id (or rec.id (id-from-path p))
      :cwd rec.cwd
-     :timestamp (or rec.timestamp
-                    (string.match (path.basename p) "^([^_]+)"))
+     :timestamp (or rec.timestamp (string.match (path.basename p) "^([^_]+)"))
      :title (short-title rec.title)
      :message-count (or rec.message-count 0)
      :version rec.version}))
@@ -526,11 +559,15 @@
   (let [dir (sessions-root cwd)
         max-count (or limit 20)
         out []]
-    (each [_ name (ipairs (session-files-newest dir ?yield-fn)) &until (>= (length out) max-count)]
+    (each [_ name (ipairs (session-files-newest dir ?yield-fn))
+           &until (>= (length out) max-count)]
       (let [rec (session-record (.. dir "/" name) ?yield-fn)]
         (when (and (= rec.cwd cwd)
-                   (or (> (or (?. (cached-record rec.path ?yield-fn) :entry-count) 0) 0)
-                       (= (or (?. (cached-record rec.path ?yield-fn) :raw-entry-count) 0) 0)))
+                   (or (> (or (?. (cached-record rec.path ?yield-fn)
+                                  :entry-count) 0) 0)
+                       (= (or (?. (cached-record rec.path ?yield-fn)
+                                  :raw-entry-count)
+                              0) 0)))
           (table.insert out rec)))
       (maybe-yield ?yield-fn))
     out))
@@ -587,9 +624,7 @@
   ;; Re-read the owner right before removal: if another process already reclaimed and re-created the
   ;; lock, its owner differs (or is not yet written) and we must not tear it down.
   (let [pid (lock-owner-pid lock-path)]
-    (when (and pid
-               (not (pid-alive? pid))
-               (= pid (lock-owner-pid lock-path)))
+    (when (and pid (not (pid-alive? pid)) (= pid (lock-owner-pid lock-path)))
       (remove-lock! lock-path)
       true)))
 
@@ -613,7 +648,8 @@
 (fn acquire-lock [info]
   (let [lock-path (.. info.path ".lock")
         create! (fn []
-                  (os.execute (.. "mkdir " (path.shell-quote lock-path) " 2>/dev/null")))]
+                  (os.execute (.. "mkdir " (path.shell-quote lock-path)
+                                  " 2>/dev/null")))]
     (if (create!)
         (hold-lock lock-path)
         (when (and (reclaim-stale-lock! lock-path) (create!))
@@ -623,7 +659,9 @@
   "Open an existing session JSONL for append without writing a duplicate
    header. Returns nil if the path is not a regular file."
   (if (not (path.file-exists? p))
-      (do (log.warn (.. "session: cannot resume missing file " p)) nil)
+      (do
+        (log.warn (.. "session: cannot resume missing file " p))
+        nil)
       (let [rec (cached-record p ?yield-fn)]
         (open-file p rec.cwd rec.id ?yield-fn rec.last-entry-id))))
 
@@ -642,8 +680,7 @@
               t
               (let [matches []]
                 (each [_ rec (ipairs sessions)]
-                  (when (or (= rec.id t)
-                            (= rec.path t)
+                  (when (or (= rec.id t) (= rec.path t)
                             (and rec.id (= (string.sub rec.id 1 (length t)) t))
                             (= (string.sub rec.path 1 (length t)) t))
                     (table.insert matches rec.path))
@@ -682,8 +719,7 @@
   (let [owner (tostring extension)]
     (var found nil)
     (each [_ entry (ipairs (read-entries p ?yield-fn))]
-      (when (and (= entry.type :extension-state)
-                 entry.extension
+      (when (and (= entry.type :extension-state) entry.extension
                  (= (tostring entry.extension) owner)
                  (valid-extension-state-entry? entry)
                  (or (not ?accept) (?accept entry.state entry)))
@@ -699,7 +735,9 @@
     (if (not entry)
         nil
         (not (valid-extension-state-entry? entry))
-        (do (log.warn "session: ignoring malformed extension-state entry") nil)
+        (do
+          (log.warn "session: ignoring malformed extension-state entry")
+          nil)
         (or (not ?accept) (?accept entry.state entry))
         entry
         ;; The cache holds only the newest valid entry per owner (#426), so a
@@ -780,8 +818,8 @@
   bytes)
 
 (fn sanitize-tool-result! [message]
-  (set message.content [{:type :text
-                         :text "[session doctor: unsafe tool output removed]"}])
+  (set message.content
+       [{:type :text :text "[session doctor: unsafe tool output removed]"}])
   (set message.is-error? true))
 
 (fn doctor [p ?repair? ?yield-fn]
@@ -792,151 +830,221 @@
   (let [(f open-err) (io.open p :r)]
     (if (not f)
         {:ok false :error (.. "cannot read session: " (tostring open-err))}
-        (let [issues [] entries [] pending {} pending-order []]
+        (let [issues []
+              entries []
+              pending {}
+              pending-order []]
           (var line-number 0)
           (var header nil)
           (var scanned 0)
-          (let [(read-ok? read-err)
-                (xpcall
-                  (fn []
-           (each [line (f:lines)]
-            (set line-number (+ line-number 1))
-            (when (not= line "")
-              (let [(ok? entry) (pcall json.decode line)]
-                (if (or (not ok?) (not= (type entry) :table))
-                    (doctor-issue issues line-number :malformed_json
-                                  "line is not a JSON object")
-                    (do
-                      (when (and (= line-number 1) (not= entry.type :session))
-                        (doctor-issue issues line-number :orphaned_header
-                                      "first entry is not a session header"))
-                      (when (and (= line-number 1) (= entry.type :session))
-                        (set header entry))
-                      (when (and (> line-number 1) (= entry.type :session))
-                        (doctor-issue issues line-number :orphaned_header
-                                      "unexpected session header after line one"))
-                      (when (and (= entry.type :message)
-                                 (= (type entry.message) :table))
-                        (let [message entry.message]
-                          (when (and (= message.role :assistant)
-                                     (= message.stop-reason :error))
-                            (doctor-issue issues line-number :assistant_error
-                                          "assistant error turn is unsafe to replay")
-                            ;; Never drop a tool-call carrier: repair must retain
-                            ;; every call/result pair that remains in context.
-                            (when (= (length (tool-call-ids message)) 0)
-                              (set entry.__doctor-drop true)))
-                          (each [_ call-id (ipairs (tool-call-ids message))]
-                            (if (. pending call-id)
-                                (doctor-issue issues line-number :duplicate_tool_call
-                                              "duplicate tool call id")
-                                (do
-                                  (tset pending call-id {:entry entry
-                                                         :index (+ (length entries) 1)
-                                                         :line line-number})
-                                  (table.insert pending-order call-id))))
-                          (when (= message.role :tool-result)
-                            (let [call-id (tostring (or message.tool-call-id ""))
-                                  call (. pending call-id)
-                                  bytes (tool-result-text-bytes message)]
-                              (if (or (= call-id "") (not call))
-                                  (do (doctor-issue issues line-number :orphan_tool_result
-                                                    "tool result has no preceding tool call")
-                                      (set entry.__doctor-drop true))
-                                  (tset pending call-id nil))
-                              (when (> bytes MAX-TOOL-RESULT-BYTES)
-                                (doctor-issue issues line-number :oversized_tool_result
-                                              "tool result exceeds the safe replay limit")
-                                (sanitize-tool-result! message))))))
-                      (set entry.__doctor-line line-number)
-                      (table.insert entries entry)))))
-            (set scanned (+ scanned 1))
-            (when (and ?yield-fn (>= scanned LINES-BEFORE-YIELD))
-              (set scanned 0)
-              (?yield-fn))))
-                  debug.traceback)]
+          (let [(read-ok? read-err) (xpcall (fn []
+                                              (each [line (f:lines)]
+                                                (set line-number
+                                                     (+ line-number 1))
+                                                (when (not= line "")
+                                                  (let [(ok? entry) (pcall json.decode
+                                                                           line)]
+                                                    (if (or (not ok?)
+                                                            (not= (type entry)
+                                                                  :table))
+                                                        (doctor-issue issues
+                                                                      line-number
+                                                                      :malformed_json
+                                                                      "line is not a JSON object")
+                                                        (do
+                                                          (when (and (= line-number
+                                                                        1)
+                                                                     (not= entry.type
+                                                                           :session))
+                                                            (doctor-issue issues
+                                                                          line-number
+                                                                          :orphaned_header
+                                                                          "first entry is not a session header"))
+                                                          (when (and (= line-number
+                                                                        1)
+                                                                     (= entry.type
+                                                                        :session))
+                                                            (set header entry))
+                                                          (when (and (> line-number
+                                                                        1)
+                                                                     (= entry.type
+                                                                        :session))
+                                                            (doctor-issue issues
+                                                                          line-number
+                                                                          :orphaned_header
+                                                                          "unexpected session header after line one"))
+                                                          (when (and (= entry.type
+                                                                        :message)
+                                                                     (= (type entry.message)
+                                                                        :table))
+                                                            (let [message entry.message]
+                                                              (when (and (= message.role
+                                                                            :assistant)
+                                                                         (= message.stop-reason
+                                                                            :error))
+                                                                (doctor-issue issues
+                                                                              line-number
+                                                                              :assistant_error
+                                                                              "assistant error turn is unsafe to replay")
+                                                                ;; Never drop a tool-call carrier: repair must retain
+                                                                ;; every call/result pair that remains in context.
+                                                                (when (= (length (tool-call-ids message))
+                                                                         0)
+                                                                  (set entry.__doctor-drop
+                                                                       true)))
+                                                              (each [_ call-id (ipairs (tool-call-ids message))]
+                                                                (if (. pending
+                                                                       call-id)
+                                                                    (doctor-issue issues
+                                                                                  line-number
+                                                                                  :duplicate_tool_call
+                                                                                  "duplicate tool call id")
+                                                                    (do
+                                                                      (tset pending
+                                                                            call-id
+                                                                            {:entry entry
+                                                                             :index (+ (length entries)
+                                                                                       1)
+                                                                             :line line-number})
+                                                                      (table.insert pending-order
+                                                                                    call-id))))
+                                                              (when (= message.role
+                                                                       :tool-result)
+                                                                (let [call-id (tostring (or message.tool-call-id
+                                                                                            ""))
+                                                                      call (. pending
+                                                                              call-id)
+                                                                      bytes (tool-result-text-bytes message)]
+                                                                  (if (or (= call-id
+                                                                             "")
+                                                                          (not call))
+                                                                      (do
+                                                                        (doctor-issue issues
+                                                                                      line-number
+                                                                                      :orphan_tool_result
+                                                                                      "tool result has no preceding tool call")
+                                                                        (set entry.__doctor-drop
+                                                                             true))
+                                                                      (tset pending
+                                                                            call-id
+                                                                            nil))
+                                                                  (when (> bytes
+                                                                           MAX-TOOL-RESULT-BYTES)
+                                                                    (doctor-issue issues
+                                                                                  line-number
+                                                                                  :oversized_tool_result
+                                                                                  "tool result exceeds the safe replay limit")
+                                                                    (sanitize-tool-result! message))))))
+                                                          (set entry.__doctor-line
+                                                               line-number)
+                                                          (table.insert entries
+                                                                        entry)))))
+                                                (set scanned (+ scanned 1))
+                                                (when (and ?yield-fn
+                                                           (>= scanned
+                                                               LINES-BEFORE-YIELD))
+                                                  (set scanned 0)
+                                                  (?yield-fn))))
+                                            debug.traceback)]
             (f:close)
             (when (not read-ok?) (error read-err)))
           (when (not header)
             (doctor-issue issues 1 :orphaned_header "missing session header"))
           ;; Declaration order is preserved rather than iterating pending as a hash.
           (each [_ call-id (ipairs pending-order)]
-              (let [call (. pending call-id)]
-                (when call
-                  (doctor-issue issues call.line :missing_tool_result
-                                (.. "tool call " call-id " has no result")))))
-            (let [report {:ok true :path p :issues issues
-                          :issue-count (length issues) :repair? (not (not ?repair?))}]
-              (when ?repair?
-                (let [output (.. p ".repaired.jsonl")
-                      temp (.. output ".tmp")
-                      audit (.. output ".doctor.json")
-                      insertions {}]
-                  ;; A missing result is inserted immediately after its call,
-                  ;; keeping provider replay's tool-call/result pairing valid.
-                  (each [_ call-id (ipairs pending-order)]
-                    (let [call (. pending call-id)]
-                      (when call
-                        (let [at (or (. insertions call.index) [])]
-                          (table.insert at
-                                        {:type :message :id (id.uuidv7)
-                                         :timestamp (iso-timestamp)
-                                         :message {:role :tool-result
-                                                   :tool-call-id call-id
-                                                   :tool-name :session-doctor
-                                                   :content [{:type :text
-                                                              :text "[session doctor: missing tool result replaced]"}]
-                                                   :is-error? true}})
-                          (tset insertions call.index at)))))
-                  (let [(ok? err)
-                        (xpcall
-                          (fn []
-                            (let [out (assert (io.open temp :w))]
-                              (let [(written? write-err)
-                                    (xpcall
-                                      (fn []
-                                        (each [entry-index entry (ipairs entries)]
-                                          (let [candidates [entry]]
-                                            (each [_ marker (ipairs (or (. insertions entry-index) []))]
-                                              (table.insert candidates marker))
-                                            (each [_ candidate (ipairs candidates)]
-                                              (when (not candidate.__doctor-drop)
-                                                (let [line (or candidate.__doctor-line entry.__doctor-line 0)]
-                                                  (set candidate.__doctor-drop nil)
-                                                  (set candidate.__doctor-line nil)
-                                                  (let [(encoded? encoded) (pcall json.encode candidate)]
-                                                    (if encoded?
-                                                        (out:write (.. encoded "\n"))
-                                                        (doctor-issue issues line :repair_encode_error
-                                                                      "entry could not be encoded for repair")))))))))
-                                      debug.traceback)]
-                                (out:close)
-                                (when (not written?) (error write-err)))))
-                          debug.traceback)]
-                    (if ok?
-                        (do
-                          ;; Only replace the sibling after a complete temp write.
-                          (case (io.open output :r)
-                            f (do (f:close) (os.rename output (.. output ".bak"))))
-                          (let [(renamed? rename-err) (os.rename temp output)]
-                            (if renamed?
-                                (do
-                                  (set report.issue-count (length issues))
-                                  (let [audit-file (assert (io.open audit :w))]
-                                    (audit-file:write (.. (json.encode report) "\n"))
-                                    (audit-file:close))
-                                  (set report.output-path output)
-                                  (set report.audit-path audit))
-                                (do
-                                  (os.remove temp)
-                                  (doctor-issue issues 0 :repair_write_error
-                                                (.. "cannot finalize repaired session: " (tostring rename-err)))))))
-                        (do
-                          (os.remove temp)
-                          (doctor-issue issues 0 :repair_write_error
-                                        (.. "cannot write repaired session: " (tostring err))))))))
-              (set report.issue-count (length issues))
-              report)))))
+            (let [call (. pending call-id)]
+              (when call
+                (doctor-issue issues call.line :missing_tool_result
+                              (.. "tool call " call-id " has no result")))))
+          (let [report {:ok true
+                        :path p
+                        :issues issues
+                        :issue-count (length issues)
+                        :repair? (not (not ?repair?))}]
+            (when ?repair?
+              (let [output (.. p ".repaired.jsonl")
+                    temp (.. output ".tmp")
+                    audit (.. output ".doctor.json")
+                    insertions {}]
+                ;; A missing result is inserted immediately after its call,
+                ;; keeping provider replay's tool-call/result pairing valid.
+                (each [_ call-id (ipairs pending-order)]
+                  (let [call (. pending call-id)]
+                    (when call
+                      (let [at (or (. insertions call.index) [])]
+                        (table.insert at
+                                      {:type :message
+                                       :id (id.uuidv7)
+                                       :timestamp (iso-timestamp)
+                                       :message {:role :tool-result
+                                                 :tool-call-id call-id
+                                                 :tool-name :session-doctor
+                                                 :content [{:type :text
+                                                            :text "[session doctor: missing tool result replaced]"}]
+                                                 :is-error? true}})
+                        (tset insertions call.index at)))))
+                (let [(ok? err) (xpcall (fn []
+                                          (let [out (assert (io.open temp :w))]
+                                            (let [(written? write-err) (xpcall (fn []
+                                                                                 (each [entry-index entry (ipairs entries)]
+                                                                                   (let [candidates [entry]]
+                                                                                     (each [_ marker (ipairs (or (. insertions
+                                                                                                                    entry-index)
+                                                                                                                 []))]
+                                                                                       (table.insert candidates
+                                                                                                     marker))
+                                                                                     (each [_ candidate (ipairs candidates)]
+                                                                                       (when (not candidate.__doctor-drop)
+                                                                                         (let [line (or candidate.__doctor-line
+                                                                                                        entry.__doctor-line
+                                                                                                        0)]
+                                                                                           (set candidate.__doctor-drop
+                                                                                                nil)
+                                                                                           (set candidate.__doctor-line
+                                                                                                nil)
+                                                                                           (let [(encoded? encoded) (pcall json.encode
+                                                                                                                           candidate)]
+                                                                                             (if encoded?
+                                                                                                 (out:write (.. encoded
+                                                                                                                "\n"))
+                                                                                                 (doctor-issue issues
+                                                                                                               line
+                                                                                                               :repair_encode_error
+                                                                                                               "entry could not be encoded for repair")))))))))
+                                                                               debug.traceback)]
+                                              (out:close)
+                                              (when (not written?)
+                                                (error write-err)))))
+                                        debug.traceback)]
+                  (if ok?
+                      (do
+                        ;; Only replace the sibling after a complete temp write.
+                        (case (io.open output :r)
+                          f (do
+                              (f:close)
+                              (os.rename output (.. output ".bak"))))
+                        (let [(renamed? rename-err) (os.rename temp output)]
+                          (if renamed?
+                              (do
+                                (set report.issue-count (length issues))
+                                (let [audit-file (assert (io.open audit :w))]
+                                  (audit-file:write (.. (json.encode report)
+                                                        "\n"))
+                                  (audit-file:close))
+                                (set report.output-path output)
+                                (set report.audit-path audit))
+                              (do
+                                (os.remove temp)
+                                (doctor-issue issues 0 :repair_write_error
+                                              (.. "cannot finalize repaired session: "
+                                                  (tostring rename-err)))))))
+                      (do
+                        (os.remove temp)
+                        (doctor-issue issues 0 :repair_write_error
+                                      (.. "cannot write repaired session: "
+                                          (tostring err))))))))
+            (set report.issue-count (length issues))
+            report)))))
 
 ;; @doc fen.extensions.session_jsonl.session.VERSION
 ;; kind: data

@@ -14,13 +14,12 @@
   (when (not= (type spec.render) :function)
     (error "register :status requires {:render fn}")))
 
-(local opts
-  {:kind :status
-   :bucket state.status-extra
-   :defaults {:side :left :order 50}
-   :validate validate
-   :list-fields [:side :order :render]
-   :sort-by-order? true})
+(local opts {:kind :status
+             :bucket state.status-extra
+             :defaults {:side :left :order 50}
+             :validate validate
+             :list-fields [:side :order :render]
+             :sort-by-order? true})
 
 ;; @doc fen.core.extensions.register.status.register
 ;; kind: function

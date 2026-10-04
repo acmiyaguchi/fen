@@ -14,7 +14,9 @@
 
 (fn file-exists? [path]
   (let [f (io.open path :r)]
-    (if f (do (f:close) true) false)))
+    (if f (do
+            (f:close)
+            true) false)))
 
 (fn parse-manifest-name [text]
   "Manifests are literal tables; text-match :name with no Fennel eval."
@@ -60,26 +62,30 @@
       (let [out []
             seen {}]
         (var failed? false)
+
         (fn visit [cur rel]
-          (let [(ok? _err) (xpcall
-                            (fn []
-                              (each [name (l.dir cur)]
-                                (when (and (not= name ".") (not= name "..") (not= name ""))
-                                  (let [child (.. cur "/" name)
-                                        child-rel (if (= rel "") name (.. rel "/" name))
-                                        mode (l.attributes child :mode)]
-                                    (if (and (= mode :file)
-                                             (or (= name "manifest.fnl")
-                                                 (= name "manifest.lua")))
-                                        (when (not (. seen cur))
-                                          (tset seen cur true)
-                                          (table.insert out cur))
-                                        (and (= mode :directory)
-                                             (not (ignored-component? child-rel)))
-                                        (visit child child-rel))))))
-                            debug.traceback)]
+          (let [(ok? _err) (xpcall (fn []
+                                     (each [name (l.dir cur)]
+                                       (when (and (not= name ".")
+                                                  (not= name "..")
+                                                  (not= name ""))
+                                         (let [child (.. cur "/" name)
+                                               child-rel (if (= rel "") name
+                                                             (.. rel "/" name))
+                                               mode (l.attributes child :mode)]
+                                           (if (and (= mode :file)
+                                                    (or (= name "manifest.fnl")
+                                                        (= name "manifest.lua")))
+                                               (when (not (. seen cur))
+                                                 (tset seen cur true)
+                                                 (table.insert out cur))
+                                               (and (= mode :directory)
+                                                    (not (ignored-component? child-rel)))
+                                               (visit child child-rel))))))
+                                   debug.traceback)]
             (when (not ok?)
               (set failed? true))))
+
         (visit dir "")
         (if failed? nil out)))))
 
@@ -90,9 +96,12 @@
   (let [out []
         cmd (.. "find " (path.shell-quote dir)
                 " -type f \\( -name manifest.fnl -o -name manifest.lua \\) 2>/dev/null")
-        (ok? result) (pcall #((. (require :fen.util.process) :run-captured)
-                              {:cmd cmd :max-bytes (* 4 1024 1024)
-                               :max-lines 100000 :spill? false}))]
+        (ok? result) (pcall #((. (require :fen.util.process) :run-captured) {:cmd cmd
+                                                                             :max-bytes (* 4
+                                                                                           1024
+                                                                                           1024)
+                                                                             :max-lines 100000
+                                                                             :spill? false}))]
     (when (and ok? result)
       (each [line (string.gmatch (or result.output "") "[^\n]+")]
         (let [parent (or (string.match line "^(.+)/manifest%.[^/]+$") dir)]
@@ -103,8 +112,7 @@
   "Return absolute paths of manifest-bearing dirs below `dir`. Prefer
    LuaFileSystem to avoid a blocking recursive `find`; keep a POSIX fallback
    for stripped-down runtimes."
-  (or (list-manifest-dirs-lfs dir)
-      (list-manifest-dirs-shell dir)))
+  (or (list-manifest-dirs-lfs dir) (list-manifest-dirs-shell dir)))
 
 (fn M.build-map [roots]
   "Walk each root recursively for manifest dirs and return a snake->dir map.
@@ -134,7 +142,6 @@
             (if (file-exists? a) a
                 (file-exists? b) b
                 nil))))))
-
 
 (fn M.make-searcher [fennel map]
   "Build a Lua package.searchers entry that resolves flat extensions.

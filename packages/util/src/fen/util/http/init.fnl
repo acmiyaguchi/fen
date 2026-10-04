@@ -71,12 +71,12 @@
       ;; Shallow-copy so the timeout defaults never mutate the caller's table.
       (let [merged (collect [k v (pairs opts)] k v)]
         (set merged.timeout-ms (or opts.timeout-ms default-timeout-ms))
-        (set merged.connect-timeout-ms (or opts.connect-timeout-ms
-                                           default-connect-timeout-ms))
+        (set merged.connect-timeout-ms
+             (or opts.connect-timeout-ms default-connect-timeout-ms))
         ;; The operator env override wins over per-call values, as it always has.
-        (set merged.idle-timeout-ms (or (env-idle-timeout-ms)
-                                        opts.idle-timeout-ms
-                                        default-idle-timeout-ms))
+        (set merged.idle-timeout-ms
+             (or (env-idle-timeout-ms) opts.idle-timeout-ms
+                 default-idle-timeout-ms))
         (backend.request merged))))
 
 {: request}
