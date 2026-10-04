@@ -29,6 +29,7 @@ Run the smallest useful check while iterating and the full gate once before comm
 ```sh
 fennel scripts/test/fennel-check.fnl
 make test TESTS=path/to/focused_test.fnl
+make fmt
 make check
 ```
 

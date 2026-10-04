@@ -18,6 +18,21 @@ make dev
 `scripts/dev/fen-dev` sets `FEN_DEV_PATH` for package source roots and
 `FEN_EXTENSION_ROOT` for `extensions/`, so `/reload` sees checkout source.
 
+### Fennel formatting
+
+```sh
+make install-hooks                  # once per clone: pre-commit checks staged .fnl files
+make fmt                            # format .fnl files changed since origin/main
+make fmt FILES='a.fnl b.fnl'        # format specific files
+make fmt-check                      # check without rewriting (also part of make check)
+```
+
+`scripts/format/check.fnl` wraps the pinned `fnlfmt` in `scripts/format/vendor/`; its header documents the modes.
+Changed files are those differing from the merge base with `FMT_BASE` (default `origin/main`), including uncommitted and untracked `.fnl` files.
+Formatting is incremental: untouched files are grandfathered, but touching an unformatted file means formatting all of it.
+The pre-commit hook checks the Git index, never rewrites it, and applies to every worktree of the clone.
+CI runs `make fmt-check` against the PR base or the previous push.
+
 Fast checks while editing:
 
 ```sh
@@ -29,7 +44,7 @@ make test BUSTED_ARGS='--filter=foo' # focused fast test-name run
 make test-list                      # inspect Busted names/tags without running
 make test-shuffle REPEAT=3          # shake out order/state leakage
 make smoke-mock                     # deterministic local provider/tool smoke
-make check                          # fennel-check + doc validation + tests
+make check                          # fennel-check + format check + doc validation + tests
 ```
 
 `make test` is an alias for `make test-fast`, the normal edit-loop suite that excludes Busted tests tagged `#slow` when no files are selected.

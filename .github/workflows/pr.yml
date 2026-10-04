@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # formatter compares the PR/push against its base
 
       - name: Install Nix
         uses: cachix/install-nix-action@v27
@@ -30,6 +32,17 @@ jobs:
 
       - name: Cache Nix store
         uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Check formatting of changed Fennel files
+        env:
+          FMT_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # A manual run has no base, and a force push can leave `before` unfetchable.
+          if [ -z "$FMT_BASE" ] || ! git cat-file -e "$FMT_BASE^{commit}" 2>/dev/null; then
+            echo "::notice::format base unavailable; checking files changed by HEAD only"
+            FMT_BASE=HEAD^
+          fi
+          nix shell --inputs-from . 'nixpkgs#lua54Packages.fennel' -c make fmt-check FMT_BASE="$FMT_BASE"
 
       - name: Run fast native checks
         run: |
