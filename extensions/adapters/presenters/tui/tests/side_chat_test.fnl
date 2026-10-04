@@ -8,6 +8,7 @@
 (local command-registry (require :fen.core.extensions.register.command))
 (local agent-mod (require :fen.core.agent))
 (local turn-submit (require :fen.turn_submit))
+(local tool-policy (require :fen.tool_policy))
 (local original-step agent-mod.step)
 (local state (require :fen.extensions.tui.state))
 (local workspaces (require :fen.extensions.tui.workspaces))
@@ -147,6 +148,22 @@
           (assert.is_nil captured-opts.tools)
           (assert.is_true captured-opts.no-tools?)
           (assert.is_nil captured-opts.denied-tools))))
+
+    (it "drops hosted web search from a tool-less side chat"
+      (fn []
+        ;; Keeping it would fail the side agent build on the --no-tools/--web-search conflict.
+        (let [rt (make-runtime {:tools "bash,write" :web-search "live"})]
+          (side-chat.open! rt nil)
+          (assert.is_true captured-opts.no-tools?)
+          (assert.is_nil captured-opts.web-search)
+          (assert.is_nil (tool-policy.conflict-error captured-opts)))))
+
+    (it "keeps the parent's hosted web search mode alongside read-only tools"
+      (fn []
+        (let [rt (make-runtime {:web-search "live"})]
+          (side-chat.open! rt nil)
+          (assert.are.equal "read,grep,find,ls" captured-opts.tools)
+          (assert.are.equal "live" captured-opts.web-search))))
 
     (it "/btw dispatch creates and then focuses the existing tab"
       (fn []

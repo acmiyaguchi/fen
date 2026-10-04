@@ -40,6 +40,17 @@
         (assert.are.equal "--no-tools and --denied-tools cannot be combined"
                           (policy.conflict-error {:no-tools? true :denied-tools "bash"}))))
 
+    (it "rejects --no-tools with hosted web search, which rides with agent tools"
+      (fn []
+        (each [_ mode (ipairs ["cached" "live"])]
+          (assert.are.equal
+            (.. "--no-tools and --web-search " mode
+                " cannot be combined; hosted web search needs agent tools")
+            (policy.conflict-error {:no-tools? true :web-search mode})))
+        (assert.is_nil (policy.conflict-error {:no-tools? true :web-search "off"}))
+        (assert.is_nil (policy.conflict-error {:tools "read" :web-search "live"}))
+        (assert.is_nil (policy.conflict-error {:web-search "live"}))))
+
     (it "describes active and restricted tools for a denylist"
       (fn []
         (let [(info err) (policy.restriction-info {:denied-tools "bash"} TOOLS)]
@@ -92,6 +103,22 @@
             (assert.are.equal 1 (length filtered))
             (assert.are.equal :profile (. (. filtered 1) :name))
             (assert.is_true (. agent.active-tool-names "profile"))))))
+
+    (it "passes the web search mode to the provider verbatim"
+      (fn []
+        (let [make (fn [opts]
+                     (interactive.make-agent-from-opts
+                       (fn [_] {:provider-name :test :model "test-model"
+                                :api :openai-codex-responses})
+                       opts (fn [_] nil) {}))]
+          (assert.are.equal "live"
+                            (. (make {:web-search "live" :pinned-tools []})
+                               :provider-options :web-search))
+          (assert.are.equal "off"
+                            (. (make {:web-search "off" :pinned-tools []})
+                               :provider-options :web-search))
+          (assert.is_nil (. (make {:pinned-tools []})
+                            :provider-options :web-search)))))
 
     (it "fails closed and lists every unknown tool"
       (fn []

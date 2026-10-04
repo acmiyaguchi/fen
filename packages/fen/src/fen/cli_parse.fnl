@@ -5,10 +5,28 @@
 (fn M.option-token? [token]
   (= (string.sub (tostring token) 1 1) "-"))
 
+(fn M.valid-choice? [flag value]
+  "True when FLAG declares no `:parse :choices` list or VALUE is one of them."
+  (let [choices (?. flag :parse :choices)]
+    (if (not choices)
+        true
+        (do
+          (var found? false)
+          (each [_ choice (ipairs choices)]
+            (when (= choice value)
+              (set found? true)))
+          found?))))
+
+(fn choice-error [flag value]
+  (.. "invalid " flag.name ": " (tostring value)
+      " (expected " (table.concat flag.parse.choices ", ") ")"))
+
 (fn apply-value! [opts flag value]
   (let [parse flag.parse
         action parse.action]
-    (if (= action :read-file)
+    (if (not (M.valid-choice? flag value))
+        (values false (choice-error flag value))
+        (= action :read-file)
         (let [f (io.open value :r)]
           (if (not f)
               (values false (.. (or parse.read-error

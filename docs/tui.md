@@ -52,7 +52,8 @@ When a subagent tab is active, the status row shows that child's provider, model
 `/btw` opens or focuses a workspace tab titled `btw`.
 `/btw optional initial message` sends the supplied text as the side conversation's first turn.
 The side conversation starts with a blank message history and uses the main session's current provider and model at creation time.
-Its agent can use only the read-only built-ins `read`, `grep`, `find`, and `ls`, enforced through the normal tool allowlist.
+Its agent can use only the read-only local built-ins `read`, `grep`, `find`, and `ls`, enforced through the normal tool allowlist.
+When any of them remain, it also keeps the main session's hosted web search mode, so in `live` mode it can fetch arbitrary pages; see [Hosted web search](providers.md#hosted-web-search).
 Side turns use the same cooperative agent loop, provider streaming path, canonical event ingestion, and transcript renderer as the main session.
 The main and side turn coroutines advance independently on each presenter tick, so either tab remains usable while the other streams.
 Input in the `btw` tab is routed only to the side agent, and slash-prefixed text is literal side input except for `/btw-use`.

@@ -188,7 +188,96 @@
                      {:messages [] :tools [{:name "ls" :description "list" :parameters {:type :object}}]}
                      nil (codex.merge-options {:tool-choice :none}))]
           (assert.are.equal 1 (length body.tools))
-          (assert.are.equal :none body.tool_choice))))))
+          (assert.are.equal :none body.tool_choice))))
+
+    (it "maps :web-search cached and live to the hosted web_search tool"
+      (fn []
+        ;; The CLI passes strings; internal callers may pass keywords.
+        (each [_ [mode live?] (ipairs [["cached" false] [:cached false]
+                                       ["live" true] [:live true]])]
+          (let [out (codex.merge-options {:web-search mode})]
+            (assert.are.same [{:type :web_search :external_web_access live?}]
+                             out.hosted-tools)))))
+
+    (it "sends no hosted tools when web search is off or unset"
+      (fn []
+        (assert.is_nil (. (codex.merge-options {:web-search "off"}) :hosted-tools))
+        (assert.is_nil (. (codex.merge-options {:web-search :off}) :hosted-tools))
+        (assert.is_nil (. (codex.merge-options {}) :hosted-tools))
+        (assert.is_nil (. (codex.merge-options nil) :hosted-tools))))
+
+    (it "derives hosted tools only from :web-search, never from the caller"
+      (fn []
+        (let [out (codex.merge-options {:hosted-tools [{:type :web_search}]})]
+          (assert.is_nil out.hosted-tools))))
+
+    (it "adds web search without mutating the caller or dropping other options"
+      (fn []
+        (let [in {:web-search "live" :tool-choice :none
+                  :reasoning-effort :high :prompt-cache-key "session-1"}
+              out (codex.merge-options in)]
+          (assert.are.same {:web-search "live" :tool-choice :none
+                            :reasoning-effort :high :prompt-cache-key "session-1"}
+                           in)
+          (assert.are.equal "live" out.web-search)
+          (assert.are.equal :none out.tool-choice)
+          (assert.are.equal :high out.reasoning-effort)
+          (assert.are.equal "session-1" out.prompt-cache-key)
+          (assert.are.equal "reasoning.encrypted_content" (. out.include 1))
+          (assert.is_true out.skip-max-output-tokens?)
+          (assert.are.equal 1 (length out.hosted-tools)))))))
+
+(fn capture-codex-body [context options]
+  "Run codex.complete against a stubbed transport; return the decoded body."
+  (let [old-request http.request
+        bodies []]
+    (set http.request
+         (fn [opts]
+           (table.insert bodies opts.body)
+           (opts.on-chunk "data: {\"type\":\"response.done\",\"response\":{\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":0,\"total_tokens\":1}}}\n\n")
+           {:status 200 :body "" :headers {}}))
+    (let [(ok? err) (pcall codex.complete "gpt-5.6-luna" context options)]
+      (set http.request old-request)
+      (assert.is_true ok? (tostring err)))
+    (assert.are.equal 1 (length bodies))
+    (json.decode (. bodies 1))))
+
+(describe "providers.openai_codex_responses.complete hosted web search"
+  (fn []
+    (let [creds {:access "AT" :accountId "acc"}
+          read-tool {:name "read" :description "read a file"
+                     :parameters {:type :object}}]
+      (it "sends web_search after the local tools on a tool-bearing call"
+        (fn []
+          (let [body (capture-codex-body
+                       {:messages [(types.user-message "latest Lua?")]
+                        :tools [read-tool]}
+                       {: creds :web-search "live"})]
+            (assert.are.equal 2 (length body.tools))
+            (assert.are.equal "function" (. body.tools 1 :type))
+            (assert.are.equal "read" (. body.tools 1 :name))
+            (assert.are.equal "web_search" (. body.tools 2 :type))
+            (assert.is_true (. body.tools 2 :external_web_access))
+            (assert.are.equal "auto" body.tool_choice))))
+
+      (it "sends cached web search without live page access"
+        (fn []
+          (let [body (capture-codex-body
+                       {:messages [(types.user-message "latest Lua?")]
+                        :tools [read-tool]}
+                       {: creds :web-search "cached"})]
+            (assert.are.equal "web_search" (. body.tools 2 :type))
+            (assert.is_false (. body.tools 2 :external_web_access)))))
+
+      (it "sends no tools key for a tool-less side call even with web search on"
+        (fn []
+          ;; Compaction/handoff summaries go through complete-messages with
+          ;; tools [] and the agent's provider-options, :web-search included.
+          (let [body (capture-codex-body
+                       {:messages [(types.user-message "summarize")] :tools []}
+                       {: creds :web-search "live"})]
+            (assert.is_nil body.tools)
+            (assert.is_nil body.tool_choice)))))))
 
 (describe "providers.openai_codex_responses.complete retry"
   (fn []

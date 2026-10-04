@@ -52,6 +52,13 @@
           (assert.are.equal "gpt-5.5" out.default-model)
           (assert.are.equal "high" out.default-thinking))))
 
+    (it "normalizes defaultWebSearch verbatim for the CLI to validate"
+      (fn []
+        (write-file (.. tmp "/fen/settings.json") "{\"defaultWebSearch\":\"cached\"}")
+        (assert.are.equal "cached" (. (settings.load) :default-web-search))
+        (write-file (.. tmp "/fen/settings.json") "{}")
+        (assert.is_nil (. (settings.load) :default-web-search))))
+
     (it "writes default provider/model atomically and can read them back"
       (fn []
         (settings.set-defaults! :openai-codex :gpt-5.5)

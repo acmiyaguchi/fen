@@ -53,7 +53,7 @@ Exit status `0` means success, `1` means a provider, tool, backend, or runtime f
 
 Sessions are scoped to the current cwd and mutation requires the complete session ID.
 The machine interface never falls back to the latest session and never uses prefix matching for `send`.
-`send` loads the existing canonical transcript, builds the normal agent with the current provider, model, thinking, and tool-policy flags, persists one ordinary turn, and returns only messages produced by that turn.
+`send` loads the existing canonical transcript, builds the normal agent with the current provider, model, thinking, web-search, and tool-policy flags, persists one ordinary turn, and returns only messages produced by that turn.
 `show` is the operation for reading the complete transcript or a bounded suffix.
 Prompts can follow `--`, come from stdin with `--prompt -`, or be read from a file with `--prompt-file PATH`.
 
