@@ -9,12 +9,12 @@ user-invocable: true
 Use this to publish a tagged `fen` release.
 Releases are driven by pushing a `vX.Y.Z` tag, which runs `.github/workflows/release.yml` (checks → per-arch static builds → GitHub Release with `SHA256SUMS`).
 
-Two hard constraints shape the flow:
+The version invariant and release policy shape the flow:
 
 - The repo-root `VERSION` file is the source of truth for non-CI builds, and the release job **fails** unless `v$(cat VERSION)` equals the pushed tag.
-- `main` is protected, so the `VERSION` bump must land through a PR before the tag can point at it.
+- Release bumps use a PR by default because publishing is higher-risk; verify current branch protection rather than assuming its configuration.
 
-`scripts/release.sh` encodes both.
+`scripts/release.sh` implements the two-phase prepare/tag flow.
 Bare invocations are dry runs; remote-mutating steps are opt-in.
 
 ## Steps
@@ -39,7 +39,7 @@ Bare invocations are dry runs; remote-mutating steps are opt-in.
 3. **Merge the PR** once CI is green, then sync main:
 
    ```sh
-   git checkout main && git pull
+   git checkout main && git pull --ff-only
    ```
 
 4. **Tag and push.**

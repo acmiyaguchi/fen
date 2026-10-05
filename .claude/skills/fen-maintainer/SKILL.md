@@ -24,7 +24,9 @@ This skill adds where to look next and the checks people forget.
 
 ## Validation ladder
 
-Run the smallest useful check while iterating and the full gate once before committing:
+Follow `docs/development.md#contributing-changes` for integration and validation policy.
+Do not require a PR or full source suite for every edit.
+For source/build changes, run the smallest useful check while iterating and `make check` before integration:
 
 ```sh
 fennel scripts/test/fennel-check.fnl
@@ -33,11 +35,13 @@ make fmt
 make check
 ```
 
+For docs/prompt-only changes, review the diff and run `git diff --check` plus relevant doc checks.
+For test-only changes, run affected tests; broaden checks for shared harness changes.
 A command killed by a timeout has not passed; rerun it or say so.
 
 Checks people forget:
 
-- Added, moved, or removed a module: run `make graphs` and commit the regenerated `docs/generated/graphs/` output, or `make check` fails.
+- Added, moved, or removed a module: run `make graphs` and commit the regenerated `docs/graphs/` output, or `make check` fails.
 - Added a first-party extension or module: update its manifest and `reload-modules` list.
 - Changed a Make target: keep it usable without Nix unless its name says `nix`.
 - Touched packaging or the binary path: `nix build .#fen --no-link`, then `rm -f result result-*` if you built with a link.

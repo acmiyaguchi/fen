@@ -4,8 +4,7 @@ applyTo: "packages/fen/src/fen/main.fnl"
 
 # `main.fnl` — CLI-entry charter only
 
-`main.fnl` was just shrunk back to its charter (#197) and must stay there.
-It accepts only CLI-entry code:
+`main.fnl` accepts only CLI-entry code:
 
 - argument parsing and defaults,
 - provider resolution,

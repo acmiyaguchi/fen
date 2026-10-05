@@ -59,7 +59,7 @@ Guide:
 6. Confirm the red test turns green.
 7. Add one or two contrast tests for nearby intended behavior.
 8. Run focused, nearest-suite, Fennel, then broader checks.
-9. Record red failure and green result in the PR summary.
+9. Record red failure and green result in the change summary (PR or final report).
 
 ## Assertions
 
@@ -128,6 +128,9 @@ If adding a first-party tool/extension forces many unrelated test updates, narro
 - Would the test fail if the original report returned?
 
 ## Validation
+
+Use the smallest relevant layers while iterating, not every command below on every edit.
+Follow `fen-maintainer` for the final gate; source changes require `make check`, while test-only changes can use affected suites.
 
 ```sh
 make test TESTS=path/to/focused_test.fnl

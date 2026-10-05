@@ -13,13 +13,10 @@ Use `issue-implementation` for the per-issue conventions and `issue-triage` for 
 
 These roles apply to fen-run implementers and reviewers (fen driving its own subagents, or any `fen --print` review).
 When Claude Code drives, it implements with its own subagents instead; see Drivers.
-Pick models by role, not by a hardcoded id; list current ids with `fen list models --provider openai-codex --json`.
-
-| Role | Default | Use for |
-|---|---|---|
-| worker | `openai-codex`, terra-class model | implementation, routine review |
-| heavy | `openai-codex`, sol-class model | repair of reproduced findings, hard or large diffs |
-| fallback | `sakana` (`fugu`, `fugu-ultra`) | only when the user asks or codex is rate-limited or down |
+Pick available models by capability and user preference, not stale aliases.
+Before each fen subagent launch, refresh the catalog with action `models` and pass an exact listed provider/model pair, explicit `cwd`, and bounded turn/tool/time budgets.
+For headless fen runs, inspect `fen list models --provider <provider> --json` first.
+Use a routine worker for scoped implementation and a stronger available model for difficult repairs; do not silently switch to an unexpected provider.
 
 - Review with a different model than the implementer; use a different provider when one is available.
 - After two failed worker attempts on one issue, retry once on heavy; if that fails, comment findings on the issue, park it, and move on.
@@ -50,7 +47,7 @@ Whatever the driver, the implementer task must say:
 
 - the issue number and title, the worktree path, and the branch name;
 - whether the worktree already exists (a fresh child has no memory; never let it rerun setup);
-- the validation ladder: fennel-check and focused `make test TESTS=...` while iterating, `make check` once right before committing;
+- the risk-based validation ladder in `fen-maintainer`: focused checks while iterating, `make check` before integration for source/build changes; lighter checks for docs/prompt-only or test-only work;
 - "if a validation command is killed by a timeout, say so and do not count it as passing";
 - "include surrounding unique context in `edit` old strings on repetitive forms";
 - commit, push, and open a PR, then report the PR number and validation results (Claude-driven children commit only; the parent pushes and opens the PR).
@@ -69,8 +66,8 @@ After any review run, check `git status` in the worktree; a reviewer that edits 
 
 When Claude Code drives the burndown, implement with Claude Code subagents, not `fen goal`.
 Create the issue worktree yourself, then launch one background subagent per worktree with the implementer prompt, the absolute worktree path as its only working directory, and "commit on the branch; do not push".
-Review each diff yourself, run the focused tests and `make check`, then push and open the PR from the parent session.
-Parallel subagents must touch disjoint files; stage regenerated `docs/graphs/*` before `make check`, since `check-graphs` diffs against the index.
+Review each diff yourself, run the risk-appropriate checks from `fen-maintainer`, then push and open the PR from the parent session.
+Parallel subagents must touch disjoint files; include regenerated `docs/graphs/` output when module structure changes.
 
 For the different-model review, prefer a read-only fen run on another provider when its quota allows:
 
@@ -88,13 +85,18 @@ The project agents in `.fen/agents/` (`implementer`, `adversary`) carry the pers
 (subagent {:agent "implementer"
            :task "<implementer prompt>"
            :provider "openai-codex"
-           :model "<worker>"})
+           :model "<worker>"
+           :cwd "../fen-issue-<n>-<slug>"
+           :timeout-seconds 300
+           :max-tool-calls 40})
 
 (subagent {:agent "adversary"
            :task "<reviewer prompt>"
            :cwd "../fen-issue-<n>-<slug>"
            :provider "openai-codex"
-           :model "<a different worker>"})
+           :model "<a different worker>"
+           :timeout-seconds 180
+           :max-tool-calls 20})
 ```
 
 For repair or continue calls, pass the existing worktree as `cwd` and say not to create a new worktree.
@@ -117,7 +119,8 @@ gh pr merge <pr> --squash
 
 Do not wait for optional bot/AI review; if it appears, triage substantive comments before merge.
 If checks or merge fail because `main` moved, send the implementer back to rebase on fresh `main`, rerun focused tests, push, re-check, and merge.
-Never push directly to `main` from the burndown loop.
+This autonomous loop deliberately uses PRs even for small issues; it does not authorize direct pushes to `main`.
+If the user requests a low-risk direct push, handle it outside the loop under the repository integration policy.
 
 ## Compact
 

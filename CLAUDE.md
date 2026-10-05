@@ -38,8 +38,14 @@ nix flake check
 ```
 
 `nix build` without `--no-link` may leave disposable `result*` symlinks; remove them with `rm -f result result-*`.
-Prefer PRs for reviewable changes, but do not block on optional bot/AI review.
-Push directly to `main` only when the user explicitly asks; run `make check` first.
+## Change integration
+
+- Default to a branch and PR for behavioral, architectural, or higher-risk changes.
+- Small docs, test-only, or mechanical changes may go directly to `main` with explicit user approval.
+- Never infer permission to push to `main` from permission to edit or commit.
+- Run checks appropriate to the change: `make check` for source/build changes; docs/prompt-only changes need diff review and relevant doc checks.
+- Independent review is encouraged for higher-risk changes; optional bot/AI review is not a universal gate.
+- Keep commits focused and easy to revert; see `docs/development.md#contributing-changes` for integration details.
 
 ## Hot reload invariants
 

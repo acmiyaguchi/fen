@@ -237,13 +237,19 @@ Set `FEN_TEST_COMPILE_CACHE_STATS` and compare cold/warm wall-clock runs on your
 
 ## Contributing changes
 
-Prefer pull requests for reviewable changes, but do not block on optional bot/AI review.
+Default to a branch and pull request for behavioral, architectural, or higher-risk changes.
+Small docs, test-only, or clearly behavior-preserving mechanical changes may go directly to `main` with explicit user approval.
+Use PRs for public contracts, provider transport, session persistence, dependencies, security, packaging, and releases.
+Independent review is encouraged for higher-risk changes; do not block on optional bot/AI review.
 
 - Branch: `git checkout -b <type>/<slug>` (e.g. `refactor/...`, `perf/...`, `chore/...`).
 - Commit focused changes and run focused tests while iterating.
 - Open a PR: `gh pr create --base main`.
 - The `pr` workflow runs `fennelCheck` plus the Busted suite.
-- Run `make check` locally when practical, especially for behavior changes.
+- Run `make check` for source/build changes before integration.
+- For docs/prompt-only changes, review the diff, run `git diff --check`, and run relevant doc checks (`make check-docs` and `make check-links` for repository Markdown).
+- For test-only changes, run the affected tests; broaden validation when fixtures or shared harnesses change.
+- A timed-out or skipped check has not passed; report it explicitly.
 - Merge with `gh pr merge <N> --squash --delete-branch` after green CI and any required human review.
 
 `gh` resolves against the current repo, so run these from inside the `fen` checkout.
@@ -255,7 +261,10 @@ Do not infer direct-push permission from silence, urgency, or small scope.
 
 When the user opts in:
 
-- Run `make check` locally first; the post-push workflow is not a substitute.
+- Confirm the change is low-risk; use a PR otherwise unless the user explicitly authorizes an exceptional direct push.
+- Run the appropriate checks above first; the post-push workflow is not a substitute.
+- Review `git status` and the outgoing commits so unrelated work is not included.
+- Respect branch protection; do not bypass required checks or force-push.
 - Push with `git push origin main`.
 - Mention that the change shipped by direct push.
 
