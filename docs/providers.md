@@ -144,7 +144,7 @@ It also exposes the pinned `gpt-5.6-luna`, `gpt-5.6-sol`, and `gpt-5.6-terra` ID
 It falls back to the shipped default if the catalog is unavailable.
 The `openai-codex` provider defaults to `gpt-6.1-sol` unless a saved or explicit model preference overrides it.
 
-## Codex account quota (phase 1)
+## Codex account quota
 
 The OpenAI extension owns the discoverable `account_usage` tool, which reads account-wide subscription quota rather than conversation token totals or context-window capacity.
 Activate it through `tool_search` and call it with `{}` for a bounded demand refresh using existing Codex OAuth credentials and `fen.util.http.request`.
