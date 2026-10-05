@@ -8,26 +8,43 @@
 (fn number? [n]
   (and (= (type n) :number) (= n n) (< (math.abs n) math.huge)))
 
+(local array-mt (getmetatable (json.decode "[]")))
+
+(fn object? [value]
+  (and (= (type value) :table) (not= (getmetatable value) array-mt)))
+
+(fn present? [value]
+  (and (not= value nil) (not (json.null? value))))
+
 (fn M.parse [body]
   (let [windows []]
-    (when (= (type body) :table)
+    (var malformed? (not (object? body)))
+    (when (object? body)
       (each [_ group (ipairs [:rate_limit :code_review_rate_limit])]
         (let [rate (. body group)]
-          (when (= (type rate) :table)
-            (each [_ name (ipairs [:primary_window :secondary_window])]
-              (let [w (. rate name)]
-                (when (and (= (type w) :table) (number? w.used_percent)
-                           (<= 0 w.used_percent 100)
-                           (number? w.limit_window_seconds)
-                           (> w.limit_window_seconds 0) (number? w.reset_at)
-                           (> w.reset_at 0))
-                  (table.insert windows
-                                {:name (.. group "/" name)
-                                 :used-percent w.used_percent
-                                 :remaining-percent (- 100 w.used_percent)
-                                 :length-seconds w.limit_window_seconds
-                                 :reset-at w.reset_at}))))))))
-    windows))
+          (when (present? rate)
+            (if (not (object? rate))
+                (set malformed? true)
+                (each [_ name (ipairs [:primary_window :secondary_window])]
+                  (let [w (. rate name)]
+                    (when (present? w)
+                      (if (and (object? w) (number? w.used_percent)
+                               (<= 0 w.used_percent 100)
+                               (number? w.limit_window_seconds)
+                               (> w.limit_window_seconds 0) (number? w.reset_at)
+                               (> w.reset_at 0))
+                          (table.insert windows
+                                        {:name (.. group "/" name)
+                                         :used-percent w.used_percent
+                                         :remaining-percent (- 100
+                                                               w.used_percent)
+                                         :length-seconds w.limit_window_seconds
+                                         :reset-at w.reset_at})
+                          (set malformed? true))))))))))
+    ;; A malformed supported shape is an API failure, not absent support.
+    (if malformed? (values [] :api)
+        (= (length windows) 0) (values windows :unsupported)
+        (values windows nil))))
 
 (fn M.snapshot []
   (let [now (os.time)
@@ -84,13 +101,14 @@
                   (not= resp.status 200)
                   (set state.failure :api)
                   (let [(decoded body) (pcall json.decode (or resp.body ""))
-                        windows (if decoded (M.parse body) [])]
-                    (if (> (length windows) 0)
+                        (windows failure) (if decoded (M.parse body)
+                                              (values [] :api))]
+                    (if failure
+                        (set state.failure failure)
                         (do
                           (set state.windows windows)
                           (set state.retrieved-at (os.time))
-                          (set state.failure nil))
-                        (set state.failure (if decoded :unsupported :api))))))))))
+                          (set state.failure nil))))))))))
   (M.snapshot))
 
 (fn M.register [api]

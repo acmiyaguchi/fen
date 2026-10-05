@@ -117,6 +117,62 @@
                   (set state.attempted-at nil)
                   (set auth-fails true)
                   (assert.equal :auth (?. (usage.refresh) :failure))))
+            (it "distinguishes absent quota from malformed supported shapes and retains safe cache"
+                (fn []
+                  (each [_ body (ipairs ["{}"
+                                         "{\"rate_limit\":null}"
+                                         "{\"rate_limit\":{\"primary_window\":null}}"
+                                         "{\"rate_limit\":{},\"other_quota\":{\"secret\":\"synthetic-private\"}}"])]
+                    (set state.attempted-at nil)
+                    (set response {:status 200 :body body})
+                    (local out (usage.refresh))
+                    (assert.equal :unsupported out.failure)
+                    (assert.equal :unsupported out.status))
+                  (each [_ body (ipairs ["null"
+                                         "false"
+                                         "[]"
+                                         "[{}]"
+                                         "\"synthetic-private\""
+                                         "{\"rate_limit\":false}"
+                                         "{\"code_review_rate_limit\":[]}"
+                                         "{\"rate_limit\":{\"primary_window\":{}}}"
+                                         "{\"rate_limit\":{\"primary_window\":false}}"
+                                         "{\"rate_limit\":{\"primary_window\":[]}}"
+                                         "{\"rate_limit\":{\"primary_window\":{\"used_percent\":25,\"limit_window_seconds\":18000}}}"])]
+                    (set state.windows [])
+                    (set state.attempted-at nil)
+                    (set response {:status 200 :body body})
+                    (local out (usage.refresh))
+                    (assert.equal :api out.failure)
+                    (assert.equal :unavailable out.status)
+                    (assert.is_nil (string.find (json.encode out) "synthetic"))
+                    (set state.windows
+                         (usage.parse {:rate_limit {:primary_window window}}))
+                    (set state.retrieved-at (os.time))
+                    (set state.attempted-at nil)
+                    (local cached (usage.refresh))
+                    (assert.equal :api cached.failure)
+                    (assert.equal :stale cached.status)
+                    (assert.equal 25 (. cached.windows 1 :used-percent)))
+                  (each [_ field (ipairs [:used_percent
+                                          :limit_window_seconds
+                                          :reset_at])]
+                    (each [_ invalid (ipairs [json.null
+                                              "synthetic-secret"
+                                              -1
+                                              math.huge])]
+                      (local bad (collect [k v (pairs window)] k v))
+                      (tset bad field invalid)
+                      (local (windows failure)
+                             (usage.parse {:rate_limit {:primary_window bad}}))
+                      (assert.same [] windows)
+                      (assert.equal :api failure)))
+                  ;; Do not silently claim fresh partial data when another supported window is broken.
+                  (local (windows failure)
+                         (usage.parse {:rate_limit {:primary_window window}
+                                       :code_review_rate_limit {:secondary_window {}}}))
+                  (assert.same [] windows)
+                  (assert.equal :api failure)))
             (it "expires at reset and propagates cooperative cancellation"
                 (fn []
                   (usage.refresh)

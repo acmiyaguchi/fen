@@ -155,7 +155,8 @@ Only validated primary/secondary windows under `rate_limit` and `code_review_rat
 The sanitized snapshot has `provider`, `scope: account-quota`, `windows` (each with `name`, `used-percent`, `remaining-percent`, `length-seconds`, and `reset-at`), `retrieved-at`, `attempted-at`, `status`, and optional `failure`.
 Timestamps are Unix epoch seconds, and percentages are upstream percentages with remaining calculated as 100 minus used.
 `fresh` means the last successful retrieval is younger than 60 seconds, no known failure occurred, and no reported window has reset; otherwise retained windows are `stale`.
-Without usable windows, the status is `unavailable` for auth/network/API failures or before retrieval, and `unsupported` for HTTP 404/405 or a successful JSON response with no supported windows.
+Without usable windows, the status is `unavailable` for auth/network/API failures or before retrieval, and `unsupported` for HTTP 404/405 or a successful JSON object with supported quota groups/windows absent or null.
+Present but malformed supported windows, groups, or response envelopes are `api` failures, retaining stale cached windows when available rather than claiming unsupported quota.
 Failures expose only `auth`, `network`, `api`, `unsupported`, or the initial `unavailable` marker, never exception text, raw responses, credentials, or account identifiers.
 Attempts are limited to once per 60 seconds, including failed or cancelled attempts, with no background polling or retries.
 A demand refresh allows at most one existing OAuth refresh (30-second HTTP timeout) followed by one usage GET (10-second timeout), passing the cooperative tool yield callback through both and preserving cancellation.
