@@ -31,8 +31,9 @@
     (table.insert state.prompt-fragments entry)
     (util.bump-registry-version!)
     (handle-result :prompt-fragment (or opts.id :prompt) owner
-      (fn []
-        (util.remove-where state.prompt-fragments (fn [e _] (= e entry)))))))
+                   (fn []
+                     (util.remove-where state.prompt-fragments
+                                        (fn [e _] (= e entry)))))))
 
 ;; @doc fen.core.extensions.register.prompt.unregister-by-owner
 ;; kind: function
@@ -40,8 +41,7 @@
 ;; summary: Remove all system-prompt fragments contributed by owner during reload or extension teardown.
 ;; tags: extensions prompt reload
 (fn M.unregister-by-owner [owner]
-  (util.remove-where state.prompt-fragments
-                     (fn [e _] (= e.__owner owner))))
+  (util.remove-where state.prompt-fragments (fn [e _] (= e.__owner owner))))
 
 (fn render-fragment [entry ?ctx]
   (let [val entry.text-or-fn]
@@ -49,22 +49,18 @@
         (let [(ok? result) (pcall val ?ctx)]
           (if ok?
               result
-              (.. "<!-- extension "
-                  (tostring entry.__owner)
-                  " failed: "
-                  (tostring result)
-                  " -->")))
+              (.. "<!-- extension " (tostring entry.__owner) " failed: "
+                  (tostring result) " -->")))
         val)))
 
 (fn sorted-fragments []
   (let [out []]
     (each [_ entry (ipairs state.prompt-fragments)]
       (table.insert out entry))
-    (table.sort out
-      (fn [a b]
-        (if (= a.order b.order)
-            (< a.seq b.seq)
-            (< a.order b.order))))
+    (table.sort out (fn [a b]
+                      (if (= a.order b.order)
+                          (< a.seq b.seq)
+                          (< a.order b.order))))
     out))
 
 (fn M.render [?ctx]
@@ -92,14 +88,14 @@
         (when (not= text "")
           (table.insert parts text))
         (table.insert out
-          {:owner entry.__owner
-           :id entry.id
-           :title entry.title
-           :order entry.order
-           :seq entry.seq
-           :dynamic? (= (type entry.text-or-fn) :function)
-           :bytes (length text)
-           :approx-tokens (tokens.approx-tokens text)})))
+                      {:owner entry.__owner
+                       :id entry.id
+                       :title entry.title
+                       :order entry.order
+                       :seq entry.seq
+                       :dynamic? (= (type entry.text-or-fn) :function)
+                       :bytes (length text)
+                       :approx-tokens (tokens.approx-tokens text)})))
     (let [joined (if (= (length parts) 0) "" (table.concat parts "\n\n"))]
       (tset out :total-bytes (length joined))
       (tset out :total-approx-tokens (tokens.approx-tokens joined))

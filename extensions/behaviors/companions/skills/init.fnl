@@ -124,8 +124,7 @@
       (tset keep spec.dir true))
     (each [_ child (ipairs (list-children root))]
       (let [child-path (.. root "/" child)]
-        (when (and (M.dir-exists? child-path)
-                   (not (. keep child)))
+        (when (and (M.dir-exists? child-path) (not (. keep child)))
           (rm-rf child-path))))))
 
 (fn materialize-bundled-skills []
@@ -140,20 +139,22 @@
           (set bundled-materialized? true)
           (if (not (mkdir-p root))
               (log.warn (.. "skills: cannot create bundled skills dir " root))
-              (let [(ok? err)
-                    (pcall
-                      (fn []
-                        (prune-stale-bundled-skills root specs)
-                        (each [_ spec (ipairs specs)]
-                          (let [dir (.. root "/" spec.dir)]
-                            (if (not (mkdir-p dir))
-                                (log.warn (.. "skills: cannot create bundled skill dir " dir))
-                                (write-all-if-changed
-                                  (.. dir "/" (or spec.file "SKILL.md"))
-                                  spec.content))))))]
+              (let [(ok? err) (pcall (fn []
+                                       (prune-stale-bundled-skills root specs)
+                                       (each [_ spec (ipairs specs)]
+                                         (let [dir (.. root "/" spec.dir)]
+                                           (if (not (mkdir-p dir))
+                                               (log.warn (.. "skills: cannot create bundled skill dir "
+                                                             dir))
+                                               (write-all-if-changed (.. dir
+                                                                         "/"
+                                                                         (or spec.file
+                                                                             "SKILL.md"))
+                                                                     spec.content))))))]
                 (if ok?
-                    (do (set bundled-materialized-root root)
-                        (set result root))
+                    (do
+                      (set bundled-materialized-root root)
+                      (set result root))
                     (log.warn (.. "skills: cannot materialize bundled skills: "
                                   (tostring err)))))))))
   result)
@@ -164,24 +165,24 @@
    directory/file name."
   (let [(meta reason err) (frontmatter.parse-file path)]
     (if (not meta)
-        (do (log.warn (if (= reason :unreadable)
-                          (.. "skills: cannot read " path ": " (tostring err))
-                          (.. "skills: " path " missing frontmatter")))
-            nil)
+        (do
+          (log.warn (if (= reason :unreadable)
+                        (.. "skills: cannot read " path ": " (tostring err))
+                        (.. "skills: " path " missing frontmatter")))
+          nil)
         (let [name (or meta.name fallback-name)
               description (trim (or meta.description ""))
               disabled? (bool-value? (or (. meta "disable-model-invocation")
-                                         meta.disable_model_invocation
-                                         "false"))]
+                                         meta.disable_model_invocation "false"))]
           (if (= description "")
-              (do (log.warn (.. "skills: " path " missing description"))
-                  nil)
+              (do
+                (log.warn (.. "skills: " path " missing description"))
+                nil)
               (do
                 (when (not (string.match name "^[A-Za-z0-9][A-Za-z0-9_-]*$"))
-                  (log.warn (.. "skills: suspicious skill name '" name
-                                 "' in " path)))
-                {: name : description
-                 :disable-model-invocation? disabled?}))))))
+                  (log.warn (.. "skills: suspicious skill name '" name "' in "
+                                path)))
+                {: name : description :disable-model-invocation? disabled?}))))))
 
 ;; @doc fen.extensions.skills.parse-frontmatter
 ;; kind: function
@@ -210,14 +211,12 @@
                              :path canonical
                              :scope scope
                              :shadowed-paths []
-                             :disable-model-invocation?
-                             meta.disable-model-invocation?}]
+                             :disable-model-invocation? meta.disable-model-invocation?}]
                   (tset seen-names meta.name skill)
                   (table.insert acc skill)))))))))
 
 (fn ignored-child-dir? [target child rules]
-  (or (= child "node_modules")
-      (string.match child "^%.")
+  (or (= child "node_modules") (string.match child "^%.")
       (ignore.match? target true rules)))
 
 (fn scan-skill-dir [dir scope acc seen-paths seen-names rules ?yield-fn]
@@ -230,7 +229,8 @@
           (let [child-path (.. dir "/" child)]
             (when (and (M.dir-exists? child-path)
                        (not (ignored-child-dir? child-path child local-rules)))
-              (scan-skill-dir child-path scope acc seen-paths seen-names local-rules ?yield-fn)))
+              (scan-skill-dir child-path scope acc seen-paths seen-names
+                              local-rules ?yield-fn)))
           (maybe-yield ?yield-fn)))))
 
 (fn scan-root [root scope direct-md? acc seen-paths seen-names ?yield-fn]
@@ -250,15 +250,15 @@
             (each [_ child (ipairs (list-children root ?yield-fn))]
               (let [child-path (.. root "/" child)]
                 (when (and (M.dir-exists? child-path)
-                           (not (ignored-child-dir? child-path child local-rules)))
-                  (scan-skill-dir child-path scope acc seen-paths seen-names local-rules ?yield-fn)))
+                           (not (ignored-child-dir? child-path child
+                                                    local-rules)))
+                  (scan-skill-dir child-path scope acc seen-paths seen-names
+                                  local-rules ?yield-fn)))
               (maybe-yield ?yield-fn))))))))
 
 (fn marker-root? [dir]
-  (or (M.dir-exists? (.. dir "/.git"))
-      (M.file-exists? (.. dir "/.git"))
-      (M.dir-exists? (.. dir "/.hg"))
-      (M.file-exists? (.. dir "/.hg"))))
+  (or (M.dir-exists? (.. dir "/.git")) (M.file-exists? (.. dir "/.git"))
+      (M.dir-exists? (.. dir "/.hg")) (M.file-exists? (.. dir "/.hg"))))
 
 (fn ancestors [cwd stop-at-git?]
   "Return cwd ancestors leaf-to-root. When stop-at-git? is true, stop at the
@@ -280,7 +280,8 @@
     (table.insert roots {:path (.. (config-dir) "/skills") :scope :user})
     (table.insert roots {:path "./.fen/skills" :scope :project})
     ;; pi/Agent Skills-compatible global roots.
-    (table.insert roots {:path (.. (path.home) "/.pi/agent/skills") :scope :user})
+    (table.insert roots {:path (.. (path.home) "/.pi/agent/skills")
+                         :scope :user})
     (table.insert roots {:path (.. (path.home) "/.agents/skills") :scope :user})
     ;; Common Claude/Codex compatibility roots.
     (table.insert roots {:path (.. (path.home) "/.claude/skills") :scope :user})
@@ -289,7 +290,8 @@
     ;; root .md files; .agents/.claude/.codex roots use SKILL.md directories only.
     (each [_ dir (ipairs (ancestors (path.cwd) true))]
       (table.insert roots {:path (.. dir "/.pi/skills")
-                           :scope :project :direct-md? true})
+                           :scope :project
+                           :direct-md? true})
       (table.insert roots {:path (.. dir "/.agents/skills") :scope :project})
       (table.insert roots {:path (.. dir "/.claude/skills") :scope :project})
       (table.insert roots {:path (.. dir "/.codex/skills") :scope :project}))
@@ -307,7 +309,8 @@
       (when root.path
         (if (and root.explicit? (M.file-exists? root.path))
             (add-skill acc seen-paths seen-names root.path root.scope)
-            (scan-root root.path root.scope root.direct-md? acc seen-paths seen-names ?yield-fn))
+            (scan-root root.path root.scope root.direct-md? acc seen-paths
+                       seen-names ?yield-fn))
         (set scanned (+ scanned 1))
         (when (and ?yield-fn (>= scanned DIRS-BEFORE-YIELD))
           (set scanned 0)
@@ -334,8 +337,9 @@
   (let [lines ["Available skills (activate the skill tool through tool_search, then load matching instructions):"]]
     (each [_ s (ipairs (or skills []))]
       (when (not s.disable-model-invocation?)
-        (table.insert lines (.. "- " (tostring s.name) ": "
-                                (tostring (or s.description ""))))))
+        (table.insert lines
+                      (.. "- " (tostring s.name) ": "
+                          (tostring (or s.description ""))))))
     (when (> (length lines) 1)
       (table.concat lines "\n"))))
 
@@ -405,16 +409,14 @@
 
 (fn discover-for-ctx [ctx]
   (let [extra (or (?. ctx :opts :extra-skill-paths)
-                  (?. ctx :opts :extra-skill-dirs)
-                  [])
+                  (?. ctx :opts :extra-skill-dirs) [])
         key (discover-cache-key extra)
         ;; A TTL is a duration comparison, so it uses the monotonic clock seam
         ;; (fen.util.clock, PR #489): compare elapsed ms since the last
         ;; discovery against DISCOVER-CACHE-TTL (ms). discover-cache-at holds a
         ;; monotonic-ms reading, not a wall-clock epoch.
         now (clock.monotonic-ms)]
-    (if (and panel-state.discover-cache
-             (= panel-state.discover-cache-key key)
+    (if (and panel-state.discover-cache (= panel-state.discover-cache-key key)
              (< (- now (or panel-state.discover-cache-at 0)) DISCOVER-CACHE-TTL))
         panel-state.discover-cache
         (let [skills (M.discover extra (?. ctx :yield))]
@@ -438,8 +440,7 @@
   (not skill.disable-model-invocation?))
 
 (fn skill-matches-filter? [skill filter]
-  (or (= filter "")
-      (= filter "all")
+  (or (= filter "") (= filter "all")
       (and (= filter "visible") (visible? skill))
       (and (= filter "hidden") (not (visible? skill)))
       (= (tostring skill.scope) filter)))
@@ -454,21 +455,25 @@
     (each [_ skill (ipairs (or skills []))]
       (when (skill-matches-filter? skill filter)
         (table.insert shown skill)))
-    (let [lines [(.. "# Skills (" (length shown) " shown, "
-                     visible-count " visible, " hidden-count " hidden)")
+    (let [lines [(.. "# Skills (" (length shown) " shown, " visible-count
+                     " visible, " hidden-count " hidden)")
                  ""]]
       (if (= (length shown) 0)
           (table.insert lines "No skills discovered.")
           (do
             (table.insert lines "```text")
-            (table.insert lines (.. (pad "name" 28) " " (pad "scope" 8) " visibility  location"))
-            (table.insert lines (.. (pad "----" 28) " " (pad "-----" 8) " ----------  --------"))
+            (table.insert lines
+                          (.. (pad "name" 28) " " (pad "scope" 8)
+                              " visibility  location"))
+            (table.insert lines
+                          (.. (pad "----" 28) " " (pad "-----" 8)
+                              " ----------  --------"))
             (each [_ s (ipairs shown)]
               (table.insert lines
-                (.. (pad s.name 28) " "
-                    (pad (tostring s.scope) 8) " "
-                    (pad (if (visible? s) "visible" "hidden") 10) "  "
-                    (tostring s.path))))
+                            (.. (pad s.name 28) " " (pad (tostring s.scope) 8)
+                                " "
+                                (pad (if (visible? s) "visible" "hidden") 10)
+                                "  " (tostring s.path))))
             (table.insert lines "```")))
       (when (not= filter "")
         (table.insert lines "")
@@ -494,9 +499,8 @@
   (let [choices []]
     (each [_ s (ipairs (skill-items skills))]
       (table.insert choices
-                    {:label (.. (tostring s.name)
-                                "  " (tostring s.scope)
-                                "  " (if (visible? s) "visible" "hidden"))
+                    {:label (.. (tostring s.name) "  " (tostring s.scope) "  "
+                                (if (visible? s) "visible" "hidden"))
                      :value s
                      :description (or s.description s.path "")}))
     choices))
@@ -507,9 +511,12 @@
 (fn M.skill-detail-lines [skill]
   (let [lines [(heading (.. "Skill: " (tostring skill.name)))
                (dim (.. "scope: " (tostring skill.scope)))
-               (dim (.. "visibility: " (if (visible? skill) "visible to model" "hidden from model")))]]
+               (dim (.. "visibility: "
+                        (if (visible? skill) "visible to model"
+                            "hidden from model")))]]
     (when skill.description
-      (table.insert lines (dim (.. "description: " (tostring skill.description)))))
+      (table.insert lines
+                    (dim (.. "description: " (tostring skill.description)))))
     (when skill.path
       (table.insert lines (dim (.. "path: " (tostring skill.path)))))
     (when skill.disable-model-invocation?
@@ -522,14 +529,18 @@
     (if (= (length items) 0)
         (table.insert rows (dim "  (none discovered)"))
         (do
-          (table.insert rows (dim (.. "  " (pad "name" 28) "  " (pad "scope" 8) "  visibility  path")))
-          (table.insert rows (dim (.. "  " (pad "----" 28) "  " (pad "-----" 8) "  ----------  ----")))
+          (table.insert rows
+                        (dim (.. "  " (pad "name" 28) "  " (pad "scope" 8)
+                                 "  visibility  path")))
+          (table.insert rows
+                        (dim (.. "  " (pad "----" 28) "  " (pad "-----" 8)
+                                 "  ----------  ----")))
           (each [_ s (ipairs items)]
             (table.insert rows
                           (dim (.. "  " (pad s.name 28) "  "
                                    (pad (tostring s.scope) 8) "  "
-                                   (pad (if (visible? s) "visible" "hidden") 10) "  "
-                                   (tostring s.path)))))))
+                                   (pad (if (visible? s) "visible" "hidden") 10)
+                                   "  " (tostring s.path)))))))
     rows))
 
 (fn wrap-text [text width]
@@ -585,7 +596,8 @@
           (if skill
               (M.skill-detail-lines skill)
               [(heading "Skills")
-               (dim (.. "selected skill not found: " (tostring panel-state.selected-name)))]))
+               (dim (.. "selected skill not found: "
+                        (tostring panel-state.selected-name)))]))
         (skills-list-lines skills))))
 
 (fn panel-title []
@@ -598,8 +610,7 @@
   ;; rows refresh at most once a second. cached-at holds a monotonic second
   ;; counter (floor(monotonic-ms/1000)), not a wall-clock epoch.
   (let [now (math.floor (/ (clock.monotonic-ms) 1000))]
-    (when (or (not panel-state.cached-rows)
-              (not= now panel-state.cached-at)
+    (when (or (not panel-state.cached-rows) (not= now panel-state.cached-at)
               (not= w panel-state.cached-w)
               (not= panel-state.selected-name panel-state.cached-selected-name))
       (set panel-state.cached-rows
@@ -627,7 +638,8 @@
           (set panel-state.visible? true)
           (invalidate-cache!)
           (api.emit {:type :redraw}))
-        (api.emit {:type :error :error (.. "skill not found: " (tostring name))}))))
+        (api.emit {:type :error
+                   :error (.. "skill not found: " (tostring name))}))))
 
 (fn show-skills-panel [api]
   (api.emit {:type :dismiss})
@@ -673,8 +685,7 @@
   found?)
 
 (fn skill-tool-result [text error?]
-  {:content [(types.text-block (or text ""))]
-   :is-error? (or error? false)})
+  {:content [(types.text-block (or text ""))] :is-error? (or error? false)})
 
 (fn visible-skill-names [skills]
   (let [names []]
@@ -688,16 +699,14 @@
         skills (discover-for-ctx lookup-ctx)
         skill (find-skill-by-name skills args.name)]
     (if (or (not skill) (not (visible? skill)))
-        (skill-tool-result
-          (.. "unknown skill: " (tostring args.name)
-              "\navailable: " (table.concat (visible-skill-names skills) ", "))
-          true)
+        (skill-tool-result (.. "unknown skill: " (tostring args.name)
+                               "\navailable: "
+                               (table.concat (visible-skill-names skills) ", "))
+                           true)
         (let [content (read-all skill.path)]
           (if content
-              (skill-tool-result
-                (.. "Skill: " skill.name "\n"
-                    "Directory: " (path.dirname skill.path) "\n\n"
-                    content))
+              (skill-tool-result (.. "Skill: " skill.name "\n" "Directory: "
+                                     (path.dirname skill.path) "\n\n" content))
               (skill-tool-result (.. "cannot read skill: " skill.path) true))))))
 
 (fn prompt-fragment [ctx]
@@ -705,17 +714,16 @@
     (M.system-prompt-section (discover-for-ctx ctx))))
 
 (fn register! [api]
-  (api.register :tool
-    {:name :skill
-     :label "Skill"
-     :exposure :search
-     :snippet "Load instructions for a discovered skill"
-     :description "Load a discovered skill's full instructions by name. The system prompt lists available skill names and descriptions; use this tool when a task matches one."
-     :parameters {:type :object
-                  :properties {:name {:type :string
-                                      :description "Exact skill name from the available-skills catalogue"}}
-                  :required [:name]}
-     :execute execute-skill-tool})
+  (api.register :tool {:name :skill
+                       :label "Skill"
+                       :exposure :search
+                       :snippet "Load instructions for a discovered skill"
+                       :description "Load a discovered skill's full instructions by name. The system prompt lists available skill names and descriptions; use this tool when a task matches one."
+                       :parameters {:type :object
+                                    :properties {:name {:type :string
+                                                        :description "Exact skill name from the available-skills catalogue"}}
+                                    :required [:name]}
+                       :execute execute-skill-tool})
   (api.prompt prompt-fragment
               {:order 60
                :id :available-skills
@@ -732,11 +740,14 @@
                              ;; we just expose every discovered skill name
                              ;; plus the recognized list filters. `:value`
                              ;; is the bare token spliced into the input.
-                             (let [out [{:label "list" :value "list"
+                             (let [out [{:label "list"
+                                         :value "list"
                                          :description "List all discovered skills"}
-                                        {:label "visible" :value "visible"
+                                        {:label "visible"
+                                         :value "visible"
                                          :description "List skills visible to the model"}
-                                        {:label "hidden" :value "hidden"
+                                        {:label "hidden"
+                                         :value "hidden"
                                          :description "List skills hidden from the model"}]]
                                (each [_ s (ipairs (discover-for-ctx ctx))]
                                  (table.insert out
@@ -754,7 +765,10 @@
                                       (= first "project") (= first "cli"))
                                   (api.emit {:type :assistant-text
                                              :text (M.skills-text (discover-for-ctx ctx)
-                                                                  (if (or (= first "list") (= first "all"))
+                                                                  (if (or (= first
+                                                                             "list")
+                                                                          (= first
+                                                                             "all"))
                                                                       ""
                                                                       first))})
                                   (and first (not= first ""))

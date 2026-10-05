@@ -54,8 +54,8 @@
         take (math.max 1 (util.int-arg limit DEFAULT-LIMIT))
         explicit-limit? (not= (util.int-arg limit nil) nil)
         probe (+ take 1)
-        pipe (io.popen (.. "ls -1 " (util.shellquote target)
-                         " 2>&1 | head -n " (tostring probe)) :r)]
+        pipe (io.popen (.. "ls -1 " (util.shellquote target) " 2>&1 | head -n "
+                           (tostring probe)) :r)]
     (if (not pipe) (util.err "io.popen failed")
         (let [out (read-pipe pipe ?yield-fn)
               lines []]
@@ -65,8 +65,9 @@
             (when (<= n take)
               (table.insert lines line)))
           (when (and (> n take) (not explicit-limit?))
-            (table.insert lines (.. "[truncated: output capped at "
-                                    (tostring take) " lines]")))
+            (table.insert lines
+                          (.. "[truncated: output capped at " (tostring take)
+                              " lines]")))
           (util.ok (table.concat lines "\n"))))))
 
 {:name :ls
@@ -74,7 +75,8 @@
  :snippet "List directory contents"
  :description "List entries in a directory."
  :parameters {:type :object
-              :properties {:path {:type :string :description "Directory (defaults to .)"}
+              :properties {:path {:type :string
+                                  :description "Directory (defaults to .)"}
                            :limit {:type :integer
                                    :description "Maximum number of entries to return"}}}
  :execute run-ls}

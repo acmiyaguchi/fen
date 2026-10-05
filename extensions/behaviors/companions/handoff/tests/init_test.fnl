@@ -34,13 +34,16 @@
   found)
 
 (fn make-assistant [text]
-  (types.assistant-message
-    {:api :test
-     :provider :test
-     :model "test-model"
-     :content [(types.text-block text)]
-     :usage {:input 11 :output 7 :cache-read 0 :cache-write 0 :total-tokens 18}
-     :stop-reason :stop}))
+  (types.assistant-message {:api :test
+                            :provider :test
+                            :model "test-model"
+                            :content [(types.text-block text)]
+                            :usage {:input 11
+                                    :output 7
+                                    :cache-read 0
+                                    :cache-write 0
+                                    :total-tokens 18}
+                            :stop-reason :stop}))
 
 (fn fresh [complete-messages]
   (test-api.reset!)
@@ -58,7 +61,8 @@
         closed []
         queue-updates {:n 0}
         session-backend {:append (fn [session msg]
-                                   (table.insert appended {:session session :msg msg}))}]
+                                   (table.insert appended
+                                                 {:session session :msg msg}))}]
     {:opts {:provider :test-provider}
      :on-event (fn [_] nil)
      :agent {:messages [(types.user-message "previous context")]
@@ -80,121 +84,142 @@
      :_test {:appended appended :closed closed :queue-updates queue-updates}}))
 
 (describe "extensions.handoff"
-  (fn []
-    (after_each restore-modules!)
-
-    (it "/handoff schedules cooperative work instead of blocking dispatch"
-      (fn []
-        (let [completed {:value false}
-              called {:value false}
-              seen (fresh
-                     (fn [_agent _messages _model _opts _on-event yield-fn]
-                       (set called.value true)
-                       (assert.is_not_nil yield-fn)
-                       (yield-fn)
-                       (set completed.value true)
-                       (make-assistant "summary text")))
-              state (make-state)]
-          (command-registry.dispatch "/handoff" state)
-          (assert.is_true state.busy?)
-          (assert.is_not_nil state.turn)
-          (assert.are.equal :suspended (coroutine.status state.turn))
-          (assert.is_false called.value)
-          (assert.is_false completed.value)
-          (assert.are.equal 0 (event-count seen :llm-start))
-
-          (let [(ok? err) (coroutine.resume state.turn)]
-            (assert.is_true ok? err))
-          (assert.is_true called.value)
-          (assert.is_false completed.value)
-          (assert.are.equal :suspended (coroutine.status state.turn))
-          (assert.are.equal 1 (event-count seen :llm-start))
-          (assert.are.equal 0 (event-count seen :llm-end)))))
-
-    (it "completes handoff by resetting the session and seeding the summary"
-      (fn []
-        (let [seen (fresh
-                     (fn [_agent _messages _model _opts _on-event yield-fn]
-                       (yield-fn)
-                       (make-assistant "summary text")))
-              state (make-state)]
-          (seed-queues!)
-          (command-registry.dispatch "/handoff extra guidance" state)
-          (let [(ok1? err1) (coroutine.resume state.turn)]
-            (assert.is_true ok1? err1))
-          (let [(ok2? err2) (coroutine.resume state.turn)]
-            (assert.is_true ok2? err2))
-          (assert.are.equal :dead (coroutine.status state.turn))
-          (assert.are.equal "new-model" state.agent.model)
-          (assert.are.equal 1 (length state.agent.messages))
-          (assert.is_not_nil (string.find (. state.agent.messages 1 :content) "summary text" 1 true))
-          (assert.are.equal 0 (length steering-state.steering-queue))
-          (assert.are.equal 0 (length steering-state.follow-up-queue))
-          (assert.are.equal 1 (length state._test.closed))
-          (assert.are.equal :old (. state._test.closed 1 :id))
-          (assert.are.equal 1 (length state._test.appended))
-          (assert.are.equal :new (. state._test.appended 1 :session :id))
-          (assert.are.equal (. state.agent.messages 1) (. state._test.appended 1 :msg))
-          (assert.are.equal 1 (event-count seen :reset-conversation))
-          (assert.are.equal 1 (event-count seen :llm-end))
-          (let [ended (last-event seen :llm-end)
-                user (last-event seen :user)
-                asst (last-event seen :assistant-text)]
-            (assert.are.equal 11 ended.usage.input)
-            (assert.is_not_nil (string.find user.text "Handoff summary" 1 true))
-            (assert.is_not_nil (string.find asst.text "✓ Handoff complete" 1 true))
-            (assert.is_not_nil (string.find asst.text "summary text" 1 true))))))
-
-    (it "keeps the new session handle available for goal-state persistence"
-      (fn []
-        (let [(seen api) (fresh
-                           (fn [_agent _messages _model _opts _on-event yield-fn]
-                             (yield-fn)
-                             (make-assistant "summary text")))
-              state (make-state)
-              persisted []]
-          (api.register :session-backend
-            {:name :memory
-             :open (fn [] nil)
-             :open-existing (fn [] nil)
-             :append (fn [] nil)
-             :append-entry (fn [session entry]
-                             (table.insert persisted {:session session :entry entry})
-                             entry)
-             :latest-extension-state (fn [] nil)
-             :close (fn [] nil)
-             :load (fn [] [])
-             :find (fn [] nil)
-             :list (fn [] [])
-             :latest (fn [] nil)})
-          (session-registry.set-active! :memory)
-          (session-registry.set-info! {:id :old} state.session)
-          (command-registry.dispatch "/handoff" state)
-          (assert.is_true (coroutine.resume state.turn))
-          (assert.is_true (coroutine.resume state.turn))
-          (let [goal-api (test-api.make-runtime-api :goal)]
-            (goal-api.session.append-state! {:status :running} 1))
-          (assert.are.equal 1 (length persisted))
-          (assert.are.equal :new (. persisted 1 :session :id))
-          (assert.are.equal :goal (. persisted 1 :entry :extension)))))
-
-    (it "cancels cooperative handoff without resetting the session"
-      (fn []
-        (let [seen (fresh
-                     (fn [_agent _messages _model _opts _on-event yield-fn]
-                       (yield-fn)
-                       (make-assistant "should not install")))
-              state (make-state)]
-          (command-registry.dispatch "/handoff" state)
-          (let [(ok1? err1) (coroutine.resume state.turn)]
-            (assert.is_true ok1? err1))
-          (set state.cancel-requested? true)
-          (let [(ok2? err2) (coroutine.resume state.turn)]
-            (assert.is_true ok2? err2))
-          (assert.are.equal :dead (coroutine.status state.turn))
-          (assert.are.equal "old-model" state.agent.model)
-          (assert.are.equal 0 (length state._test.closed))
-          (assert.are.equal 0 (length state._test.appended))
-          (assert.are.equal 1 (event-count seen :llm-start))
-          (assert.are.equal 1 (event-count seen :llm-end))
-          (assert.are.equal 1 (event-count seen :cancelled)))))))
+          (fn []
+            (after_each restore-modules!)
+            (it "/handoff schedules cooperative work instead of blocking dispatch"
+                (fn []
+                  (let [completed {:value false}
+                        called {:value false}
+                        seen (fresh (fn [_agent
+                                         _messages
+                                         _model
+                                         _opts
+                                         _on-event
+                                         yield-fn]
+                                      (set called.value true)
+                                      (assert.is_not_nil yield-fn)
+                                      (yield-fn)
+                                      (set completed.value true)
+                                      (make-assistant "summary text")))
+                        state (make-state)]
+                    (command-registry.dispatch "/handoff" state)
+                    (assert.is_true state.busy?)
+                    (assert.is_not_nil state.turn)
+                    (assert.are.equal :suspended (coroutine.status state.turn))
+                    (assert.is_false called.value)
+                    (assert.is_false completed.value)
+                    (assert.are.equal 0 (event-count seen :llm-start))
+                    (let [(ok? err) (coroutine.resume state.turn)]
+                      (assert.is_true ok? err))
+                    (assert.is_true called.value)
+                    (assert.is_false completed.value)
+                    (assert.are.equal :suspended (coroutine.status state.turn))
+                    (assert.are.equal 1 (event-count seen :llm-start))
+                    (assert.are.equal 0 (event-count seen :llm-end)))))
+            (it "completes handoff by resetting the session and seeding the summary"
+                (fn []
+                  (let [seen (fresh (fn [_agent
+                                         _messages
+                                         _model
+                                         _opts
+                                         _on-event
+                                         yield-fn]
+                                      (yield-fn)
+                                      (make-assistant "summary text")))
+                        state (make-state)]
+                    (seed-queues!)
+                    (command-registry.dispatch "/handoff extra guidance" state)
+                    (let [(ok1? err1) (coroutine.resume state.turn)]
+                      (assert.is_true ok1? err1))
+                    (let [(ok2? err2) (coroutine.resume state.turn)]
+                      (assert.is_true ok2? err2))
+                    (assert.are.equal :dead (coroutine.status state.turn))
+                    (assert.are.equal "new-model" state.agent.model)
+                    (assert.are.equal 1 (length state.agent.messages))
+                    (assert.is_not_nil (string.find (. state.agent.messages 1
+                                                       :content)
+                                                    "summary text" 1 true))
+                    (assert.are.equal 0 (length steering-state.steering-queue))
+                    (assert.are.equal 0 (length steering-state.follow-up-queue))
+                    (assert.are.equal 1 (length state._test.closed))
+                    (assert.are.equal :old (. state._test.closed 1 :id))
+                    (assert.are.equal 1 (length state._test.appended))
+                    (assert.are.equal :new
+                                      (. state._test.appended 1 :session :id))
+                    (assert.are.equal (. state.agent.messages 1)
+                                      (. state._test.appended 1 :msg))
+                    (assert.are.equal 1 (event-count seen :reset-conversation))
+                    (assert.are.equal 1 (event-count seen :llm-end))
+                    (let [ended (last-event seen :llm-end)
+                          user (last-event seen :user)
+                          asst (last-event seen :assistant-text)]
+                      (assert.are.equal 11 ended.usage.input)
+                      (assert.is_not_nil (string.find user.text
+                                                      "Handoff summary" 1 true))
+                      (assert.is_not_nil (string.find asst.text
+                                                      "✓ Handoff complete" 1
+                                                      true))
+                      (assert.is_not_nil (string.find asst.text "summary text"
+                                                      1 true))))))
+            (it "keeps the new session handle available for goal-state persistence"
+                (fn []
+                  (let [(seen api) (fresh (fn [_agent
+                                               _messages
+                                               _model
+                                               _opts
+                                               _on-event
+                                               yield-fn]
+                                            (yield-fn)
+                                            (make-assistant "summary text")))
+                        state (make-state)
+                        persisted []]
+                    (api.register :session-backend
+                                  {:name :memory
+                                   :open (fn [] nil)
+                                   :open-existing (fn [] nil)
+                                   :append (fn [] nil)
+                                   :append-entry (fn [session entry]
+                                                   (table.insert persisted
+                                                                 {:session session
+                                                                  :entry entry})
+                                                   entry)
+                                   :latest-extension-state (fn [] nil)
+                                   :close (fn [] nil)
+                                   :load (fn [] [])
+                                   :find (fn [] nil)
+                                   :list (fn [] [])
+                                   :latest (fn [] nil)})
+                    (session-registry.set-active! :memory)
+                    (session-registry.set-info! {:id :old} state.session)
+                    (command-registry.dispatch "/handoff" state)
+                    (assert.is_true (coroutine.resume state.turn))
+                    (assert.is_true (coroutine.resume state.turn))
+                    (let [goal-api (test-api.make-runtime-api :goal)]
+                      (goal-api.session.append-state! {:status :running} 1))
+                    (assert.are.equal 1 (length persisted))
+                    (assert.are.equal :new (. persisted 1 :session :id))
+                    (assert.are.equal :goal (. persisted 1 :entry :extension)))))
+            (it "cancels cooperative handoff without resetting the session"
+                (fn []
+                  (let [seen (fresh (fn [_agent
+                                         _messages
+                                         _model
+                                         _opts
+                                         _on-event
+                                         yield-fn]
+                                      (yield-fn)
+                                      (make-assistant "should not install")))
+                        state (make-state)]
+                    (command-registry.dispatch "/handoff" state)
+                    (let [(ok1? err1) (coroutine.resume state.turn)]
+                      (assert.is_true ok1? err1))
+                    (set state.cancel-requested? true)
+                    (let [(ok2? err2) (coroutine.resume state.turn)]
+                      (assert.is_true ok2? err2))
+                    (assert.are.equal :dead (coroutine.status state.turn))
+                    (assert.are.equal "old-model" state.agent.model)
+                    (assert.are.equal 0 (length state._test.closed))
+                    (assert.are.equal 0 (length state._test.appended))
+                    (assert.are.equal 1 (event-count seen :llm-start))
+                    (assert.are.equal 1 (event-count seen :llm-end))
+                    (assert.are.equal 1 (event-count seen :cancelled)))))))

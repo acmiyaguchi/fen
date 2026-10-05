@@ -1,4 +1,3 @@
-
 (local th (require :fen.testing.tools))
 (local tools th.tools)
 (local registry th.registry)
@@ -20,274 +19,285 @@
     (assert.is_true ok? err)))
 
 (describe "core.tools.edit"
-  (fn []
-    (it "applies a single replacement"
-      (fn []
-        (with-tmpfile [path "alpha beta gamma"]
-          (let [r (execute registry :edit
-                                  {:path path
-                                   :edits [{:old_string "beta"
-                                            :new_string "BETA"}]})]
-            (assert.is_false r.is-error?)
-            (assert.are.equal "alpha BETA gamma" (read-file path))
-            (assert.is_truthy (string.find (first-text r.content)
-                                            "applied 1 edit"))))))
-
-    (it "applies multiple disjoint edits in one call"
-      (fn []
-        (with-tmpfile [path "alpha beta gamma"]
-          (let [r (execute registry :edit
-                                  {:path path
-                                   :edits [{:old_string "alpha" :new_string "A"}
-                                           {:old_string "gamma" :new_string "G"}]})]
-            (assert.is_false r.is-error?)
-            (assert.are.equal "A beta G" (read-file path))))))
-
-    (it "applies edits to the original snapshot, not sequentially"
-      (fn []
-        (with-tmpfile [path "X-Y"]
-          (let [r (execute registry :edit
-                                  {:path path
-                                   :edits [{:old_string "X" :new_string "Y"}
-                                           {:old_string "Y" :new_string "Z"}]})]
-            (assert.is_false r.is-error?)
-            (assert.are.equal "Y-Z" (read-file path))))))
-
-    (it "is-error? when old_string is not found"
-      (fn []
-        (with-tmpfile [path "abc"]
-          (let [r (execute registry :edit
-                                  {:path path
-                                   :edits [{:old_string "xyz" :new_string "_"}]})]
-            (assert.is_true r.is-error?)
-            (assert.is_truthy (string.find (first-text r.content) "not found"))))))
-
-    (it "hints at CRLF when not-found and file uses CRLF line endings"
-      (fn []
-        (with-tmpfile [path "alpha\r\nbeta\r\n"]
-          (let [r (execute registry :edit
-                                  {:path path
-                                   :edits [{:old_string "alpha\nbeta"
-                                            :new_string "_"}]})]
-            (assert.is_true r.is-error?)
-            (assert.is_truthy (string.find (first-text r.content)
-                                            "CRLF" 1 true))
-            (assert.is_truthy (string.find (first-text r.content)
-                                            "old_string uses LF" 1 true))))))
-
-    (it "lists line-numbered matching sites when old_string occurs more than once"
-      (fn []
-        (with-tmpfile [path "before\nmatch one\nother\nmatch two\nafter\n"]
-          (let [r (execute registry :edit
-                                  {:path path
-                                   :edits [{:old_string "match" :new_string "_"}]})
-                text (first-text r.content)]
-            (assert.is_true r.is-error?)
-            (assert.is_truthy (string.find text "not unique" 1 true))
-            (assert.is_truthy (string.find text "line 2: match one" 1 true))
-            (assert.is_truthy (string.find text "line 4: match two" 1 true))))))
-
-    (it "caps ambiguous old_string match-site listings"
-      (fn []
-        (with-tmpfile [path "same\nsame\nsame\nsame\nsame\nsame\nsame\nsame\nsame\nsame\nsame\nsame\n"]
-          (let [r (execute registry :edit
-                                  {:path path
-                                   :edits [{:old_string "same" :new_string "_"}]})
-                text (first-text r.content)]
-            (assert.is_true r.is-error?)
-            (assert.is_truthy (string.find text "line 10: same" 1 true))
-            (assert.is_falsy (string.find text "line 11: same" 1 true))
-            (assert.is_truthy (string.find text "and 2 more" 1 true))))))
-
-    (it "cuts long match-site context on a UTF-8 boundary"
-      (fn []
-        ;; 119 ASCII bytes put the 2-byte "é" across the 120-byte cut.
-        (let [line (.. (string.rep "a" 119) "é" "tail dup")]
-          (with-tmpfile [path (.. line "\n" line "\n")]
-            (let [r (execute registry :edit
-                                    {:path path
-                                     :edits [{:old_string "dup" :new_string "_"}]})
-                  text (first-text r.content)]
-              (assert.is_true r.is-error?)
-              (assert.is_truthy
-                (string.find text (.. "line 2: " (string.rep "a" 119) "...") 1 true)))))))
-
-    (it "is-error? when two edits' matches overlap"
-      (fn []
-        (with-tmpfile [path "abcdef"]
-          (let [r (execute registry :edit
-                                  {:path path
-                                   :edits [{:old_string "abc" :new_string "_"}
-                                           {:old_string "bcd" :new_string "_"}]})]
-            (assert.is_true r.is-error?)
-            (assert.is_truthy (string.find (first-text r.content) "overlap"))))))
-
-    (it "is-error? for missing path"
-      (fn []
-        (let [r (execute registry :edit
-                                {:edits [{:old_string "x" :new_string "y"}]})]
-          (assert.is_true r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content) "missing 'path'")))))
-
-    (it "is-error? when single and batched edit shapes are both provided"
-      (fn []
-        (let [r (execute registry :edit
-                                {:path "/tmp/a"
-                                 :edits [{:old_string "x" :new_string "y"}]
-                                 :files [{:path "/tmp/b"
-                                          :edits [{:old_string "x"
-                                                   :new_string "y"}]}]})]
-          (assert.is_true r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content)
-                                          "either 'path'/'edits' or 'files'" 1 true)))))
-
-    (it "is-error? for empty files array"
-      (fn []
-        (let [r (execute registry :edit {:files []})]
-          (assert.is_true r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content)
-                                          "missing 'files'" 1 true)))))
-
-    (it "applies batched edits across multiple files"
-      (fn []
-        (with-tmpfile [a "alpha beta"]
-          (with-tmpfile [b "gamma delta"]
-            (let [r (execute registry :edit
-                                    {:files [{:path a
-                                              :edits [{:old_string "beta"
-                                                       :new_string "BETA"}]}
-                                             {:path b
-                                              :edits [{:old_string "gamma"
-                                                       :new_string "GAMMA"}]}]})]
-              (assert.is_false r.is-error?)
-              (assert.are.equal "alpha BETA" (read-file a))
-              (assert.are.equal "GAMMA delta" (read-file b))
-              (let [text (first-text r.content)]
-                (assert.is_truthy (string.find text (.. "applied 1 edit(s) to " a) 1 true))
-                (assert.is_truthy (string.find text (.. "applied 1 edit(s) to " b) 1 true))))))))
-
-    (it "rejects batched edits that use different spellings of one path"
-      (fn []
-        (with-tmpdir [dir]
-          (let [lfs (require :lfs)
-                old (lfs.currentdir)]
-            (h.write-file (.. dir "/a.fnl") "alpha")
-            (assert (lfs.chdir dir))
-            (let [(ok? r) (pcall #(execute registry :edit
-                                  {:files [{:path "a.fnl"
-                                            :edits [{:old_string "alpha"
-                                                     :new_string "A"}]}
-                                           {:path "./a.fnl"
-                                            :edits [{:old_string "alpha"
-                                                     :new_string "B"}]}]}))]
-              (assert (lfs.chdir old))
-              (if (not ok?) (error r))
-              (assert.is_true r.is-error?)
-              (assert.is_truthy (string.find (first-text r.content)
-                                              "combine edits for the same file" 1 true))
-              (assert.are.equal "alpha" (read-file (.. dir "/a.fnl"))))))))
-
-    (it "does not mutate any file when batched edit validation fails"
-      (fn []
-        (with-tmpfile [a "alpha beta"]
-          (with-tmpfile [b "gamma delta"]
-            (let [r (execute registry :edit
-                                    {:files [{:path a
-                                              :edits [{:old_string "beta"
-                                                       :new_string "BETA"}]}
-                                             {:path b
-                                              :edits [{:old_string "missing"
-                                                       :new_string "MISS"}]}]})]
-              (assert.is_true r.is-error?)
-              (assert.is_truthy (string.find (first-text r.content) b 1 true))
-              (assert.are.equal "alpha beta" (read-file a))
-              (assert.are.equal "gamma delta" (read-file b)))))))
-
-    (it "surfaces CRLF hints with the path in batched edit validation failures"
-      (fn []
-        (with-tmpfile [a "alpha beta"]
-          (with-tmpfile [b "gamma\r\ndelta\r\n"]
-            (let [r (execute registry :edit
-                                    {:files [{:path a
-                                              :edits [{:old_string "beta"
-                                                       :new_string "BETA"}]}
-                                             {:path b
-                                              :edits [{:old_string "gamma\ndelta"
-                                                       :new_string "G"}]}]})]
-              (assert.is_true r.is-error?)
-              (let [text (first-text r.content)]
-                (assert.is_truthy (string.find text b 1 true))
-                (assert.is_truthy (string.find text "CRLF" 1 true)))
-              (assert.are.equal "alpha beta" (read-file a))
-              (assert.are.equal "gamma\r\ndelta\r\n" (read-file b)))))))
-
-    (it "is-error? for empty edits array"
-      (fn []
-        (with-tmpfile [path "x"]
-          (let [r (execute registry :edit
-                                  {:path path :edits []})]
-            (assert.is_true r.is-error?)
-            (assert.is_truthy (string.find (first-text r.content) "missing 'edits'"))))))
-
-    (it "asserts through the real execute path when its file is already locked"
-      (fn []
-        (with-tmpfile [path "alpha"]
-          (let [key (file-mutex.canonical-path path)]
-            (tset file-mutex-state.locks key {:owner {} :waiters []})
-            (let [r (execute registry :edit
-                             {:path path
-                              :edits [{:old_string "alpha" :new_string "beta"}]})]
-              (tset file-mutex-state.locks key nil)
-              (assert.is_true r.is-error?)
-              (assert.is_truthy (string.find (first-text r.content)
-                                              "synchronous mutation" 1 true)))))))
-
-    (it "serializes a batch edit and concurrent write on a shared path"
-      (fn []
-        (with-tmpfile [path "alpha"]
-          (let [batch (coroutine.create
-                       #(execute-coop registry :edit
-                                      {:files [{:path path
-                                                :edits [{:old_string "alpha"
-                                                         :new_string "BETA"}]}]}
-                                      #(coroutine.yield)))
-                writer (coroutine.create
-                        #(execute-coop registry :write {:path path :content "writer"}
-                                       #(coroutine.yield)))]
-            (resume! batch)
-            (resume! batch)
-            (resume! batch)
-            (resume! batch)
-            (resume! writer)
-            (assert.are.equal "alpha" (read-file path))
-            (resume! batch)
-            (assert.are.equal "alpha" (read-file path))
-            (var steps 0)
-            (while (and (= (read-file path) "alpha") (< steps 10))
-              (resume! batch)
-              (set steps (+ steps 1))
-              (assert.are.equal :suspended (coroutine.status writer)))
-            (assert.are.equal :suspended (coroutine.status batch))
-            (assert.are.equal "BETA" (read-file path))
-            (while (not= (coroutine.status batch) :dead)
-              (resume! batch))
-            (assert.are.equal :dead (coroutine.status batch))
-            (assert.are.equal :suspended (coroutine.status writer))
-            (while (not= (coroutine.status writer) :dead)
-              (resume! writer))
-            (assert.are.equal :dead (coroutine.status writer))
-            (assert.are.equal "writer" (read-file path))))))
-
-    (it "yields during cooperative edit validation and write phases"
-      (fn []
-        (with-tmpfile [path "alpha beta gamma"]
-          (var yields 0)
-          (let [r (execute-coop registry :edit
-                                      {:path path
-                                       :edits [{:old_string "beta"
-                                                :new_string "BETA"}]}
-                                      (fn [] (set yields (+ yields 1))))]
-            (assert.is_false r.is-error?)
-            (assert.are.equal "alpha BETA gamma" (read-file path))
-            (assert.is_true (> yields 0))))))))
-
+          (fn []
+            (it "applies a single replacement"
+                (fn []
+                  (with-tmpfile [path "alpha beta gamma"]
+                    (let [r (execute registry :edit
+                                     {:path path
+                                      :edits [{:old_string "beta"
+                                               :new_string "BETA"}]})]
+                      (assert.is_false r.is-error?)
+                      (assert.are.equal "alpha BETA gamma" (read-file path))
+                      (assert.is_truthy (string.find (first-text r.content)
+                                                     "applied 1 edit"))))))
+            (it "applies multiple disjoint edits in one call"
+                (fn []
+                  (with-tmpfile [path "alpha beta gamma"]
+                    (let [r (execute registry :edit
+                                     {:path path
+                                      :edits [{:old_string "alpha"
+                                               :new_string "A"}
+                                              {:old_string "gamma"
+                                               :new_string "G"}]})]
+                      (assert.is_false r.is-error?)
+                      (assert.are.equal "A beta G" (read-file path))))))
+            (it "applies edits to the original snapshot, not sequentially"
+                (fn []
+                  (with-tmpfile [path "X-Y"]
+                    (let [r (execute registry :edit
+                                     {:path path
+                                      :edits [{:old_string "X" :new_string "Y"}
+                                              {:old_string "Y" :new_string "Z"}]})]
+                      (assert.is_false r.is-error?)
+                      (assert.are.equal "Y-Z" (read-file path))))))
+            (it "is-error? when old_string is not found"
+                (fn []
+                  (with-tmpfile [path "abc"]
+                    (let [r (execute registry :edit
+                                     {:path path
+                                      :edits [{:old_string "xyz"
+                                               :new_string "_"}]})]
+                      (assert.is_true r.is-error?)
+                      (assert.is_truthy (string.find (first-text r.content)
+                                                     "not found"))))))
+            (it "hints at CRLF when not-found and file uses CRLF line endings"
+                (fn []
+                  (with-tmpfile [path "alpha\r\nbeta\r\n"]
+                    (let [r (execute registry :edit
+                                     {:path path
+                                      :edits [{:old_string "alpha\nbeta"
+                                               :new_string "_"}]})]
+                      (assert.is_true r.is-error?)
+                      (assert.is_truthy (string.find (first-text r.content)
+                                                     "CRLF" 1 true))
+                      (assert.is_truthy (string.find (first-text r.content)
+                                                     "old_string uses LF" 1 true))))))
+            (it "lists line-numbered matching sites when old_string occurs more than once"
+                (fn []
+                  (with-tmpfile [path
+                                 "before\nmatch one\nother\nmatch two\nafter\n"]
+                    (let [r (execute registry :edit
+                                     {:path path
+                                      :edits [{:old_string "match"
+                                               :new_string "_"}]})
+                          text (first-text r.content)]
+                      (assert.is_true r.is-error?)
+                      (assert.is_truthy (string.find text "not unique" 1 true))
+                      (assert.is_truthy (string.find text "line 2: match one" 1
+                                                     true))
+                      (assert.is_truthy (string.find text "line 4: match two" 1
+                                                     true))))))
+            (it "caps ambiguous old_string match-site listings"
+                (fn []
+                  (with-tmpfile [path
+                                 "same\nsame\nsame\nsame\nsame\nsame\nsame\nsame\nsame\nsame\nsame\nsame\n"]
+                    (let [r (execute registry :edit
+                                     {:path path
+                                      :edits [{:old_string "same"
+                                               :new_string "_"}]})
+                          text (first-text r.content)]
+                      (assert.is_true r.is-error?)
+                      (assert.is_truthy (string.find text "line 10: same" 1
+                                                     true))
+                      (assert.is_falsy (string.find text "line 11: same" 1 true))
+                      (assert.is_truthy (string.find text "and 2 more" 1 true))))))
+            (it "cuts long match-site context on a UTF-8 boundary"
+                (fn []
+                  ;; 119 ASCII bytes put the 2-byte "é" across the 120-byte cut.
+                  (let [line (.. (string.rep "a" 119) "é" "tail dup")]
+                    (with-tmpfile [path (.. line "\n" line "\n")]
+                      (let [r (execute registry :edit
+                                       {:path path
+                                        :edits [{:old_string "dup"
+                                                 :new_string "_"}]})
+                            text (first-text r.content)]
+                        (assert.is_true r.is-error?)
+                        (assert.is_truthy (string.find text
+                                                       (.. "line 2: "
+                                                           (string.rep "a" 119)
+                                                           "...")
+                                                       1 true)))))))
+            (it "is-error? when two edits' matches overlap"
+                (fn []
+                  (with-tmpfile [path "abcdef"]
+                    (let [r (execute registry :edit
+                                     {:path path
+                                      :edits [{:old_string "abc"
+                                               :new_string "_"}
+                                              {:old_string "bcd"
+                                               :new_string "_"}]})]
+                      (assert.is_true r.is-error?)
+                      (assert.is_truthy (string.find (first-text r.content)
+                                                     "overlap"))))))
+            (it "is-error? for missing path"
+                (fn []
+                  (let [r (execute registry :edit
+                                   {:edits [{:old_string "x" :new_string "y"}]})]
+                    (assert.is_true r.is-error?)
+                    (assert.is_truthy (string.find (first-text r.content)
+                                                   "missing 'path'")))))
+            (it "is-error? when single and batched edit shapes are both provided"
+                (fn []
+                  (let [r (execute registry :edit
+                                   {:path "/tmp/a"
+                                    :edits [{:old_string "x" :new_string "y"}]
+                                    :files [{:path "/tmp/b"
+                                             :edits [{:old_string "x"
+                                                      :new_string "y"}]}]})]
+                    (assert.is_true r.is-error?)
+                    (assert.is_truthy (string.find (first-text r.content)
+                                                   "either 'path'/'edits' or 'files'"
+                                                   1 true)))))
+            (it "is-error? for empty files array"
+                (fn []
+                  (let [r (execute registry :edit {:files []})]
+                    (assert.is_true r.is-error?)
+                    (assert.is_truthy (string.find (first-text r.content)
+                                                   "missing 'files'" 1 true)))))
+            (it "applies batched edits across multiple files"
+                (fn []
+                  (with-tmpfile [a "alpha beta"]
+                    (with-tmpfile [b "gamma delta"]
+                      (let [r (execute registry :edit
+                                       {:files [{:path a
+                                                 :edits [{:old_string "beta"
+                                                          :new_string "BETA"}]}
+                                                {:path b
+                                                 :edits [{:old_string "gamma"
+                                                          :new_string "GAMMA"}]}]})]
+                        (assert.is_false r.is-error?)
+                        (assert.are.equal "alpha BETA" (read-file a))
+                        (assert.are.equal "GAMMA delta" (read-file b))
+                        (let [text (first-text r.content)]
+                          (assert.is_truthy (string.find text
+                                                         (.. "applied 1 edit(s) to "
+                                                             a)
+                                                         1 true))
+                          (assert.is_truthy (string.find text
+                                                         (.. "applied 1 edit(s) to "
+                                                             b)
+                                                         1 true))))))))
+            (it "rejects batched edits that use different spellings of one path"
+                (fn []
+                  (with-tmpdir [dir]
+                    (let [lfs (require :lfs)
+                          old (lfs.currentdir)]
+                      (h.write-file (.. dir "/a.fnl") "alpha")
+                      (assert (lfs.chdir dir))
+                      (let [(ok? r) (pcall #(execute registry :edit
+                                                     {:files [{:path "a.fnl"
+                                                               :edits [{:old_string "alpha"
+                                                                        :new_string "A"}]}
+                                                              {:path "./a.fnl"
+                                                               :edits [{:old_string "alpha"
+                                                                        :new_string "B"}]}]}))]
+                        (assert (lfs.chdir old))
+                        (if (not ok?) (error r))
+                        (assert.is_true r.is-error?)
+                        (assert.is_truthy (string.find (first-text r.content)
+                                                       "combine edits for the same file"
+                                                       1 true))
+                        (assert.are.equal "alpha" (read-file (.. dir "/a.fnl"))))))))
+            (it "does not mutate any file when batched edit validation fails"
+                (fn []
+                  (with-tmpfile [a "alpha beta"]
+                    (with-tmpfile [b "gamma delta"]
+                      (let [r (execute registry :edit
+                                       {:files [{:path a
+                                                 :edits [{:old_string "beta"
+                                                          :new_string "BETA"}]}
+                                                {:path b
+                                                 :edits [{:old_string "missing"
+                                                          :new_string "MISS"}]}]})]
+                        (assert.is_true r.is-error?)
+                        (assert.is_truthy (string.find (first-text r.content) b
+                                                       1 true))
+                        (assert.are.equal "alpha beta" (read-file a))
+                        (assert.are.equal "gamma delta" (read-file b)))))))
+            (it "surfaces CRLF hints with the path in batched edit validation failures"
+                (fn []
+                  (with-tmpfile [a "alpha beta"]
+                    (with-tmpfile [b "gamma\r\ndelta\r\n"]
+                      (let [r (execute registry :edit
+                                       {:files [{:path a
+                                                 :edits [{:old_string "beta"
+                                                          :new_string "BETA"}]}
+                                                {:path b
+                                                 :edits [{:old_string "gamma\ndelta"
+                                                          :new_string "G"}]}]})]
+                        (assert.is_true r.is-error?)
+                        (let [text (first-text r.content)]
+                          (assert.is_truthy (string.find text b 1 true))
+                          (assert.is_truthy (string.find text "CRLF" 1 true)))
+                        (assert.are.equal "alpha beta" (read-file a))
+                        (assert.are.equal "gamma\r\ndelta\r\n" (read-file b)))))))
+            (it "is-error? for empty edits array"
+                (fn []
+                  (with-tmpfile [path "x"]
+                    (let [r (execute registry :edit {:path path :edits []})]
+                      (assert.is_true r.is-error?)
+                      (assert.is_truthy (string.find (first-text r.content)
+                                                     "missing 'edits'"))))))
+            (it "asserts through the real execute path when its file is already locked"
+                (fn []
+                  (with-tmpfile [path "alpha"]
+                    (let [key (file-mutex.canonical-path path)]
+                      (tset file-mutex-state.locks key {:owner {} :waiters []})
+                      (let [r (execute registry :edit
+                                       {:path path
+                                        :edits [{:old_string "alpha"
+                                                 :new_string "beta"}]})]
+                        (tset file-mutex-state.locks key nil)
+                        (assert.is_true r.is-error?)
+                        (assert.is_truthy (string.find (first-text r.content)
+                                                       "synchronous mutation" 1
+                                                       true)))))))
+            (it "serializes a batch edit and concurrent write on a shared path"
+                (fn []
+                  (with-tmpfile [path "alpha"]
+                    (let [batch (coroutine.create #(execute-coop registry :edit
+                                                                 {:files [{:path path
+                                                                           :edits [{:old_string "alpha"
+                                                                                    :new_string "BETA"}]}]}
+                                                                 #(coroutine.yield)))
+                          writer (coroutine.create #(execute-coop registry
+                                                                  :write
+                                                                  {:path path
+                                                                   :content "writer"}
+                                                                  #(coroutine.yield)))]
+                      (resume! batch)
+                      (resume! batch)
+                      (resume! batch)
+                      (resume! batch)
+                      (resume! writer)
+                      (assert.are.equal "alpha" (read-file path))
+                      (resume! batch)
+                      (assert.are.equal "alpha" (read-file path))
+                      (var steps 0)
+                      (while (and (= (read-file path) "alpha") (< steps 10))
+                        (resume! batch)
+                        (set steps (+ steps 1))
+                        (assert.are.equal :suspended (coroutine.status writer)))
+                      (assert.are.equal :suspended (coroutine.status batch))
+                      (assert.are.equal "BETA" (read-file path))
+                      (while (not= (coroutine.status batch) :dead)
+                        (resume! batch))
+                      (assert.are.equal :dead (coroutine.status batch))
+                      (assert.are.equal :suspended (coroutine.status writer))
+                      (while (not= (coroutine.status writer) :dead)
+                        (resume! writer))
+                      (assert.are.equal :dead (coroutine.status writer))
+                      (assert.are.equal "writer" (read-file path))))))
+            (it "yields during cooperative edit validation and write phases"
+                (fn []
+                  (with-tmpfile [path "alpha beta gamma"]
+                    (var yields 0)
+                    (let [r (execute-coop registry :edit
+                                          {:path path
+                                           :edits [{:old_string "beta"
+                                                    :new_string "BETA"}]}
+                                          (fn [] (set yields (+ yields 1))))]
+                      (assert.is_false r.is-error?)
+                      (assert.are.equal "alpha BETA gamma" (read-file path))
+                      (assert.is_true (> yields 0))))))))

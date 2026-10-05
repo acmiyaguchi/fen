@@ -12,13 +12,12 @@
     out))
 
 (fn searchable-text [tool]
-  (string.lower
-    (table.concat [(tostring (or tool.name ""))
-                   (tostring (or tool.label ""))
-                   (tostring (or tool.snippet ""))
-                   (tostring (or tool.description ""))
-                   (tostring (or tool.__owner ""))]
-                  " ")))
+  (string.lower (table.concat [(tostring (or tool.name ""))
+                               (tostring (or tool.label ""))
+                               (tostring (or tool.snippet ""))
+                               (tostring (or tool.description ""))
+                               (tostring (or tool.__owner ""))]
+                              " ")))
 
 (local STOP-WORDS {:a true :an true :for true :the true :tool true :to true})
 
@@ -65,7 +64,9 @@
         (let [query-words (meaningful-words query)
               hits []
               active (or agent.active-tool-names {})
-              limit (math.max 1 (math.min 10 (math.floor (or (tonumber args.limit) 5))))]
+              limit (math.max 1
+                              (math.min 10
+                                        (math.floor (or (tonumber args.limit) 5))))]
           (set agent.active-tool-names active)
           (each [_ tool (ipairs (or agent.tools []))]
             (when (and (= tool.exposure :search)
@@ -88,16 +89,14 @@
                   (table.insert activated name)
                   (table.insert lines
                                 (.. "- " name " — "
-                                    (tostring (or tool.snippet
-                                                  tool.description
+                                    (tostring (or tool.snippet tool.description
                                                   "")))))))
             (if (= (length activated) 0)
                 (result (.. "No tools matched: " query) false
                         {:query query :activated []})
                 (result (.. "Activated tools for subsequent requests:\n"
                             (table.concat lines "\n"))
-                        false
-                        {:query query :activated activated})))))))
+                        false {:query query :activated activated})))))))
 
 {:name :tool_search
  :label "Tool Search"

@@ -12,8 +12,7 @@
       (let [contents (f:read "*a")]
         (f:close)
         (when contents
-          {:path path :size (length contents)
-           :fingerprint contents})))))
+          {:path path :size (length contents) :fingerprint contents})))))
 
 (var fnl-path-cache nil)
 
@@ -52,10 +51,9 @@
               name (tostring modname)
               cached (and flat-map-cache (= flat-map-cache.env env)
                           (flat.resolve-fnl flat-map-cache.map name))]
-          (or cached
-              (let [map (flat.build-map roots)]
-                (set flat-map-cache {:env env :map map})
-                (flat.resolve-fnl map name))))))))
+          (or cached (let [map (flat.build-map roots)]
+                       (set flat-map-cache {:env env :map map})
+                       (flat.resolve-fnl map name))))))))
 
 ;; @doc fen.util.checksum.backends.default.module-path
 ;; kind: function
@@ -65,11 +63,10 @@
 (fn module-path [modname]
   (let [name (tostring modname)
         (lua-path _lua-err) (package.searchpath name package.path)]
-    (or lua-path
-        (let [fnl-search-path (fnl-path-from-lua-path package.path)
-              (fnl-path _fnl-err) (package.searchpath name fnl-search-path)]
-          (or fnl-path
-              (flat-extension-path name))))))
+    (or lua-path (let [fnl-search-path (fnl-path-from-lua-path package.path)
+                       (fnl-path _fnl-err) (package.searchpath name
+                                                               fnl-search-path)]
+                   (or fnl-path (flat-extension-path name))))))
 
 ;; @doc fen.util.checksum.backends.default.module-fingerprint
 ;; kind: function

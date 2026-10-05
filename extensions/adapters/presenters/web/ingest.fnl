@@ -23,16 +23,13 @@
     (if ok? out (tostring args))))
 
 (fn content->text [content]
-  (if (= (type content) :string) content
-      (= (type content) :table)
+  (if (= (type content) :string) content (= (type content) :table)
       (let [parts []]
         (each [_ item (ipairs content)]
-          (if (= (type item) :string)
-              (table.insert parts item)
-              (and (= (type item) :table) item.text)
-              (table.insert parts (tostring item.text))))
-        (table.concat parts "\n"))
-      (tostring (or content ""))))
+          (if (= (type item) :string) (table.insert parts item)
+              (and (= (type item) :table) item.text) (table.insert parts
+                                                                   (tostring item.text))))
+        (table.concat parts "\n")) (tostring (or content ""))))
 
 (fn copy-event [ev]
   (let [out {}]
@@ -52,10 +49,8 @@
           (set found row)
           (and row (not row.streaming?)
                (or (= row.type :assistant-text)
-                   (= row.type :assistant-thinking)
-                   (= row.type :tool-call)
-                   (= row.type :tool-result)
-                   (= row.type :user)))
+                   (= row.type :assistant-thinking) (= row.type :tool-call)
+                   (= row.type :tool-result) (= row.type :user)))
           (set i 0)))
     (set i (- i 1)))
   found)
@@ -88,66 +83,62 @@
     (if (= ev.type :set-status-info)
         (each [k v (pairs (or ev.info {}))]
           (tset s k v))
-
         (= ev.type :llm-start)
-        (do (set s.thinking? true)
-            (when (= (or s.turn-start 0) 0)
-              (set s.turn-start (os.time))))
-
+        (do
+          (set s.thinking? true)
+          (when (= (or s.turn-start 0) 0)
+            (set s.turn-start (os.time))))
         (= ev.type :llm-end)
-        (do (set s.thinking? false)
-            (when ev.usage
-              (set s.last-input (or ev.usage.input s.last-input))))
-
+        (do
+          (set s.thinking? false)
+          (when ev.usage
+            (set s.last-input (or ev.usage.input s.last-input))))
         (= ev.type :tool-call)
-        (do (set ev.args-pretty (args->string ev.arguments))
-            (set s.running-label (tostring (or ev.name "tool")))
-            (table.insert state.transcript (copy-event ev)))
-
+        (do
+          (set ev.args-pretty (args->string ev.arguments))
+          (set s.running-label (tostring (or ev.name "tool")))
+          (table.insert state.transcript (copy-event ev)))
         (= ev.type :tool-result)
-        (do (set s.running-label nil)
-            (set ev.body-pretty (content->text (?. ev :result :content)))
-            (table.insert state.transcript (copy-event ev)))
-
+        (do
+          (set s.running-label nil)
+          (set ev.body-pretty (content->text (?. ev :result :content)))
+          (table.insert state.transcript (copy-event ev)))
         (= ev.type :cancelled)
-        (do (set s.thinking? false)
-            (set s.running-label nil)
-            (set s.cancelling? false)
-            (set s.turn-start 0)
-            (table.insert state.transcript (copy-event ev)))
-
+        (do
+          (set s.thinking? false)
+          (set s.running-label nil)
+          (set s.cancelling? false)
+          (set s.turn-start 0)
+          (table.insert state.transcript (copy-event ev)))
         (or (= ev.type :assistant-text) (= ev.type :assistant-thinking))
-        (do (when (not= ev.final? false)
-              (set s.thinking? false)
-              (set s.running-label nil)
-              (set s.turn-start 0))
-            (table.insert state.transcript (copy-event ev)))
-
+        (do
+          (when (not= ev.final? false)
+            (set s.thinking? false)
+            (set s.running-label nil)
+            (set s.turn-start 0))
+          (table.insert state.transcript (copy-event ev)))
         (= ev.type :assistant-text-delta)
         (append-assistant-delta! :assistant-text ev.content-index ev.delta)
-
         (= ev.type :assistant-thinking-delta)
         (append-assistant-delta! :assistant-thinking ev.content-index ev.delta)
-
         (= ev.type :assistant-stream-end)
-        (do (finish-streaming-assistant! ev.final?)
-            (when ev.final?
-              (set s.thinking? false)
-              (set s.running-label nil)
-              (set s.turn-start 0)))
-
-        (= ev.type :error)
-        (do (set s.thinking? false)
+        (do
+          (finish-streaming-assistant! ev.final?)
+          (when ev.final?
+            (set s.thinking? false)
             (set s.running-label nil)
-            (set s.turn-start 0)
-            (table.insert state.transcript (copy-event ev)))
-
+            (set s.turn-start 0)))
+        (= ev.type :error)
+        (do
+          (set s.thinking? false)
+          (set s.running-label nil)
+          (set s.turn-start 0)
+          (table.insert state.transcript (copy-event ev)))
         (= ev.type :extension-loaded)
         (table.insert state.transcript
                       {:type :info
                        :text (.. "extension-loaded: "
                                  (tostring (or ev.name "")))})
-
         (not (= ev.type :redraw))
         (table.insert state.transcript (copy-event ev)))))
 

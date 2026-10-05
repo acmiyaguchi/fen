@@ -3,8 +3,7 @@
 
 (local fennel (require :fennel))
 (set fennel.path
-     (.. fennel.path
-         ";./scripts/?.fnl;./scripts/?/init.fnl"
+     (.. fennel.path ";./scripts/?.fnl;./scripts/?/init.fnl"
          ";./packages/core/src/?.fnl;./packages/core/src/?/init.fnl"))
 
 (local scanner (require :docs.scanner))
@@ -61,7 +60,7 @@
 
 (fn flush-renders! []
   "Render all queued DOT->SVG jobs in parallel, capped at core count."
-  (when (> (# pending-renders) 0)
+  (when (> (length pending-renders) 0)
     (if (not (command-ok? "command -v dot >/dev/null 2>&1"))
         (io.stderr:write "warning: Graphviz dot not found; skipped SVG rendering\n")
         (let [listfile (os.tmpname)
@@ -80,7 +79,7 @@
             (when (not (command-ok? cmd))
               (io.stderr:write "warning: some SVG renders failed\n"))
             (os.remove listfile)
-            (print (.. "rendered " (# pending-renders) " SVGs")))))
+            (print (.. "rendered " (length pending-renders) " SVGs")))))
     (set pending-renders [])))
 
 (fn read-file [path]
@@ -98,7 +97,7 @@
     out))
 
 (fn starts-with? [s prefix]
-  (= (string.sub (tostring s) 1 (# prefix)) prefix))
+  (= (string.sub (tostring s) 1 (length prefix)) prefix))
 
 (fn parse-reloadable []
   "Read packages/fen/src/fen/main.fnl's RELOADABLE vector as source of truth."
@@ -106,7 +105,7 @@
         start (string.find text "%(local%s+RELOADABLE%s+%[")
         out []]
     (when start
-      (let [finish (or (string.find text "%]%)" start) (# text))
+      (let [finish (or (string.find text "%]%)" start) (length text))
             body (string.sub text start finish)]
         (each [m (string.gmatch body ":([%w%._%-]+)")]
           (when (starts-with? m "fen.")
@@ -120,10 +119,11 @@
       (let [mi file.module-info]
         (when mi
           (tset source-mods mi.module true)
-          (tset nodes mi.module {:label mi.module
-                                 :tooltip file.path
-                                 :style :filled
-                                 :fillcolor :white}))))
+          (tset nodes mi.module
+                {:label mi.module
+                 :tooltip file.path
+                 :style :filled
+                 :fillcolor :white}))))
     (values nodes source-mods)))
 
 (fn edge-key [from to kind]
@@ -132,8 +132,7 @@
 (fn subsystem-for [mod]
   "Collapse a module id to a docs-facing subsystem bucket."
   (let [m (tostring mod)]
-    (if (= m "fen.main") "cli"
-        (= m "fen.version") "cli"
+    (if (= m "fen.main") "cli" (= m "fen.version") "cli"
         (starts-with? m "fen.testing") "testing"
         (let [ext (string.match m "^fen%.extensions%.([%w_%-]+)")]
           (if ext (.. "extension." ext)
@@ -184,10 +183,7 @@
   (let [k (edge-key from to kind)]
     (when (not (. seen-edges k))
       (tset seen-edges k true)
-      (table.insert edges {:from from
-                           :to to
-                           :kind kind
-                           :attrs (or attrs {})}))))
+      (table.insert edges {:from from :to to :kind kind :attrs (or attrs {})}))))
 
 (fn add-script-deps! [nodes edges seen-edges]
   "Add selected script/helper dependencies that are outside package modules."
@@ -223,19 +219,24 @@
     (each [_ mod (ipairs ["fen.main" "fen.util.flat_extensions"])]
       (when (string.find text mod 1 true)
         (add-edge! edges seen-edges id mod :c-require {:label :c})))
-    (each [_ mod (ipairs ["fennel" "cjson" "termbox2" "fen_http" "fen_process" "fen_random" "lfs"])]
+    (each [_ mod (ipairs ["fennel"
+                          "cjson"
+                          "termbox2"
+                          "fen_http"
+                          "fen_process"
+                          "fen_random"
+                          "lfs"])]
       (when (string.find text (.. "\"" mod "\"") 1 true)
         (let [nid (.. "native:" mod)]
           (external-node! nodes nid mod)
           (add-edge! edges seen-edges id nid :c-preload {:label :preload}))))))
 
 (fn dep-attrs [kind]
-  (if (= kind :late-require)
-      {:label :late :style :dashed :color :gray50}
-      (= kind :optional-require)
-      {:label :optional :style :dotted :color :gray50}
-      (= kind :macro)
-      {:label :macro :style :dashed :color :gray50}
+  (if (= kind :late-require) {:label :late :style :dashed :color :gray50}
+      (= kind :optional-require) {:label :optional
+                                  :style :dotted
+                                  :color :gray50}
+      (= kind :macro) {:label :macro :style :dashed :color :gray50}
       {:label (tostring kind)}))
 
 (fn collect-module-graph []
@@ -248,17 +249,19 @@
     (each [_ dep (ipairs agg.dependencies)]
       (when (and dep.from dep.module (starts-with? dep.module "fen."))
         (when (not (. nodes dep.module))
-          (tset nodes dep.module {:label dep.module
-                                  :style :dashed
-                                  :color :gray
-                                  :fontcolor :gray}))
+          (tset nodes dep.module
+                {:label dep.module
+                 :style :dashed
+                 :color :gray
+                 :fontcolor :gray}))
         (let [k (edge-key dep.from dep.module dep.kind)]
           (when (not (. seen-edges k))
             (tset seen-edges k true)
-            (table.insert edges {:from dep.from
-                                 :to dep.module
-                                 :kind dep.kind
-                                 :attrs (dep-attrs dep.kind)})))))
+            (table.insert edges
+                          {:from dep.from
+                           :to dep.module
+                           :kind dep.kind
+                           :attrs (dep-attrs dep.kind)})))))
     (add-script-deps! nodes edges seen-edges)
     (add-c-bootstrap-deps! nodes edges seen-edges)
     ;; Reloadability annotations.
@@ -285,12 +288,9 @@
       (each [_ e (ipairs edges)]
         (when (and (. source-mods e.from) (. source-mods e.to))
           (table.insert source-edges e)
-          (when (not (or (= e.kind :late-require)
-                         (= e.kind :optional-require)
-                         (= e.kind :script-require)
-                         (= e.kind :lua-require)
-                         (= e.kind :c-require)
-                         (= e.kind :c-preload)))
+          (when (not (or (= e.kind :late-require) (= e.kind :optional-require)
+                         (= e.kind :script-require) (= e.kind :lua-require)
+                         (= e.kind :c-require) (= e.kind :c-preload)))
             (table.insert load-source-edges e))))
       (let [comps (graph.scc source-list load-source-edges)]
         (each [_ comp (ipairs comps)]
@@ -337,7 +337,8 @@
       (if (= e.kind :macro)
           (set e.attrs {:style :dashed :color :gray50})
           (set e.attrs {})))
-    (graph.render-dot-clustered "fen_modules_clustered" data.nodes data.edges (build-clusters data.nodes))))
+    (graph.render-dot-clustered "fen_modules_clustered" data.nodes data.edges
+                                (build-clusters data.nodes))))
 
 (var write-graph! nil)
 
@@ -345,11 +346,10 @@
   (let [items []]
     (each [id n (pairs counts)]
       (table.insert items {:id id :count n}))
-    (table.sort items
-                (fn [a b]
-                  (if (= a.count b.count)
-                      (< a.id b.id)
-                      (> a.count b.count))))
+    (table.sort items (fn [a b]
+                        (if (= a.count b.count)
+                            (< a.id b.id)
+                            (> a.count b.count))))
     items))
 
 (fn write-summary! []
@@ -385,15 +385,16 @@
       (tset fan-in e.to (+ (or (. fan-in e.to) 0) 1)))
     (table.insert out "## Load-time cycles")
     (table.insert out "")
-    (if (= (# data.cycles) 0)
+    (if (= (length data.cycles) 0)
         (table.insert out "No load-time source-module cycles detected.")
         (each [_ comp (ipairs data.cycles)]
           (table.insert out (.. "- `" (table.concat comp "` → `") "`"))))
     (table.insert out "")
     (table.insert out "## Late/optional cycles")
     (table.insert out "")
-    (if (= (# data.dynamic-cycles) 0)
-        (table.insert out "No additional late/optional source-module cycles detected.")
+    (if (= (length data.dynamic-cycles) 0)
+        (table.insert out
+                      "No additional late/optional source-module cycles detected.")
         (each [_ comp (ipairs data.dynamic-cycles)]
           (table.insert out (.. "- `" (table.concat comp "` → `") "`"))))
     (table.insert out "")
@@ -422,7 +423,8 @@
   "Remove stale DOT/SVG files in a generated graph subdirectory."
   (let [dir (.. OUT-DIR "/" rel)]
     (os.execute (.. "mkdir -p " (shell-quote dir)))
-    (os.execute (.. "rm -f " (shell-quote dir) "/*.dot " (shell-quote dir) "/*.svg"))))
+    (os.execute (.. "rm -f " (shell-quote dir) "/*.dot " (shell-quote dir)
+                    "/*.svg"))))
 
 (fn clean-extension-graphs! []
   (clean-generated-graph-dir! "extensions"))
@@ -456,22 +458,30 @@
                 (add-edge! edges seen-edges e.from e.to e.kind e.attrs)
                 from-local?
                 (let [boundary-id (.. "external:" (subsystem-for e.to))]
-                  (external-node! nodes boundary-id (.. "external\n" (subsystem-label (subsystem-for e.to))))
+                  (external-node! nodes boundary-id
+                                  (.. "external\n"
+                                      (subsystem-label (subsystem-for e.to))))
                   (add-edge! edges seen-edges e.from boundary-id :external-out
-                             {:label (.. "out: " e.to) :style :dashed :color :gray50}))
+                             {:label (.. "out: " e.to)
+                              :style :dashed
+                              :color :gray50}))
                 to-local?
                 (let [boundary-id (.. "external:" (subsystem-for e.from))]
-                  (external-node! nodes boundary-id (.. "external\n" (subsystem-label (subsystem-for e.from))))
+                  (external-node! nodes boundary-id
+                                  (.. "external\n"
+                                      (subsystem-label (subsystem-for e.from))))
                   (add-edge! edges seen-edges boundary-id e.to :external-in
-                             {:label (.. "in: " e.from) :style :dashed :color :gray50})))))
+                             {:label (.. "in: " e.from)
+                              :style :dashed
+                              :color :gray50})))))
         (let [slug (extension-slug sid)]
           (write-graph! (.. "extensions/" slug)
-                        (graph.render-dot (.. "fen_" (dot-graph-id slug)) nodes edges)))))))
+                        (graph.render-dot (.. "fen_" (dot-graph-id slug)) nodes
+                                          edges)))))))
 
 (fn contribution-node-id [r]
   (.. "contribution:" (tostring (or r.kind "unknown")) ":"
-      (tostring (or r.name "dynamic")) ":"
-      (tostring (or r.path "unknown")) ":"
+      (tostring (or r.name "dynamic")) ":" (tostring (or r.path "unknown")) ":"
       (tostring (or r.line 0))))
 
 (fn extension-for-register-site [r]
@@ -496,25 +506,30 @@
                 name (tostring (or r.name "(dynamic)"))
                 kind (tostring (or r.kind "unknown"))
                 mi (scanner.module-from-path r.path)]
-            (tset nodes ext-id {:label (.. "extension\n" ext.name)
-                                :shape :folder
-                                :style :filled
-                                :fillcolor :lightyellow
-                                :tooltip ext.module})
-            (tset nodes contrib-id {:label (.. kind "\n" name)
-                                    :shape :note
-                                    :style :filled
-                                    :fillcolor :white
-                                    :tooltip (.. r.path ":" (tostring (or r.line "?")))})
-            (add-edge! edges seen-edges ext-id contrib-id :register {:label :registers})
+            (tset nodes ext-id
+                  {:label (.. "extension\n" ext.name)
+                   :shape :folder
+                   :style :filled
+                   :fillcolor :lightyellow
+                   :tooltip ext.module})
+            (tset nodes contrib-id
+                  {:label (.. kind "\n" name)
+                   :shape :note
+                   :style :filled
+                   :fillcolor :white
+                   :tooltip (.. r.path ":" (tostring (or r.line "?")))})
+            (add-edge! edges seen-edges ext-id contrib-id :register
+                       {:label :registers})
             (when mi
               (when (not (. nodes mi.module))
-                (tset nodes mi.module {:label mi.module
-                                       :shape :box
-                                       :style :filled
-                                       :fillcolor :palegreen
-                                       :tooltip r.path}))
-              (add-edge! edges seen-edges contrib-id mi.module :source {:label :source :style :dashed :color :gray50}))))))
+                (tset nodes mi.module
+                      {:label mi.module
+                       :shape :box
+                       :style :filled
+                       :fillcolor :palegreen
+                       :tooltip r.path}))
+              (add-edge! edges seen-edges contrib-id mi.module :source
+                         {:label :source :style :dashed :color :gray50}))))))
     (graph.render-dot "fen_contributions" nodes edges)))
 
 (fn build-module-focus-graphs []
@@ -541,7 +556,8 @@
           ;; leak the blue focus marker into every later graph).
           (each [id _ (pairs included)]
             (let [src (. data.nodes id)
-                  attrs (if src (shallow-copy src) {:label id :style :dashed :color :gray})]
+                  attrs (if src (shallow-copy src)
+                            {:label id :style :dashed :color :gray})]
               (tset nodes id attrs)))
           (let [focus-attrs (. nodes focus)]
             (when focus-attrs
@@ -551,7 +567,9 @@
             (when (and (. included e.from) (. included e.to))
               (table.insert edges e)))
           (write-graph! (.. "modules/" (module-slug focus))
-                        (graph.render-dot (.. "fen_module_" (dot-graph-id focus)) nodes edges)))))))
+                        (graph.render-dot (.. "fen_module_"
+                                              (dot-graph-id focus))
+                                          nodes edges)))))))
 
 (fn build-subsystem-graph []
   (let [data (collect-module-graph)
@@ -563,12 +581,14 @@
       (let [sid (subsystem-for id)]
         (tset counts sid (+ (or (. counts sid) 0) 1))))
     (each [sid n (pairs counts)]
-      (tset nodes sid {:label (.. (subsystem-label sid) "\n" n " modules")
-                       :style :filled
-                       :fillcolor (if (string.match sid "^extension%.") :lightyellow
-                                      (or (= sid "core") (= sid "core.llm") (= sid "core.extensions")) :palegreen
-                                      (= sid "cli") :lightblue
-                                      :white)}))
+      (tset nodes sid
+            {:label (.. (subsystem-label sid) "\n" n " modules")
+             :style :filled
+             :fillcolor (if (string.match sid "^extension%.") :lightyellow
+                            (or (= sid "core") (= sid "core.llm")
+                                (= sid "core.extensions")) :palegreen
+                            (= sid "cli") :lightblue
+                            :white)}))
     (each [_ e (ipairs data.edges)]
       (let [from (subsystem-for e.from)
             to (subsystem-for e.to)]
@@ -579,13 +599,12 @@
               (table.insert edges {:from from :to to :attrs {}}))))))
     (graph.render-dot "fen_subsystems" nodes edges)))
 
-(set write-graph!
-     (fn [basename dot]
-       (let [path (.. OUT-DIR "/" basename ".dot")
-             svg-path (.. OUT-DIR "/" basename ".svg")]
-         (write-file path (.. dot "\n"))
-         (print (.. "wrote " path))
-         (queue-render! path svg-path))))
+(set write-graph! (fn [basename dot]
+                    (let [path (.. OUT-DIR "/" basename ".dot")
+                          svg-path (.. OUT-DIR "/" basename ".svg")]
+                      (write-file path (.. dot "\n"))
+                      (print (.. "wrote " path))
+                      (queue-render! path svg-path))))
 
 (fn write-tracked-graph! [basename dot]
   "Write a tracked DOT artifact and ignored local SVG under docs/graphs."
@@ -638,7 +657,7 @@
 (fn arg-value [args flag default]
   (var out default)
   (var i 1)
-  (while (<= i (# args))
+  (while (<= i (length args))
     (if (= (. args i) flag)
         (do
           (set out (. args (+ i 1)))

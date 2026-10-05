@@ -1,4 +1,3 @@
-
 (local codex (require :fen.extensions.provider_openai.openai_codex_responses))
 (local shared (require :fen.extensions.provider_openai.openai_responses_shared))
 (local types (require :fen.core.types))
@@ -6,340 +5,385 @@
 (local http (require :fen.util.http))
 
 (describe "providers.openai_codex_responses.build-url"
-  (fn []
-    (it "appends /codex/responses to the chatgpt backend-api root"
-      (fn []
-        (assert.are.equal "https://chatgpt.com/backend-api/codex/responses"
-                          (codex.build-url "https://chatgpt.com/backend-api"))))
-
-    (it "respects a fully-qualified codex URL"
-      (fn []
-        (assert.are.equal "https://chatgpt.com/backend-api/codex/responses"
-                          (codex.build-url "https://chatgpt.com/backend-api/codex/responses"))))))
+          (fn []
+            (it "appends /codex/responses to the chatgpt backend-api root"
+                (fn []
+                  (assert.are.equal "https://chatgpt.com/backend-api/codex/responses"
+                                    (codex.build-url "https://chatgpt.com/backend-api"))))
+            (it "respects a fully-qualified codex URL"
+                (fn []
+                  (assert.are.equal "https://chatgpt.com/backend-api/codex/responses"
+                                    (codex.build-url "https://chatgpt.com/backend-api/codex/responses"))))))
 
 (describe "providers.openai_codex_responses.build-headers"
-  (fn []
-    (it "carries authorization, chatgpt-account-id, originator, openai-beta"
-      (fn []
-        (let [headers (codex.build-headers {:access "AT" :accountId "acc_1"})]
-          (assert.are.equal "Bearer AT" headers.authorization)
-          (assert.are.equal "acc_1" headers.chatgpt-account-id)
-          (assert.are.equal "pi" headers.originator)
-          (assert.are.equal "responses=experimental" headers.openai-beta)
-          (assert.are.equal "text/event-stream" headers.accept)
-          (assert.are.equal "application/json" headers.content-type))))))
+          (fn []
+            (it "carries authorization, chatgpt-account-id, originator, openai-beta"
+                (fn []
+                  (let [headers (codex.build-headers {:access "AT"
+                                                      :accountId "acc_1"})]
+                    (assert.are.equal "Bearer AT" headers.authorization)
+                    (assert.are.equal "acc_1" headers.chatgpt-account-id)
+                    (assert.are.equal "pi" headers.originator)
+                    (assert.are.equal "responses=experimental"
+                                      headers.openai-beta)
+                    (assert.are.equal "text/event-stream" headers.accept)
+                    (assert.are.equal "application/json" headers.content-type))))))
 
 (describe "providers.openai_codex_responses.map-codex-event"
-  (fn []
-    (it "rewrites response.done to response.completed"
-      (fn []
-        (let [in {:type :response.done :response {:id "r1" :status :completed}}
-              out (codex.map-codex-event in)]
-          (assert.are.equal :response.completed out.type)
-          (assert.are.equal "r1" out.response.id))))
-
-    (it "rewrites response.incomplete to response.completed"
-      (fn []
-        (let [in {:type :response.incomplete :response {:id "r2"}}
-              out (codex.map-codex-event in)]
-          (assert.are.equal :response.completed out.type))))
-
-    (it "passes other event types through unchanged"
-      (fn []
-        (let [in {:type :response.output_text.delta :delta "hi"}
-              out (codex.map-codex-event in)]
-          (assert.are.equal :response.output_text.delta out.type)
-          (assert.are.equal "hi" out.delta))))
-
-    (it "feeds aliased events through the shared reducer correctly"
-      (fn []
-        (let [state (shared.new-stream-state "gpt-5.5")
-              events
-              [{:type :response.output_item.added
-                :item {:type :message :id "msg_1" :role :assistant :content []}}
-               {:type :response.output_text.delta :delta "ok"}
-               {:type :response.output_item.done
-                :item {:type :message :id "msg_1" :role :assistant
-                       :content [{:type :output_text :text "ok"}]}}
-               {:type :response.done
-                :response {:status :completed
-                           :usage {:input_tokens 0 :output_tokens 0
-                                   :total_tokens 0}}}]]
-          (each [_ ev (ipairs events)]
-            (shared.process-event! state (codex.map-codex-event ev) nil))
-          (assert.is_true state.saw-terminal?)
-          (let [asst (shared.finalize-stream-state state :openai-codex-responses
-                                                    :openai-codex nil)]
-            (assert.are.equal :stop asst.stop-reason)
-            (assert.are.equal "ok" (. asst.content 1 :text))))))))
+          (fn []
+            (it "rewrites response.done to response.completed"
+                (fn []
+                  (let [in {:type :response.done
+                            :response {:id "r1" :status :completed}}
+                        out (codex.map-codex-event in)]
+                    (assert.are.equal :response.completed out.type)
+                    (assert.are.equal "r1" out.response.id))))
+            (it "rewrites response.incomplete to response.completed"
+                (fn []
+                  (let [in {:type :response.incomplete :response {:id "r2"}}
+                        out (codex.map-codex-event in)]
+                    (assert.are.equal :response.completed out.type))))
+            (it "passes other event types through unchanged"
+                (fn []
+                  (let [in {:type :response.output_text.delta :delta "hi"}
+                        out (codex.map-codex-event in)]
+                    (assert.are.equal :response.output_text.delta out.type)
+                    (assert.are.equal "hi" out.delta))))
+            (it "feeds aliased events through the shared reducer correctly"
+                (fn []
+                  (let [state (shared.new-stream-state "gpt-5.5")
+                        events [{:type :response.output_item.added
+                                 :item {:type :message
+                                        :id "msg_1"
+                                        :role :assistant
+                                        :content []}}
+                                {:type :response.output_text.delta :delta "ok"}
+                                {:type :response.output_item.done
+                                 :item {:type :message
+                                        :id "msg_1"
+                                        :role :assistant
+                                        :content [{:type :output_text
+                                                   :text "ok"}]}}
+                                {:type :response.done
+                                 :response {:status :completed
+                                            :usage {:input_tokens 0
+                                                    :output_tokens 0
+                                                    :total_tokens 0}}}]]
+                    (each [_ ev (ipairs events)]
+                      (shared.process-event! state (codex.map-codex-event ev)
+                                             nil))
+                    (assert.is_true state.saw-terminal?)
+                    (let [asst (shared.finalize-stream-state state
+                                                             :openai-codex-responses
+                                                             :openai-codex nil)]
+                      (assert.are.equal :stop asst.stop-reason)
+                      (assert.are.equal "ok" (. asst.content 1 :text))))))))
 
 (describe "providers.openai_codex_responses.model catalog"
-  (fn []
-    (it "builds the Codex model catalog URL with a client version"
-      (fn []
-        (assert.are.equal "https://chatgpt.com/backend-api/codex/models?client_version=0.155.0"
-                          (codex.build-models-url "https://chatgpt.com/backend-api"))
-        (assert.are.equal "https://chatgpt.com/backend-api/codex/models?client_version=0.155.0"
-                          (codex.build-models-url "https://chatgpt.com/backend-api/codex/responses"))))
-
-    (it "keeps only listed models supported by the API"
-      (fn []
-        (let [models (codex.parse-models
-                       {:models [{:slug "gpt-5.5" :visibility :list :supported_in_api true}
-                                 {:slug "spark" :visibility :list :supported_in_api false}
-                                 {:slug "codex-auto-review" :visibility :hide :supported_in_api true}]})]
-          (assert.are.equal 1 (length models))
-          (assert.are.equal "gpt-5.5" (. models 1 :id)))))
-
-    (it "appends pinned models only when absent from the live catalog"
-      (fn []
-        (let [models (codex.append-pinned-models
-                       [{:id "gpt-5.4"}]
-                       [{:slug "gpt-5.6-sol" :visibility :list
-                         :supported_in_api false}])]
-          (assert.are.equal 3 (length models))
-          (assert.are.equal "gpt-5.4" (. models 1 :id))
-          (assert.are.equal "gpt-5.6-luna" (. models 2 :id))
-          (assert.are.equal "gpt-5.6-terra" (. models 3 :id)))))
-
-    (it "keeps live catalog metadata for a pinned model"
-      (fn []
-        (let [models (codex.append-pinned-models
-                       [{:id "gpt-5.6-sol" :name "Catalog Sol"}]
-                       [{:slug "gpt-5.6-sol" :visibility :list
-                         :supported_in_api true}])]
-          (assert.are.equal 3 (length models))
-          (assert.are.equal "Catalog Sol" (. models 1 :name)))))
-
-    (it "fetches, parses, and augments the authenticated catalog"
-      (fn []
-        (let [old-request http.request
-              captured {}]
-          (set http.request
-               (fn [opts]
-                 (tset captured :opts opts)
-                 {:status 200
-                  :headers {}
-                  :body (json.encode {:models [{:slug "gpt-5.4" :visibility :list
-                                                :supported_in_api true}]})}))
-          (let [models (codex.list-models {:creds {:access "AT" :accountId "acc"}
-                                           :client-version "1.0.0"})]
-            (set http.request old-request)
-            (assert.are.equal :GET captured.opts.method)
-            (assert.are.equal "https://chatgpt.com/backend-api/codex/models?client_version=1.0.0"
-                              captured.opts.url)
-            (assert.are.equal "Bearer AT" captured.opts.headers.authorization)
-            (assert.are.equal "acc" captured.opts.headers.chatgpt-account-id)
-            (assert.are.equal 4 (length models))
-            (assert.are.equal "gpt-5.4" (. models 1 :id))
-            (assert.are.equal "gpt-5.6-luna" (. models 2 :id))
-            (assert.are.equal "gpt-5.6-sol" (. models 3 :id))
-            (assert.are.equal "gpt-5.6-terra" (. models 4 :id)))))
-
-    (it "returns structured secret-free catalog failure reasons"
-      (fn []
-        (let [old-request http.request
-              opts {:creds {:access "oauth-secret" :accountId "acc"}}]
-          (set http.request (fn [_] {:status 401 :headers {} :body "token=oauth-secret"}))
-          (let [(ok? err) (pcall codex.list-models opts)]
-            (assert.is_false ok?)
-            (assert.are.equal :authentication-failed err.reason)
-            (assert.is_nil err.body)
-            (assert.is_nil (string.find (tostring err) "oauth-secret" 1 true)))
-          (set http.request (fn [_] {:status 403 :headers {} :body "access denied"}))
-          (let [(ok? err) (pcall codex.list-models opts)]
-            (assert.is_false ok?)
-            (assert.are.equal :authentication-failed err.reason))
-          (set http.request (fn [_] {:status 503 :headers {} :body "upstream details"}))
-          (let [(ok? err) (pcall codex.list-models opts)]
-            (assert.is_false ok?)
-            (assert.are.equal :request-failed err.reason))
-          (set http.request (fn [_] {:error "transport secret"}))
-          (let [(ok? err) (pcall codex.list-models opts)]
-            (set http.request old-request)
-            (assert.is_false ok?)
-            (assert.are.equal :request-failed err.reason)
-            (assert.is_nil (string.find (tostring err) "secret" 1 true))))))))
-
-(describe "providers.openai_codex_responses.merge-options"
-  (fn []
-    (it "defaults include to [reasoning.encrypted_content]"
-      (fn []
-        (let [out (codex.merge-options {})]
-          (assert.are.equal 1 (length out.include))
-          (assert.are.equal "reasoning.encrypted_content" (. out.include 1)))))
-
-    (it "preserves a caller-supplied include[]"
-      (fn []
-        (let [out (codex.merge-options {:include ["custom.flag"]})]
-          (assert.are.equal 1 (length out.include))
-          (assert.are.equal "custom.flag" (. out.include 1)))))
-
-    (it "does not mutate the caller's options table"
-      (fn []
-        (let [in {}
-              out (codex.merge-options in)]
-          (assert.is_nil in.include)
-          (assert.is_table out.include))))
-
-    (it "carries :tool-choice :none through to the shared Responses body"
-      (fn []
-        (let [body (shared.build-body "gpt-5.5"
-                     {:messages [] :tools [{:name "ls" :description "list" :parameters {:type :object}}]}
-                     nil (codex.merge-options {:tool-choice :none}))]
-          (assert.are.equal 1 (length body.tools))
-          (assert.are.equal :none body.tool_choice))))
-
-    (it "maps :web-search cached and live to the hosted web_search tool"
-      (fn []
-        ;; The CLI passes strings; internal callers may pass keywords.
-        (each [_ [mode live?] (ipairs [["cached" false] [:cached false]
-                                       ["live" true] [:live true]])]
-          (let [out (codex.merge-options {:web-search mode})]
-            (assert.are.same [{:type :web_search :external_web_access live?}]
-                             out.hosted-tools)))))
-
-    (it "sends no hosted tools when web search is off or unset"
-      (fn []
-        (assert.is_nil (. (codex.merge-options {:web-search "off"}) :hosted-tools))
-        (assert.is_nil (. (codex.merge-options {:web-search :off}) :hosted-tools))
-        (assert.is_nil (. (codex.merge-options {}) :hosted-tools))
-        (assert.is_nil (. (codex.merge-options nil) :hosted-tools))))
-
-    (it "derives hosted tools only from :web-search, never from the caller"
-      (fn []
-        (let [out (codex.merge-options {:hosted-tools [{:type :web_search}]})]
-          (assert.is_nil out.hosted-tools))))
-
-    (it "adds web search without mutating the caller or dropping other options"
-      (fn []
-        (let [in {:web-search "live" :tool-choice :none
-                  :reasoning-effort :high :prompt-cache-key "session-1"}
-              out (codex.merge-options in)]
-          (assert.are.same {:web-search "live" :tool-choice :none
-                            :reasoning-effort :high :prompt-cache-key "session-1"}
-                           in)
-          (assert.are.equal "live" out.web-search)
-          (assert.are.equal :none out.tool-choice)
-          (assert.are.equal :high out.reasoning-effort)
-          (assert.are.equal "session-1" out.prompt-cache-key)
-          (assert.are.equal "reasoning.encrypted_content" (. out.include 1))
-          (assert.is_true out.skip-max-output-tokens?)
-          (assert.are.equal 1 (length out.hosted-tools)))))))
-
-(fn capture-codex-body [context options]
-  "Run codex.complete against a stubbed transport; return the decoded body."
-  (let [old-request http.request
-        bodies []]
-    (set http.request
-         (fn [opts]
-           (table.insert bodies opts.body)
-           (opts.on-chunk "data: {\"type\":\"response.done\",\"response\":{\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":0,\"total_tokens\":1}}}\n\n")
-           {:status 200 :body "" :headers {}}))
-    (let [(ok? err) (pcall codex.complete "gpt-5.6-luna" context options)]
-      (set http.request old-request)
-      (assert.is_true ok? (tostring err)))
-    (assert.are.equal 1 (length bodies))
-    (json.decode (. bodies 1))))
-
-(describe "providers.openai_codex_responses.complete hosted web search"
-  (fn []
-    (let [creds {:access "AT" :accountId "acc"}
-          read-tool {:name "read" :description "read a file"
-                     :parameters {:type :object}}]
-      (it "sends web_search after the local tools on a tool-bearing call"
-        (fn []
-          (let [body (capture-codex-body
-                       {:messages [(types.user-message "latest Lua?")]
-                        :tools [read-tool]}
-                       {: creds :web-search "live"})]
-            (assert.are.equal 2 (length body.tools))
-            (assert.are.equal "function" (. body.tools 1 :type))
-            (assert.are.equal "read" (. body.tools 1 :name))
-            (assert.are.equal "web_search" (. body.tools 2 :type))
-            (assert.is_true (. body.tools 2 :external_web_access))
-            (assert.are.equal "auto" body.tool_choice))))
-
-      (it "sends cached web search without live page access"
-        (fn []
-          (let [body (capture-codex-body
-                       {:messages [(types.user-message "latest Lua?")]
-                        :tools [read-tool]}
-                       {: creds :web-search "cached"})]
-            (assert.are.equal "web_search" (. body.tools 2 :type))
-            (assert.is_false (. body.tools 2 :external_web_access)))))
-
-      (it "sends no tools key for a tool-less side call even with web search on"
-        (fn []
-          ;; Compaction/handoff summaries go through complete-messages with
-          ;; tools [] and the agent's provider-options, :web-search included.
-          (let [body (capture-codex-body
-                       {:messages [(types.user-message "summarize")] :tools []}
-                       {: creds :web-search "live"})]
-            (assert.is_nil body.tools)
-            (assert.is_nil body.tool_choice)))))))
-
-(describe "providers.openai_codex_responses.complete retry"
-  (fn []
-    (it "retries no-status transport failures before finalizing the stream"
-      (fn []
-        (let [old-request http.request
-              calls []
-              events []]
-          (set http.request
-               (fn [opts]
-                 (table.insert calls opts)
-                 (if (= (length calls) 1)
-                     {:error "legacy wording not needed when curl code is present" :curl-code 52}
-                     (do
-                       (opts.on-chunk "data: {\"type\":\"response.done\",\"response\":{\"status\":\"completed\",\"usage\":{\"input_tokens\":1,\"output_tokens\":0,\"total_tokens\":1}}}\n\n")
-                       {:status 200 :body "" :headers {}}))))
-          (let [asst (codex.complete
-                       "gpt-5.5" {:messages [] :tools []}
-                       {:creds {:access "AT" :accountId "acc"}
-                        :retry-base-delay-ms 0
-                        :retry-max-delay-ms 0}
-                       #(table.insert events $1))]
-            (set http.request old-request)
-            (assert.are.equal 2 (length calls))
-            (assert.are.equal :stop asst.stop-reason)
-            (assert.are.equal 1 asst.usage.input)
-            (assert.are.equal :provider-retry (. events 2 :type))
-            (assert.are.equal :openai-codex (. events 2 :provider)))))))))
+          (fn []
+            (it "builds the Codex model catalog URL with a client version"
+                (fn []
+                  (assert.are.equal "https://chatgpt.com/backend-api/codex/models?client_version=0.155.0"
+                                    (codex.build-models-url "https://chatgpt.com/backend-api"))
+                  (assert.are.equal "https://chatgpt.com/backend-api/codex/models?client_version=0.155.0"
+                                    (codex.build-models-url "https://chatgpt.com/backend-api/codex/responses"))))
+            (it "keeps only listed models supported by the API"
+                (fn []
+                  (let [models (codex.parse-models {:models [{:slug "gpt-5.5"
+                                                              :visibility :list
+                                                              :supported_in_api true}
+                                                             {:slug "spark"
+                                                              :visibility :list
+                                                              :supported_in_api false}
+                                                             {:slug "codex-auto-review"
+                                                              :visibility :hide
+                                                              :supported_in_api true}]})]
+                    (assert.are.equal 1 (length models))
+                    (assert.are.equal "gpt-5.5" (. models 1 :id)))))
+            (it "appends pinned models only when absent from the live catalog"
+                (fn []
+                  (let [models (codex.append-pinned-models [{:id "gpt-5.4"}]
+                                                           [{:slug "gpt-5.6-sol"
+                                                             :visibility :list
+                                                             :supported_in_api false}])]
+                    (assert.are.equal 3 (length models))
+                    (assert.are.equal "gpt-5.4" (. models 1 :id))
+                    (assert.are.equal "gpt-5.6-luna" (. models 2 :id))
+                    (assert.are.equal "gpt-5.6-terra" (. models 3 :id)))))
+            (it "keeps live catalog metadata for a pinned model"
+                (fn []
+                  (let [models (codex.append-pinned-models [{:id "gpt-5.6-sol"
+                                                             :name "Catalog Sol"}]
+                                                           [{:slug "gpt-5.6-sol"
+                                                             :visibility :list
+                                                             :supported_in_api true}])]
+                    (assert.are.equal 3 (length models))
+                    (assert.are.equal "Catalog Sol" (. models 1 :name)))))
+            (it "fetches, parses, and augments the authenticated catalog"
+                (fn []
+                  (let [old-request http.request
+                        captured {}]
+                    (set http.request
+                         (fn [opts]
+                           (tset captured :opts opts)
+                           {:status 200
+                            :headers {}
+                            :body (json.encode {:models [{:slug "gpt-5.4"
+                                                          :visibility :list
+                                                          :supported_in_api true}]})}))
+                    (let [models (codex.list-models {:creds {:access "AT"
+                                                             :accountId "acc"}
+                                                     :client-version "1.0.0"})]
+                      (set http.request old-request)
+                      (assert.are.equal :GET captured.opts.method)
+                      (assert.are.equal "https://chatgpt.com/backend-api/codex/models?client_version=1.0.0"
+                                        captured.opts.url)
+                      (assert.are.equal "Bearer AT"
+                                        captured.opts.headers.authorization)
+                      (assert.are.equal "acc"
+                                        captured.opts.headers.chatgpt-account-id)
+                      (assert.are.equal 4 (length models))
+                      (assert.are.equal "gpt-5.4" (. models 1 :id))
+                      (assert.are.equal "gpt-5.6-luna" (. models 2 :id))
+                      (assert.are.equal "gpt-5.6-sol" (. models 3 :id))
+                      (assert.are.equal "gpt-5.6-terra" (. models 4 :id)))))
+                (it "returns structured secret-free catalog failure reasons"
+                    (fn []
+                      (let [old-request http.request
+                            opts {:creds {:access "oauth-secret"
+                                          :accountId "acc"}}]
+                        (set http.request
+                             (fn [_]
+                               {:status 401
+                                :headers {}
+                                :body "token=oauth-secret"}))
+                        (let [(ok? err) (pcall codex.list-models opts)]
+                          (assert.is_false ok?)
+                          (assert.are.equal :authentication-failed err.reason)
+                          (assert.is_nil err.body)
+                          (assert.is_nil (string.find (tostring err)
+                                                      "oauth-secret" 1 true)))
+                        (set http.request
+                             (fn [_]
+                               {:status 403 :headers {} :body "access denied"}))
+                        (let [(ok? err) (pcall codex.list-models opts)]
+                          (assert.is_false ok?)
+                          (assert.are.equal :authentication-failed err.reason))
+                        (set http.request
+                             (fn [_]
+                               {:status 503
+                                :headers {}
+                                :body "upstream details"}))
+                        (let [(ok? err) (pcall codex.list-models opts)]
+                          (assert.is_false ok?)
+                          (assert.are.equal :request-failed err.reason))
+                        (set http.request (fn [_] {:error "transport secret"}))
+                        (let [(ok? err) (pcall codex.list-models opts)]
+                          (set http.request old-request)
+                          (assert.is_false ok?)
+                          (assert.are.equal :request-failed err.reason)
+                          (assert.is_nil (string.find (tostring err) "secret" 1
+                                                      true))))))))
+          (describe "providers.openai_codex_responses.merge-options"
+                    (fn []
+                      (it "defaults include to [reasoning.encrypted_content]"
+                          (fn []
+                            (let [out (codex.merge-options {})]
+                              (assert.are.equal 1 (length out.include))
+                              (assert.are.equal "reasoning.encrypted_content"
+                                                (. out.include 1)))))
+                      (it "preserves a caller-supplied include[]"
+                          (fn []
+                            (let [out (codex.merge-options {:include ["custom.flag"]})]
+                              (assert.are.equal 1 (length out.include))
+                              (assert.are.equal "custom.flag" (. out.include 1)))))
+                      (it "does not mutate the caller's options table"
+                          (fn []
+                            (let [in {}
+                                  out (codex.merge-options in)]
+                              (assert.is_nil in.include)
+                              (assert.is_table out.include))))
+                      (it "carries :tool-choice :none through to the shared Responses body"
+                          (fn []
+                            (let [body (shared.build-body "gpt-5.5"
+                                                          {:messages []
+                                                           :tools [{:name "ls"
+                                                                    :description "list"
+                                                                    :parameters {:type :object}}]}
+                                                          nil
+                                                          (codex.merge-options {:tool-choice :none}))]
+                              (assert.are.equal 1 (length body.tools))
+                              (assert.are.equal :none body.tool_choice))))
+                      (it "maps :web-search cached and live to the hosted web_search tool"
+                          (fn []
+                            ;; The CLI passes strings; internal callers may pass keywords.
+                            (each [_ [mode live?] (ipairs [["cached" false]
+                                                           [:cached false]
+                                                           ["live" true]
+                                                           [:live true]])]
+                              (let [out (codex.merge-options {:web-search mode})]
+                                (assert.are.same [{:type :web_search
+                                                   :external_web_access live?}]
+                                                 out.hosted-tools)))))
+                      (it "sends no hosted tools when web search is off or unset"
+                          (fn []
+                            (assert.is_nil (. (codex.merge-options {:web-search "off"})
+                                              :hosted-tools))
+                            (assert.is_nil (. (codex.merge-options {:web-search :off})
+                                              :hosted-tools))
+                            (assert.is_nil (. (codex.merge-options {})
+                                              :hosted-tools))
+                            (assert.is_nil (. (codex.merge-options nil)
+                                              :hosted-tools))))
+                      (it "derives hosted tools only from :web-search, never from the caller"
+                          (fn []
+                            (let [out (codex.merge-options {:hosted-tools [{:type :web_search}]})]
+                              (assert.is_nil out.hosted-tools))))
+                      (it "adds web search without mutating the caller or dropping other options"
+                          (fn []
+                            (let [in {:web-search "live"
+                                      :tool-choice :none
+                                      :reasoning-effort :high
+                                      :prompt-cache-key "session-1"}
+                                  out (codex.merge-options in)]
+                              (assert.are.same {:web-search "live"
+                                                :tool-choice :none
+                                                :reasoning-effort :high
+                                                :prompt-cache-key "session-1"}
+                                               in)
+                              (assert.are.equal "live" out.web-search)
+                              (assert.are.equal :none out.tool-choice)
+                              (assert.are.equal :high out.reasoning-effort)
+                              (assert.are.equal "session-1"
+                                                out.prompt-cache-key)
+                              (assert.are.equal "reasoning.encrypted_content"
+                                                (. out.include 1))
+                              (assert.is_true out.skip-max-output-tokens?)
+                              (assert.are.equal 1 (length out.hosted-tools)))))))
+          (fn capture-codex-body [context options]
+            "Run codex.complete against a stubbed transport; return the decoded body."
+            (let [old-request http.request
+                  bodies []]
+              (set http.request
+                   (fn [opts]
+                     (table.insert bodies opts.body)
+                     (opts.on-chunk "data: {\"type\":\"response.done\",\"response\":{\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":0,\"total_tokens\":1}}}\n\n")
+                     {:status 200 :body "" :headers {}}))
+              (let [(ok? err) (pcall codex.complete "gpt-5.6-luna" context
+                                     options)]
+                (set http.request old-request)
+                (assert.is_true ok? (tostring err)))
+              (assert.are.equal 1 (length bodies))
+              (json.decode (. bodies 1))))
+          (describe "providers.openai_codex_responses.complete hosted web search"
+                    (fn []
+                      (let [creds {:access "AT" :accountId "acc"}
+                            read-tool {:name "read"
+                                       :description "read a file"
+                                       :parameters {:type :object}}]
+                        (it "sends web_search after the local tools on a tool-bearing call"
+                            (fn []
+                              (let [body (capture-codex-body {:messages [(types.user-message "latest Lua?")]
+                                                              :tools [read-tool]}
+                                                             {: creds
+                                                              :web-search "live"})]
+                                (assert.are.equal 2 (length body.tools))
+                                (assert.are.equal "function"
+                                                  (. body.tools 1 :type))
+                                (assert.are.equal "read" (. body.tools 1 :name))
+                                (assert.are.equal "web_search"
+                                                  (. body.tools 2 :type))
+                                (assert.is_true (. body.tools 2
+                                                   :external_web_access))
+                                (assert.are.equal "auto" body.tool_choice))))
+                        (it "sends cached web search without live page access"
+                            (fn []
+                              (let [body (capture-codex-body {:messages [(types.user-message "latest Lua?")]
+                                                              :tools [read-tool]}
+                                                             {: creds
+                                                              :web-search "cached"})]
+                                (assert.are.equal "web_search"
+                                                  (. body.tools 2 :type))
+                                (assert.is_false (. body.tools 2
+                                                    :external_web_access)))))
+                        (it "sends no tools key for a tool-less side call even with web search on"
+                            (fn []
+                              ;; Compaction/handoff summaries go through complete-messages with
+                              ;; tools [] and the agent's provider-options, :web-search included.
+                              (let [body (capture-codex-body {:messages [(types.user-message "summarize")]
+                                                              :tools []}
+                                                             {: creds
+                                                              :web-search "live"})]
+                                (assert.is_nil body.tools)
+                                (assert.is_nil body.tool_choice)))))))
+          (describe "providers.openai_codex_responses.complete retry"
+                    (fn []
+                      (it "retries no-status transport failures before finalizing the stream"
+                          (fn []
+                            (let [old-request http.request
+                                  calls []
+                                  events []]
+                              (set http.request
+                                   (fn [opts]
+                                     (table.insert calls opts)
+                                     (if (= (length calls) 1)
+                                         {:error "legacy wording not needed when curl code is present"
+                                          :curl-code 52}
+                                         (do
+                                           (opts.on-chunk "data: {\"type\":\"response.done\",\"response\":{\"status\":\"completed\",\"usage\":{\"input_tokens\":1,\"output_tokens\":0,\"total_tokens\":1}}}\n\n")
+                                           {:status 200 :body "" :headers {}}))))
+                              (let [asst (codex.complete "gpt-5.5"
+                                                         {:messages []
+                                                          :tools []}
+                                                         {:creds {:access "AT"
+                                                                  :accountId "acc"}
+                                                          :retry-base-delay-ms 0
+                                                          :retry-max-delay-ms 0}
+                                                         #(table.insert events
+                                                                        $1))]
+                                (set http.request old-request)
+                                (assert.are.equal 2 (length calls))
+                                (assert.are.equal :stop asst.stop-reason)
+                                (assert.are.equal 1 asst.usage.input)
+                                (assert.are.equal :provider-retry
+                                                  (. events 2 :type))
+                                (assert.are.equal :openai-codex
+                                                  (. events 2 :provider)))))))))
 
 (describe "providers.openai_codex_responses.detect-user-agent"
-  (fn []
-    (it "falls back to pi (lua) when io.popen is absent (e.g. wasmoon)"
-      (fn []
-        ;; Some embedding hosts leave io.popen nil; detection must degrade to
-        ;; the documented fallback rather than error. Regression for #481.
-        (let [saved io.popen]
-          (set io.popen nil)
-          (let [(ok? ua) (pcall codex.detect-user-agent)]
-            (set io.popen saved)
-            (assert.is_true ok?)
-            (assert.are.equal "pi (lua)" ua)))))
-
-    (it "loads and builds headers without error when io.popen is absent"
-      (fn []
-        (let [saved io.popen
-              saved-mod (. package.loaded
-                           :fen.extensions.provider_openai.openai_codex_responses)]
-          (set io.popen nil)
-          (tset package.loaded
-                :fen.extensions.provider_openai.openai_codex_responses nil)
-          (let [(ok? mod) (pcall require
-                                :fen.extensions.provider_openai.openai_codex_responses)
-                (ok2? headers) (if (and ok? mod)
-                                   (pcall mod.build-headers
-                                          {:access "AT" :accountId "acc_1"})
-                                   (values false nil))]
-            (set io.popen saved)
-            ;; Restore the original cached module so later requirers do not
-            ;; see the instance memoized under the stubbed io.popen.
-            (tset package.loaded
-                  :fen.extensions.provider_openai.openai_codex_responses
-                  saved-mod)
-            (assert.is_true ok?)
-            (assert.is_true ok2?)
-            (assert.is_string headers.user-agent)))))))
+          (fn []
+            (it "falls back to pi (lua) when io.popen is absent (e.g. wasmoon)"
+                (fn []
+                  ;; Some embedding hosts leave io.popen nil; detection must degrade to
+                  ;; the documented fallback rather than error. Regression for #481.
+                  (let [saved io.popen]
+                    (set io.popen nil)
+                    (let [(ok? ua) (pcall codex.detect-user-agent)]
+                      (set io.popen saved)
+                      (assert.is_true ok?)
+                      (assert.are.equal "pi (lua)" ua)))))
+            (it "loads and builds headers without error when io.popen is absent"
+                (fn []
+                  (let [saved io.popen
+                        saved-mod (. package.loaded
+                                     :fen.extensions.provider_openai.openai_codex_responses)]
+                    (set io.popen nil)
+                    (tset package.loaded
+                          :fen.extensions.provider_openai.openai_codex_responses
+                          nil)
+                    (let [(ok? mod) (pcall require
+                                           :fen.extensions.provider_openai.openai_codex_responses)
+                          (ok2? headers) (if (and ok? mod)
+                                             (pcall mod.build-headers
+                                                    {:access "AT"
+                                                     :accountId "acc_1"})
+                                             (values false nil))]
+                      (set io.popen saved)
+                      ;; Restore the original cached module so later requirers do not
+                      ;; see the instance memoized under the stubbed io.popen.
+                      (tset package.loaded
+                            :fen.extensions.provider_openai.openai_codex_responses
+                            saved-mod)
+                      (assert.is_true ok?)
+                      (assert.is_true ok2?)
+                      (assert.is_string headers.user-agent)))))))

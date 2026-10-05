@@ -6,45 +6,44 @@
 (local coroutines (require :fen.util.coroutines))
 (local clock (require :fen.util.clock))
 
-(local M
-  {:enabled? false
-   :period 25000
-   :mode :functions
-   :max-frames 20000
-   :max-stacks 50000
-   :max-depth 128
-   :max-threads 1024
-   :frames []
-   :frame-ids {}
-   :stacks []
-   :stack-ids {}
-   :stack-threads {}
-   :counts {}
-   :sample-count 0
-   :dropped-samples 0
-   :wall-gaps []
-   :dropped-wall-gaps 0
-   :marks []
-   :spans []
-   :dropped-spans 0
-   :counters {}
-   :counter-count 0
-   :dropped-counters 0
-   :max-wall-gaps 2000
-   :max-marks 200
-   :max-spans 2000
-   :max-counters 64
-   :wall-gap-ms 25
-   :started-wall nil
-   :started-cpu nil
-   :stopped-wall nil
-   :stopped-cpu nil
-   :threads {}
-   :thread-count 0
-   :thread-refs (setmetatable {} {:__mode :v})
-   :generation 0
-   :env-started? false
-   :hook nil})
+(local M {:enabled? false
+          :period 25000
+          :mode :functions
+          :max-frames 20000
+          :max-stacks 50000
+          :max-depth 128
+          :max-threads 1024
+          :frames []
+          :frame-ids {}
+          :stacks []
+          :stack-ids {}
+          :stack-threads {}
+          :counts {}
+          :sample-count 0
+          :dropped-samples 0
+          :wall-gaps []
+          :dropped-wall-gaps 0
+          :marks []
+          :spans []
+          :dropped-spans 0
+          :counters {}
+          :counter-count 0
+          :dropped-counters 0
+          :max-wall-gaps 2000
+          :max-marks 200
+          :max-spans 2000
+          :max-counters 64
+          :wall-gap-ms 25
+          :started-wall nil
+          :started-cpu nil
+          :stopped-wall nil
+          :stopped-cpu nil
+          :threads {}
+          :thread-count 0
+          :thread-refs (setmetatable {} {:__mode :v})
+          :generation 0
+          :env-started? false
+          :hook nil})
 
 (fn clear-capture! []
   (set M.frames [])
@@ -87,8 +86,7 @@
   (let [source (normalize-source info.source)
         line (or info.linedefined 0)
         current (if (= M.mode :lines) (or info.currentline 0) nil)
-        name (or info.name
-                 (if (= info.what :main) "<main>" "<anonymous>"))]
+        name (or info.name (if (= info.what :main) "<main>" "<anonymous>"))]
     (if current
         (string.format "%s (%s:%d @ %d)" name source line current)
         (string.format "%s (%s:%d)" name source line))))
@@ -102,10 +100,10 @@
             nil
             (let [id (+ (length M.frames) 1)]
               (table.insert M.frames
-                {:name (frame-name info)
-                 :file (normalize-source info.source)
-                 :line (or info.linedefined 0)
-                 :kind (or info.what "?")})
+                            {:name (frame-name info)
+                             :file (normalize-source info.source)
+                             :line (or info.linedefined 0)
+                             :kind (or info.what "?")})
               (tset M.frame-ids key id)
               id)))))
 
@@ -123,7 +121,9 @@
             (let [id (intern-frame! info)]
               (if id
                   (table.insert leaf-first id)
-                  (do (set overflow? true) (set done? true))))))
+                  (do
+                    (set overflow? true)
+                    (set done? true))))))
       (set level (+ level 1))
       (set depth (+ depth 1)))
     ;; If the next frame exists, max-depth truncated the root side. Drop the
@@ -165,7 +165,8 @@
 
 (fn sample-hook []
   (let [(thread main?) (coroutine.running)
-        thread-id (or (remember-thread! thread (if main? "main" "coroutine")) "overflow")
+        thread-id (or (remember-thread! thread (if main? "main" "coroutine"))
+                      "overflow")
         stack (capture-stack!)
         id (and stack (intern-stack! stack thread-id))]
     (if id
@@ -190,13 +191,16 @@
   (if (not M.enabled?)
       nil
       (if (>= (length M.spans) M.max-spans)
-          (do (set M.dropped-spans (+ M.dropped-spans 1)) nil)
+          (do
+            (set M.dropped-spans (+ M.dropped-spans 1))
+            nil)
           (let [token (+ (length M.spans) 1)]
-            (table.insert M.spans {:name (tostring name)
-                                   :metadata (or ?metadata {})
-                                   :started-wall-ms (clock.monotonic-ms)
-                                   :started-cpu-seconds (os.clock)
-                                   :finished? false})
+            (table.insert M.spans
+                          {:name (tostring name)
+                           :metadata (or ?metadata {})
+                           :started-wall-ms (clock.monotonic-ms)
+                           :started-cpu-seconds (os.clock)
+                           :finished? false})
             token))))
 
 (fn M.span-end! [token]
@@ -229,16 +233,15 @@
   (if (and M.enabled? M.started-wall)
       (if (< (length M.marks) M.max-marks)
           (do
-            (table.insert M.marks {:name (tostring name)
-                                   :wall-ms (- (clock.monotonic-ms) M.started-wall)})
+            (table.insert M.marks
+                          {:name (tostring name)
+                           :wall-ms (- (clock.monotonic-ms) M.started-wall)})
             true)
           false)
       false))
 
 (fn valid-period? [period]
-  (and (= (type period) :number)
-       (= period (math.floor period))
-       (>= period 100)))
+  (and (= (type period) :number) (= period (math.floor period)) (>= period 100)))
 
 (fn clear-hook-from-thread! [thread hook]
   (let [(ok? installed) (pcall debug.gethook thread)]
@@ -286,8 +289,8 @@
       (set M.enabled? true)
       (let [(thread main?) (coroutine.running)]
         (remember-thread! thread (if main? "main" "command")))
-      (coroutines.register-inheritable-hook!
-        hook #(remember-thread! $1 "coroutine"))
+      (coroutines.register-inheritable-hook! hook
+                                             #(remember-thread! $1 "coroutine"))
       (debug.sethook hook "" M.period))
     true))
 

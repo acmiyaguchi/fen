@@ -38,9 +38,9 @@
   (let [state (config.new-state config.model)
         parser-error {:message nil}
         process-frame (or config.process-frame default-process-frame)
-        parser (sse.new-parser
-                 (fn [frame]
-                   (process-frame state frame config.on-event parser-error config)))]
+        parser (sse.new-parser (fn [frame]
+                                 (process-frame state frame config.on-event
+                                                parser-error config)))]
     (values state parser parser-error)))
 
 (fn M.build-request-opts [spec model context options ?on-chunk]
@@ -56,7 +56,8 @@
      :headers (spec.headers opts streaming?)
      :body (json.encode body)
      :timeout-ms (or opts.timeout-ms spec.default-timeout-ms)
-     :connect-timeout-ms (or opts.connect-timeout-ms spec.default-connect-timeout-ms)
+     :connect-timeout-ms (or opts.connect-timeout-ms
+                             spec.default-connect-timeout-ms)
      :idle-timeout-ms opts.idle-timeout-ms
      ;; Streaming success builds the result from parsed stream state, never
      ;; resp.body. Non-streaming response parsers need the full body.
@@ -73,14 +74,16 @@
     (when config.finish
       (config.finish state emit))
     (when (and (= state.stop-reason :stop)
-               (> (length (types.assistant-tool-calls {:content state.content})) 0))
+               (> (length (types.assistant-tool-calls {:content state.content}))
+                  0))
       (set state.stop-reason :tool-use))
-    (let [asst (types.assistant-message
-                 {:api config.api :provider config.provider :model state.model
-                  :content state.content
-                  :usage state.usage
-                  :stop-reason state.stop-reason
-                  :error-message state.error-message})]
+    (let [asst (types.assistant-message {:api config.api
+                                         :provider config.provider
+                                         :model state.model
+                                         :content state.content
+                                         :usage state.usage
+                                         :stop-reason state.stop-reason
+                                         :error-message state.error-message})]
       (when emit
         (emit (if (= asst.stop-reason :error)
                   {:type :error :message asst}
@@ -106,7 +109,8 @@
           (when on-event (on-event {:type :error :message asst}))
           asst)
         (and parser-error (not= parser-error.message nil))
-        (let [asst (types.assistant-error api provider model parser-error.message)]
+        (let [asst (types.assistant-error api provider model
+                                          parser-error.message)]
           (when on-event (on-event {:type :error :message asst}))
           asst)
         (or (not resp) (< resp.status 200) (>= resp.status 300))
@@ -118,7 +122,8 @@
           (when on-event (on-event {:type :error :message asst}))
           asst)
         (not state.saw-terminal?)
-        (let [asst (types.assistant-error api provider model types.INCOMPLETE-STREAM-MSG)]
+        (let [asst (types.assistant-error api provider model
+                                          types.INCOMPLETE-STREAM-MSG)]
           (log.error (.. (or config.incomplete-log-prefix (tostring provider))
                          ": " types.INCOMPLETE-STREAM-MSG))
           (when on-event (on-event {:type :error :message asst}))
@@ -135,14 +140,15 @@
         yield-fn config.yield-fn
         latest {:state nil :parser nil :parser-error nil :request-opts nil}]
     (when on-event (on-event {:type :start}))
-    (let [resp (retry.with-retry
-                 (retry.options config.provider options on-event)
+    (let [resp (retry.with-retry (retry.options config.provider options
+                                                on-event)
                  (fn [_attempt]
-                   (let [(state parser parser-error)
-                         (config.make-stream-pipeline model on-event)
-                         req-opts (config.build-request-opts
-                                    model context options
-                                    (fn [chunk] (parser.feed chunk)))]
+                   (let [(state parser parser-error) (config.make-stream-pipeline model
+                                                                                  on-event)
+                         req-opts (config.build-request-opts model context
+                                                             options
+                                                             (fn [chunk]
+                                                               (parser.feed chunk)))]
                      (set latest.state state)
                      (set latest.parser parser)
                      (set latest.parser-error parser-error)
@@ -150,10 +156,9 @@
                      (set req-opts.yield yield-fn)
                      (let [resp (http.request req-opts)]
                        (when (not resp.error) (parser.finish))
-                       (retry.mark-incomplete-stream
-                         resp
-                         (and (not parser-error.message)
-                              (not state.saw-terminal?))))))
+                       (retry.mark-incomplete-stream resp
+                                                     (and (not parser-error.message)
+                                                          (not state.saw-terminal?))))))
                  yield-fn)]
       (config.finalize-stream latest.state latest.parser latest.parser-error
                               model resp on-event latest.request-opts))))
@@ -171,14 +176,16 @@
     (if on-event
         (let [latest {:state nil :parser nil :parser-error nil}]
           (on-event {:type :start})
-          (let [resp (retry.with-retry
-                       (retry.options config.provider options on-event)
+          (let [resp (retry.with-retry (retry.options config.provider options
+                                                      on-event)
                        (fn [_attempt]
-                         (let [(state parser parser-error)
-                               (config.make-stream-pipeline model on-event)
-                               req-opts (config.build-request-opts
-                                          model context options
-                                          (fn [chunk] (parser.feed chunk)))]
+                         (let [(state parser parser-error) (config.make-stream-pipeline model
+                                                                                        on-event)
+                               req-opts (config.build-request-opts model
+                                                                   context
+                                                                   options
+                                                                   (fn [chunk]
+                                                                     (parser.feed chunk)))]
                            (set latest.state state)
                            (set latest.parser parser)
                            (set latest.parser-error parser-error)
@@ -190,17 +197,17 @@
                              ;; unterminated stream is not needlessly retried.
                              ;; finish is idempotent; finalize-stream calls it again.
                              (when (not resp.error) (parser.finish))
-                             (retry.mark-incomplete-stream
-                               resp
-                               (and (not parser-error.message)
-                                    (not state.saw-terminal?))))))
+                             (retry.mark-incomplete-stream resp
+                                                           (and (not parser-error.message)
+                                                                (not state.saw-terminal?))))))
                        yield-fn)]
-            (config.finalize-stream latest.state latest.parser latest.parser-error
-                                    model resp on-event)))
-        (let [resp (retry.with-retry
-                     (retry.options config.provider options on-event)
+            (config.finalize-stream latest.state latest.parser
+                                    latest.parser-error model resp on-event)))
+        (let [resp (retry.with-retry (retry.options config.provider options
+                                                    on-event)
                      (fn [_attempt]
-                       (let [req-opts (config.build-request-opts model context options nil)]
+                       (let [req-opts (config.build-request-opts model context
+                                                                 options nil)]
                          (set req-opts.yield yield-fn)
                          (http.request req-opts)))
                      yield-fn)]

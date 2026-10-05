@@ -28,7 +28,8 @@
     _ {:error "usage: /reload [--all] [--recover registries]"}))
 
 (fn compact-time [ts]
-  (let [(date hour minute) (string.match (or ts "") "^(%d%d%d%d%-%d%d%-%d%d)T(%d%d)%-(%d%d)")]
+  (let [(date hour minute) (string.match (or ts "")
+                                         "^(%d%d%d%d%-%d%d%-%d%d)T(%d%d)%-(%d%d)")]
     (if date
         (.. date " " hour ":" minute)
         (or ts "unknown-time"))))
@@ -49,10 +50,8 @@
   (.. (tostring (or n 0)) " msgs"))
 
 (fn format-session-line [rec]
-  (.. (compact-time rec.timestamp)
-      "  " (message-count-label rec.message-count)
-      "  " (compact-id rec.id)
-      "  " (compact-title rec.title)))
+  (.. (compact-time rec.timestamp) "  " (message-count-label rec.message-count)
+      "  " (compact-id rec.id) "  " (compact-title rec.title)))
 
 (fn install-agent-messages! [agent msgs]
   (set agent.messages [])
@@ -84,19 +83,19 @@
     (if (= block.type :thinking)
         (when (not= (or block.thinking "") "")
           (api.emit {:type :assistant-thinking
-                            :text block.thinking
-                            :final? (= i last-visible)
-                            :spacer-after? (< i last-visible)}))
+                     :text block.thinking
+                     :final? (= i last-visible)
+                     :spacer-after? (< i last-visible)}))
         (= block.type :text)
         (when (not= (or block.text "") "")
           (api.emit {:type :assistant-text
-                            :text block.text
-                            :final? (= i last-visible)}))
+                     :text block.text
+                     :final? (= i last-visible)}))
         (= block.type :tool-call)
         (api.emit {:type :tool-call
-                          :name block.name
-                          :arguments block.arguments
-                          :id block.id}))))
+                   :name block.name
+                   :arguments block.arguments
+                   :id block.id}))))
 
 (fn replay-history! [api msgs]
   (each [_ msg (ipairs (or msgs []))]
@@ -106,18 +105,18 @@
         (replay-assistant-message! api msg)
         (= msg.role :tool-result)
         (api.emit {:type :tool-result
-                          :name msg.tool-name
-                          :id msg.tool-call-id
-                          :result {:content msg.content
-                                   :details msg.details
-                                   :is-error? msg.is-error?}}))))
+                   :name msg.tool-name
+                   :id msg.tool-call-id
+                   :result {:content msg.content
+                            :details msg.details
+                            :is-error? msg.is-error?}}))))
 
 (fn resume-session! [api state target]
   (let [cwd (path-util.cwd)
         p (and state.find-session (state.find-session cwd target))]
     (if (not p)
         (api.emit {:type :error
-                          :error (.. "session not found: " (or target "latest"))})
+                   :error (.. "session not found: " (or target "latest"))})
         (let [msgs (or (and state.load-session (state.load-session p)) [])
               new-session (if state.opts.no-session?
                               nil
@@ -130,27 +129,26 @@
           ;; activation; tool_search selections are intentionally not persisted.
           (set state.opts.active-tool-names {})
           (set state.agent
-               (state.make-agent-from-opts
-                 state.opts state.on-event state.agent-extra))
+               (state.make-agent-from-opts state.opts state.on-event
+                                           state.agent-extra))
           (install-agent-messages! state.agent msgs)
           (reset-queues! state)
           (set state.session new-session)
-          (api.session.set-info!
-            (and state.session-info (state.session-info state.session))
-            state.session)
-          (set state.flush (state.make-flush state.agent state.session (length msgs)))
+          (api.session.set-info! (and state.session-info
+                                      (state.session-info state.session))
+                                 state.session)
+          (set state.flush
+               (state.make-flush state.agent state.session (length msgs)))
           (when state.update-queue-status (state.update-queue-status))
           (api.emit {:type :reset-conversation})
           (replay-history! api msgs)
-          (api.emit
-            {:type :set-status-info
-             :info {:provider state.opts.provider
-                    :model state.agent.model
-                    :thinking-status state.agent.thinking-status}})
-          (api.emit
-            {:type :info
-             :text (.. "✓ Resumed session with "
-                       (tostring (length msgs)) " messages")})))))
+          (api.emit {:type :set-status-info
+                     :info {:provider state.opts.provider
+                            :model state.agent.model
+                            :thinking-status state.agent.thinking-status}})
+          (api.emit {:type :info
+                     :text (.. "✓ Resumed session with "
+                               (tostring (length msgs)) " messages")})))))
 
 (fn build-session-choices [sessions]
   (let [out []]
@@ -165,8 +163,7 @@
   (let [cwd (path-util.cwd)
         sessions (if state.list-sessions (state.list-sessions cwd 50) [])]
     (if (= (length sessions) 0)
-        (api.emit
-          {:type :info :text "no sessions for this cwd"})
+        (api.emit {:type :info :text "no sessions for this cwd"})
         (let [ui api.ui
               picked (ui.select {:label "resume session"
                                  :choices (build-session-choices sessions)})]
@@ -177,32 +174,34 @@
 
 (fn register-new [api]
   (api.register :command
-    {:name :new
-     :order 10
-     :description "Reset the current conversation and start a fresh session"
-     :idle-only? true
-     :handler (fn [_args state]
-                (when state.close-session (state.close-session state.session))
-                (set state.opts.active-tool-names {})
-                (set state.agent
-                     (state.make-agent-from-opts
-                       state.opts state.on-event state.agent-extra))
-                (steering.clear-queues!)
-                (when state.update-queue-status (state.update-queue-status))
-                (set state.session (state.open-session state.opts))
-                (api.session.set-info!
-                  (and state.session-info (state.session-info state.session))
-                  state.session)
-                (set state.flush (state.make-flush state.agent state.session))
-                (api.emit {:type :reset-conversation :reason :new})
-                (api.emit
-                  {:type :set-status-info
-                   :info {:provider state.opts.provider
-                          :model state.agent.model
-                          :thinking-status state.agent.thinking-status}})
-                (api.emit
-                  {:type :assistant-text
-                   :text "✓ New session started"}))}))
+                {:name :new
+                 :order 10
+                 :description "Reset the current conversation and start a fresh session"
+                 :idle-only? true
+                 :handler (fn [_args state]
+                            (when state.close-session
+                              (state.close-session state.session))
+                            (set state.opts.active-tool-names {})
+                            (set state.agent
+                                 (state.make-agent-from-opts state.opts
+                                                             state.on-event
+                                                             state.agent-extra))
+                            (steering.clear-queues!)
+                            (when state.update-queue-status
+                              (state.update-queue-status))
+                            (set state.session (state.open-session state.opts))
+                            (api.session.set-info! (and state.session-info
+                                                        (state.session-info state.session))
+                                                   state.session)
+                            (set state.flush
+                                 (state.make-flush state.agent state.session))
+                            (api.emit {:type :reset-conversation :reason :new})
+                            (api.emit {:type :set-status-info
+                                       :info {:provider state.opts.provider
+                                              :model state.agent.model
+                                              :thinking-status state.agent.thinking-status}})
+                            (api.emit {:type :assistant-text
+                                       :text "✓ New session started"}))}))
 
 (fn join-tostring [xs sep]
   (let [out []]
@@ -212,8 +211,8 @@
 
 (fn recovery-summary [result]
   (when result
-    (.. "recovery> reset " (join-tostring result.buckets ", ")
-        "; preserved " (join-tostring result.preserved ", ") "\n")))
+    (.. "recovery> reset " (join-tostring result.buckets ", ") "; preserved "
+        (join-tostring result.preserved ", ") "\n")))
 
 (fn format-extension-line [item]
   (let [changed (or item.changed 0)
@@ -222,27 +221,24 @@
         modules (or item.changed-modules [])]
     (if (not= status :loaded)
         (.. "    " (tostring item.name) " (failed: " (tostring status) ")")
-        (.. "    " (tostring item.name) " (" (tostring changed)
-            "/" (tostring checked) " changed)"
+        (.. "    " (tostring item.name) " (" (tostring changed) "/"
+            (tostring checked) " changed)"
             (if (> (length modules) 0)
                 (.. ": " (join-tostring modules ", "))
                 "")))))
 
 (fn interesting-extension-reload? [item]
-  (or (not= item.status :loaded)
-      (> (or item.changed 0) 0)))
+  (or (not= item.status :loaded) (> (or item.changed 0) 0)))
 
 (fn format-reload-summary [core-summary ext-summary msg-count]
   (let [core (or core-summary {:reloaded 0 :changed 0 :failed 0})
         ext (or ext-summary {:loaded 0 :changed 0 :failed 0 :extensions []})
-        title (if (or (> (or core.failed 0) 0)
-                      (> (or ext.failed 0) 0))
+        title (if (or (> (or core.failed 0) 0) (> (or ext.failed 0) 0))
                   "/reload (errors)"
                   "/reload")
-        lines [(.. title
-                   " core " (tostring core.changed) "/"
-                   (tostring (or core.checked core.reloaded))
-                   " changed, " (tostring core.reloaded) " reloaded; ext "
+        lines [(.. title " core " (tostring core.changed) "/"
+                   (tostring (or core.checked core.reloaded)) " changed, "
+                   (tostring core.reloaded) " reloaded; ext "
                    (tostring ext.changed) "/" (tostring ext.loaded)
                    " changed; msgs " (tostring msg-count))]]
     (let [interesting []]
@@ -256,10 +252,10 @@
           (table.insert lines (format-extension-line item))))
       (when (> (length (or core.changed-modules [])) 0)
         (table.insert lines "")
-        (table.insert lines (.. "core changed: "
-                                (join-tostring core.changed-modules ", ")))))
+        (table.insert lines
+                      (.. "core changed: "
+                          (join-tostring core.changed-modules ", ")))))
     (table.concat lines "\n")))
-
 
 (local RELOAD-PHASE-WARN-MS 250)
 
@@ -270,16 +266,16 @@
       (tset rec k v))
     (table.insert records rec)
     (when (>= elapsed RELOAD-PHASE-WARN-MS)
-      (log.warn
-        (string.format "reload phase=%s elapsed_ms=%d"
-                       (tostring phase) elapsed)))
+      (log.warn (string.format "reload phase=%s elapsed_ms=%d" (tostring phase)
+                               elapsed)))
     rec))
 
 (fn format-reload-timings [records]
   (let [parts []]
     (each [_ rec (ipairs (or records []))]
-      (table.insert parts (.. (tostring rec.phase) "="
-                              (tostring (or rec.elapsed-ms 0)) "ms")))
+      (table.insert parts
+                    (.. (tostring rec.phase) "="
+                        (tostring (or rec.elapsed-ms 0)) "ms")))
     (when (> (length parts) 0)
       (.. "timings: " (table.concat parts ", ")))))
 
@@ -296,9 +292,11 @@
         text
         (let [lines [text "" "diagnostics:"]]
           (when truncated?
-            (table.insert lines "    [warn] earlier reload logs left the recent-log buffer"))
+            (table.insert lines
+                          "    [warn] earlier reload logs left the recent-log buffer"))
           (each [_ rec (ipairs important)]
-            (table.insert lines (.. "    [" (tostring rec.level) "] " rec.message)))
+            (table.insert lines
+                          (.. "    [" (tostring rec.level) "] " rec.message)))
           (table.concat lines "\n")))))
 
 (fn merge-reload-summary! [summary extra]
@@ -328,12 +326,17 @@
             (api.emit {:type :reinit-presenter}))
           (do
             (merge-reload-summary! ext-summary
-                                   {:loaded 0 :changed 0 :failed 1
-                                    :extensions [{:name :tui :status :error
+                                   {:loaded 0
+                                    :changed 0
+                                    :failed 1
+                                    :extensions [{:name :tui
+                                                  :status :error
                                                   :error (tostring result)
-                                                  :checked 0 :changed 0
+                                                  :checked 0
+                                                  :changed 0
                                                   :changed-modules []}]})
-            (api.emit {:type :error :error (.. "reload: tui: " (tostring result))}))))))
+            (api.emit {:type :error
+                       :error (.. "reload: tui: " (tostring result))}))))))
 
 ;; Cache this optional reloadable table. Extension reload mutates exports in
 ;; place, so a cached table still resolves refreshed activity behavior.
@@ -377,11 +380,12 @@
     (var core-summary nil)
     (let [start-ms (clock.monotonic-ms)
           span (profile-span-begin! :reload-core {})
-          (_n core-failures summary)
-          (state.reload-modules
-            yield!
-            {:force? (or (= (?. ?opts :force?) true)
-                         (not= recovery-result nil))})]
+          (_n core-failures summary) (state.reload-modules yield!
+                                                           {:force? (or (= (?. ?opts
+                                                                               :force?)
+                                                                           true)
+                                                                        (not= recovery-result
+                                                                              nil))})]
       (set failures core-failures)
       (set core-summary summary)
       (record-reload-phase! timings :core start-ms
@@ -394,13 +398,12 @@
       (let [start-ms (clock.monotonic-ms)
             span (profile-span-begin! :reload-extensions {})]
         (set ext-summary
-             (state.load-extensions
-               state.opts
-               {:interactive? true
-                :reload? true
-                :force? (not= recovery-result nil)
-                :skip-names {:tui true}
-                :yield yield!}))
+             (state.load-extensions state.opts
+                                    {:interactive? true
+                                     :reload? true
+                                     :force? (not= recovery-result nil)
+                                     :skip-names {:tui true}
+                                     :yield yield!}))
         (record-reload-phase! timings :extensions start-ms
                               {:loaded (or (?. ext-summary :loaded) 0)
                                :changed (or (?. ext-summary :changed) 0)})
@@ -419,8 +422,7 @@
       (let [start-ms (clock.monotonic-ms)
             span (profile-span-begin! :reload-model-providers {})
             count (state.reload-model-providers)]
-        (record-reload-phase! timings :model-providers start-ms
-                              {:count count})
+        (record-reload-phase! timings :model-providers start-ms {:count count})
         (profile-span-end! span)))
     (yield! {:phase :after-model-providers})
     (let [start-ms (clock.monotonic-ms)
@@ -431,7 +433,8 @@
     (let [saved state.agent.messages
           start-ms (clock.monotonic-ms)
           span (profile-span-begin! :reload-agent-rebuild {})
-          new-agent (state.make-agent-from-opts state.opts state.on-event state.agent-extra)]
+          new-agent (state.make-agent-from-opts state.opts state.on-event
+                                                state.agent-extra)]
       (record-reload-phase! timings :agent-rebuild start-ms)
       (profile-span-end! span)
       ;; Keep the messages table shared with an in-flight agent tool call. Its
@@ -446,31 +449,31 @@
       (let [summary-start-ms (clock.monotonic-ms)
             (reload-logs logs-truncated?) (log.list-recent log-cursor)
             base-text (.. (or (recovery-summary recovery-result) "")
-                           (format-reload-summary core-summary ext-summary (length saved)))]
+                          (format-reload-summary core-summary ext-summary
+                                                 (length saved)))]
         (record-reload-phase! timings :summary summary-start-ms)
-        (let [text (append-reload-diagnostics
-                     (append-reload-timings base-text timings)
-                     reload-logs logs-truncated?)]
+        (let [text (append-reload-diagnostics (append-reload-timings base-text
+                                                                     timings)
+                                              reload-logs logs-truncated?)]
           (profile-span-end! reload-span)
-          (values text (or (> (length failures) 0)
-                           (> (or (?. core-summary :failed) 0) 0)
-                           (> (or (?. ext-summary :failed) 0) 0))))))))
+          (values text
+                  (or (> (length failures) 0)
+                      (> (or (?. core-summary :failed) 0) 0)
+                      (> (or (?. ext-summary :failed) 0) 0))))))))
 
 (fn start-reload! [api state opts]
-  (api.log :info {:event :reload-executing
-                  :scope (or opts.recovery :reload)})
+  (api.log :info {:event :reload-executing :scope (or opts.recovery :reload)})
   (api.emit {:type :assistant-text
              :text "reload> reloading core modules and extensions…"})
   (set state.cancel-requested? false)
   (set state.busy? true)
   (set state.turn
-       (coroutines.create
-         (fn []
-           (let [(text _error?)
-                 (perform-reload! api state
-                   (fn [_progress] (coroutine.yield))
-                   opts)]
-             (api.emit {:type :assistant-text :text text}))))))
+       (coroutines.create (fn []
+                            (let [(text _error?) (perform-reload! api state
+                                                                  (fn [_progress]
+                                                                    (coroutine.yield))
+                                                                  opts)]
+                              (api.emit {:type :assistant-text :text text}))))))
 
 (fn register-reload [api]
   (api.register :command
@@ -491,26 +494,26 @@
                  :description "Queue a reload request for after the current agent turn is fully idle. scope is reload for normal state-preserving reload, or registries for explicit registry recovery; reason is recorded for the user and logs. Restart and resume remain the full-process recovery path."
                  :parameters {:type :object
                               :properties {:scope {:type :string
-                                                   :enum ["reload" "registries"]
+                                                   :enum ["reload"
+                                                          "registries"]
                                                    :description "reload preserves runtime state; registries resets only declared extension registry buckets"}
                                            :reason {:type :string
                                                     :description "Why this reload or recovery is requested"}
                                            :force {:type :boolean
-                                                    :description "Reload all core modules even when unchanged"}}
+                                                   :description "Reload all core modules even when unchanged"}}
                               :required ["scope" "reason"]}
                  :execute (fn [args ctx ?_yield!]
                             (if (not ctx.state)
                                 {:content [(types.text-block "reload requires an interactive run state")]
                                  :is-error? true}
-                                (let [(ok? entry)
-                                      (reload-request.enqueue!
-                                        ctx.state
-                                        {:scope args.scope
-                                         :reason args.reason
-                                         :force? (= args.force true)})]
+                                (let [(ok? entry) (reload-request.enqueue! ctx.state
+                                                                           {:scope args.scope
+                                                                            :reason args.reason
+                                                                            :force? (= args.force
+                                                                                       true)})]
                                   (if (not ok?)
-                                      {:content [(types.text-block
-                                                   (.. "reload request rejected: " entry))]
+                                      {:content [(types.text-block (.. "reload request rejected: "
+                                                                       entry))]
                                        :is-error? true}
                                       (do
                                         (api.log :info
@@ -518,11 +521,11 @@
                                                   :scope entry.scope
                                                   :reason entry.reason
                                                   :force? entry.force?})
-                                        {:content
-                                         [(types.text-block
-                                            (.. "reload request queued ("
-                                                (tostring entry.scope) "): " entry.reason
-                                                "; it will run after this turn is idle"))]})))))}))
+                                        {:content [(types.text-block (.. "reload request queued ("
+                                                                         (tostring entry.scope)
+                                                                         "): "
+                                                                         entry.reason
+                                                                         "; it will run after this turn is idle"))]})))))}))
 
 ;; @doc fen.extensions.sessions.commands.session.register
 ;; kind: function
@@ -532,46 +535,48 @@
 (fn M.register [api]
   (register-new api)
   (api.register :command
-    {:name :n
-     :order 20
-     :description "Alias for /new"
-     :idle-only? true
-     :handler (fn [args state]
-                (api.commands.dispatch (.. "/new " (or args "")) state))})
+                {:name :n
+                 :order 20
+                 :description "Alias for /new"
+                 :idle-only? true
+                 :handler (fn [args state]
+                            (api.commands.dispatch (.. "/new " (or args ""))
+                                                   state))})
   (api.register :command
-    {:name :sessions
-     :order 25
-     :description "Pick a recent session to resume (overlay)"
-     :idle-only? true
-     :handler (fn [_args state] (pick-session! api state))})
+                {:name :sessions
+                 :order 25
+                 :description "Pick a recent session to resume (overlay)"
+                 :idle-only? true
+                 :handler (fn [_args state] (pick-session! api state))})
   (api.register :command
-    {:name :resume
-     :order 26
-     :description "Resume a session (overlay if no arg; id/prefix/path/index if given)"
-     :idle-only? true
-     :handler (fn [args state]
-                (let [target (trim args)]
-                  (if (= target "")
-                      (pick-session! api state)
-                      (resume-session! api state target))))})
+                {:name :resume
+                 :order 26
+                 :description "Resume a session (overlay if no arg; id/prefix/path/index if given)"
+                 :idle-only? true
+                 :handler (fn [args state]
+                            (let [target (trim args)]
+                              (if (= target "")
+                                  (pick-session! api state)
+                                  (resume-session! api state target))))})
   (register-reload api)
   (api.register :command
-    {:name :r
-     :order 40
-     :description "Alias for /reload"
-     :idle-only? true
-     :handler (fn [args state]
-                (api.commands.dispatch (.. "/reload " (or args "")) state))})
-
+                {:name :r
+                 :order 40
+                 :description "Alias for /reload"
+                 :idle-only? true
+                 :handler (fn [args state]
+                            (api.commands.dispatch (.. "/reload " (or args ""))
+                                                   state))})
   (api.register :introspect
-    {:name :active-session
-     :description "Current session selection and persistence backend summary"
-     :snapshot (fn [_]
-                 (let [info (api.session.info)
-                       backend (api.session.active-backend)]
-                   {:enabled? (not= info nil)
-                    :backend (or (?. info :backend) (?. backend :name))
-                    :id (?. info :id)
-                    :path (?. info :path)}))}))
+                {:name :active-session
+                 :description "Current session selection and persistence backend summary"
+                 :snapshot (fn [_]
+                             (let [info (api.session.info)
+                                   backend (api.session.active-backend)]
+                               {:enabled? (not= info nil)
+                                :backend (or (?. info :backend)
+                                             (?. backend :name))
+                                :id (?. info :id)
+                                :path (?. info :path)}))}))
 
 M

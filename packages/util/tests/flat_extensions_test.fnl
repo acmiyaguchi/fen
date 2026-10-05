@@ -24,32 +24,32 @@
       (if ok? result (error result 0)))))
 
 (describe "util.flat_extensions shell fallback"
-  (fn []
-    (var root nil)
-    (before_each (fn [] (set root (make-tree))))
-    (after_each (fn [] (when root (h.rmtree root)) (set root nil)))
-
-    (it "enumerates manifests through the fen.util.process seam"
-      (fn []
-        (local calls [])
-        (let [map (with-shell-fallback
-                    {:fen.util.process
-                     {:run-captured
-                      (fn [opts]
-                        (table.insert calls opts)
-                        ;; find exits nonzero when one subdir is unreadable;
-                        ;; the paths it did print still count.
-                        {:exit-code 1
-                         :output (.. root "/alpha/manifest.fnl\n"
-                                     root "/group/beta/manifest.fnl\n")})}}
-                    (fn [flat] (flat.build-map [root])))]
-          (assert.are.equal 1 (length calls))
-          (assert.is_truthy (string.find (. calls 1 :cmd) "find " 1 true))
-          (assert.are.equal (.. root "/alpha") map.alpha)
-          (assert.are.equal (.. root "/group/beta") map.beta))))
-
-    (it "finds real manifests with the default process backend"
-      (fn []
-        (let [map (with-shell-fallback {} (fn [flat] (flat.build-map [root])))]
-          (assert.are.equal (.. root "/alpha") map.alpha)
-          (assert.are.equal (.. root "/group/beta") map.beta))))))
+          (fn []
+            (var root nil)
+            (before_each (fn [] (set root (make-tree))))
+            (after_each (fn [] (when root (h.rmtree root)) (set root nil)))
+            (it "enumerates manifests through the fen.util.process seam"
+                (fn []
+                  (local calls [])
+                  (let [map (with-shell-fallback {:fen.util.process {:run-captured (fn [opts]
+                                                                                     (table.insert calls
+                                                                                                   opts)
+                                                                                     ;; find exits nonzero when one subdir is unreadable;
+                                                                                     ;; the paths it did print still count.
+                                                                                     {:exit-code 1
+                                                                                      :output (.. root
+                                                                                                  "/alpha/manifest.fnl\n"
+                                                                                                  root
+                                                                                                  "/group/beta/manifest.fnl\n")})}}
+                              (fn [flat] (flat.build-map [root])))]
+                    (assert.are.equal 1 (length calls))
+                    (assert.is_truthy (string.find (. calls 1 :cmd) "find " 1
+                                                   true))
+                    (assert.are.equal (.. root "/alpha") map.alpha)
+                    (assert.are.equal (.. root "/group/beta") map.beta))))
+            (it "finds real manifests with the default process backend"
+                (fn []
+                  (let [map (with-shell-fallback {}
+                              (fn [flat] (flat.build-map [root])))]
+                    (assert.are.equal (.. root "/alpha") map.alpha)
+                    (assert.are.equal (.. root "/group/beta") map.beta))))))

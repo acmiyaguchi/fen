@@ -24,28 +24,25 @@
         (and opts.reasoning-effort
              (.. "effort:" (tostring opts.reasoning-effort)))
         (and opts.thinking-budget
-             (.. "budget:" (tostring opts.thinking-budget)))
-        :off)))
+             (.. "budget:" (tostring opts.thinking-budget))) :off)))
 
 (fn status-text [state]
   (let [level (current-level state)
         materialized (or (?. state :agent :thinking-status) "off")]
-    (.. "thinking: " (tostring level)
-        " (" (tostring materialized) ")\n"
+    (.. "thinking: " (tostring level) " (" (tostring materialized) ")\n"
         "levels: " (thinking.level-list) "\n"
         "visibility: /thinking blocks on|off")))
 
 (fn refresh-status! [api state]
-  (api.emit
-    {:type :set-status-info
-     :info {:provider state.opts.provider
-            :model state.agent.model
-            :thinking-status state.agent.thinking-status}}))
+  (api.emit {:type :set-status-info
+             :info {:provider state.opts.provider
+                    :model state.agent.model
+                    :thinking-status state.agent.thinking-status}}))
 
 (fn rebuild-agent! [state]
   (let [saved state.agent.messages
-        new-agent (state.make-agent-from-opts
-                    state.opts state.on-event state.agent-extra)]
+        new-agent (state.make-agent-from-opts state.opts state.on-event
+                                              state.agent-extra)]
     (set new-agent.messages saved)
     (set state.agent new-agent)))
 
@@ -74,8 +71,9 @@
           (when state.update-queue-status (state.update-queue-status))
           (refresh-status! api state)
           (api.emit {:type :info
-                     :text (.. "thinking: " (tostring level)
-                               " (" (tostring (or state.agent.thinking-status "off")) ")")})))))
+                     :text (.. "thinking: " (tostring level) " ("
+                               (tostring (or state.agent.thinking-status "off"))
+                               ")")})))))
 
 (fn set-blocks! [api arg]
   (if (or (= arg nil) (= arg ""))
@@ -103,7 +101,8 @@
         (not state)
         (api.emit {:type :error :error "/thinking requires an active run"})
         (not (and state.opts state.agent state.make-agent-from-opts))
-        (api.emit {:type :error :error "/thinking cannot rebuild the active agent"})
+        (api.emit {:type :error
+                   :error "/thinking cannot rebuild the active agent"})
         (set-level! api state cmd))))
 
 ;; @doc fen.extensions.essentials.commands.thinking.register
@@ -113,10 +112,10 @@
 ;; tags: commands thinking register
 (fn M.register [api]
   (api.register :command
-    {:name :thinking
-     :order 13
-     :description "Show/set thinking effort; /thinking blocks on|off toggles display"
-     :idle-only? true
-     :handler (fn [args state] (handle-thinking api args state))}))
+                {:name :thinking
+                 :order 13
+                 :description "Show/set thinking effort; /thinking blocks on|off toggles display"
+                 :idle-only? true
+                 :handler (fn [args state] (handle-thinking api args state))}))
 
 M

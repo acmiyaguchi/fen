@@ -22,20 +22,18 @@
                  :text (.. "decide undo: " (tostring result.error))}))))
 
 (fn register-command! [api]
-  (let [sub (subcommands.build
-              {:name :decide
-               :emit api.emit
-               :summary "Experimental Jev decisions"
-               :subcommands
-                 {:undo {:description "move the line last reclassified as follow-up back to steering"
-                         :handler (fn [_ _] (undo-command! api))}}})]
-    (api.register :command
-      {:name :decide
-       :description "Experimental Jev decisions: /decide undo"
-       :usage sub.usage
-       :subcommands sub.descriptor
-       :handler sub.handler
-       :complete sub.complete})))
+  (let [sub (subcommands.build {:name :decide
+                                :emit api.emit
+                                :summary "Experimental Jev decisions"
+                                :subcommands {:undo {:description "move the line last reclassified as follow-up back to steering"
+                                                     :handler (fn [_ _]
+                                                                (undo-command! api))}}})]
+    (api.register :command {:name :decide
+                            :description "Experimental Jev decisions: /decide undo"
+                            :usage sub.usage
+                            :subcommands sub.descriptor
+                            :handler sub.handler
+                            :complete sub.complete})))
 
 ;; @doc fen.extensions.decide.register
 ;; kind: function
@@ -53,13 +51,16 @@
   ;; fallback (order 1000); never changes the input, and a failure never
   ;; disturbs it.
   (api.register :input-handler
-    {:name :decide
-     :order 900
-     :handle (fn [input ctx]
-               (let [(ok? err) (pcall decide-input.observe! api input ctx)]
-                 (when (not ok?)
-                   (api.log :warn (.. "decide: input observer failed: " (tostring err)))))
-               {:action :continue})})
+                {:name :decide
+                 :order 900
+                 :handle (fn [input ctx]
+                           (let [(ok? err) (pcall decide-input.observe! api
+                                                  input ctx)]
+                             (when (not ok?)
+                               (api.log :warn
+                                        (.. "decide: input observer failed: "
+                                            (tostring err)))))
+                           {:action :continue})})
   ;; Every submitted line (slash commands too) and every reset makes a pending topic-shift answer stale.
   (api.on :user (fn [ev] (decide-input.forget-pending! ev)))
   (api.on :reset-conversation (fn [ev] (decide-input.forget-pending! ev)))

@@ -17,10 +17,10 @@
 
 (fn git [cwd & items]
   (let [(ok? result) (pcall process.run-captured
-                             {:argv (argv (table.unpack items))
-                              :cwd cwd
-                              :timeout-seconds GIT-TIMEOUT
-                              :spill? true})]
+                            {:argv (argv (table.unpack items))
+                             :cwd cwd
+                             :timeout-seconds GIT-TIMEOUT
+                             :spill? true})]
     (if (not ok?)
         (values nil (tostring result))
         (not= result.exit-code 0)
@@ -55,27 +55,32 @@
         (or (not= (type count) :number) (< count 1) (> count 4))
         (values nil "worktree count must be between 1 and 4")
         (let [records []
-              (ok? err) (pcall
-                           (fn []
-                             (for [n 1 count]
-                               (let [target (sibling-path root n)
-                                     (_added add-err) (git cwd "worktree" "add" "--detach" target ref)]
-                                 (if add-err
-                                     (error (.. "cannot create review worktree: " add-err))
-                                     (let [(head head-err) (git-head target)
-                                           (clean clean-err) (clean? target)]
-                                       (if head-err
-                                           (error (.. "cannot inspect review worktree: " head-err))
-                                           clean-err
-                                           (error (.. "cannot preflight review worktree: " clean-err))
-                                           (not clean)
-                                           (error "new review worktree is unexpectedly dirty")
-                                           (table.insert records {:path target
-                                                                  :owner-cwd cwd
-                                                                  :source-root root
-                                                                  :head head
-                                                                  :ref ref
-                                                                  :created? true}))))))))]
+              (ok? err) (pcall (fn []
+                                 (for [n 1 count]
+                                   (let [target (sibling-path root n)
+                                         (_added add-err) (git cwd "worktree"
+                                                               "add" "--detach"
+                                                               target ref)]
+                                     (if add-err
+                                         (error (.. "cannot create review worktree: "
+                                                    add-err))
+                                         (let [(head head-err) (git-head target)
+                                               (clean clean-err) (clean? target)]
+                                           (if head-err
+                                               (error (.. "cannot inspect review worktree: "
+                                                          head-err))
+                                               clean-err
+                                               (error (.. "cannot preflight review worktree: "
+                                                          clean-err))
+                                               (not clean)
+                                               (error "new review worktree is unexpectedly dirty")
+                                               (table.insert records
+                                                             {:path target
+                                                              :owner-cwd cwd
+                                                              :source-root root
+                                                              :head head
+                                                              :ref ref
+                                                              :created? true}))))))))]
           (if ok?
               (values records nil)
               (do
@@ -104,10 +109,12 @@
             (not= head record.head)
             (values false "refusing to remove a worktree whose HEAD changed")
             clean-err
-            (values false (.. "cannot verify review worktree status: " clean-err))
+            (values false (.. "cannot verify review worktree status: "
+                              clean-err))
             (not clean)
             (values false "refusing to remove a changed review worktree")
-            (let [(_out err) (git record.owner-cwd "worktree" "remove" record.path)]
+            (let [(_out err) (git record.owner-cwd "worktree" "remove"
+                                  record.path)]
               (if err (values false (.. "cannot remove review worktree: " err))
                   (values true nil)))))))
 

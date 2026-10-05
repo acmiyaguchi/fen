@@ -11,8 +11,7 @@
 ;; summary: Return whether a zero-based terminal coordinate is inside the current termbox dimensions.
 ;; tags: tui draw bounds termbox
 (fn M.in-bounds? [x y]
-  (and (>= x 0) (< x state.tb-cols)
-       (>= y 0) (< y state.tb-rows)))
+  (and (>= x 0) (< x state.tb-cols) (>= y 0) (< y state.tb-rows)))
 
 (fn M.fill-row [y x0 x1 ch fg bg]
   "Fill a row segment. Use one tb.print call instead of one set_cell call per
@@ -22,8 +21,8 @@
     (let [x0* (math.max 0 x0)
           x1* (math.min (- state.tb-cols 1) x1)]
       (when (<= x0* x1*)
-        (tb.print x0* y fg bg (string.rep (string.char (or ch 32))
-                                          (+ 1 (- x1* x0*))))))))
+        (tb.print x0* y fg bg
+                  (string.rep (string.char (or ch 32)) (+ 1 (- x1* x0*))))))))
 
 (fn M.utf8-prefix-cols [s cols]
   "Return a prefix of s containing at most cols UTF-8 codepoints. Still

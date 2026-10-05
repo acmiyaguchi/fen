@@ -29,9 +29,7 @@
 
 (fn usage-total [usage]
   (when usage
-    (or (. usage :total-tokens)
-        (. usage :total_tokens)
-        (. usage :total)
+    (or (. usage :total-tokens) (. usage :total_tokens) (. usage :total)
         (let [input (or (. usage :input) (. usage :input-tokens)
                         (. usage :input_tokens))
               output (or (. usage :output) (. usage :output-tokens)
@@ -41,9 +39,9 @@
 
 (fn tool-detail [arguments]
   (when (= (type arguments) :table)
-    (clean-detail
-      (or arguments.path arguments.file_path arguments.file
-          arguments.query arguments.pattern arguments.cmd arguments.command))))
+    (clean-detail (or arguments.path arguments.file_path arguments.file
+                      arguments.query arguments.pattern arguments.cmd
+                      arguments.command))))
 
 (fn M.make-handler [?opts]
   ;; Non-streaming providers emit no mid-turn heartbeat (no runtime timer); the summary still lands at :llm-end.
@@ -56,43 +54,50 @@
         turns []
         heartbeat {:last nil}]
     (fn [ev]
-      (let [line
-            (if (= ev.type :llm-start)
-                (let [now (clock)
-                      model-ref (and ev.provider ev.model
-                                     (.. (tostring ev.provider) "/" (tostring ev.model)))]
-                  (table.insert turns now)
-                  (set heartbeat.last now)
-                  (.. "[turn] started" (if model-ref (.. " " model-ref) "")))
-                (= ev.type :llm-end)
-                (let [started (table.remove turns)
-                      elapsed (elapsed-text (- (clock) (or started (clock))))
-                      total (usage-total ev.usage)]
-                  (set heartbeat.last nil)
-                  (if total
-                      (.. "[turn] " (compact-number total) " tokens, " elapsed " elapsed")
-                      (.. "[turn] complete, " elapsed " elapsed")))
-                (or (= ev.type :assistant-text-delta)
-                    (= ev.type :assistant-thinking-delta))
-                ;; Content-free: never echo text or reasoning, only elapsed time.
-                (let [started (. turns (length turns))]
-                  (when (and started heartbeat.last)
-                    (let [now (clock)]
-                      (when (>= (- now heartbeat.last) heartbeat-ms)
-                        (set heartbeat.last now)
-                        (.. "[turn] " (elapsed-text (- now started)) " elapsed")))))
-                (= ev.type :tool-call)
-                (let [name (clean-detail (or ev.name "unknown"))
-                      detail (tool-detail ev.arguments)]
-                  (.. "[tool] " name (if detail (.. " " detail) "")))
-                (and (= ev.type :info) (= ev.source :goal))
-                (let [raw (or ev.iteration 0)
-                      ;; Goal :start means iteration one is in flight; render 1 even if the event carries 0.
-                      iteration (if (and (= ev.decision :start) (< raw 1)) 1 raw)
-                      maximum (or ev.max-iterations "?")]
-                  (if (= ev.decision :stop)
-                      (.. "[goal] " (tostring ev.status) " " iteration "/" maximum)
-                      (.. "[goal] iteration " iteration "/" maximum))))]
+      (let [line (if (= ev.type :llm-start)
+                     (let [now (clock)
+                           model-ref (and ev.provider ev.model
+                                          (.. (tostring ev.provider) "/"
+                                              (tostring ev.model)))]
+                       (table.insert turns now)
+                       (set heartbeat.last now)
+                       (.. "[turn] started"
+                           (if model-ref (.. " " model-ref) "")))
+                     (= ev.type :llm-end)
+                     (let [started (table.remove turns)
+                           elapsed (elapsed-text (- (clock)
+                                                    (or started (clock))))
+                           total (usage-total ev.usage)]
+                       (set heartbeat.last nil)
+                       (if total
+                           (.. "[turn] " (compact-number total) " tokens, "
+                               elapsed " elapsed")
+                           (.. "[turn] complete, " elapsed " elapsed")))
+                     (or (= ev.type :assistant-text-delta)
+                         (= ev.type :assistant-thinking-delta))
+                     ;; Content-free: never echo text or reasoning, only elapsed time.
+                     (let [started (. turns (length turns))]
+                       (when (and started heartbeat.last)
+                         (let [now (clock)]
+                           (when (>= (- now heartbeat.last) heartbeat-ms)
+                             (set heartbeat.last now)
+                             (.. "[turn] " (elapsed-text (- now started))
+                                 " elapsed")))))
+                     (= ev.type :tool-call)
+                     (let [name (clean-detail (or ev.name "unknown"))
+                           detail (tool-detail ev.arguments)]
+                       (.. "[tool] " name (if detail (.. " " detail) "")))
+                     (and (= ev.type :info) (= ev.source :goal))
+                     (let [raw (or ev.iteration 0)
+                           ;; Goal :start means iteration one is in flight; render 1 even if the event carries 0.
+                           iteration (if (and (= ev.decision :start) (< raw 1))
+                                         1
+                                         raw)
+                           maximum (or ev.max-iterations "?")]
+                       (if (= ev.decision :stop)
+                           (.. "[goal] " (tostring ev.status) " " iteration "/"
+                               maximum)
+                           (.. "[goal] iteration " iteration "/" maximum))))]
         (when line (write-line line))))))
 
 (fn M.register [api]

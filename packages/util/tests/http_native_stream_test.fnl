@@ -13,16 +13,16 @@
 (local fen-http (require :fen_http))
 (local socket (require :socket))
 
-(local ERROR-BODY-CAP 65536)   ;; must match FEN_ERROR_BODY_CAP in fen_http.c
-(local DRAIN-BUDGET 65536)     ;; must match FEN_CHUNK_DRAIN_BUDGET in fen_http.c
+(local ERROR-BODY-CAP 65536)
+
+;; must match FEN_ERROR_BODY_CAP in fen_http.c
+(local DRAIN-BUDGET 65536)
+
+;; must match FEN_CHUNK_DRAIN_BUDGET in fen_http.c
 
 (fn make-response [body]
-  (.. "HTTP/1.1 200 OK\r\n"
-      "Content-Type: text/plain\r\n"
-      "Content-Length: " (length body) "\r\n"
-      "Connection: close\r\n"
-      "\r\n"
-      body))
+  (.. "HTTP/1.1 200 OK\r\n" "Content-Type: text/plain\r\n" "Content-Length: "
+      (length body) "\r\n" "Connection: close\r\n" "\r\n" body))
 
 ;; Drive the client coroutine to completion while servicing a one-shot
 ;; localhost server between resumes. The server accepts (non-blocking), then
@@ -48,8 +48,7 @@
                           (table.insert chunk-resumes (. resume-box 1)))
               :yield (fn [] (coroutine.yield))}
         _ (each [k v (pairs extra-opts)] (tset opts k v))
-        co (coroutine.create
-             (fn [] (tset response 1 (fen-http.request opts))))]
+        co (coroutine.create (fn [] (tset response 1 (fen-http.request opts))))]
     (server:settimeout 0)
     (var client nil)
     (var sent 0)
@@ -83,82 +82,83 @@
 
 (fn total-bytes [chunks]
   (var n 0)
-  (each [_ c (ipairs chunks)] (set n (+ n (length c))))
+  (each [_ c (ipairs chunks)]
+    (set n (+ n (length c))))
   n)
 
 (describe "fen_http streaming body accumulation"
-  (fn []
-    (it "accumulates the full body by default"
-      (fn []
-        (let [body (string.rep "x" 4096)
-              (r chunks) (run-request {} body)]
-          (assert.is_table r)
-          (assert.is_nil r.error (.. "unexpected error: " (tostring (?. r :error))))
-          (assert.are.equal 200 r.status)
-          (assert.are.equal (length body) (length r.body))
-          (assert.are.equal (length body) (total-bytes chunks)))))
-
-    (it "skips accumulation past the cap when accumulate_body=false"
-      (fn []
-        (let [body (string.rep "y" (* 3 ERROR-BODY-CAP))
-              (r chunks) (run-request {:accumulate_body false} body)]
-          (assert.is_table r)
-          (assert.is_nil r.error (.. "unexpected error: " (tostring (?. r :error))))
-          (assert.are.equal 200 r.status)
-          (assert.are.equal ERROR-BODY-CAP (length r.body)
-                            "resp.body must be capped at FEN_ERROR_BODY_CAP")
-          (assert.are.equal (length body) (total-bytes chunks)
-                            "on_chunk must still see every byte"))))
-
-    (it "keeps a sub-cap body intact even with accumulate_body=false"
-      (fn []
-        (let [body (string.rep "z" 1024)
-              (r chunks) (run-request {:accumulate_body false} body)]
-          (assert.is_table r)
-          (assert.is_nil r.error)
-          (assert.are.equal (length body) (length r.body))
-          (assert.are.equal (length body) (total-bytes chunks)))))
-
-    (it "keeps repeated final headers and discards interim response headers"
-      (fn []
-        (let [raw (.. "HTTP/1.1 100 Continue\r\n"
-                       "X-Interim: discard\r\n"
-                       "Set-Cookie: interim=1\r\n"
-                       "\r\n"
-                       "HTTP/1.1 200 OK\r\n"
-                       "X-Final: yes\r\n"
-                       "Vary: Accept\r\n"
-                       "Vary: Origin\r\n"
-                       "Set-Cookie: first=1; Expires=Wed, 21 Oct 2015 07:28:00 GMT\r\n"
-                       "Set-Cookie: second=2\r\n"
-                       "Content-Length: 2\r\n"
-                       "Connection: close\r\n"
-                       "\r\n"
-                       "ok")
-              (r _) (run-request {} "" raw)]
-          (assert.is_nil r.error)
-          (assert.are.equal 200 r.status)
-          (assert.are.equal "ok" r.body)
-          (assert.are.equal "yes" (. r.headers "X-Final"))
-          (assert.are.equal "Accept, Origin" (. r.headers "Vary"))
-          (assert.are.equal "first=1; Expires=Wed, 21 Oct 2015 07:28:00 GMT\nsecond=2"
-                            (. r.headers "Set-Cookie"))
-          (assert.is_nil (. r.headers "X-Interim")))))))
+          (fn []
+            (it "accumulates the full body by default"
+                (fn []
+                  (let [body (string.rep "x" 4096)
+                        (r chunks) (run-request {} body)]
+                    (assert.is_table r)
+                    (assert.is_nil r.error
+                                   (.. "unexpected error: "
+                                       (tostring (?. r :error))))
+                    (assert.are.equal 200 r.status)
+                    (assert.are.equal (length body) (length r.body))
+                    (assert.are.equal (length body) (total-bytes chunks)))))
+            (it "skips accumulation past the cap when accumulate_body=false"
+                (fn []
+                  (let [body (string.rep "y" (* 3 ERROR-BODY-CAP))
+                        (r chunks) (run-request {:accumulate_body false} body)]
+                    (assert.is_table r)
+                    (assert.is_nil r.error
+                                   (.. "unexpected error: "
+                                       (tostring (?. r :error))))
+                    (assert.are.equal 200 r.status)
+                    (assert.are.equal ERROR-BODY-CAP (length r.body)
+                                      "resp.body must be capped at FEN_ERROR_BODY_CAP")
+                    (assert.are.equal (length body) (total-bytes chunks)
+                                      "on_chunk must still see every byte"))))
+            (it "keeps a sub-cap body intact even with accumulate_body=false"
+                (fn []
+                  (let [body (string.rep "z" 1024)
+                        (r chunks) (run-request {:accumulate_body false} body)]
+                    (assert.is_table r)
+                    (assert.is_nil r.error)
+                    (assert.are.equal (length body) (length r.body))
+                    (assert.are.equal (length body) (total-bytes chunks)))))
+            (it "keeps repeated final headers and discards interim response headers"
+                (fn []
+                  (let [raw (.. "HTTP/1.1 100 Continue\r\n"
+                                "X-Interim: discard\r\n"
+                                "Set-Cookie: interim=1\r\n" "\r\n"
+                                "HTTP/1.1 200 OK\r\n" "X-Final: yes\r\n"
+                                "Vary: Accept\r\n" "Vary: Origin\r\n"
+                                "Set-Cookie: first=1; Expires=Wed, 21 Oct 2015 07:28:00 GMT\r\n"
+                                "Set-Cookie: second=2\r\n"
+                                "Content-Length: 2\r\n" "Connection: close\r\n"
+                                "\r\n" "ok")
+                        (r _) (run-request {} "" raw)]
+                    (assert.is_nil r.error)
+                    (assert.are.equal 200 r.status)
+                    (assert.are.equal "ok" r.body)
+                    (assert.are.equal "yes" (. r.headers "X-Final"))
+                    (assert.are.equal "Accept, Origin" (. r.headers "Vary"))
+                    (assert.are.equal "first=1; Expires=Wed, 21 Oct 2015 07:28:00 GMT\nsecond=2"
+                                      (. r.headers "Set-Cookie"))
+                    (assert.is_nil (. r.headers "X-Interim")))))))
 
 (describe "fen_http cooperative chunk draining"
-  (fn []
-    (it "delivers a large body across multiple resumes, bounded per slice"
-      (fn []
-        (let [body (string.rep "q" (* 5 DRAIN-BUDGET))
-              (r chunks _resumes chunk-resumes)
-              (run-request {:accumulate_body false} body)]
-          (assert.is_table r)
-          (assert.is_nil r.error (.. "unexpected error: " (tostring (?. r :error))))
-          (assert.are.equal (length body) (total-bytes chunks)
-                            "every byte must reach on_chunk")
-          (assert.is_true (<= (max-len chunks) DRAIN-BUDGET)
-                          (.. "a slice exceeded the drain budget: " (max-len chunks)))
-          (assert.is_true (> (distinct-count chunk-resumes) 1)
-                          "chunk delivery must interleave with yields (>1 resume)")
-          (assert.are.equal (length chunk-resumes) (distinct-count chunk-resumes)
-                            "bounded draining must deliver at most one slice per resume"))))))
+          (fn []
+            (it "delivers a large body across multiple resumes, bounded per slice"
+                (fn []
+                  (let [body (string.rep "q" (* 5 DRAIN-BUDGET))
+                        (r chunks _resumes chunk-resumes) (run-request {:accumulate_body false}
+                                                                       body)]
+                    (assert.is_table r)
+                    (assert.is_nil r.error
+                                   (.. "unexpected error: "
+                                       (tostring (?. r :error))))
+                    (assert.are.equal (length body) (total-bytes chunks)
+                                      "every byte must reach on_chunk")
+                    (assert.is_true (<= (max-len chunks) DRAIN-BUDGET)
+                                    (.. "a slice exceeded the drain budget: "
+                                        (max-len chunks)))
+                    (assert.is_true (> (distinct-count chunk-resumes) 1)
+                                    "chunk delivery must interleave with yields (>1 resume)")
+                    (assert.are.equal (length chunk-resumes)
+                                      (distinct-count chunk-resumes)
+                                      "bounded draining must deliver at most one slice per resume"))))))

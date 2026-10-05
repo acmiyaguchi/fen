@@ -26,13 +26,14 @@
              :level (tostring (or level :info))
              :timestamp (stderr-log.timestamp)
              :msg (message value)}]
-    (when state.session.info (set rec.session (redact.sanitize state.session.info)))
+    (when state.session.info
+      (set rec.session (redact.sanitize state.session.info)))
     rec))
 
 (fn append! [rec]
   (jsonl.append! state (log-path) rec
-                (fn [err]
-                  (stderr-log.warn (.. "logs: append failed: " err)))))
+                 (fn [err]
+                   (stderr-log.warn (.. "logs: append failed: " err)))))
 
 (fn trim! []
   (while (> (length state.logs) MAX-LOGS)

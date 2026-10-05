@@ -28,10 +28,9 @@
     (if (= (type v) :table)
         (if (= (type v.format) :function)
             (v.format)
-            (.. "fen " (tostring (or v.version "unknown"))
-                " (" (tostring (or v.source "unknown"))
-                (if v.targetSystem (.. ", " (tostring v.targetSystem)) "")
-                ")"))
+            (.. "fen " (tostring (or v.version "unknown")) " ("
+                (tostring (or v.source "unknown"))
+                (if v.targetSystem (.. ", " (tostring v.targetSystem)) "") ")"))
         (.. "fen " (tostring (or v "unknown"))))))
 
 (fn install-runtime-info! []
@@ -95,11 +94,11 @@
     (set diagnostics (require :fen.core.diagnostics))
     (install-runtime-info!)
     (set provider-registry (require :fen.core.extensions.register.provider))
-    (set auth-backend-registry (require :fen.core.extensions.register.auth_backend))
+    (set auth-backend-registry
+         (require :fen.core.extensions.register.auth_backend))
     (set extension-loader (require :fen.core.extensions.loader))
     (set log (require :fen.util.log))
     (set interactive (require :fen.interactive))))
-
 
 (fn model-id-present? [provider id]
   (var found? false)
@@ -113,7 +112,10 @@
   (or provider.default-model (models-mod.first-model-id provider)))
 
 ;; Headless presenters fail fast on unknown --model; interactive keeps the id since /model can recover and startup avoids forced catalog calls.
-(local HEADLESS-PRESENTERS {:print true :json true :goal-headless true :rpc true})
+(local HEADLESS-PRESENTERS {:print true
+                            :json true
+                            :goal-headless true
+                            :rpc true})
 
 (fn cli-model-suggestion-lines [candidates]
   (let [lines []]
@@ -129,8 +131,7 @@
      (rewriting opts.model to the resolved id so later passes are exact);
    - ambiguous or unknown id → exit 2 with a did-you-mean list;
    - catalog not consultable → pass the id through unchanged (today's behavior)."
-  (if (or (not model)
-          (not opts.model-explicit?)
+  (if (or (not model) (not opts.model-explicit?)
           (not (. HEADLESS-PRESENTERS opts.presenter)))
       model
       (let [resolved (models-mod.resolve-cli-model model provider-name {})]
@@ -141,8 +142,8 @@
               (when (and (not= (tostring model) id)
                          (not= (tostring model)
                                (models-mod.canonical-model-id resolved.model)))
-                (io.stderr:write (.. "using model " id
-                                     " (matched \"" (tostring model) "\")\n")))
+                (io.stderr:write (.. "using model " id " (matched \""
+                                     (tostring model) "\")\n")))
               ;; Rewrite so the second resolve pass and persisted metadata see the canonical id.
               (set opts.model id)
               id)
@@ -183,8 +184,8 @@
         (os.exit exit-code))))
 
 (set resolve-provider-config
-  (fn [opts]
-  "Returns a record describing the provider to use for this run:
+     (fn [opts]
+       "Returns a record describing the provider to use for this run:
    {:name :provider-name :model :api-key :base-url :compat}.
 
    Provider registry names are the dispatch contract. models.json providers
@@ -192,68 +193,82 @@
    same name overrides the built-in entry. Built-ins require their configured
    auth; custom providers may have no api-key at all (Ollama-style local
    servers)."
-  (let [name opts.provider
-        provider (provider-registry.find name)]
-    (if (not provider)
-        (fail-provider!
-          opts
-          (.. "defaultProvider " (tostring name) " is not configured")
-          (let [help (ensure-provider-help!)]
-            (help.unknown-provider-message name))
-          2)
-        (let [default-model (provider-default-model provider)
-              model (validate-cli-model!
-                      opts name
-                      (if (and opts.model opts.model-from-settings?
-                               default-model
-                               (> (length (or provider.models [])) 0)
-                               (not (model-id-present? provider opts.model)))
-                          (do (log.warn (.. "settings: defaultModel "
-                                            (tostring opts.model)
-                                            " is not declared for provider "
-                                            (tostring name)
-                                            "; using " (tostring default-model)))
-                              default-model)
-                          (or opts.model default-model)))]
-          (if provider.auth-backend
-              (let [backend (auth-backend-registry.find provider.auth-backend)]
-                (if (not backend)
-                    (fail-provider!
-                      opts
-                      (.. "defaultProvider " (tostring name)
-                          " has missing auth backend "
-                          (tostring provider.auth-backend))
-                      (.. "missing auth backend: "
-                          (tostring provider.auth-backend))
-                      1)
-                    (let [(ok? creds) (pcall backend.get-fresh-creds!)]
-                      (if (not ok?)
-                          (fail-provider!
-                            opts
-                            (.. "defaultProvider " (tostring name)
-                                " is unavailable: " (tostring creds))
-                            (tostring creds)
-                            1)
-                          {:name name :provider-name provider.name :api provider.api
-                           :api-key nil :model model :base-url provider.base-url
-                           :compat provider.compat :creds creds}))))
-              (let [key-var provider.api-key-var
-                    env-key (and key-var (os.getenv key-var))]
-                (if (and key-var (or (not env-key) (= env-key "")))
-                    (fail-provider!
-                      opts
-                      (.. "defaultProvider " (tostring name)
-                          " requires " (tostring key-var))
-                      (let [help (ensure-provider-help!)
-                            ;; By the time this renders, the provider is either explicit or the built-in fallback.
-                            source (if opts.provider-explicit? :explicit :default)]
-                        (help.missing-provider-message name key-var source))
-                      1)
-                    {:name name :provider-name provider.name :api provider.api
-                     :api-key (or env-key provider.api-key)
-                     :model model
-                     :base-url provider.base-url
-                     :compat provider.compat}))))))))
+       (let [name opts.provider
+             provider (provider-registry.find name)]
+         (if (not provider)
+             (fail-provider! opts
+                             (.. "defaultProvider " (tostring name)
+                                 " is not configured")
+                             (let [help (ensure-provider-help!)]
+                               (help.unknown-provider-message name))
+                             2)
+             (let [default-model (provider-default-model provider)
+                   model (validate-cli-model! opts name
+                                              (if (and opts.model
+                                                       opts.model-from-settings?
+                                                       default-model
+                                                       (> (length (or provider.models
+                                                                      []))
+                                                          0)
+                                                       (not (model-id-present? provider
+                                                                               opts.model)))
+                                                  (do
+                                                    (log.warn (.. "settings: defaultModel "
+                                                                  (tostring opts.model)
+                                                                  " is not declared for provider "
+                                                                  (tostring name)
+                                                                  "; using "
+                                                                  (tostring default-model)))
+                                                    default-model)
+                                                  (or opts.model default-model)))]
+               (if provider.auth-backend
+                   (let [backend (auth-backend-registry.find provider.auth-backend)]
+                     (if (not backend)
+                         (fail-provider! opts
+                                         (.. "defaultProvider " (tostring name)
+                                             " has missing auth backend "
+                                             (tostring provider.auth-backend))
+                                         (.. "missing auth backend: "
+                                             (tostring provider.auth-backend))
+                                         1)
+                         (let [(ok? creds) (pcall backend.get-fresh-creds!)]
+                           (if (not ok?)
+                               (fail-provider! opts
+                                               (.. "defaultProvider "
+                                                   (tostring name)
+                                                   " is unavailable: "
+                                                   (tostring creds))
+                                               (tostring creds) 1)
+                               {:name name
+                                :provider-name provider.name
+                                :api provider.api
+                                :api-key nil
+                                :model model
+                                :base-url provider.base-url
+                                :compat provider.compat
+                                :creds creds}))))
+                   (let [key-var provider.api-key-var
+                         env-key (and key-var (os.getenv key-var))]
+                     (if (and key-var (or (not env-key) (= env-key "")))
+                         (fail-provider! opts
+                                         (.. "defaultProvider " (tostring name)
+                                             " requires " (tostring key-var))
+                                         (let [help (ensure-provider-help!)
+                                               ;; By the time this renders, the provider is either explicit or the built-in fallback.
+                                               source (if opts.provider-explicit?
+                                                          :explicit
+                                                          :default)]
+                                           (help.missing-provider-message name
+                                                                          key-var
+                                                                          source))
+                                         1)
+                         {:name name
+                          :provider-name provider.name
+                          :api provider.api
+                          :api-key (or env-key provider.api-key)
+                          :model model
+                          :base-url provider.base-url
+                          :compat provider.compat}))))))))
 
 (fn starts-with? [s prefix]
   (= (string.sub (tostring s) 1 (length prefix)) prefix))
@@ -277,8 +292,10 @@
 (fn parse-args [argv ?start-index ?goal-mode]
   ;; Keep :max-tokens nil unless --max-tokens is passed, so /reload picks up a changed make-agent default without a restart.
   (let [opts {:presenter :tui
-              :extra-skill-paths [] :extension-paths []
-              :dev-paths [] :extension-roots []
+              :extra-skill-paths []
+              :extension-paths []
+              :dev-paths []
+              :extension-roots []
               :session-backend :jsonl}
         flags (ensure-cli-flags!)
         context (cli-context ?goal-mode)]
@@ -297,16 +314,18 @@
             known-flag
             (die-usage! (flags.invalid-message known-flag context))
             (and ?goal-mode (= a :--))
-            (do (set collecting-objective? true) (set i (+ i 1)))
-            (and ?goal-mode
-                 (or collecting-objective?
-                     (not (option-token? a))))
-            (do (set collecting-objective? true)
-                (table.insert opts.objective-parts (tostring a))
-                (set i (+ i 1)))
+            (do
+              (set collecting-objective? true)
+              (set i (+ i 1)))
+            (and ?goal-mode (or collecting-objective? (not (option-token? a))))
+            (do
+              (set collecting-objective? true)
+              (table.insert opts.objective-parts (tostring a))
+              (set i (+ i 1)))
             (option-token? a)
-            (do (io.stderr:write (flags.unknown-message a context))
-                (os.exit 2))
+            (do
+              (io.stderr:write (flags.unknown-message a context))
+              (os.exit 2))
             (die-usage! (.. "unknown arg: " a)))))
     (when ?goal-mode
       (set opts.objective (table.concat opts.objective-parts " "))
@@ -317,10 +336,12 @@
       (when (and opts.max-iterations-given? (not opts.max-iterations))
         (io.stderr:write (goal-iterations-error))
         (os.exit 2))
-      (set opts.max-iterations (or opts.max-iterations GOAL-DEFAULT-MAX-ITERATIONS))
+      (set opts.max-iterations
+           (or opts.max-iterations GOAL-DEFAULT-MAX-ITERATIONS))
       (set opts.max-iterations-given? nil)
       (when (or (not= opts.max-iterations (math.floor opts.max-iterations))
-                (< opts.max-iterations 1) (> opts.max-iterations GOAL-MAX-ITERATIONS))
+                (< opts.max-iterations 1)
+                (> opts.max-iterations GOAL-MAX-ITERATIONS))
         (io.stderr:write (goal-iterations-error))
         (os.exit 2)))
     (when (and opts.print opts.prompt-file)
@@ -329,7 +350,8 @@
     (when opts.prompt-file
       (let [f (io.open opts.prompt-file :r)]
         (when (not f)
-          (io.stderr:write (.. "cannot read --prompt-file: " opts.prompt-file "\n"))
+          (io.stderr:write (.. "cannot read --prompt-file: " opts.prompt-file
+                               "\n"))
           (os.exit 2))
         (set opts.print (f:read :*a))
         (f:close)))
@@ -348,17 +370,14 @@
         (set thinking (require :fen.core.thinking)))
       (when (not (thinking.valid-level? opts.thinking))
         (io.stderr:write (.. "invalid --thinking: " (tostring opts.thinking)
-                            " (expected " (thinking.level-list) ")\n"))
+                             " (expected " (thinking.level-list) ")\n"))
         (os.exit 2)))
-    (when (and (not= opts.presenter :tui)
-               (not= opts.presenter :stdio)
-               (not= opts.presenter :web)
-               (not= opts.presenter :print)
-               (not= opts.presenter :json)
-               (not= opts.presenter :rpc)
+    (when (and (not= opts.presenter :tui) (not= opts.presenter :stdio)
+               (not= opts.presenter :web) (not= opts.presenter :print)
+               (not= opts.presenter :json) (not= opts.presenter :rpc)
                (not= opts.presenter :goal-headless))
       (io.stderr:write (.. "unknown --presenter: " (tostring opts.presenter)
-                          " (expected tui | stdio | web | print | json | rpc)\n"))
+                           " (expected tui | stdio | web | print | json | rpc)\n"))
       (os.exit 2))
     (when (and (= opts.presenter :rpc) opts.print)
       (io.stderr:write "--presenter rpc takes its task as a wire prompt; it cannot be combined with --print or --prompt-file\n")
@@ -366,7 +385,7 @@
     (when (and (or (= opts.presenter :print) (= opts.presenter :json))
                (not opts.print))
       (io.stderr:write (.. "--presenter " (tostring opts.presenter)
-                          " requires --print TEXT\n"))
+                           " requires --print TEXT\n"))
       (os.exit 2))
     opts))
 
@@ -401,26 +420,22 @@
   (let [s (settings.load)]
     (if (not opts.provider)
         (if s.default-provider
-            (do (set opts.provider s.default-provider)
-                (set opts.provider-from-settings? true))
+            (do
+              (set opts.provider s.default-provider)
+              (set opts.provider-from-settings? true))
             (set opts.provider :openai)))
-    (when (and (not opts.model)
-               s.default-model
+    (when (and (not opts.model) s.default-model
                (= (tostring opts.provider) (tostring s.default-provider)))
       (set opts.model s.default-model)
       (set opts.model-from-settings? true))
-    (when (and (not opts.thinking)
-               (not opts.thinking-budget)
-               (not opts.reasoning-effort)
-               s.default-thinking)
+    (when (and (not opts.thinking) (not opts.thinking-budget)
+               (not opts.reasoning-effort) s.default-thinking)
       (if (thinking.valid-level? s.default-thinking)
           (set opts.thinking s.default-thinking)
           (log.warn (.. "settings: defaultThinking "
-                        (tostring s.default-thinking)
-                        " is invalid; ignoring"))))
+                        (tostring s.default-thinking) " is invalid; ignoring"))))
     ;; --no-tools disables hosted tools too, so it also skips the settings default.
-    (when (and (= opts.web-search nil)
-               (not opts.no-tools?)
+    (when (and (= opts.web-search nil) (not opts.no-tools?)
                s.default-web-search)
       (let [flags (ensure-cli-flags!)]
         (if (cli-parse.valid-choice? (flags.find-any "--web-search")
@@ -489,9 +504,12 @@
             known-flag
             (die-usage! (flags.invalid-message known-flag context))
             (option-token? arg)
-            (do (io.stderr:write (flags.unknown-message arg context))
-                (os.exit 2))
-            (do (table.insert positional arg) (set i (+ i 1))))))
+            (do
+              (io.stderr:write (flags.unknown-message arg context))
+              (os.exit 2))
+            (do
+              (table.insert positional arg)
+              (set i (+ i 1))))))
     (let [surface (. positional 1)
           name (. positional 2)
           json? parsed.json?
@@ -502,35 +520,46 @@
                 (and (= verb :show) (or (not surface) (not name))))
         (io.stderr:write "usage: fen list [surface] [--json] [--provider NAME] [--check]\n       fen show <surface> <name> [--json] [--provider NAME]\n")
         (os.exit 2))
-      (when (and check? (or (not= verb :list)
-                             (not (or (= surface :providers) (= surface :provider)))))
+      (when (and check?
+                 (or (not= verb :list)
+                     (not (or (= surface :providers) (= surface :provider)))))
         (io.stderr:write "--check is only valid for `fen list providers`\n")
         (os.exit 2))
-    (ensure-rocks!)
-    (rocks.prepend-tree!)
-    (ensure-runtime!)
-    ;; interactive? only so slash-command/presenter extensions register metadata; no presenter lifecycle runs.
-    (extension-loader.load! {:presenter :tui :extra-skill-paths []
-                             :extension-paths extension-paths}
-                            {:interactive? true})
-    (models-mod.register-providers!)
-    (let [discovery (ensure-cli-discovery!)
-          opts {:provider provider :check? check?}]
-      (if (= verb :show)
-          (let [(entry err) (discovery.show surface name opts)]
-            (when (or err (not entry))
-              (io.stderr:write (.. (or err (.. "entry not found: " (tostring surface)
-                                                " " (tostring name))) "\n"))
-              (os.exit 2))
-            (io.write (.. (discovery.render {:surface surface :entry entry} json?) "\n")))
-          surface
-          (let [(items err) (discovery.list surface opts)]
-            (when err
-              (io.stderr:write (.. err "\n"))
-              (os.exit 2))
-            (io.write (.. (discovery.render {:surface surface :items items} json?) "\n")))
-          (io.write (.. (discovery.render {:surfaces (discovery.surfaces)} json?) "\n")))
-      (os.exit 0)))))
+      (ensure-rocks!)
+      (rocks.prepend-tree!)
+      (ensure-runtime!)
+      ;; interactive? only so slash-command/presenter extensions register metadata; no presenter lifecycle runs.
+      (extension-loader.load! {:presenter :tui
+                               :extra-skill-paths []
+                               :extension-paths extension-paths}
+                              {:interactive? true})
+      (models-mod.register-providers!)
+      (let [discovery (ensure-cli-discovery!)
+            opts {:provider provider :check? check?}]
+        (if (= verb :show)
+            (let [(entry err) (discovery.show surface name opts)]
+              (when (or err (not entry))
+                (io.stderr:write (.. (or err
+                                         (.. "entry not found: "
+                                             (tostring surface) " "
+                                             (tostring name)))
+                                     "\n"))
+                (os.exit 2))
+              (io.write (.. (discovery.render {:surface surface :entry entry}
+                                              json?)
+                            "\n")))
+            surface
+            (let [(items err) (discovery.list surface opts)]
+              (when err
+                (io.stderr:write (.. err "\n"))
+                (os.exit 2))
+              (io.write (.. (discovery.render {:surface surface :items items}
+                                              json?)
+                            "\n")))
+            (io.write (.. (discovery.render {:surfaces (discovery.surfaces)}
+                                            json?)
+                          "\n")))
+        (os.exit 0)))))
 
 (fn provider-for-auth-backend [backend-name]
   "Find the provider wired to backend-name. Prefer an exact name match so
@@ -550,15 +579,14 @@
    never mask a successful login."
   (let [p (provider-for-auth-backend backend-name)]
     (when (and p p.default-model)
-      (let [(ok? wrote?) (pcall settings.adopt-default-if-unset!
-                                p.name p.default-model)]
+      (let [(ok? wrote?) (pcall settings.adopt-default-if-unset! p.name
+                                p.default-model)]
         (if (not ok?)
             (log.warn (.. "login: could not persist default provider: "
                           (tostring wrote?)))
             wrote?
-            (io.write (.. "\nDefault provider set to " (tostring p.name)
-                          " (" (tostring p.default-model)
-                          "). Run `fen` to start.\n")))))))
+            (io.write (.. "\nDefault provider set to " (tostring p.name) " ("
+                          (tostring p.default-model) "). Run `fen` to start.\n")))))))
 
 (fn run-auth-action! [opts action method-key]
   "Dispatch --login/--logout to the named provider's auth-backend.
@@ -602,21 +630,20 @@
   (when (= (. argv 1) :session)
     (ensure-runtime!)
     (let [session-cli (require :fen.session_cli)]
-      (session-cli.run!
-        argv
-        {:resolve-provider-config resolve-provider-config
-         :write-help! (fn []
-                        (let [help (ensure-cli-help!)]
-                          (help.write-subcommand-help! :session)))
-         :prepare!
-         (fn [opts send?]
-           (set opts.presenter :session)
-           (extension-loader.load! opts {:interactive? false})
-           (models-mod.register-providers!)
-           (when send?
-             (apply-model-prefix! opts)
-             (apply-defaults opts)
-             (resolve-provider-config opts)))}))
+      (session-cli.run! argv
+                        {:resolve-provider-config resolve-provider-config
+                         :write-help! (fn []
+                                        (let [help (ensure-cli-help!)]
+                                          (help.write-subcommand-help! :session)))
+                         :prepare! (fn [opts send?]
+                                     (set opts.presenter :session)
+                                     (extension-loader.load! opts
+                                                             {:interactive? false})
+                                     (models-mod.register-providers!)
+                                     (when send?
+                                       (apply-model-prefix! opts)
+                                       (apply-defaults opts)
+                                       (resolve-provider-config opts)))}))
     (os.exit 0))
   (let [goal-mode? (= (. argv 1) :goal)
         parsed (parse-args argv (if goal-mode? 2 1) goal-mode?)]
@@ -624,7 +651,9 @@
       (if goal-mode?
           (write-subcommand-help-and-exit! :goal)
           (write-top-level-help-and-exit! parsed.help-all?)))
-    (when parsed.version? (io.write (.. (version-line) "\n")) (os.exit 0))
+    (when parsed.version?
+      (io.write (.. (version-line) "\n"))
+      (os.exit 0))
     (ensure-runtime!)
     (apply-model-prefix! parsed)
     (let [opts (apply-defaults parsed)]

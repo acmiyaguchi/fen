@@ -15,24 +15,22 @@
 
 (local M {})
 
-(local SIMPLIFY_PROMPT
-  (table.concat
-    ["Run a simplification pass over the changed code listed below."
-     "Improve reuse, simplification, efficiency, and altitude. Quality only: do NOT"
-     "hunt for or fix bugs, and do NOT change behavior."
-     ""
-     "Process:"
-     "1. For each changed file, delegate review to the `subagent` tool with agent"
-     "   \"simplifier\", asking it to review that file in the current git diff for"
-     "   reuse/simplification/efficiency/altitude cleanups and return findings only"
-     "   (no edits). Batch sensibly when there are many files. If the `subagent`"
-     "   tool or the `simplifier` agent is unavailable, review the files inline."
-     "2. Consolidate the findings. Discard anything that changes behavior, is"
-     "   speculative, or is really a bug fix."
-     "3. Apply the safe simplifications with edit/write."
-     "4. If practical, run the cheap project check: fennel scripts/test/fennel-check.fnl"
-     "5. End with a concise summary: what you applied, and what you skipped and why."]
-    "\n"))
+(local SIMPLIFY_PROMPT (table.concat ["Run a simplification pass over the changed code listed below."
+                                      "Improve reuse, simplification, efficiency, and altitude. Quality only: do NOT"
+                                      "hunt for or fix bugs, and do NOT change behavior."
+                                      ""
+                                      "Process:"
+                                      "1. For each changed file, delegate review to the `subagent` tool with agent"
+                                      "   \"simplifier\", asking it to review that file in the current git diff for"
+                                      "   reuse/simplification/efficiency/altitude cleanups and return findings only"
+                                      "   (no edits). Batch sensibly when there are many files. If the `subagent`"
+                                      "   tool or the `simplifier` agent is unavailable, review the files inline."
+                                      "2. Consolidate the findings. Discard anything that changes behavior, is"
+                                      "   speculative, or is really a bug fix."
+                                      "3. Apply the safe simplifications with edit/write."
+                                      "4. If practical, run the cheap project check: fennel scripts/test/fennel-check.fnl"
+                                      "5. End with a concise summary: what you applied, and what you skipped and why."]
+                                     "\n"))
 
 (fn running? []
   (= state.status :running))
@@ -64,7 +62,8 @@
     out))
 
 (fn dedupe [items]
-  (let [seen {} out []]
+  (let [seen {}
+        out []]
     (each [_ it (ipairs items)]
       (when (not (. seen it))
         (tset seen it true)
@@ -99,21 +98,22 @@
   (let [scope (if (and base (not= base ""))
                   (.. "changes since " base)
                   "uncommitted working-tree changes")
-        lines [SIMPLIFY_PROMPT
-               ""
-               (.. "Scope: " scope ".")]]
+        lines [SIMPLIFY_PROMPT "" (.. "Scope: " scope ".")]]
     (if (and files (> (length files) 0))
         (do
           (table.insert lines "Changed files:")
           (each [_ f (ipairs files)]
             (table.insert lines (.. "- " f))))
-        (table.insert lines (.. "The file list could not be precomputed; discover "
-                                "the changed files yourself with `git diff` "
-                                "(including untracked files).")))
+        (table.insert lines
+                      (.. "The file list could not be precomputed; discover "
+                          "the changed files yourself with `git diff` "
+                          "(including untracked files).")))
     (table.concat lines "\n")))
 
 (fn tool-result [text ?error? ?details]
-  {:content [(types.text-block text)] :is-error? (or ?error? false) :details ?details})
+  {:content [(types.text-block text)]
+   :is-error? (or ?error? false)
+   :details ?details})
 
 (fn start-simplify! [api base run-state ?when-busy]
   ;; Guard first: reject a concurrent run before shelling git, so an already-busy
@@ -126,7 +126,8 @@
         ;; Early-exit only when git succeeded and reported no changes. When git
         ;; is unavailable (files=nil) still run and let the model find the diff.
         (if (and files (= (length files) 0))
-            (api.emit {:type :info :text "simplify: no changed files to simplify"})
+            (api.emit {:type :info
+                       :text "simplify: no changed files to simplify"})
             (do
               (when (not (simplifier-agent-present?))
                 (api.emit {:type :info
@@ -140,13 +141,16 @@
               (set-status! :running)
               (let [result (api.turn.submit! run-state
                                              (simplify-prompt files ref)
-                                             {:when-busy (or ?when-busy :reject) :emit-user? false})]
+                                             {:when-busy (or ?when-busy :reject)
+                                              :emit-user? false})]
                 (when result.ok
-                  (set state.active-turn-id (or run-state.turn-id result.turn-id)))
+                  (set state.active-turn-id
+                       (or run-state.turn-id result.turn-id)))
                 (when (not result.ok)
                   (set state.last-error result.error)
                   (set-status! :idle)
-                  (api.emit {:type :error :error (.. "/simplify: " (tostring result.error))}))
+                  (api.emit {:type :error
+                             :error (.. "/simplify: " (tostring result.error))}))
                 result))))))
 
 (fn show-summary! [api]
@@ -158,12 +162,11 @@
 
 (fn usage! [api]
   (api.emit {:type :assistant-text
-             :text (table.concat
-                     ["Usage:"
-                      "/simplify         Review and apply quality cleanups on the current changes"
-                      "/simplify <ref>   Simplify changes since <ref> (e.g. main)"
-                      "/simplify show    Reprint the last simplify summary"]
-                     "\n")}))
+             :text (table.concat ["Usage:"
+                                  "/simplify         Review and apply quality cleanups on the current changes"
+                                  "/simplify <ref>   Simplify changes since <ref> (e.g. main)"
+                                  "/simplify show    Reprint the last simplify summary"]
+                                 "\n")}))
 
 (fn handle-command [api args run-state]
   (let [cmd (first-arg args)
@@ -182,8 +185,10 @@
       (tool-result "simplify requires an active agent turn" true)
       (let [r (start-simplify! api (or args.base "") run-state :follow-up)]
         (if (and r r.ok)
-            (tool-result "Simplification pass queued" false {:base state.last-base})
-            (tool-result (or (?. r :error) "simplification was not started") true)))))
+            (tool-result "Simplification pass queued" false
+                         {:base state.last-base})
+            (tool-result (or (?. r :error) "simplification was not started")
+                         true)))))
 
 ;; --- events -----------------------------------------------------------------
 
@@ -203,7 +208,8 @@
           (set state.last-error nil)
           (set-status! :idle))
         (do
-          (set state.last-error (or ev.error "simplify turn did not produce a summary"))
+          (set state.last-error
+               (or ev.error "simplify turn did not produce a summary"))
           (set-status! :idle)))))
 
 (fn on-error [ev]
@@ -231,29 +237,28 @@
 
 (fn register! [api]
   (api.register :command
-    {:name :simplify
-     :order 29
-     :description "Review changed code and apply quality cleanups via subagent reviewers"
-     :handler (fn [args run-state]
-                (handle-command api args run-state))})
+                {:name :simplify
+                 :order 29
+                 :description "Review changed code and apply quality cleanups via subagent reviewers"
+                 :handler (fn [args run-state]
+                            (handle-command api args run-state))})
   (api.register :tool
-    {:name :simplify
-     :label "Simplify"
-     :exposure :search
-     :description "Queue a behavior-preserving simplification pass over changed code in the active agent turn."
-     :parameters {:type :object
-                  :properties {:base {:type :string
-                                      :description "Optional git ref to compare against."}}}
-     :execute (fn [args ctx _yield] (execute-tool api args ctx.state))})
-  (api.register :status
-    {:name :simplify
-     :side :left
-     :order 35
-     :render status-render})
-  (api.register :introspect
-    {:name :state
-     :description "Current simplify companion status and last summary"
-     :snapshot snapshot})
+                {:name :simplify
+                 :label "Simplify"
+                 :exposure :search
+                 :description "Queue a behavior-preserving simplification pass over changed code in the active agent turn."
+                 :parameters {:type :object
+                              :properties {:base {:type :string
+                                                  :description "Optional git ref to compare against."}}}
+                 :execute (fn [args ctx _yield]
+                            (execute-tool api args ctx.state))})
+  (api.register :status {:name :simplify
+                         :side :left
+                         :order 35
+                         :render status-render})
+  (api.register :introspect {:name :state
+                             :description "Current simplify companion status and last summary"
+                             :snapshot snapshot})
   (api.on :agent-turn-complete on-turn-complete)
   (api.on :error on-error)
   (api.on :reset-conversation on-reset)

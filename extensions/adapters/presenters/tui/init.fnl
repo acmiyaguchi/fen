@@ -50,8 +50,7 @@
   "Default log file path while the TUI owns the terminal. Stays under the
    same XDG_STATE_HOME/fen directory used for errors.jsonl and session
    storage so users find logs where they already look for state."
-  (or (os.getenv :FEN_LOG_FILE)
-      (.. (path.state-dir :fen) "/fen.log")))
+  (or (os.getenv :FEN_LOG_FILE) (.. (path.state-dir :fen) "/fen.log")))
 
 (fn open-log-sink! []
   "Idempotent — returns immediately when a sink is already active so
@@ -99,12 +98,15 @@
   (when (not state.tb-initialized?)
     (let [(rc _err _code) (tb.init)]
       (if (and rc (>= rc 0))
-          (do (set state.tb-initialized? true)
-              (set state.tb-init-failed? false)
-              (when (= state.status-info.start-ms 0)
-                (set state.status-info.start-ms (os.time))))
-          (do (set state.tb-init-failed? true)
-              (error "termbox2 init failed (TUI requires an interactive terminal)" 0)))))
+          (do
+            (set state.tb-initialized? true)
+            (set state.tb-init-failed? false)
+            (when (= state.status-info.start-ms 0)
+              (set state.status-info.start-ms (os.time))))
+          (do
+            (set state.tb-init-failed? true)
+            (error "termbox2 init failed (TUI requires an interactive terminal)"
+                   0)))))
   (when state.tb-initialized?
     ;; Reroute log.* to a file first: once termbox owns the terminal, stderr writes corrupt the frame.
     (open-log-sink!)
@@ -213,8 +215,10 @@
   (when (not= info.thinking-status nil)
     (set state.status-info.thinking-status
          (if (= info.thinking-status false) nil info.thinking-status)))
-  (when info.steering-queued (set state.status-info.steering-queued info.steering-queued))
-  (when info.follow-up-queued (set state.status-info.follow-up-queued info.follow-up-queued))
+  (when info.steering-queued
+    (set state.status-info.steering-queued info.steering-queued))
+  (when info.follow-up-queued
+    (set state.status-info.follow-up-queued info.follow-up-queued))
   (when (not= info.approx-context nil)
     (set state.status-info.approx-context info.approx-context))
   (when (not= info.context-estimated? nil)
@@ -263,15 +267,11 @@
    much buffered text it touched. Input stalls (e.g. a large bracketed paste)
    carry no coroutine stack, so this is the only signal into what was slow."
   (let [ev (or ?ev {})]
-    (string.format
-      "event=%s key=%s ch=%s mod=%s paste=%s paste_bytes=%d buf_bytes=%d"
-      (fmt-field ev.type)
-      (fmt-field ev.key)
-      (fmt-field ev.ch)
-      (fmt-field ev.mod)
-      (fmt-field state.paste-active?)
-      (length (or state.paste-buffer ""))
-      (length (or state.input-buf "")))))
+    (string.format "event=%s key=%s ch=%s mod=%s paste=%s paste_bytes=%d buf_bytes=%d"
+                   (fmt-field ev.type) (fmt-field ev.key) (fmt-field ev.ch)
+                   (fmt-field ev.mod) (fmt-field state.paste-active?)
+                   (length (or state.paste-buffer ""))
+                   (length (or state.input-buf "")))))
 
 ;; Cache optional profiler lookups off the hot path; reloading this module resets a cached miss.
 (var profile-state nil)
@@ -312,7 +312,8 @@
 
 (fn profile-span-begin! [name metadata]
   (when (profile-enabled?)
-    (let [(recorded? token) (pcall (. (cached-profile-activity) :span-begin!) name metadata)]
+    (let [(recorded? token) (pcall (. (cached-profile-activity) :span-begin!)
+                                   name metadata)]
       (if recorded? token nil))))
 
 (fn profile-span-end! [token]
@@ -334,16 +335,13 @@
                    STALL-WARN-COOLDOWN-MS))
       (set state.last-stall-warn-ms now)
       (let [s state.status-info
-            line (string.format
-                   "tui-stall phase=%s elapsed_ms=%d tool=%s provider=%s model=%s retry=%s retry_attempt=%s thinking=%s"
-                   (tostring phase)
-                   elapsed
-                   (fmt-field s.running-label)
-                   (fmt-field s.provider)
-                   (fmt-field s.model)
-                   (fmt-field s.retrying?)
-                   (fmt-field s.retry-attempt)
-                   (fmt-field s.thinking?))
+            line (string.format "tui-stall phase=%s elapsed_ms=%d tool=%s provider=%s model=%s retry=%s retry_attempt=%s thinking=%s"
+                                (tostring phase) elapsed
+                                (fmt-field s.running-label)
+                                (fmt-field s.provider) (fmt-field s.model)
+                                (fmt-field s.retrying?)
+                                (fmt-field s.retry-attempt)
+                                (fmt-field s.thinking?))
             line (if (= phase :input)
                      (.. line " " (M.input-meta ?ev))
                      line)
@@ -356,12 +354,8 @@
   "Use a short poll while busy or resolving Esc/Alt, but sleep longer when the
    TUI is clean and idle. Dirty redraw already prevents repaint churn; this
    prevents a 33Hz no-op wakeup loop on slow/battery-constrained terminals."
-  (if (or state.dirty?
-          state.force-redraw?
-          state.alt-pending?
-          (and is-busy? (is-busy?))
-          (side-chat.busy?)
-          (paint.busy?))
+  (if (or state.dirty? state.force-redraw? state.alt-pending?
+          (and is-busy? (is-busy?)) (side-chat.busy?) (paint.busy?))
       ACTIVE-TICK-MS
       IDLE-TICK-MS))
 
@@ -371,8 +365,7 @@
    cross-built termbox2.so may surface it as `tb_*_event failed:
    Interrupted ... call`. EINTR is transient — the loop treats it as an
    idle tick, never a session-fatal error (#132)."
-  (if (and err
-           (string.find (string.lower (tostring err)) "interrupted" 1 true))
+  (if (and err (string.find (string.lower (tostring err)) "interrupted" 1 true))
       true
       false))
 
@@ -436,10 +429,13 @@
             (if next-ev
                 (set ev next-ev)
                 (or (= code tb.ERR_NO_EVENT) (M.interrupted-syscall? next-err))
-                (do (set ev nil) (set continue? false))
-                (do (set err (.. "tb_peek_event failed: " (tostring next-err)))
-                    (set ev nil)
-                    (set continue? false))))
+                (do
+                  (set ev nil)
+                  (set continue? false))
+                (do
+                  (set err (.. "tb_peek_event failed: " (tostring next-err)))
+                  (set ev nil)
+                  (set continue? false))))
           (set continue? false))))
   (values quit? count err))
 
@@ -450,10 +446,8 @@
 ;; tags: tui presenter loop termbox
 (fn M.run [on-submit on-tick on-cancel is-busy? ?get-turn]
   (set state.on-tick on-tick)
-  (workspaces.with-main!
-    #(ingest.append-event
-       {:type :info
-        :text "fen — ctrl-d to quit, ctrl-c twice to quit, ctrl-j for newline"}))
+  (workspaces.with-main! #(ingest.append-event {:type :info
+                                                :text "fen — ctrl-d to quit, ctrl-c twice to quit, ctrl-j for newline"}))
   (var quit? false)
   (while (not quit?)
     (if (profile-enabled?)
@@ -475,52 +469,58 @@
             (set state.alt-pending? false)
             (state.api.emit {:type :dismiss}))
           (= ev nil)
-          (do (state.api.emit
-                {:type :error
-                 :error (.. "tb_peek_event failed: " (tostring err))})
-              (set quit? true))
-          (let [handle-one
-                (fn [input-ev]
-                  (let [profiling? (profile-enabled?)
-                        start-ms (clock.monotonic-ms)
-                        start-cpu (and profiling? (os.clock))
-                        span (and profiling?
-                                  (profile-span-begin! :tui-input {:event-type input-ev.type}))
-                        (ok? r) (xpcall #(input.handle-event input-ev on-submit on-cancel is-busy?)
-                                         debug.traceback)]
-                    (when profiling?
-                      (profile-span-end! span)
-                      (profile-counter-add! :tui-input-events))
-                    (M.warn-if-stalled! :input start-ms ?get-turn input-ev start-cpu)
-                    (if (not ok?)
-                        (do (state.api.emit {:type :error
-                                             :error (.. "tui: " (first-line r))
-                                             :traceback (tostring r)})
-                            false)
-                        r)))
+          (do
+            (state.api.emit {:type :error
+                             :error (.. "tb_peek_event failed: " (tostring err))})
+            (set quit? true))
+          (let [handle-one (fn [input-ev]
+                             (let [profiling? (profile-enabled?)
+                                   start-ms (clock.monotonic-ms)
+                                   start-cpu (and profiling? (os.clock))
+                                   span (and profiling?
+                                             (profile-span-begin! :tui-input
+                                                                  {:event-type input-ev.type}))
+                                   (ok? r) (xpcall #(input.handle-event input-ev
+                                                                        on-submit
+                                                                        on-cancel
+                                                                        is-busy?)
+                                                   debug.traceback)]
+                               (when profiling?
+                                 (profile-span-end! span)
+                                 (profile-counter-add! :tui-input-events))
+                               (M.warn-if-stalled! :input start-ms ?get-turn
+                                                   input-ev start-cpu)
+                               (if (not ok?)
+                                   (do
+                                     (state.api.emit {:type :error
+                                                      :error (.. "tui: "
+                                                                 (first-line r))
+                                                      :traceback (tostring r)})
+                                     false)
+                                   r)))
                 (batch-quit? _ batch-err) (M.drain-scroll-burst! ev handle-one)]
             (when batch-err
               (state.api.emit {:type :error :error batch-err})
               (set quit? true))
             (when batch-quit?
               (set quit? true)))))
-      (when (and (not quit?) on-tick)
-        (let [profiling? (profile-enabled?)
-              start-ms (clock.monotonic-ms)
-              start-cpu (and profiling? (os.clock))
-              span (and profiling? (profile-span-begin! :tui-tick {}))
-              (ok? err) (xpcall on-tick debug.traceback)]
-          (when profiling?
-            (profile-span-end! span)
-            (profile-counter-add! :tui-ticks))
-          (M.warn-if-stalled! :tick start-ms ?get-turn nil start-cpu)
-          (when (not ok?)
-            (state.api.emit {:type :error
-                              :error (.. "on-tick: " (first-line err))
-                              :traceback (tostring err)}))))
-      ;; Side chat and detached subagents share this cooperative tick so they stream alongside the main turn.
-      (when (not quit?)
-        (M.tick-background!))
+    (when (and (not quit?) on-tick)
+      (let [profiling? (profile-enabled?)
+            start-ms (clock.monotonic-ms)
+            start-cpu (and profiling? (os.clock))
+            span (and profiling? (profile-span-begin! :tui-tick {}))
+            (ok? err) (xpcall on-tick debug.traceback)]
+        (when profiling?
+          (profile-span-end! span)
+          (profile-counter-add! :tui-ticks))
+        (M.warn-if-stalled! :tick start-ms ?get-turn nil start-cpu)
+        (when (not ok?)
+          (state.api.emit {:type :error
+                           :error (.. "on-tick: " (first-line err))
+                           :traceback (tostring err)}))))
+    ;; Side chat and detached subagents share this cooperative tick so they stream alongside the main turn.
+    (when (not quit?)
+      (M.tick-background!))
     ;; Clear stale first-press cancel state when the turn ends normally, so the next ctrl-c arms quit, not force-quit.
     (when (and state.cancel-pressed? is-busy? (not (is-busy?)))
       (set state.cancel-pressed? false)
@@ -530,481 +530,453 @@
 ;; Reload-safe: the loader drops the prior owner-tagged batch before re-requiring, so registrations don't double.
 (fn M.register [api]
   (set state.api api)
+  ;; Every bus event lands in the transcript EXCEPT presenter-control events with dedicated subscribers below.
+  (local PRESENTER-CONTROL-EVENTS
+         {:runtime-tick true
+          :model-catalog-updated true
+          :agent-turn-complete true
+          :message-appended true
+          :reset-conversation true
+          :reinit-presenter true
+          :redraw true
+          :hard-refresh true
+          :suspend true
+          :set-status-info true
+          :set-thinking-blocks true
+          :hint true})
+  (api.on :*
+          (fn [ev]
+            (when (not (. PRESENTER-CONTROL-EVENTS ev.type))
+              (workspaces.with-main! #(ingest.append-event ev)))))
+  ;; Bus events that ask the TUI to do something. Built-in commands
+  ;; (/new, /reload) emit these instead of importing the TUI module.
+  (api.on :reset-conversation (fn [_] (M.reset-conversation!)))
+  (api.on :reinit-presenter
+          (fn [_]
+            (M.init!)
+            (paint.invalidate-full!)))
+  (api.on :redraw (fn [_] (paint.invalidate-full!)))
+  (api.on :model-catalog-updated
+          (fn [_]
+            ;; Dynamic model discovery may finish while the input bytes/cursor are
+            ;; unchanged. Bypass the snapshot guard and rebuild inline choices.
+            (completion.invalidate!)
+            (completion.refresh! (or state.presenter-ctx {}))
+            (paint.invalidate-full!)))
+  ;; Stronger than :redraw — re-asserts terminal modes and blank-presents to
+  ;; recover from external corruption. Driven by ctrl-l and the /redraw command.
+  (api.on :hard-refresh (fn [_] (M.hard-refresh!)))
+  ;; Ctrl-Z job-control suspend. Synchronous: the emit blocks here (process
+  ;; stopped) until fg/SIGCONT, then suspend! re-inits and repaints before return.
+  (api.on :suspend (fn [_] (M.suspend!)))
+  (api.on :set-status-info
+          (fn [ev]
+            (M.set-status-info (or ev.info {}))))
+  (api.on :set-thinking-blocks
+          (fn [ev]
+            (let [visible? (not= ev.visible? false)]
+              (set state.hide-thinking-block? (not visible?))
+              (paint.invalidate-full!))))
+  (api.on :dismiss (fn [_]
+                     (input.clear-hint!)
+                     (when (completion.active?)
+                       (completion.dismiss!)
+                       (paint.invalidate!))))
+  ;; Contextual suggestions from extensions land in the empty-input placeholder, never the transcript.
+  (api.on :hint (fn [ev] (input.show-hint! ev)))
+  ;; First-party status blocks. These use the same :status kind third-party
+  ;; extensions will use; paint.fnl composes them at draw time.
 
-;; Every bus event lands in the transcript EXCEPT presenter-control events with dedicated subscribers below.
-(local PRESENTER-CONTROL-EVENTS
-  {:runtime-tick true
-   :model-catalog-updated true
-   :agent-turn-complete true
-   :message-appended true
-   :reset-conversation true
-   :reinit-presenter true
-   :redraw true
-   :hard-refresh true
-   :suspend true
-   :set-status-info true
-   :set-thinking-blocks true
-   :hint true})
+  (fn active-agent-workspace []
+    (let [(ok? ws) (pcall workspaces.active)]
+      (when (and ok? (workspaces.agent? ws) (not= ws.kind :main-session))
+        ws)))
 
-(api.on :*
-        (fn [ev]
-          (when (not (. PRESENTER-CONTROL-EVENTS ev.type))
-            (workspaces.with-main! #(ingest.append-event ev)))))
+  (fn numeric [v]
+    (and (= (type v) :number) v))
 
-;; Bus events that ask the TUI to do something. Built-in commands
-;; (/new, /reload) emit these instead of importing the TUI module.
-(api.on :reset-conversation
-        (fn [_] (M.reset-conversation!)))
-(api.on :reinit-presenter
-        (fn [_]
-          (M.init!)
-          (paint.invalidate-full!)))
-(api.on :redraw
-        (fn [_] (paint.invalidate-full!)))
-(api.on :model-catalog-updated
-        (fn [_]
-          ;; Dynamic model discovery may finish while the input bytes/cursor are
-          ;; unchanged. Bypass the snapshot guard and rebuild inline choices.
-          (completion.invalidate!)
-          (completion.refresh! (or state.presenter-ctx {}))
-          (paint.invalidate-full!)))
-;; Stronger than :redraw — re-asserts terminal modes and blank-presents to
-;; recover from external corruption. Driven by ctrl-l and the /redraw command.
-(api.on :hard-refresh
-        (fn [_] (M.hard-refresh!)))
-;; Ctrl-Z job-control suspend. Synchronous: the emit blocks here (process
-;; stopped) until fg/SIGCONT, then suspend! re-inits and repaints before return.
-(api.on :suspend
-        (fn [_] (M.suspend!)))
-(api.on :set-status-info
-        (fn [ev] (M.set-status-info (or ev.info {}))))
-(api.on :set-thinking-blocks
-        (fn [ev]
-          (let [visible? (not= ev.visible? false)]
-            (set state.hide-thinking-block? (not visible?))
-            (paint.invalidate-full!))))
-(api.on :dismiss
-        (fn [_]
-          (input.clear-hint!)
-          (when (completion.active?)
-            (completion.dismiss!)
-            (paint.invalidate!))))
-;; Contextual suggestions from extensions land in the empty-input placeholder, never the transcript.
-(api.on :hint
-        (fn [ev] (input.show-hint! ev)))
+  (fn workspace-usage-total [usage]
+    (when usage
+      (or (numeric (. usage :total-tokens))
+          (and (or (numeric usage.input) (numeric usage.output))
+               (+ (or (numeric usage.input) 0) (or (numeric usage.output) 0))))))
 
-;; First-party status blocks. These use the same :status kind third-party
-;; extensions will use; paint.fnl composes them at draw time.
-(fn active-agent-workspace []
-  (let [(ok? ws) (pcall workspaces.active)]
-    (when (and ok? (workspaces.agent? ws)
-               (not= ws.kind :main-session))
-      ws)))
-
-(fn numeric [v]
-  (and (= (type v) :number) v))
-
-(fn workspace-usage-total [usage]
-  (when usage
-    (or (numeric (. usage :total-tokens))
-        (and (or (numeric usage.input) (numeric usage.output))
-             (+ (or (numeric usage.input) 0)
-                (or (numeric usage.output) 0))))))
-
-(api.register :status
-              {:name :model
-               :side :left
-               :order 10
-               :render (fn [_ctx]
-                         (let [ws (active-agent-workspace)]
-                           (if ws
-                               {:text (.. (or ws.provider "?") ":"
-                                          (tostring (or ws.model "?")))
-                                :style :status}
-                               (let [s state.status-info]
-                                 {:text (.. (or s.provider "?") ":" (tostring (or s.model "?")))
-                                  :style :status}))))})
-
-(api.register :status
-              {:name :thinking
-               :side :left
-               :order 15
-               :render (fn [_ctx]
-                         (when state.status-info.thinking-status
-                           {:text (tostring state.status-info.thinking-status)
-                            :style :status}))})
-
-(api.register :status
-              {:name :context
-               :side :left
-               :order 20
-               :render (fn [_ctx]
-                         (let [ws (active-agent-workspace)]
-                           (if ws
-                               (let [total (workspace-usage-total ws.usage)]
-                                 {:text (.. "tok:"
-                                            (if total
-                                                (tokens.fmt-tokens total)
-                                                "?"))
-                                  :style :status})
-                               (let [s state.status-info]
-                                 {:text (.. "ctx:"
-                                           (if (= s.context-estimated? false) "" "~")
-                                           (tokens.fmt-tokens (or s.approx-context s.last-input)))
-                                  :style :status}))))})
-
-(api.register :status
-              {:name :steering-queue
-               :side :left
-               :order 30
-               :render (fn [_ctx]
-                         (let [n (or state.status-info.steering-queued 0)]
-                           (when (> n 0)
-                             {:text (.. "steer:" (tostring n))
-                              :style :status})))})
-
-(api.register :status
-              {:name :follow-up-queue
-               :side :left
-               :order 40
-               :render (fn [_ctx]
-                         (let [n (or state.status-info.follow-up-queued 0)]
-                           (when (> n 0)
-                             {:text (.. "follow:" (tostring n))
-                              :style :status})))})
-
-(api.register :status
-              {:name :attention
-               :side :left
-               :order 50
-               :render (fn [_ctx]
-                         (let [text (if state.pending-quit? "ctrl-c again to quit"
-                                        state.status-info.cancelling? "cancelling…"
-                                        "")]
-                           (when (not= text "")
-                             {:text text :style :status})))})
-
-;; Right side: the status row lays out right items first, so the recovery key
-;; survives narrow terminals and long model/context labels on the left.
-(api.register :status
-              {:name :scroll
-               :side :right
-               :order 60
-               :render (fn [_ctx]
-                         (when (> state.scroll-offset 0)
-                           {:text (.. "↑" (tostring state.scroll-offset)
-                                      (if state.new-content-below?
-                                          " ↓new · ctrl-y"
-                                          " · ctrl-y bottom"))
-                            :style :status}))})
-
-;; Transient copy feedback after a mouse-selection OSC 52 copy. Shows for a
-;; few seconds then clears itself so it doesn't pin the status line.
-(local COPY-STATUS-TTL-SECONDS 4)
-(api.register :status
-              {:name :copy
-               :side :left
-               :order 70
-               :render (fn [_ctx]
-                         (let [cs state.copy-status]
-                           (when cs
-                             (if (> (- (os.time) (or cs.at-seconds 0)) COPY-STATUS-TTL-SECONDS)
-                                 (do (set state.copy-status nil) nil)
-                                 (let [text (if cs.ok?
-                                                (.. "copied " (tostring (or cs.bytes 0)) "B")
-                                                (= cs.reason :too-large)
-                                                "copy: too large"
-                                                (= cs.reason :write-error)
-                                                "copy failed"
-                                                "")]
-                                   (when (not= text "")
-                                     {:text text :style :status}))))))})
-
-(api.register :status
-              {:name :errors
-               :side :right
-               :order 90
-               :render (fn [_ctx]
-                         (when (and (not (errors-panel.visible?))
-                                    (errors-panel.has-errors?))
-                           {:text "err:/errors"
-                            :style :error}))})
-
-(api.register :status
-              {:name :version
-               :side :right
-               :order 100
-               :render (fn [_ctx]
-                         (when (and STATUS-VERSION (not= STATUS-VERSION ""))
-                           {:text STATUS-VERSION
-                            :style :status}))})
-
-;; First-party panels. Busy row is the only one in v1; lives above input
-;; with order 10 (closest to the input box). Collapses to height 0 when
-;; idle so the row goes back to the transcript.
-;; @doc register-site:panel:errors
-;; summary: TUI error introspection panel showing recent error summaries and traceback details.
-;; tags: panel tui errors
-(api.register :panel (errors-panel.spec))
-(api.register :panel (tabs-panel.spec))
-;; @doc register-site:panel:busy
-;; summary: TUI busy-state panel showing spinner, retry information, current turn elapsed time, and the next ctrl-c action.
-;; tags: panel tui status
-(api.register :panel (busy-panel.spec))
-;; @doc register-site:panel:completion
-;; summary: TUI inline slash-command/argument completion menu, filter-as-you-type above the input line.
-;; tags: panel tui completion
-(api.register :panel (completion.panel-spec))
-
-;; Presenter slot: marks the TUI as the active presenter, supplies the
-;; generic lifecycle methods `core.extensions` dispatches, and exposes a
-;; ui table the api.ui slot delegates to. notify lands as a dim :info
-;; line in the transcript; prompt/select are presenter-specific and not
-;; yet wired (the TUI input is always a multi-line full-screen field,
-;; not an inline modal).
-(api.register :presenter
-              {:name :tui
-               :active? true
-               ;; The TUI run loop calls on-tick while idle, so detached
-               ;; background subagent jobs are pumped and reaped here.
-               :idle-ticks? true
-               :init (fn [_ctx] (M.init!))
-               :shutdown (fn [_ctx] (M.shutdown))
-               :run (fn [ctx]
-                      ;; Keep the presenter ctx available to input-time completers without widening input's dispatch signature.
-                      (set state.presenter-ctx ctx)
-                      (M.run ctx.on-submit ctx.on-tick
-                             ctx.request-cancel ctx.is-busy?
-                             ctx.get-turn))
-               :ui {:notify (fn [text _opts]
-                              (workspaces.with-main!
-                                #(ingest.append-event
-                                   {:type :info :text (tostring text)})))
-                    :prompt (fn [_opts] nil)
-                    :select (fn [opts] (select-mod.tui-select opts))}})
-
-(api.register :control
-              {:name :next-workspace
-               :keys ["alt-right"]
-               :order 2
-               :description "Switch to the next presenter tab"})
-
-(api.register :control
-              {:name :previous-workspace
-               :keys ["alt-left"]
-               :order 3
-               :description "Switch to the previous presenter tab"})
-
-(api.register :control
-              {:name :list-workspaces
-               :keys ["alt-t"]
-               :order 4
-               :description "Open the tab list and switch with the modal selector"})
-
-(api.register :control
-              {:name :jump-to-user-message
-               :keys ["ctrl-g"]
-               :order 5
-               :description "Jump to the latest user message; repeat for previous messages"})
-
-(api.register :control
-              {:name :jump-to-live-bottom
-               :keys ["ctrl-y"]
-               :order 6
-               :description "Jump to the live bottom and resume following transcript output"})
-
-(api.register :control
-              {:name :toggle-tool-results
-               :keys ["ctrl-o"]
-               :order 10
-               :description "Toggle tool-result bodies"})
-
-(api.register :control
-              {:name :toggle-thinking-blocks
-               :keys ["ctrl-t"]
-               :order 20
-               :description "Toggle thinking blocks"})
-
-(api.register :control
-              {:name :quit
-               :keys ["ctrl-c" "ctrl-d"]
-               :order 30
-               :description "Quit; ctrl-c also clears input or cancels a busy turn"})
-
-(api.register :control
-              {:name :hard-refresh
-               :keys ["ctrl-l"]
-               :order 40
-               :description "Redraw the screen / recover from terminal corruption"})
-
-(api.register :control
-              {:name :suspend
-               :keys ["ctrl-z"]
-               :order 50
-               :description "Suspend to the shell (resume with fg)"})
-
-(api.register :command
-              {:name :btw
-               :order 5
-               :usage "/btw [initial message]"
-               :description "Open or focus an ephemeral read-only side-agent chat"
-               :handler (fn [args run-state]
-                          (side-chat.open! run-state args))})
-
-(api.register :command
-              {:name :btw-use
-               :order 6
-               :usage "/btw-use"
-               :description "Copy the btw agent's last reply into the main input draft"
-               :handler (fn [args _run-state]
-                          (if (string.find (or args "") "%S")
-                              (workspaces.append-active!
-                                {:type :error :error "usage: /btw-use"})
-                              (let [(ok? err) (side-chat.use-last!)]
-                                (when (not ok?)
-                                  (workspaces.append-active!
-                                    {:type :error :error err})))))})
-
-(api.register :command
-              {:name :expand
-               :order 10
-               :description "Toggle full vs collapsed tool-result bodies"
-               :handler (fn [args _state]
-                          (let [arg (first-arg args)
-                                new-val (if (= arg :on) true
-                                            (= arg :off) false
-                                            (not state.expand-tool-results?))]
-                            (set state.expand-tool-results? new-val)
-                            (state.api.emit
-                              {:type :info
-                               :text (.. "tool results: "
-                                         (if new-val "expanded" "collapsed"))})
-                            (paint.invalidate-full!)))})
-
-(api.register :command
-              {:name :markdown
-               :order 20
-               :description "Toggle Markdown rendering of assistant text"
-               :handler (fn [args _state]
-                          (let [arg (first-arg args)
-                                new-val (if (= arg :on) true
-                                            (= arg :off) false
-                                            (not state.markdown?))]
-                            (set state.markdown? new-val)
-                            (state.api.emit
-                              {:type :info
-                               :text (.. "markdown rendering: "
-                                         (if new-val "on" "off"))})
-                            (paint.invalidate-full!)))})
-
-(api.register :command
-              {:name :animations
-               :order 25
-               :description "Toggle TUI busy animations"
-               :handler (fn [args _state]
-                          (let [arg (first-arg args)
-                                new-val (if (= arg :on) true
-                                            (= arg :off) false
-                                            (not state.animations?))]
-                            (set state.animations? new-val)
-                            (set state.spinner-ticks 0)
-                            (state.api.emit
-                              {:type :info
-                               :text (.. "animations: "
-                                         (if new-val "on" "off"))})
-                            (paint.invalidate!)))})
-
-(api.register :command
-              {:name :thinking-blocks
-               :order 30
-               :description "Show or hide assistant thinking blocks"
-               :handler (fn [args _state]
-                          (let [arg (first-arg args)
-                                ;; User-facing wording is visibility; state stores hiding.
-                                visible? (if (= arg :on) true
-                                             (= arg :off) false
-                                             state.hide-thinking-block?)
-                                hide? (not visible?)]
-                            (set state.hide-thinking-block? hide?)
-                            (state.api.emit
-                              {:type :info
-                               :text (.. "thinking blocks: "
-                                         (if hide? "hidden" "visible"))})
-                            (paint.invalidate-full!)))})
-
-(api.register :command
-              {:name :errors
-               :order 35
-               :description "Toggle recent error details / tracebacks"
-               :handler (fn [args _state]
-                          (let [arg (first-arg args)]
-                            (if (= arg :clear)
-                                (do (errors-panel.clear-transcript-errors!)
-                                    (state.api.emit {:type :info :text "errors: cleared"})
+  (api.register :status
+                {:name :model
+                 :side :left
+                 :order 10
+                 :render (fn [_ctx]
+                           (let [ws (active-agent-workspace)]
+                             (if ws
+                                 {:text (.. (or ws.provider "?") ":"
+                                            (tostring (or ws.model "?")))
+                                  :style :status}
+                                 (let [s state.status-info]
+                                   {:text (.. (or s.provider "?") ":"
+                                              (tostring (or s.model "?")))
+                                    :style :status}))))})
+  (api.register :status
+                {:name :thinking
+                 :side :left
+                 :order 15
+                 :render (fn [_ctx]
+                           (when state.status-info.thinking-status
+                             {:text (tostring state.status-info.thinking-status)
+                              :style :status}))})
+  (api.register :status
+                {:name :context
+                 :side :left
+                 :order 20
+                 :render (fn [_ctx]
+                           (let [ws (active-agent-workspace)]
+                             (if ws
+                                 (let [total (workspace-usage-total ws.usage)]
+                                   {:text (.. "tok:"
+                                              (if total
+                                                  (tokens.fmt-tokens total)
+                                                  "?"))
+                                    :style :status})
+                                 (let [s state.status-info]
+                                   {:text (.. "ctx:"
+                                              (if (= s.context-estimated? false)
+                                                  ""
+                                                  "~")
+                                              (tokens.fmt-tokens (or s.approx-context
+                                                                     s.last-input)))
+                                    :style :status}))))})
+  (api.register :status
+                {:name :steering-queue
+                 :side :left
+                 :order 30
+                 :render (fn [_ctx]
+                           (let [n (or state.status-info.steering-queued 0)]
+                             (when (> n 0)
+                               {:text (.. "steer:" (tostring n))
+                                :style :status})))})
+  (api.register :status
+                {:name :follow-up-queue
+                 :side :left
+                 :order 40
+                 :render (fn [_ctx]
+                           (let [n (or state.status-info.follow-up-queued 0)]
+                             (when (> n 0)
+                               {:text (.. "follow:" (tostring n))
+                                :style :status})))})
+  (api.register :status
+                {:name :attention
+                 :side :left
+                 :order 50
+                 :render (fn [_ctx]
+                           (let [text (if state.pending-quit?
+                                          "ctrl-c again to quit"
+                                          state.status-info.cancelling?
+                                          "cancelling…"
+                                          "")]
+                             (when (not= text "")
+                               {:text text :style :status})))})
+  ;; Right side: the status row lays out right items first, so the recovery key
+  ;; survives narrow terminals and long model/context labels on the left.
+  (api.register :status
+                {:name :scroll
+                 :side :right
+                 :order 60
+                 :render (fn [_ctx]
+                           (when (> state.scroll-offset 0)
+                             {:text (.. "↑" (tostring state.scroll-offset)
+                                        (if state.new-content-below?
+                                            " ↓new · ctrl-y"
+                                            " · ctrl-y bottom"))
+                              :style :status}))})
+  ;; Transient copy feedback after a mouse-selection OSC 52 copy. Shows for a
+  ;; few seconds then clears itself so it doesn't pin the status line.
+  (local COPY-STATUS-TTL-SECONDS 4)
+  (api.register :status
+                {:name :copy
+                 :side :left
+                 :order 70
+                 :render (fn [_ctx]
+                           (let [cs state.copy-status]
+                             (when cs
+                               (if (> (- (os.time) (or cs.at-seconds 0))
+                                      COPY-STATUS-TTL-SECONDS)
+                                   (do
+                                     (set state.copy-status nil)
+                                     nil)
+                                   (let [text (if cs.ok?
+                                                  (.. "copied "
+                                                      (tostring (or cs.bytes 0))
+                                                      "B")
+                                                  (= cs.reason :too-large)
+                                                  "copy: too large"
+                                                  (= cs.reason :write-error)
+                                                  "copy failed"
+                                                  "")]
+                                     (when (not= text "")
+                                       {:text text :style :status}))))))})
+  (api.register :status
+                {:name :errors
+                 :side :right
+                 :order 90
+                 :render (fn [_ctx]
+                           (when (and (not (errors-panel.visible?))
+                                      (errors-panel.has-errors?))
+                             {:text "err:/errors" :style :error}))})
+  (api.register :status
+                {:name :version
+                 :side :right
+                 :order 100
+                 :render (fn [_ctx]
+                           (when (and STATUS-VERSION (not= STATUS-VERSION ""))
+                             {:text STATUS-VERSION :style :status}))})
+  ;; First-party panels. Busy row is the only one in v1; lives above input
+  ;; with order 10 (closest to the input box). Collapses to height 0 when
+  ;; idle so the row goes back to the transcript.
+  ;; @doc register-site:panel:errors
+  ;; summary: TUI error introspection panel showing recent error summaries and traceback details.
+  ;; tags: panel tui errors
+  (api.register :panel (errors-panel.spec))
+  (api.register :panel (tabs-panel.spec))
+  ;; @doc register-site:panel:busy
+  ;; summary: TUI busy-state panel showing spinner, retry information, current turn elapsed time, and the next ctrl-c action.
+  ;; tags: panel tui status
+  (api.register :panel (busy-panel.spec))
+  ;; @doc register-site:panel:completion
+  ;; summary: TUI inline slash-command/argument completion menu, filter-as-you-type above the input line.
+  ;; tags: panel tui completion
+  (api.register :panel (completion.panel-spec))
+  ;; Presenter slot: marks the TUI as the active presenter, supplies the
+  ;; generic lifecycle methods `core.extensions` dispatches, and exposes a
+  ;; ui table the api.ui slot delegates to. notify lands as a dim :info
+  ;; line in the transcript; prompt/select are presenter-specific and not
+  ;; yet wired (the TUI input is always a multi-line full-screen field,
+  ;; not an inline modal).
+  (api.register :presenter
+                {:name :tui
+                 :active? true
+                 ;; The TUI run loop calls on-tick while idle, so detached
+                 ;; background subagent jobs are pumped and reaped here.
+                 :idle-ticks? true
+                 :init (fn [_ctx] (M.init!))
+                 :shutdown (fn [_ctx] (M.shutdown))
+                 :run (fn [ctx]
+                        ;; Keep the presenter ctx available to input-time completers without widening input's dispatch signature.
+                        (set state.presenter-ctx ctx)
+                        (M.run ctx.on-submit ctx.on-tick ctx.request-cancel
+                               ctx.is-busy? ctx.get-turn))
+                 :ui {:notify (fn [text _opts]
+                                (workspaces.with-main! #(ingest.append-event {:type :info
+                                                                              :text (tostring text)})))
+                      :prompt (fn [_opts] nil)
+                      :select (fn [opts] (select-mod.tui-select opts))}})
+  (api.register :control
+                {:name :next-workspace
+                 :keys ["alt-right"]
+                 :order 2
+                 :description "Switch to the next presenter tab"})
+  (api.register :control
+                {:name :previous-workspace
+                 :keys ["alt-left"]
+                 :order 3
+                 :description "Switch to the previous presenter tab"})
+  (api.register :control
+                {:name :list-workspaces
+                 :keys ["alt-t"]
+                 :order 4
+                 :description "Open the tab list and switch with the modal selector"})
+  (api.register :control
+                {:name :jump-to-user-message
+                 :keys ["ctrl-g"]
+                 :order 5
+                 :description "Jump to the latest user message; repeat for previous messages"})
+  (api.register :control
+                {:name :jump-to-live-bottom
+                 :keys ["ctrl-y"]
+                 :order 6
+                 :description "Jump to the live bottom and resume following transcript output"})
+  (api.register :control
+                {:name :toggle-tool-results
+                 :keys ["ctrl-o"]
+                 :order 10
+                 :description "Toggle tool-result bodies"})
+  (api.register :control
+                {:name :toggle-thinking-blocks
+                 :keys ["ctrl-t"]
+                 :order 20
+                 :description "Toggle thinking blocks"})
+  (api.register :control
+                {:name :quit
+                 :keys ["ctrl-c" "ctrl-d"]
+                 :order 30
+                 :description "Quit; ctrl-c also clears input or cancels a busy turn"})
+  (api.register :control
+                {:name :hard-refresh
+                 :keys ["ctrl-l"]
+                 :order 40
+                 :description "Redraw the screen / recover from terminal corruption"})
+  (api.register :control
+                {:name :suspend
+                 :keys ["ctrl-z"]
+                 :order 50
+                 :description "Suspend to the shell (resume with fg)"})
+  (api.register :command
+                {:name :btw
+                 :order 5
+                 :usage "/btw [initial message]"
+                 :description "Open or focus an ephemeral read-only side-agent chat"
+                 :handler (fn [args run-state]
+                            (side-chat.open! run-state args))})
+  (api.register :command
+                {:name :btw-use
+                 :order 6
+                 :usage "/btw-use"
+                 :description "Copy the btw agent's last reply into the main input draft"
+                 :handler (fn [args _run-state]
+                            (if (string.find (or args "") "%S")
+                                (workspaces.append-active! {:type :error
+                                                            :error "usage: /btw-use"})
+                                (let [(ok? err) (side-chat.use-last!)]
+                                  (when (not ok?)
+                                    (workspaces.append-active! {:type :error
+                                                                :error err})))))})
+  (api.register :command
+                {:name :expand
+                 :order 10
+                 :description "Toggle full vs collapsed tool-result bodies"
+                 :handler (fn [args _state]
+                            (let [arg (first-arg args)
+                                  new-val (if (= arg :on) true
+                                              (= arg :off) false
+                                              (not state.expand-tool-results?))]
+                              (set state.expand-tool-results? new-val)
+                              (state.api.emit {:type :info
+                                               :text (.. "tool results: "
+                                                         (if new-val "expanded"
+                                                             "collapsed"))})
+                              (paint.invalidate-full!)))})
+  (api.register :command
+                {:name :markdown
+                 :order 20
+                 :description "Toggle Markdown rendering of assistant text"
+                 :handler (fn [args _state]
+                            (let [arg (first-arg args)
+                                  new-val (if (= arg :on) true
+                                              (= arg :off) false
+                                              (not state.markdown?))]
+                              (set state.markdown? new-val)
+                              (state.api.emit {:type :info
+                                               :text (.. "markdown rendering: "
+                                                         (if new-val "on" "off"))})
+                              (paint.invalidate-full!)))})
+  (api.register :command
+                {:name :animations
+                 :order 25
+                 :description "Toggle TUI busy animations"
+                 :handler (fn [args _state]
+                            (let [arg (first-arg args)
+                                  new-val (if (= arg :on) true
+                                              (= arg :off) false
+                                              (not state.animations?))]
+                              (set state.animations? new-val)
+                              (set state.spinner-ticks 0)
+                              (state.api.emit {:type :info
+                                               :text (.. "animations: "
+                                                         (if new-val "on" "off"))})
+                              (paint.invalidate!)))})
+  (api.register :command
+                {:name :thinking-blocks
+                 :order 30
+                 :description "Show or hide assistant thinking blocks"
+                 :handler (fn [args _state]
+                            (let [arg (first-arg args)
+                                  ;; User-facing wording is visibility; state stores hiding.
+                                  visible? (if (= arg :on) true
+                                               (= arg :off) false
+                                               state.hide-thinking-block?)
+                                  hide? (not visible?)]
+                              (set state.hide-thinking-block? hide?)
+                              (state.api.emit {:type :info
+                                               :text (.. "thinking blocks: "
+                                                         (if hide? "hidden"
+                                                             "visible"))})
+                              (paint.invalidate-full!)))})
+  (api.register :command
+                {:name :errors
+                 :order 35
+                 :description "Toggle recent error details / tracebacks"
+                 :handler (fn [args _state]
+                            (let [arg (first-arg args)]
+                              (if (= arg :clear)
+                                  (do
+                                    (errors-panel.clear-transcript-errors!)
+                                    (state.api.emit {:type :info
+                                                     :text "errors: cleared"})
                                     (paint.invalidate-full!))
-                                (let [visible? (errors-panel.toggle!
-                                                 (if (= arg :on) true
-                                                     (= arg :off) false
-                                                     nil))]
-                                  (state.api.emit
-                                    {:type :info
-                                     :text (.. "errors panel: "
-                                               (if visible? "on" "off"))})
-                                  (paint.invalidate-full!)))))})
-
-(api.register :command
-              {:name :redraw
-               :order 40
-               :description "Force a full terminal repaint to recover from corruption"
-               :handler (fn [_args _state]
-                          (state.api.emit {:type :hard-refresh}))})
-
-(api.register :introspect
-              {:name :runtime
-               :description "Current TUI presenter state summary without transcript or input contents"
-               :snapshot (fn [_]
-                           (let [s state.status-info]
-                             {:tb-initialized? state.tb-initialized?
-                              :tb-init-failed? state.tb-init-failed?
-                              :dimensions {:cols state.tb-cols :rows state.tb-rows}
-                              :dirty? state.dirty?
-                              :force-redraw? state.force-redraw?
-                              :animations? state.animations?
-                              :mouse-enabled? (M.mouse-enabled?)
-                              :workspace-count (length (workspaces.list))
-                              :active-workspace-id state.active-workspace-id
-                              :selection-active? (not= state.selection nil)
-                              :transcript-count (length (or state.transcript []))
-                              :streaming-row-count (table-count state.streaming-assistant-rows)
-                              :scroll-offset state.scroll-offset
-                              :input-bytes (length (or state.input-buf ""))
-                              :input-cursor state.input-cursor
-                              :paste-active? state.paste-active?
-                              :paste-count (table-count state.pastes)
-                              :history-count (length (or state.history []))
-                              :history-pos state.history-pos
-                              :expand-tool-results? state.expand-tool-results?
-                              :markdown? state.markdown?
-                              :hide-thinking-block? state.hide-thinking-block?
-                              :pending-quit? state.pending-quit?
-                              :alt-pending? state.alt-pending?
-                              :cancel-pressed? state.cancel-pressed?
-                              :error-panel-visible? state.error-panel-visible?
-                              :status {:provider s.provider
-                                       :model s.model
-                                       :thinking-status s.thinking-status
-                                       :last-input s.last-input
-                                       :approx-context s.approx-context
-                                       :context-estimated? s.context-estimated?
-                                       :context-source s.context-source
-                                       :steering-queued s.steering-queued
-                                       :follow-up-queued s.follow-up-queued
-                                       :running-label s.running-label
-                                       :retrying? s.retrying?
-                                       :thinking? s.thinking?
-                                       :cancelling? s.cancelling?
-                                       :turn-active? (> (or s.turn-start 0) 0)}}))})
-
+                                  (let [visible? (errors-panel.toggle! (if (= arg
+                                                                              :on)
+                                                                           true
+                                                                           (= arg
+                                                                              :off)
+                                                                           false
+                                                                           nil))]
+                                    (state.api.emit {:type :info
+                                                     :text (.. "errors panel: "
+                                                               (if visible?
+                                                                   "on"
+                                                                   "off"))})
+                                    (paint.invalidate-full!)))))})
+  (api.register :command
+                {:name :redraw
+                 :order 40
+                 :description "Force a full terminal repaint to recover from corruption"
+                 :handler (fn [_args _state]
+                            (state.api.emit {:type :hard-refresh}))})
+  (api.register :introspect
+                {:name :runtime
+                 :description "Current TUI presenter state summary without transcript or input contents"
+                 :snapshot (fn [_]
+                             (let [s state.status-info]
+                               {:tb-initialized? state.tb-initialized?
+                                :tb-init-failed? state.tb-init-failed?
+                                :dimensions {:cols state.tb-cols
+                                             :rows state.tb-rows}
+                                :dirty? state.dirty?
+                                :force-redraw? state.force-redraw?
+                                :animations? state.animations?
+                                :mouse-enabled? (M.mouse-enabled?)
+                                :workspace-count (length (workspaces.list))
+                                :active-workspace-id state.active-workspace-id
+                                :selection-active? (not= state.selection nil)
+                                :transcript-count (length (or state.transcript
+                                                              []))
+                                :streaming-row-count (table-count state.streaming-assistant-rows)
+                                :scroll-offset state.scroll-offset
+                                :input-bytes (length (or state.input-buf ""))
+                                :input-cursor state.input-cursor
+                                :paste-active? state.paste-active?
+                                :paste-count (table-count state.pastes)
+                                :history-count (length (or state.history []))
+                                :history-pos state.history-pos
+                                :expand-tool-results? state.expand-tool-results?
+                                :markdown? state.markdown?
+                                :hide-thinking-block? state.hide-thinking-block?
+                                :pending-quit? state.pending-quit?
+                                :alt-pending? state.alt-pending?
+                                :cancel-pressed? state.cancel-pressed?
+                                :error-panel-visible? state.error-panel-visible?
+                                :status {:provider s.provider
+                                         :model s.model
+                                         :thinking-status s.thinking-status
+                                         :last-input s.last-input
+                                         :approx-context s.approx-context
+                                         :context-estimated? s.context-estimated?
+                                         :context-source s.context-source
+                                         :steering-queued s.steering-queued
+                                         :follow-up-queued s.follow-up-queued
+                                         :running-label s.running-label
+                                         :retrying? s.retrying?
+                                         :thinking? s.thinking?
+                                         :cancelling? s.cancelling?
+                                         :turn-active? (> (or s.turn-start 0) 0)}}))})
   true)
 
 M

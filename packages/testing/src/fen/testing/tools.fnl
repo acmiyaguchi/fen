@@ -32,26 +32,18 @@
                                  :id "test-call"
                                  :name name
                                  :arguments args}
-                                ?ctx
-                                yield-fn)]
+                                ?ctx yield-fn)]
     out.result))
 
-(local M
-  {: h
-   : read-file
-   : first-text
-   : execute
-   : execute-coop})
+(local M {: h : read-file : first-text : execute : execute-coop})
 
-(setmetatable M
-  {:__index
-   (fn [_ k]
-     (case k
-       :tools (require-core-tools)
-       :builtin-tools (require-builtin-tools)
-       :registry (. (require-builtin-tools) :registry)
-       :types (require-types)
-       :json (require-json)
-       _ nil))})
+(setmetatable M {:__index (fn [_ k]
+                            (case k
+                              :tools (require-core-tools)
+                              :builtin-tools (require-builtin-tools)
+                              :registry (. (require-builtin-tools) :registry)
+                              :types (require-types)
+                              :json (require-json)
+                              _ nil))})
 
 M

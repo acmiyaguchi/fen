@@ -6,15 +6,24 @@
 
 (local M {})
 
-(local KINDS {:commands :commands :command :commands
-              :tools :tools :tool :tools
-              :providers :providers :provider :providers
-              :models :models :model :models
-              :presenters :presenters :presenter :presenters
-              :session-backends :session-backends :session-backend :session-backends
-              :extensions :extensions :extension :extensions
-              :skills :skills :skill :skills
-              :agents :agents :agent :agents})
+(local KINDS {:commands :commands
+              :command :commands
+              :tools :tools
+              :tool :tools
+              :providers :providers
+              :provider :providers
+              :models :models
+              :model :models
+              :presenters :presenters
+              :presenter :presenters
+              :session-backends :session-backends
+              :session-backend :session-backends
+              :extensions :extensions
+              :extension :extensions
+              :skills :skills
+              :skill :skills
+              :agents :agents
+              :agent :agents})
 
 (fn canonical-kind [kind]
   (. KINDS kind))
@@ -44,8 +53,9 @@
                 out))))))
 
 (fn provider-records [opts]
-  (models.inspect-providers {} {:provider (?. opts :provider)
-                                :check? (?. opts :check?)}))
+  (models.inspect-providers {}
+                            {:provider (?. opts :provider)
+                             :check? (?. opts :check?)}))
 
 (fn model-records [opts]
   "Return one merged, canonical-id-sorted catalog row per runnable model.
@@ -54,9 +64,10 @@
    catalog-status per row (falling back to static/default metadata when the
    fetch fails)."
   (let [out []]
-    (each [_ provider (ipairs
-                        (models.inspect-providers
-                          {} {:provider (?. opts :provider) :catalog? true}))]
+    (each [_ provider (ipairs (models.inspect-providers {}
+                                                        {:provider (?. opts
+                                                                       :provider)
+                                                         :catalog? true}))]
       (when provider.available?
         (each [_ model (ipairs provider.models)]
           (table.insert out
@@ -67,15 +78,16 @@
                          :default? model.default?
                          :source model.source
                          :catalog-status provider.catalog.status}))))
-    (table.sort out (fn [a b]
-                      (< (tostring a.canonical-id)
-                         (tostring b.canonical-id))))
+    (table.sort out
+                (fn [a b]
+                  (< (tostring a.canonical-id) (tostring b.canonical-id))))
     out))
 
 (fn records [requested-kind opts]
   (let [kind (canonical-kind requested-kind)]
     (if (not kind)
-        (values nil (.. "unknown discovery surface: " (tostring requested-kind)))
+        (values nil
+                (.. "unknown discovery surface: " (tostring requested-kind)))
         (= kind :skills)
         (let [skill-mod (require :fen.extensions.skills)
               skills (skill-mod.discover (or (?. opts :extra-skill-paths) []))]
@@ -117,22 +129,32 @@
                 (if (= (length matches) 1)
                     (. matches 1)
                     (> (length matches) 1)
-                    (values nil (.. "ambiguous " (tostring kind) " entry: " wanted
-                                    " (use a canonical provider/id or --provider)"))
+                    (values nil
+                            (.. "ambiguous " (tostring kind) " entry: " wanted
+                                " (use a canonical provider/id or --provider)"))
                     nil)))))))
 
 (local SURFACE-SUMMARIES
-  {:commands "Registered slash commands."
-   :tools "Agent tools available to a run."
-   :providers "Registered LLM providers and secret-free availability metadata."
-   :models "Runnable models from providers with available auth; may fetch dynamic catalogs."
-   :presenters "Registered interactive presenters."
-   :session-backends "Registered session persistence backends."
-   :extensions "Loaded and discovered extensions."
-   :skills "Discovered Agent Skills."
-   :agents "Discovered subagent definitions."})
+       {:commands "Registered slash commands."
+        :tools "Agent tools available to a run."
+        :providers "Registered LLM providers and secret-free availability metadata."
+        :models "Runnable models from providers with available auth; may fetch dynamic catalogs."
+        :presenters "Registered interactive presenters."
+        :session-backends "Registered session persistence backends."
+        :extensions "Loaded and discovered extensions."
+        :skills "Discovered Agent Skills."
+        :agents "Discovered subagent definitions."})
 
-(fn M.kinds [] [:commands :tools :providers :models :presenters :session-backends :extensions :skills :agents])
+(fn M.kinds []
+  [:commands
+   :tools
+   :providers
+   :models
+   :presenters
+   :session-backends
+   :extensions
+   :skills
+   :agents])
 
 (fn M.surfaces []
   (icollect [_ kind (ipairs (M.kinds))]
@@ -145,15 +167,22 @@
                       (if payload.entry [payload.entry] []))
             lines []]
         (each [_ item (ipairs items)]
-          (table.insert lines (.. (tostring (or item.canonical-id item.name item.id "(unnamed)"))
-                                  (if item.description (.. "\t" item.description) "")
-                                  (if item.owner (.. "\towner=" (tostring item.owner)) "")
+          (table.insert lines (.. (tostring (or item.canonical-id item.name
+                                                item.id "(unnamed)"))
+                                  (if item.description
+                                      (.. "\t" item.description)
+                                      "")
+                                  (if item.owner
+                                      (.. "\towner=" (tostring item.owner))
+                                      "")
                                   (if item.connectivity
                                       (.. "\tconnectivity="
                                           (tostring item.connectivity.status)
                                           (if (and item.connectivity.reason
-                                                   (not= item.connectivity.reason json.null))
-                                              (.. " reason=" (tostring item.connectivity.reason))
+                                                   (not= item.connectivity.reason
+                                                         json.null))
+                                              (.. " reason="
+                                                  (tostring item.connectivity.reason))
                                               ""))
                                       ""))))
         (if (> (length lines) 0) (table.concat lines "\n") "(none)"))))

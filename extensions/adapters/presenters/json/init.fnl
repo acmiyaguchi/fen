@@ -17,13 +17,14 @@
   (let [(ok? encoded) (pcall json.encode blob)]
     (if ok?
         encoded
-        (do (set blob.messages nil)
-            (tset blob :messages-error "messages omitted: not JSON-encodable")
-            (let [(ok2? encoded2) (pcall json.encode blob)]
-              (if ok2?
-                  encoded2
-                  (json.encode {:final-text (tostring (?. blob :final-text))
-                                :error "result not JSON-encodable"})))))))
+        (do
+          (set blob.messages nil)
+          (tset blob :messages-error "messages omitted: not JSON-encodable")
+          (let [(ok2? encoded2) (pcall json.encode blob)]
+            (if ok2?
+                encoded2
+                (json.encode {:final-text (tostring (?. blob :final-text))
+                              :error "result not JSON-encodable"})))))))
 
 (fn output-path [state]
   "Resolve where the result blob is written: an explicit opts override (used in
@@ -36,11 +37,18 @@
   (if path
       (let [(f err) (io.open path :w)]
         (if f
-            (do (f:write text) (f:write "\n") (f:close) true)
-            (do (io.stderr:write (.. "json presenter: cannot write "
-                                     path ": " (tostring err) "\n"))
-                false)))
-      (do (print text) true)))
+            (do
+              (f:write text)
+              (f:write "\n")
+              (f:close)
+              true)
+            (do
+              (io.stderr:write (.. "json presenter: cannot write " path ": "
+                                   (tostring err) "\n"))
+              false)))
+      (do
+        (print text)
+        true)))
 
 ;; @doc fen.extensions.json.run
 ;; kind: function
@@ -52,7 +60,8 @@
         prompt (or (?. state :opts :print) ctx.prompt)]
     (when (not prompt)
       (error "json presenter requires a prompt"))
-    (let [(ok? result) (xpcall #(agent-mod.step state.agent prompt) debug.traceback)]
+    (let [(ok? result) (xpcall #(agent-mod.step state.agent prompt)
+                               debug.traceback)]
       (turn-lifecycle.emit-complete! state ok? result)
       (let [agent state.agent
             messages (or (?. agent :messages) [])

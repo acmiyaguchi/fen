@@ -29,7 +29,9 @@
       (p:close))))
 
 (each-line "find packages -path '*/src' -type d | sort"
-           (fn [dir] (set fennel.path (.. dir "/?.fnl;" dir "/?/init.fnl;" fennel.path))))
+           (fn [dir]
+             (set fennel.path (.. dir "/?.fnl;" dir "/?/init.fnl;" fennel.path))))
+
 (each-line "find packages extensions -path '*/dist' -type d | sort"
            (fn [dir] (set package.cpath (.. dir "/?.so;" package.cpath))))
 
@@ -42,11 +44,14 @@
 ;; follow-up that sends the agent to read core and describe the design. Set
 ;; FEN_HERO_PROMPT to record a single-turn take instead.
 (local PROMPTS
-  (if (os.getenv :FEN_HERO_PROMPT)
-      [(os.getenv :FEN_HERO_PROMPT)]
-      ["read the README and tell me about fen"
-       "now read the core module and describe its high-level design"]))
-(local CAST (or (os.getenv :FEN_HERO_CAST) "docs/assets/casts/what-is-fen.cast"))
+       (if (os.getenv :FEN_HERO_PROMPT)
+           [(os.getenv :FEN_HERO_PROMPT)]
+           ["read the README and tell me about fen"
+            "now read the core module and describe its high-level design"]))
+
+(local CAST
+       (or (os.getenv :FEN_HERO_CAST) "docs/assets/casts/what-is-fen.cast"))
+
 ;; fen's TUI pins the input row to the terminal bottom, so a height taller than
 ;; the content leaves dead space between the answer and the prompt — the demo
 ;; then renders as a mostly-empty box. Keep rows near the content height (the
@@ -56,9 +61,15 @@
 (local ROWS (tonumber (or (os.getenv :FEN_HERO_ROWS) 20)))
 
 ;; Timing budget for the live turn (wall-clock seconds).
-(local FIRST-TOKEN-S 90)   ; how long to wait for the first response byte
-(local QUIET-S 4)          ; stop once the stream has been silent this long
-(local MAX-S 240)          ; hard cap on the whole turn
+(local FIRST-TOKEN-S 90)
+
+; how long to wait for the first response byte
+(local QUIET-S 4)
+
+; stop once the stream has been silent this long
+(local MAX-S 240)
+
+; hard cap on the whole turn
 
 (fn die [msg] (io.stderr:write (.. "record-hero-cast: " msg "\n")) (os.exit 1))
 
@@ -87,7 +98,11 @@
   (set bytes-read (+ bytes-read (length chunk)))
   (pty.cast-event CAST (- (pty.now) started) "o" chunk))
 
-(local child (assert (pty.spawn {:argv argv :cwd "." :env env :cols COLS :rows ROWS})))
+(local child (assert (pty.spawn {:argv argv
+                                 :cwd "."
+                                 :env env
+                                 :cols COLS
+                                 :rows ROWS})))
 
 (fn write-input [bytes]
   (pty.cast-event CAST (- (pty.now) started) "i" bytes)
@@ -95,11 +110,13 @@
 
 ;; Wait for first paint so the prompt lands in a ready TUI.
 (let [(out captured) (pty.read-until child "ctrl-d to quit" 8000
-                       {:on-chunk on-chunk})]
+                                     {:on-chunk on-chunk})]
   (when (not out)
-    (child:kill) (child:close)
+    (child:kill)
+    (child:close)
     (die (.. "fen did not reach first paint; got "
-             (tostring (length (or captured ""))) " bytes (check FEN_BIN/provider)"))))
+             (tostring (length (or captured "")))
+             " bytes (check FEN_BIN/provider)"))))
 
 ;; Record one live turn: poll in short drains, return once the stream has been
 ;; quiet for QUIET-S after producing output (or give up if no first token).
@@ -112,15 +129,19 @@
       (let [chunk (pty.drain child 500 {:on-chunk on-chunk})
             now (pty.now)]
         (if (not= chunk "")
-            (do (set seen (+ seen (length chunk))) (set last-data now))
+            (do
+              (set seen (+ seen (length chunk)))
+              (set last-data now))
             (and (> seen 0) (>= (- now last-data) QUIET-S))
             (set done? true)
             (and (= seen 0) (>= (- now turn-start) FIRST-TOKEN-S))
-            (do (io.stderr:write "record-hero-cast: WARNING no response (timeout)\n")
-                (set done? true))
+            (do
+              (io.stderr:write "record-hero-cast: WARNING no response (timeout)\n")
+              (set done? true))
             (>= (- now turn-start) MAX-S)
-            (do (io.stderr:write "record-hero-cast: WARNING hit max turn time\n")
-                (set done? true)))))))
+            (do
+              (io.stderr:write "record-hero-cast: WARNING hit max turn time\n")
+              (set done? true)))))))
 
 (each [_ prompt (ipairs PROMPTS)]
   (io.stderr:write (.. "record-hero-cast: typing prompt: " prompt "\n"))
@@ -136,5 +157,5 @@
   (when (not status) (child:kill))
   (child:close))
 
-(io.stderr:write (.. "record-hero-cast: wrote " CAST " ("
-                     (tostring bytes-read) " bytes captured)\n"))
+(io.stderr:write (.. "record-hero-cast: wrote " CAST " (" (tostring bytes-read)
+                     " bytes captured)\n"))

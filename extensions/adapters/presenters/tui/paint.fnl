@@ -31,18 +31,17 @@
 
 ;; ---------- color presets ----------
 
-(local C
-  {:user      (bor tb.CYAN tb.BOLD)
-   :assistant tb.GREEN
-   :tool      tb.YELLOW
-   :err       (bor tb.RED tb.BOLD)
-   :dim       (bor tb.WHITE tb.DIM)
-   :status-fg (bor tb.WHITE tb.REVERSE)
-   :status-bg tb.DEFAULT
-   :prompt    (bor tb.CYAN tb.BOLD)
-   :selection (bor tb.WHITE tb.REVERSE)
-   :selection-bg tb.DEFAULT
-   :normal    tb.DEFAULT})
+(local C {:user (bor tb.CYAN tb.BOLD)
+          :assistant tb.GREEN
+          :tool tb.YELLOW
+          :err (bor tb.RED tb.BOLD)
+          :dim (bor tb.WHITE tb.DIM)
+          :status-fg (bor tb.WHITE tb.REVERSE)
+          :status-bg tb.DEFAULT
+          :prompt (bor tb.CYAN tb.BOLD)
+          :selection (bor tb.WHITE tb.REVERSE)
+          :selection-bg tb.DEFAULT
+          :normal tb.DEFAULT})
 
 ;; ---------- defensive state init ----------
 ;;
@@ -96,9 +95,11 @@
       (let [remaining (- budget used)
             take (math.max 0 (math.min p.height remaining))]
         (when (> take 0)
-          (table.insert slots
-                        {:name p.name :y0 y :y1 (+ y take -1)
-                         :height take :render p.render})
+          (table.insert slots {:name p.name
+                               :y0 y
+                               :y1 (+ y take -1)
+                               :height take
+                               :render p.render})
           (set y (+ y take))
           (set used (+ used take)))))
     (values slots used)))
@@ -114,9 +115,11 @@
       (let [remaining (- budget used)
             take (math.max 0 (math.min p.height remaining))]
         (when (> take 0)
-          (table.insert slots
-                        {:name p.name :y0 (- bottom take -1) :y1 bottom
-                         :height take :render p.render})
+          (table.insert slots {:name p.name
+                               :y0 (- bottom take -1)
+                               :y1 bottom
+                               :height take
+                               :render p.render})
           (set bottom (- bottom take))
           (set used (+ used take)))))
     (values slots used)))
@@ -145,11 +148,13 @@
                            (. above-slots (length above-slots) :y0)
                            (- h input-h))
         transcript-y1 (- first-above-y0 1)]
-    {: w : h
+    {: w
+     : h
      : status-y
      :below-status-panels below-slots
      :above-input-panels above-slots
-     : transcript-y0 : transcript-y1
+     : transcript-y0
+     : transcript-y1
      :input-y0 (- h input-h)
      :input-y1 (- h 1)
      :transcript-h (math.max 0 (+ 1 (- transcript-y1 transcript-y0)))
@@ -194,9 +199,11 @@
               (when (> remaining 0)
                 (put-clipped x y (or seg.attr row.attr C.normal) (or seg.bg bg)
                              (or seg.text "") remaining)
-                (set x (+ x (math.min remaining
-                                      (or seg.cols
-                                          (md.display-len (or seg.text ""))))))))))
+                (set x
+                     (+ x
+                        (math.min remaining
+                                  (or seg.cols
+                                      (md.display-len (or seg.text ""))))))))))
         (put-clipped 0 y row.attr bg row.text width))))
 
 ;; ---------- panel painting ----------
@@ -259,8 +266,7 @@
   (let [thumb (transcript.scrollbar-thumb w h)]
     (when (and thumb (> w 0))
       (for [i 0 (- thumb.height 1)]
-        (put-clipped (- w 1) (+ y0 thumb.top i)
-                     C.dim C.normal "▐" 1)))))
+        (put-clipped (- w 1) (+ y0 thumb.top i) C.dim C.normal "▐" 1)))))
 
 ;; @doc fen.extensions.tui.paint.paint-transcript
 ;; kind: function

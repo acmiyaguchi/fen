@@ -2,8 +2,17 @@
 
 (local M {})
 (local MAX-DEPTH 8)
-(local sensitive-patterns ["auth" "authorization" "bearer" "cookie" "session"
-                           "token" "secret" "password" "api-key" "api_key" "apikey"])
+(local sensitive-patterns ["auth"
+                           "authorization"
+                           "bearer"
+                           "cookie"
+                           "session"
+                           "token"
+                           "secret"
+                           "password"
+                           "api-key"
+                           "api_key"
+                           "apikey"])
 
 (fn M.sensitive-key? [key]
   "Return true when key contains a case-insensitive secret-bearing name."
@@ -21,8 +30,8 @@
 (fn M.scrub-string [value]
   "Redact common credential shapes from an otherwise free-form string."
   (let [without-bearers (string.gsub (tostring value)
-                                      "[Bb][Ee][Aa][Rr][Ee][Rr]%s+[^%s,;]+"
-                                      "Bearer [redacted]")
+                                     "[Bb][Ee][Aa][Rr][Ee][Rr]%s+[^%s,;]+"
+                                     "Bearer [redacted]")
         without-sk (string.gsub without-bearers "sk%-%w+" "[redacted]")]
     (string.gsub without-sk "([%w_%-]+)=([^%s,&;]+)"
                  (fn [key _value]
@@ -34,18 +43,16 @@
   "Return JSON-friendly data while redacting credentials and message bodies."
   (let [depth (or ?depth 0)
         kind (type value)]
-    (if (> depth MAX-DEPTH) "[truncated]"
-        (= kind :string) (M.scrub-string value)
-        (or (= kind :number) (= kind :boolean)) value
-        (= kind :nil) nil
-        (= kind :table)
+    (if (> depth MAX-DEPTH) "[truncated]" (= kind :string)
+        (M.scrub-string value) (or (= kind :number) (= kind :boolean)) value
+        (= kind :nil) nil (= kind :table)
         (let [out {}]
           (each [key child (pairs value)]
             (when (or (= (type key) :string) (= (type key) :number))
-              (tset out key (if (M.sensitive-key? key) "[redacted]"
-                                (content-key? key) "[redacted]"
-                                (M.sanitize child (+ depth 1))))))
-          out)
-        (M.scrub-string (tostring value)))))
+              (tset out key
+                    (if (M.sensitive-key? key) "[redacted]"
+                        (content-key? key) "[redacted]"
+                        (M.sanitize child (+ depth 1))))))
+          out) (M.scrub-string (tostring value)))))
 
 M

@@ -87,8 +87,9 @@
 
 (fn relative-to [target base]
   (if (= target base) ""
-      (= (string.sub target 1 (+ (length base) 1)) (.. base "/"))
-      (string.sub target (+ (length base) 2))
+      (= (string.sub target 1 (+ (length base) 1)) (.. base "/")) (string.sub target
+                                                                              (+ (length base)
+                                                                                 2))
       nil))
 
 (fn lua-pattern-escape [c]
@@ -103,16 +104,20 @@
       (let [c (string.sub glob i i)
             n (string.sub glob (+ i 1) (+ i 1))]
         (if (and (= c "*") (= n "*"))
-            (do (table.insert out ".*")
-                (set i (+ i 2)))
+            (do
+              (table.insert out ".*")
+              (set i (+ i 2)))
             (= c "*")
-            (do (table.insert out "[^/]*")
-                (set i (+ i 1)))
+            (do
+              (table.insert out "[^/]*")
+              (set i (+ i 1)))
             (= c "?")
-            (do (table.insert out "[^/]")
-                (set i (+ i 1)))
-            (do (table.insert out (lua-pattern-escape c))
-                (set i (+ i 1))))))
+            (do
+              (table.insert out "[^/]")
+              (set i (+ i 1)))
+            (do
+              (table.insert out (lua-pattern-escape c))
+              (set i (+ i 1))))))
     (.. "^" (table.concat out "") "$")))
 
 (fn glob-match? [s glob]
@@ -127,10 +132,8 @@
 
 (fn rule-matches? [rule target is-dir?]
   (let [rel (relative-to target rule.base-dir)]
-    (if (or (not rel) (= rel ""))
-        false
-        (and rule.dir-only? (not is-dir?))
-        false
+    (if (or (not rel) (= rel "")) false
+        (and rule.dir-only? (not is-dir?)) false
         (if (and (not rule.anchored?) (not rule.has-slash?))
             (component-matches? rel rule.pattern)
             (or (glob-match? rel rule.pattern)

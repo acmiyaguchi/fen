@@ -17,57 +17,57 @@
   found?)
 
 (describe "tui stories registry"
-  (fn []
-    (it "lists story names and descriptions"
-      (fn []
-        (let [listed (stories.list)]
-          (assert.is_true (>= (length listed) 6))
-          (assert.is_true (has-name? :idle-empty))
-          (assert.is_true (has-name? :busy-tool))
-          (assert.is_true (has-name? :slash-completion))
-          (assert.is_true (has-name? :scrolled-transcript))
-          (assert.is_true (has-name? :errors-panel))
-          (assert.is_true (has-name? :narrow-status))
-          (each [_ story (ipairs listed)]
-            (assert.are.equal :string (type story.description))
-            (assert.is_true (> (length story.description) 0))))))
-
-    (it "finds stories by keyword or string name"
-      (fn []
-        (assert.are.equal :busy-tool (. (stories.find :busy-tool) :name))
-        (assert.are.equal :busy-tool (. (stories.find "busy-tool") :name))
-        (assert.is_nil (stories.find :missing-story))))
-
-    (it "errors for unknown setup names"
-      (fn []
-        (let [(ok? err) (pcall stories.setup! :missing-story)]
-          (assert.is_false ok?)
-          (assert.is_not_nil (string.find (tostring err) "unknown TUI story" 1 true)))))))
+          (fn []
+            (it "lists story names and descriptions"
+                (fn []
+                  (let [listed (stories.list)]
+                    (assert.is_true (>= (length listed) 6))
+                    (assert.is_true (has-name? :idle-empty))
+                    (assert.is_true (has-name? :busy-tool))
+                    (assert.is_true (has-name? :slash-completion))
+                    (assert.is_true (has-name? :scrolled-transcript))
+                    (assert.is_true (has-name? :errors-panel))
+                    (assert.is_true (has-name? :narrow-status))
+                    (each [_ story (ipairs listed)]
+                      (assert.are.equal :string (type story.description))
+                      (assert.is_true (> (length story.description) 0))))))
+            (it "finds stories by keyword or string name"
+                (fn []
+                  (assert.are.equal :busy-tool
+                                    (. (stories.find :busy-tool) :name))
+                  (assert.are.equal :busy-tool
+                                    (. (stories.find "busy-tool") :name))
+                  (assert.is_nil (stories.find :missing-story))))
+            (it "errors for unknown setup names"
+                (fn []
+                  (let [(ok? err) (pcall stories.setup! :missing-story)]
+                    (assert.is_false ok?)
+                    (assert.is_not_nil (string.find (tostring err)
+                                                    "unknown TUI story" 1 true)))))))
 
 (describe "tui story setup"
-  (fn []
-    (it "resets state before seeding each story"
-      (fn []
-        (stories.setup! :busy-tool)
-        (assert.are.equal "$ make test" state.status-info.running-label)
-        (stories.setup! :idle-empty)
-        (assert.are.equal "" state.input-buf)
-        (assert.are.equal 0 (length state.transcript))
-        (assert.is_nil state.status-info.running-label)
-        (assert.is_false state.error-panel-visible?)
-        (assert.is_false state.completion.active?)))
-
-    (it "seeds the idle empty-input story"
-      (fn []
-        (stories.setup! :idle-empty)
-        (assert.are.equal 80 state.tb-cols)
-        (assert.are.equal 24 state.tb-rows)
-        (assert.are.equal "" state.input-buf)
-        (assert.are.equal 0 state.input-cursor)
-        (assert.are.equal 0 (length state.transcript))))
-
-    (it "allows caller dimension overrides"
-      (fn []
-        (stories.setup! :narrow-status {:cols 44 :rows 13})
-        (assert.are.equal 44 state.tb-cols)
-        (assert.are.equal 13 state.tb-rows)))))
+          (fn []
+            (it "resets state before seeding each story"
+                (fn []
+                  (stories.setup! :busy-tool)
+                  (assert.are.equal "$ make test"
+                                    state.status-info.running-label)
+                  (stories.setup! :idle-empty)
+                  (assert.are.equal "" state.input-buf)
+                  (assert.are.equal 0 (length state.transcript))
+                  (assert.is_nil state.status-info.running-label)
+                  (assert.is_false state.error-panel-visible?)
+                  (assert.is_false state.completion.active?)))
+            (it "seeds the idle empty-input story"
+                (fn []
+                  (stories.setup! :idle-empty)
+                  (assert.are.equal 80 state.tb-cols)
+                  (assert.are.equal 24 state.tb-rows)
+                  (assert.are.equal "" state.input-buf)
+                  (assert.are.equal 0 state.input-cursor)
+                  (assert.are.equal 0 (length state.transcript))))
+            (it "allows caller dimension overrides"
+                (fn []
+                  (stories.setup! :narrow-status {:cols 44 :rows 13})
+                  (assert.are.equal 44 state.tb-cols)
+                  (assert.are.equal 13 state.tb-rows)))))

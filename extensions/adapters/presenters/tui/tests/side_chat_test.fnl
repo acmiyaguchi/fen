@@ -23,13 +23,12 @@
 (fn fake-step [agent prompt _cancel]
   (table.insert agent.messages {:role :user :content prompt})
   (agent.on-event {:type :message-appended
-                   :agent agent :index (length agent.messages)
+                   :agent agent
+                   :index (length agent.messages)
                    :message (. agent.messages (length agent.messages))})
-  (agent.on-event {:type :assistant-text-delta
-                   :content-index 1 :delta "side "})
+  (agent.on-event {:type :assistant-text-delta :content-index 1 :delta "side "})
   (coroutine.yield)
-  (agent.on-event {:type :assistant-text-delta
-                   :content-index 1 :delta "reply"})
+  (agent.on-event {:type :assistant-text-delta :content-index 1 :delta "reply"})
   (let [reply {:role :assistant
                :content [{:type :text :text "side reply"}]
                :stop-reason :stop
@@ -37,7 +36,8 @@
     (table.insert agent.messages reply)
     (agent.on-event {:type :llm-end :usage reply.usage})
     (agent.on-event {:type :message-appended
-                     :agent agent :index (length agent.messages)
+                     :agent agent
+                     :index (length agent.messages)
                      :message reply})
     (agent.on-event {:type :assistant-stream-end :final? true}))
   "side reply")
@@ -80,306 +80,326 @@
   (side-chat.tick!))
 
 (describe "tui side chat"
-  (fn []
-    (before_each reset!)
-    (after_each (fn [] (set agent-mod.step original-step)))
-
-    (it "/btw creates the singleton tab with blank context and allowlisted tools"
-      (fn []
-        (let [ws (side-chat.open! runtime "first question")
-              caps (workspaces.capabilities-for ws)]
-          (assert.are.equal :btw ws.id)
-          (assert.are.equal :side-chat ws.kind)
-          (assert.are.equal "btw" ws.title)
-          (assert.are.equal :ephemeral-side-chat ws.source.kind)
-          (assert.are.equal :btw state.active-workspace-id)
-          (assert.are.equal "btw> " (input.input-prompt))
-          (assert.is_true caps.edit)
-          (assert.is_true caps.input)
-          (assert.is_false caps.submit)
-          (assert.is_false caps.steer)
-          (assert.are.equal "read,grep,find,ls" captured-opts.tools)
-          (assert.is_nil captured-opts.denied-tools)
-          (assert.is_false captured-opts.no-tools?)
-          (assert.are.same {} captured-opts.active-tool-names)
-          (assert.are.equal :mock ws.provider)
-          (assert.are.equal "same-model" ws.model)
-          (assert.is_nil ws.side.agent)
-          (assert.is_nil ws.side.runtime)
-          (assert.is_nil ws.side.turn)
-          (assert.is_nil ws.agent)
-          ;; The private agent appends its first user message only when the cooperative tick advances the turn.
-          (assert.are.equal 0 (length ws.side.history))
-          (side-chat.tick!)
-          (assert.are.equal 1 (length ws.side.history))
-          (assert.are.equal "first question" (. ws.side.history 1 :content))
-          (assert.are.equal 1 (length runtime.agent.messages))
-          (assert.are.equal "private parent context"
-                            (. runtime.agent.messages 1 :content)))))
-
-    (it "intersects a parent --tools allowlist with the read-only set"
-      (fn []
-        (let [rt (make-runtime {:tools "read,bash"})]
-          (side-chat.open! rt nil)
-          (assert.are.equal "read" captured-opts.tools)
-          (assert.is_false captured-opts.no-tools?)
-          (assert.is_nil captured-opts.denied-tools))))
-
-    (it "subtracts a parent --denied-tools list from the read-only set"
-      (fn []
-        (let [rt (make-runtime {:denied-tools "read"})]
-          (side-chat.open! rt nil)
-          (assert.are.equal "grep,find,ls" captured-opts.tools)
-          (assert.is_false captured-opts.no-tools?)
-          (assert.is_nil captured-opts.denied-tools))))
-
-    (it "gives a --no-tools parent a tool-less side chat"
-      (fn []
-        (let [rt (make-runtime {:no-tools? true})]
-          (side-chat.open! rt nil)
-          (assert.is_nil captured-opts.tools)
-          (assert.is_true captured-opts.no-tools?)
-          (assert.is_nil captured-opts.denied-tools))))
-
-    (it "runs tool-less when the parent allowlist excludes every read-only tool"
-      (fn []
-        (let [rt (make-runtime {:tools "bash,write"})]
-          (side-chat.open! rt nil)
-          (assert.is_nil captured-opts.tools)
-          (assert.is_true captured-opts.no-tools?)
-          (assert.is_nil captured-opts.denied-tools))))
-
-    (it "drops hosted web search from a tool-less side chat"
-      (fn []
-        ;; Keeping it would fail the side agent build on the --no-tools/--web-search conflict.
-        (let [rt (make-runtime {:tools "bash,write" :web-search "live"})]
-          (side-chat.open! rt nil)
-          (assert.is_true captured-opts.no-tools?)
-          (assert.is_nil captured-opts.web-search)
-          (assert.is_nil (tool-policy.conflict-error captured-opts)))))
-
-    (it "keeps the parent's hosted web search mode alongside read-only tools"
-      (fn []
-        (let [rt (make-runtime {:web-search "live"})]
-          (side-chat.open! rt nil)
-          (assert.are.equal "read,grep,find,ls" captured-opts.tools)
-          (assert.are.equal "live" captured-opts.web-search))))
-
-    (it "/btw dispatch creates and then focuses the existing tab"
-      (fn []
-        (command-registry.dispatch "/btw" runtime)
-        (let [first (workspaces.find :btw)]
-          (assert.is_truthy first)
-          (workspaces.activate! :main-session)
-          (command-registry.dispatch "/btw" runtime)
-          (let [second (workspaces.find :btw)]
-            (assert.is_true (rawequal first second))
-            (assert.are.equal 2 (length (workspaces.list)))
-            (assert.are.equal :btw state.active-workspace-id)))))
-
-    (it "routes input and streamed transcript only to the side conversation"
-      (fn []
-        (let [ws (side-chat.open! runtime nil)
-              main (workspaces.find :main-session)]
-          (set state.input-buf "side question")
-          (set state.input-cursor (length state.input-buf))
-          (var parent-submits 0)
-          (input.handle-key {:key tb.KEY_ENTER :ch 0 :mod 0}
-                            (fn [_] (set parent-submits (+ parent-submits 1)))
-                            nil (fn [] false))
-          (assert.are.equal 0 parent-submits)
-          (assert.are.equal "" state.input-buf)
-          (assert.are.equal :user (. ws.transcript 1 :type))
-          (assert.are.equal "side question" (. ws.transcript 1 :text))
-          (finish-side-turn!)
-          (assert.are.equal :idle ws.status)
-          (assert.is_true (. (workspaces.capabilities-for ws) :submit))
-          (assert.are.equal 2 (length ws.transcript))
-          (assert.are.equal :assistant-text (. ws.transcript 2 :type))
-          (assert.are.equal "side reply"
-                            (transcript.event-text (. ws.transcript 2)))
-          (assert.are.equal 9 ws.usage.total-tokens)
-          (assert.are.equal 1 (length main.transcript))
-          (assert.are.equal "main untouched" (. main.transcript 1 :text))
-          (assert.are.equal 1 (length runtime.agent.messages)))))
-
-    (it "/btw-use fills the main draft without submitting or changing focus"
-      (fn []
-        (let [ws (side-chat.open! runtime "question")]
-          (finish-side-turn!)
-          (assert.are.equal :btw state.active-workspace-id)
-          (var parent-submits 0)
-          (set state.input-buf "/btw-use")
-          (set state.input-cursor (length state.input-buf))
-          (input.handle-key
-            {:key tb.KEY_ENTER :ch 0 :mod 0}
-            (fn [line]
-              (if (= (string.sub line 1 1) "/")
-                  (command-registry.dispatch line runtime)
-                  (set parent-submits (+ parent-submits 1))))
-            nil (fn [] false))
-          (assert.are.equal 0 parent-submits)
-          (assert.are.equal :btw state.active-workspace-id)
-          (assert.are.equal "" state.input-buf)
-          (workspaces.activate! :main-session)
-          (assert.are.equal "side reply" state.input-buf)
-          (assert.are.equal (length "side reply") state.input-cursor)
-          (assert.are.equal 1 (length state.transcript))
-          (assert.are.equal "main untouched" (. state.transcript 1 :text))
-          (assert.is_truthy ws))))
-
-    (it "resolves the current interactive submitter after a module reload"
-      (fn []
-        (let [ws (side-chat.open! runtime nil)
-              old-interactive (. package.loaded :fen.interactive)
-              marker {:line nil}
-              replacement {:submit-agent-turn!
-                           (fn [turn-state line opts emit]
-                             (set marker.line line)
-                             (turn-submit.submit! turn-state line {}
-                                                   agent-mod.step emit))}]
-          (tset package.loaded :fen.interactive replacement)
-          (let [result (side-chat.submit! ws "new-module turn")]
-            (assert.is_true result.ok)
-            (assert.are.equal "new-module turn" marker.line))
-          (finish-side-turn!)
-          (tset package.loaded :fen.interactive old-interactive)
-          (assert.are.equal "new-module turn"
-                            (. ws.side.history 1 :content)))))
-
-    (it "retries a failed side-agent construction instead of keeping a dead tab"
-      (fn []
-        (var can-construct? false)
-        (set runtime.make-agent-from-opts
-             (fn [opts on-event _extra]
-               (if (not can-construct?)
-                   (error "invalid api key")
-                   (do
-                     (set captured-opts opts)
-                     {:provider-name opts.provider
-                      :model opts.model
-                      :messages []
-                      :on-event on-event}))))
-        (let [ws (side-chat.open! runtime nil)]
-          (assert.are.equal :error ws.status)
-          (assert.is_nil (. ws.side :agent))
-          (set can-construct? true)
-          (let [same (side-chat.open! runtime "retry now")]
-            (assert.is_true (rawequal ws same))
-            (assert.is_true ws.side.busy?)
-            (finish-side-turn!)
-            (assert.are.equal :idle ws.status)
-            (assert.are.equal "retry now" (. ws.side.history 1 :content))))))
-
-    (it "drains a cancelled coroutine that needs more than two resumes"
-      (fn []
-        (var cancelled-co nil)
-        (set agent-mod.step
-             (fn [agent prompt _cancel]
-               (set cancelled-co (coroutine.running))
-               (table.insert agent.messages {:role :user :content prompt})
-               (for [_ 1 12] (coroutine.yield))
-               "never returned"))
-        (let [ws (side-chat.open! runtime "long turn")]
-          (side-chat.tick!)
-          (assert.are.equal :suspended (coroutine.status cancelled-co))
-          (side-chat.cancel! ws)
-          ;; Close has a bounded immediate drain, so cleanup can park without blocking the presenter.
-          (assert.are.equal :suspended (coroutine.status cancelled-co))
-          (for [_ 1 3] (side-chat.tick!))
-          (assert.are.equal :dead (coroutine.status cancelled-co))
-          (assert.is_nil ws.side))))
-
-    (it "preserves data-only conversation history across multiple turns"
-      (fn []
-        (let [ws (side-chat.open! runtime "first")]
-          (finish-side-turn!)
-          (let [result (side-chat.submit! ws "second")]
-            (assert.is_true result.ok))
-          (finish-side-turn!)
-          (assert.are.equal 4 (length ws.side.history))
-          (assert.are.equal "first" (. ws.side.history 1 :content))
-          (assert.are.equal "second" (. ws.side.history 3 :content)))))
-
-    (it "registers both side-chat commands idempotently"
-      (fn []
-        (var btw 0)
-        (var use 0)
-        (each [_ command (ipairs (command-registry.list))]
-          (when (= command.name :btw) (set btw (+ btw 1)))
-          (when (= command.name :btw-use) (set use (+ use 1))))
-        (assert.are.equal 1 btw)
-        (assert.are.equal 1 use)
-        (tui.register (test-api.make-runtime-api :tui))
-        (set btw 0)
-        (set use 0)
-        (each [_ command (ipairs (command-registry.list))]
-          (when (= command.name :btw) (set btw (+ btw 1)))
-          (when (= command.name :btw-use) (set use (+ use 1))))
-        (assert.are.equal 1 btw)
-        (assert.are.equal 1 use)))
-
-    (it "ctrl-c cancels a busy side turn without arming quit"
-      (fn []
-        (let [ws (side-chat.open! runtime "question")]
-          (side-chat.tick!)
-          (var main-cancellations 0)
-          (assert.is_false
-            (input.handle-key {:key tb.KEY_CTRL_C :ch 0 :mod 0}
-                              nil
-                              (fn [] (set main-cancellations (+ main-cancellations 1)))
-                              (fn [] false)))
-          (assert.is_true ws.side.cancel-requested?)
-          (assert.is_true ws.side.busy?)
-          (assert.are.equal 0 main-cancellations)
-          (assert.is_false state.pending-quit?)
-          (assert.is_false state.cancel-pressed?))))
-
-    (it "does not exit on double ctrl-c during a busy side turn"
-      (fn []
-        (let [ws (side-chat.open! runtime "question")]
-          (side-chat.tick!)
-          (assert.is_false
-            (input.handle-key {:key tb.KEY_CTRL_C :ch 0 :mod 0}
-                              nil nil (fn [] false)))
-          (assert.is_false
-            (input.handle-key {:key tb.KEY_CTRL_C :ch 0 :mod 0}
-                              nil nil (fn [] false)))
-          (assert.is_true ws.side.cancel-requested?)
-          (assert.is_false state.pending-quit?)
-          (assert.are.equal :btw state.active-workspace-id))))
-
-    (it "ctrl-w cancels and discards all side state"
-      (fn []
-        (let [ws (side-chat.open! runtime "question")]
-          (side-chat.tick!)
-          (assert.is_true ws.side.busy?)
-          (input.handle-key {:key tb.KEY_CTRL_W :ch 0 :mod 0}
-                            nil nil (fn [] false))
-          (assert.are.equal :main-session state.active-workspace-id)
-          (assert.are.equal 1 (length (workspaces.list)))
-          (assert.is_nil (workspaces.find :btw))
-          (assert.is_nil ws.side)
-          (assert.is_nil ws.agent)
-          (assert.are.equal 1 (length runtime.agent.messages)))))
-
-    (it "keeps workspace conversation state across behavior reloads"
-      (fn []
-        (let [ws (side-chat.open! runtime nil)
-              old-workspaces (. package.loaded :fen.extensions.tui.workspaces)
-              old-side (. package.loaded :fen.extensions.tui.side_chat)]
-          (set state.input-buf "reload-safe side draft")
-          (set state.input-cursor (length state.input-buf))
-          (workspaces.capture-active!)
-          (tset package.loaded :fen.extensions.tui.workspaces nil)
-          (tset package.loaded :fen.extensions.tui.side_chat nil)
-          (let [reloaded-workspaces (require :fen.extensions.tui.workspaces)
-                reloaded-side (require :fen.extensions.tui.side_chat)
-                found (reloaded-workspaces.find :btw)]
-            (assert.is_true (rawequal ws found))
-            (assert.is_true (rawequal ws.side.history found.side.history))
-            (assert.are.equal "reload-safe side draft" found.input-buf)
-            (reloaded-side.open! runtime nil)
-            (assert.are.equal "reload-safe side draft" state.input-buf))
-          (tset package.loaded :fen.extensions.tui.workspaces old-workspaces)
-          (tset package.loaded :fen.extensions.tui.side_chat old-side))))))
+          (fn []
+            (before_each reset!)
+            (after_each (fn [] (set agent-mod.step original-step)))
+            (it "/btw creates the singleton tab with blank context and allowlisted tools"
+                (fn []
+                  (let [ws (side-chat.open! runtime "first question")
+                        caps (workspaces.capabilities-for ws)]
+                    (assert.are.equal :btw ws.id)
+                    (assert.are.equal :side-chat ws.kind)
+                    (assert.are.equal "btw" ws.title)
+                    (assert.are.equal :ephemeral-side-chat ws.source.kind)
+                    (assert.are.equal :btw state.active-workspace-id)
+                    (assert.are.equal "btw> " (input.input-prompt))
+                    (assert.is_true caps.edit)
+                    (assert.is_true caps.input)
+                    (assert.is_false caps.submit)
+                    (assert.is_false caps.steer)
+                    (assert.are.equal "read,grep,find,ls" captured-opts.tools)
+                    (assert.is_nil captured-opts.denied-tools)
+                    (assert.is_false captured-opts.no-tools?)
+                    (assert.are.same {} captured-opts.active-tool-names)
+                    (assert.are.equal :mock ws.provider)
+                    (assert.are.equal "same-model" ws.model)
+                    (assert.is_nil ws.side.agent)
+                    (assert.is_nil ws.side.runtime)
+                    (assert.is_nil ws.side.turn)
+                    (assert.is_nil ws.agent)
+                    ;; The private agent appends its first user message only when the cooperative tick advances the turn.
+                    (assert.are.equal 0 (length ws.side.history))
+                    (side-chat.tick!)
+                    (assert.are.equal 1 (length ws.side.history))
+                    (assert.are.equal "first question"
+                                      (. ws.side.history 1 :content))
+                    (assert.are.equal 1 (length runtime.agent.messages))
+                    (assert.are.equal "private parent context"
+                                      (. runtime.agent.messages 1 :content)))))
+            (it "intersects a parent --tools allowlist with the read-only set"
+                (fn []
+                  (let [rt (make-runtime {:tools "read,bash"})]
+                    (side-chat.open! rt nil)
+                    (assert.are.equal "read" captured-opts.tools)
+                    (assert.is_false captured-opts.no-tools?)
+                    (assert.is_nil captured-opts.denied-tools))))
+            (it "subtracts a parent --denied-tools list from the read-only set"
+                (fn []
+                  (let [rt (make-runtime {:denied-tools "read"})]
+                    (side-chat.open! rt nil)
+                    (assert.are.equal "grep,find,ls" captured-opts.tools)
+                    (assert.is_false captured-opts.no-tools?)
+                    (assert.is_nil captured-opts.denied-tools))))
+            (it "gives a --no-tools parent a tool-less side chat"
+                (fn []
+                  (let [rt (make-runtime {:no-tools? true})]
+                    (side-chat.open! rt nil)
+                    (assert.is_nil captured-opts.tools)
+                    (assert.is_true captured-opts.no-tools?)
+                    (assert.is_nil captured-opts.denied-tools))))
+            (it "runs tool-less when the parent allowlist excludes every read-only tool"
+                (fn []
+                  (let [rt (make-runtime {:tools "bash,write"})]
+                    (side-chat.open! rt nil)
+                    (assert.is_nil captured-opts.tools)
+                    (assert.is_true captured-opts.no-tools?)
+                    (assert.is_nil captured-opts.denied-tools))))
+            (it "drops hosted web search from a tool-less side chat"
+                (fn []
+                  ;; Keeping it would fail the side agent build on the --no-tools/--web-search conflict.
+                  (let [rt (make-runtime {:tools "bash,write"
+                                          :web-search "live"})]
+                    (side-chat.open! rt nil)
+                    (assert.is_true captured-opts.no-tools?)
+                    (assert.is_nil captured-opts.web-search)
+                    (assert.is_nil (tool-policy.conflict-error captured-opts)))))
+            (it "keeps the parent's hosted web search mode alongside read-only tools"
+                (fn []
+                  (let [rt (make-runtime {:web-search "live"})]
+                    (side-chat.open! rt nil)
+                    (assert.are.equal "read,grep,find,ls" captured-opts.tools)
+                    (assert.are.equal "live" captured-opts.web-search))))
+            (it "/btw dispatch creates and then focuses the existing tab"
+                (fn []
+                  (command-registry.dispatch "/btw" runtime)
+                  (let [first (workspaces.find :btw)]
+                    (assert.is_truthy first)
+                    (workspaces.activate! :main-session)
+                    (command-registry.dispatch "/btw" runtime)
+                    (let [second (workspaces.find :btw)]
+                      (assert.is_true (rawequal first second))
+                      (assert.are.equal 2 (length (workspaces.list)))
+                      (assert.are.equal :btw state.active-workspace-id)))))
+            (it "routes input and streamed transcript only to the side conversation"
+                (fn []
+                  (let [ws (side-chat.open! runtime nil)
+                        main (workspaces.find :main-session)]
+                    (set state.input-buf "side question")
+                    (set state.input-cursor (length state.input-buf))
+                    (var parent-submits 0)
+                    (input.handle-key {:key tb.KEY_ENTER :ch 0 :mod 0}
+                                      (fn [_]
+                                        (set parent-submits
+                                             (+ parent-submits 1)))
+                                      nil
+                                      (fn []
+                                        false))
+                    (assert.are.equal 0 parent-submits)
+                    (assert.are.equal "" state.input-buf)
+                    (assert.are.equal :user (. ws.transcript 1 :type))
+                    (assert.are.equal "side question" (. ws.transcript 1 :text))
+                    (finish-side-turn!)
+                    (assert.are.equal :idle ws.status)
+                    (assert.is_true (. (workspaces.capabilities-for ws) :submit))
+                    (assert.are.equal 2 (length ws.transcript))
+                    (assert.are.equal :assistant-text (. ws.transcript 2 :type))
+                    (assert.are.equal "side reply"
+                                      (transcript.event-text (. ws.transcript 2)))
+                    (assert.are.equal 9 ws.usage.total-tokens)
+                    (assert.are.equal 1 (length main.transcript))
+                    (assert.are.equal "main untouched"
+                                      (. main.transcript 1 :text))
+                    (assert.are.equal 1 (length runtime.agent.messages)))))
+            (it "/btw-use fills the main draft without submitting or changing focus"
+                (fn []
+                  (let [ws (side-chat.open! runtime "question")]
+                    (finish-side-turn!)
+                    (assert.are.equal :btw state.active-workspace-id)
+                    (var parent-submits 0)
+                    (set state.input-buf "/btw-use")
+                    (set state.input-cursor (length state.input-buf))
+                    (input.handle-key {:key tb.KEY_ENTER :ch 0 :mod 0}
+                                      (fn [line]
+                                        (if (= (string.sub line 1 1) "/")
+                                            (command-registry.dispatch line
+                                                                       runtime)
+                                            (set parent-submits
+                                                 (+ parent-submits 1))))
+                                      nil
+                                      (fn []
+                                        false))
+                    (assert.are.equal 0 parent-submits)
+                    (assert.are.equal :btw state.active-workspace-id)
+                    (assert.are.equal "" state.input-buf)
+                    (workspaces.activate! :main-session)
+                    (assert.are.equal "side reply" state.input-buf)
+                    (assert.are.equal (length "side reply") state.input-cursor)
+                    (assert.are.equal 1 (length state.transcript))
+                    (assert.are.equal "main untouched"
+                                      (. state.transcript 1 :text))
+                    (assert.is_truthy ws))))
+            (it "resolves the current interactive submitter after a module reload"
+                (fn []
+                  (let [ws (side-chat.open! runtime nil)
+                        old-interactive (. package.loaded :fen.interactive)
+                        marker {:line nil}
+                        replacement {:submit-agent-turn! (fn [turn-state
+                                                              line
+                                                              opts
+                                                              emit]
+                                                           (set marker.line
+                                                                line)
+                                                           (turn-submit.submit! turn-state
+                                                                                line
+                                                                                {}
+                                                                                agent-mod.step
+                                                                                emit))}]
+                    (tset package.loaded :fen.interactive replacement)
+                    (let [result (side-chat.submit! ws "new-module turn")]
+                      (assert.is_true result.ok)
+                      (assert.are.equal "new-module turn" marker.line))
+                    (finish-side-turn!)
+                    (tset package.loaded :fen.interactive old-interactive)
+                    (assert.are.equal "new-module turn"
+                                      (. ws.side.history 1 :content)))))
+            (it "retries a failed side-agent construction instead of keeping a dead tab"
+                (fn []
+                  (var can-construct? false)
+                  (set runtime.make-agent-from-opts
+                       (fn [opts on-event _extra]
+                         (if (not can-construct?)
+                             (error "invalid api key")
+                             (do
+                               (set captured-opts opts)
+                               {:provider-name opts.provider
+                                :model opts.model
+                                :messages []
+                                :on-event on-event}))))
+                  (let [ws (side-chat.open! runtime nil)]
+                    (assert.are.equal :error ws.status)
+                    (assert.is_nil (. ws.side :agent))
+                    (set can-construct? true)
+                    (let [same (side-chat.open! runtime "retry now")]
+                      (assert.is_true (rawequal ws same))
+                      (assert.is_true ws.side.busy?)
+                      (finish-side-turn!)
+                      (assert.are.equal :idle ws.status)
+                      (assert.are.equal "retry now"
+                                        (. ws.side.history 1 :content))))))
+            (it "drains a cancelled coroutine that needs more than two resumes"
+                (fn []
+                  (var cancelled-co nil)
+                  (set agent-mod.step
+                       (fn [agent prompt _cancel]
+                         (set cancelled-co (coroutine.running))
+                         (table.insert agent.messages
+                                       {:role :user :content prompt})
+                         (for [_ 1 12] (coroutine.yield))
+                         "never returned"))
+                  (let [ws (side-chat.open! runtime "long turn")]
+                    (side-chat.tick!)
+                    (assert.are.equal :suspended
+                                      (coroutine.status cancelled-co))
+                    (side-chat.cancel! ws)
+                    ;; Close has a bounded immediate drain, so cleanup can park without blocking the presenter.
+                    (assert.are.equal :suspended
+                                      (coroutine.status cancelled-co))
+                    (for [_ 1 3] (side-chat.tick!))
+                    (assert.are.equal :dead (coroutine.status cancelled-co))
+                    (assert.is_nil ws.side))))
+            (it "preserves data-only conversation history across multiple turns"
+                (fn []
+                  (let [ws (side-chat.open! runtime "first")]
+                    (finish-side-turn!)
+                    (let [result (side-chat.submit! ws "second")]
+                      (assert.is_true result.ok))
+                    (finish-side-turn!)
+                    (assert.are.equal 4 (length ws.side.history))
+                    (assert.are.equal "first" (. ws.side.history 1 :content))
+                    (assert.are.equal "second" (. ws.side.history 3 :content)))))
+            (it "registers both side-chat commands idempotently"
+                (fn []
+                  (var btw 0)
+                  (var use 0)
+                  (each [_ command (ipairs (command-registry.list))]
+                    (when (= command.name :btw) (set btw (+ btw 1)))
+                    (when (= command.name :btw-use) (set use (+ use 1))))
+                  (assert.are.equal 1 btw)
+                  (assert.are.equal 1 use)
+                  (tui.register (test-api.make-runtime-api :tui))
+                  (set btw 0)
+                  (set use 0)
+                  (each [_ command (ipairs (command-registry.list))]
+                    (when (= command.name :btw) (set btw (+ btw 1)))
+                    (when (= command.name :btw-use) (set use (+ use 1))))
+                  (assert.are.equal 1 btw)
+                  (assert.are.equal 1 use)))
+            (it "ctrl-c cancels a busy side turn without arming quit"
+                (fn []
+                  (let [ws (side-chat.open! runtime "question")]
+                    (side-chat.tick!)
+                    (var main-cancellations 0)
+                    (assert.is_false (input.handle-key {:key tb.KEY_CTRL_C
+                                                        :ch 0
+                                                        :mod 0}
+                                                       nil
+                                                       (fn []
+                                                         (set main-cancellations
+                                                              (+ main-cancellations
+                                                                 1)))
+                                                       (fn []
+                                                         false)))
+                    (assert.is_true ws.side.cancel-requested?)
+                    (assert.is_true ws.side.busy?)
+                    (assert.are.equal 0 main-cancellations)
+                    (assert.is_false state.pending-quit?)
+                    (assert.is_false state.cancel-pressed?))))
+            (it "does not exit on double ctrl-c during a busy side turn"
+                (fn []
+                  (let [ws (side-chat.open! runtime "question")]
+                    (side-chat.tick!)
+                    (assert.is_false (input.handle-key {:key tb.KEY_CTRL_C
+                                                        :ch 0
+                                                        :mod 0}
+                                                       nil nil
+                                                       (fn []
+                                                         false)))
+                    (assert.is_false (input.handle-key {:key tb.KEY_CTRL_C
+                                                        :ch 0
+                                                        :mod 0}
+                                                       nil nil
+                                                       (fn []
+                                                         false)))
+                    (assert.is_true ws.side.cancel-requested?)
+                    (assert.is_false state.pending-quit?)
+                    (assert.are.equal :btw state.active-workspace-id))))
+            (it "ctrl-w cancels and discards all side state"
+                (fn []
+                  (let [ws (side-chat.open! runtime "question")]
+                    (side-chat.tick!)
+                    (assert.is_true ws.side.busy?)
+                    (input.handle-key {:key tb.KEY_CTRL_W :ch 0 :mod 0} nil nil
+                                      (fn []
+                                        false))
+                    (assert.are.equal :main-session state.active-workspace-id)
+                    (assert.are.equal 1 (length (workspaces.list)))
+                    (assert.is_nil (workspaces.find :btw))
+                    (assert.is_nil ws.side)
+                    (assert.is_nil ws.agent)
+                    (assert.are.equal 1 (length runtime.agent.messages)))))
+            (it "keeps workspace conversation state across behavior reloads"
+                (fn []
+                  (let [ws (side-chat.open! runtime nil)
+                        old-workspaces (. package.loaded
+                                          :fen.extensions.tui.workspaces)
+                        old-side (. package.loaded
+                                    :fen.extensions.tui.side_chat)]
+                    (set state.input-buf "reload-safe side draft")
+                    (set state.input-cursor (length state.input-buf))
+                    (workspaces.capture-active!)
+                    (tset package.loaded :fen.extensions.tui.workspaces nil)
+                    (tset package.loaded :fen.extensions.tui.side_chat nil)
+                    (let [reloaded-workspaces (require :fen.extensions.tui.workspaces)
+                          reloaded-side (require :fen.extensions.tui.side_chat)
+                          found (reloaded-workspaces.find :btw)]
+                      (assert.is_true (rawequal ws found))
+                      (assert.is_true (rawequal ws.side.history
+                                                found.side.history))
+                      (assert.are.equal "reload-safe side draft"
+                                        found.input-buf)
+                      (reloaded-side.open! runtime nil)
+                      (assert.are.equal "reload-safe side draft"
+                                        state.input-buf))
+                    (tset package.loaded :fen.extensions.tui.workspaces
+                          old-workspaces)
+                    (tset package.loaded :fen.extensions.tui.side_chat old-side))))))

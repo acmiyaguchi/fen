@@ -10,7 +10,9 @@
 
 ;; Version text is captured at module load; pin it before require so status placement is deterministic.
 (local saved-version (. package.loaded :fen.version))
-(tset package.loaded :fen.version {:info (fn [] {:version "test" :source "source"})})
+(tset package.loaded :fen.version
+      {:info (fn [] {:version "test" :source "source"})})
+
 (tset package.loaded :fen.extensions.tui nil)
 (local tui (require :fen.extensions.tui))
 (tset package.loaded :fen.version saved-version)
@@ -45,73 +47,68 @@
 (fn assert-golden [name opts expected]
   (let [actual (render-story name opts)]
     (assert.are.same expected actual
-                     (.. "golden mismatch for " (tostring name)
-                         "\nexpected:\n" (view expected)
-                         "\nactual:\n" (view actual)))))
+                     (.. "golden mismatch for " (tostring name) "\nexpected:\n"
+                         (view expected) "\nactual:\n" (view actual)))))
 
 (describe "tui story golden snapshots"
-  (fn []
-    (it "preserves a narrow status bar with right-side build identity"
-      (fn []
-        (assert-golden :narrow-status nil
-                       [" ant ↑4 ↓new · ctrl-y  <build>"
-                        ""
-                        ""
-                        ""
-                        ""
-                        ""
-                        ""
-                        ""
-                        ""
-                        "> / for commands"])))
-
-    (it "renders the slash completion menu above the input"
-      (fn []
-        (assert-golden :slash-completion {:cols 40 :rows 8}
-                       [" ?:?  ctx:~0                   <build>"
-                        ""
-                        ""
-                        "┌─ commands (2)"
-                        "│❯ reload   Reload extensions from sour…"
-                        "│  redraw   Force a full TUI redraw"
-                        "└─ tab/↑↓ move · enter select …"
-                        "> /re"])))
-
-    (it "renders busy tool feedback with the cancel/input row preserved"
-      (fn []
-        (assert-golden :busy-tool {:cols 40 :rows 7}
-                       [" ?:?  ctx:~0                   <build>"
-                        "you> run the focused tests"
-                        "ai>  I'll run the focused test command n"
-                        "ow."
-                        ""
-                        "  ⠋ $ make test · ctrl-c cancel"
-                        "> / for commands"])))
-
-    (it "renders a scrolled transcript with the new-content indicator"
-      (fn []
-        (assert-golden :scrolled-transcript {:cols 56 :rows 8}
-                       [" ?:?  ctx:~0                 ↑6 ↓new · ctrl-y  <build>"
-                        "ai>  response 3"
-                        "you> prompt 4                                          ▐"
-                        "ai>  response 5                                        ▐"
-                        "ai>  response 6"
-                        "you> prompt 7"
-                        "ai>  response 8"
-                        "> type / for commands · /help for keys · ctrl-j newline"])))
-
-    (it "renders the errors panel with traceback summaries"
-      (fn []
-        (assert-golden :errors-panel {:cols 64 :rows 12}
-                       [" ?:?  ctx:~0                                           <build>"
-                        "Errors — /errors to close, /errors clear to remove error rows"
-                        "#1 extension handler failed owner=demo event=turn-complete: hand"
-                        "    stack traceback:"
-                        "      demo/init.fnl:8: bad argument"
-                        "#2 example failure while loading extension"
-                        "    stack traceback:"
-                        "      stories/example.fnl:12: boom"
-                        ""
-                        ""
-                        "extension-error: handler failed"
-                        "> type / for commands · /help for keys · ctrl-j newline"])))))
+          (fn []
+            (it "preserves a narrow status bar with right-side build identity"
+                (fn []
+                  (assert-golden :narrow-status nil
+                                 [" ant ↑4 ↓new · ctrl-y  <build>"
+                                  ""
+                                  ""
+                                  ""
+                                  ""
+                                  ""
+                                  ""
+                                  ""
+                                  ""
+                                  "> / for commands"])))
+            (it "renders the slash completion menu above the input"
+                (fn []
+                  (assert-golden :slash-completion {:cols 40 :rows 8}
+                                 [" ?:?  ctx:~0                   <build>"
+                                  ""
+                                  ""
+                                  "┌─ commands (2)"
+                                  "│❯ reload   Reload extensions from sour…"
+                                  "│  redraw   Force a full TUI redraw"
+                                  "└─ tab/↑↓ move · enter select …"
+                                  "> /re"])))
+            (it "renders busy tool feedback with the cancel/input row preserved"
+                (fn []
+                  (assert-golden :busy-tool {:cols 40 :rows 7}
+                                 [" ?:?  ctx:~0                   <build>"
+                                  "you> run the focused tests"
+                                  "ai>  I'll run the focused test command n"
+                                  "ow."
+                                  ""
+                                  "  ⠋ $ make test · ctrl-c cancel"
+                                  "> / for commands"])))
+            (it "renders a scrolled transcript with the new-content indicator"
+                (fn []
+                  (assert-golden :scrolled-transcript {:cols 56 :rows 8}
+                                 [" ?:?  ctx:~0                 ↑6 ↓new · ctrl-y  <build>"
+                                  "ai>  response 3"
+                                  "you> prompt 4                                          ▐"
+                                  "ai>  response 5                                        ▐"
+                                  "ai>  response 6"
+                                  "you> prompt 7"
+                                  "ai>  response 8"
+                                  "> type / for commands · /help for keys · ctrl-j newline"])))
+            (it "renders the errors panel with traceback summaries"
+                (fn []
+                  (assert-golden :errors-panel {:cols 64 :rows 12}
+                                 [" ?:?  ctx:~0                                           <build>"
+                                  "Errors — /errors to close, /errors clear to remove error rows"
+                                  "#1 extension handler failed owner=demo event=turn-complete: hand"
+                                  "    stack traceback:"
+                                  "      demo/init.fnl:8: bad argument"
+                                  "#2 example failure while loading extension"
+                                  "    stack traceback:"
+                                  "      stories/example.fnl:12: boom"
+                                  ""
+                                  ""
+                                  "extension-error: handler failed"
+                                  "> type / for commands · /help for keys · ctrl-j newline"])))))

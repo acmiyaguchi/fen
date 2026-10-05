@@ -14,8 +14,9 @@
 (fn read-file [file-path]
   (let [(f err) (io.open file-path :r)]
     (if (not f)
-        (do (log.warn (.. "resources: cannot read " file-path ": " (tostring err)))
-            nil)
+        (do
+          (log.warn (.. "resources: cannot read " file-path ": " (tostring err)))
+          nil)
         (let [s (f:read :*a)]
           (f:close)
           s))))
@@ -82,6 +83,7 @@
         (each [k v (pairs fresh)]
           (tset self k v))
         self))
+
     (loader.reload loader)))
 
 ;; @doc fen.extensions.default_prompt.resources.cwd

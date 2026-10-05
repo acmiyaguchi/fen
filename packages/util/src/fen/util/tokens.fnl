@@ -46,13 +46,13 @@
               ;; Responses/Codex stores the replayable encrypted reasoning
               ;; item in thinking-signature. It is request context just like
               ;; visible thinking text, and can be much larger than it.
-              (set n (+ n
-                        (M.approx-tokens block.thinking)
-                        (M.approx-tokens block.thinking-signature)))
+              (set n
+                   (+ n (M.approx-tokens block.thinking)
+                      (M.approx-tokens block.thinking-signature)))
               (= block.type :tool-call)
-              (set n (+ n
-                        (M.approx-tokens block.name)
-                        (M.approx-tokens (M.safe-json (or block.arguments {})))))))
+              (set n
+                   (+ n (M.approx-tokens block.name)
+                      (M.approx-tokens (M.safe-json (or block.arguments {})))))))
         n)))
 
 (fn context-message? [msg]
@@ -68,8 +68,7 @@
 (fn M.message-tokens [msg]
   (let [m (or msg {})]
     (if (context-message? m)
-        (+ (M.approx-tokens m.role)
-           (M.content-tokens m.content)
+        (+ (M.approx-tokens m.role) (M.content-tokens m.content)
            (if (= m.role :tool-result)
                (M.approx-tokens m.tool-name)
                0))
@@ -85,10 +84,11 @@
   (var n 0)
   (each [_ tool (ipairs (or tools []))]
     (when (tool-visible? tool active-tool-names)
-      (set n (+ n (M.approx-tokens
-                    (M.safe-json {:name tool.name
-                                  :description tool.description
-                                  :parameters (or tool.parameters {})}))))))
+      (set n
+           (+ n
+              (M.approx-tokens (M.safe-json {:name tool.name
+                                             :description tool.description
+                                             :parameters (or tool.parameters {})}))))))
   n)
 
 (fn active-tools-key [tools active-tool-names]
@@ -129,8 +129,7 @@
     ledger))
 
 (fn valid-ledger? [agent ledger]
-  (and agent ledger
-       (= ledger.system-prompt agent.system-prompt)
+  (and agent ledger (= ledger.system-prompt agent.system-prompt)
        (= ledger.tools-ref agent.tools)
        (= ledger.active-tools-key
           (active-tools-key agent.tools agent.active-tool-names))
@@ -144,8 +143,7 @@
 ;; tags: tokens ledger agent
 (fn M.rebuild-agent-ledger! [agent]
   (let [ledger (M.rebuild-ledger (?. agent :system-prompt)
-                                 (or (?. agent :messages) [])
-                                 (?. agent :tools)
+                                 (or (?. agent :messages) []) (?. agent :tools)
                                  (?. agent :active-tool-names))]
     (when agent
       (tset agent :context-token-ledger ledger))
@@ -177,7 +175,9 @@
             ledger)
           ;; Direct message-table edits happened. Leave the next estimate to
           ;; rebuild once rather than doing an O(history) walk on this append.
-          (do (tset agent :context-token-ledger nil) nil)))))
+          (do
+            (tset agent :context-token-ledger nil)
+            nil)))))
 
 ;; @doc fen.util.tokens.estimated-context-tokens
 ;; kind: function
@@ -200,9 +200,7 @@
   (var found nil)
   (while (and (> i 0) (= found nil))
     (let [msg (. messages i)
-          u (and (= msg.role :assistant)
-                 (context-message? msg)
-                 msg.usage)
+          u (and (= msg.role :assistant) (context-message? msg) msg.usage)
           input (and u (or u.input 0))
           output (and u (or u.output 0))
           cache-read (and u (or u.cache-read 0))
@@ -210,8 +208,7 @@
       ;; Canonical assistant constructors use an all-zero usage record when a
       ;; provider omitted usage, so require at least one non-zero counter.
       (when (and u (> (+ input output cache-read cache-write) 0))
-        (set found {:tokens (+ input output cache-read cache-write)
-                    :index i})))
+        (set found {:tokens (+ input output cache-read cache-write) :index i})))
     (set i (- i 1)))
   found)
 
@@ -226,12 +223,15 @@
       (let [reported (reported-context agent.messages)
             message-count (length (or agent.messages []))]
         (if (and reported (= reported.index message-count))
-            {:tokens reported.tokens :source :provider-reported :estimated? false}
+            {:tokens reported.tokens
+             :source :provider-reported
+             :estimated? false}
             ;; Messages after the reported boundary (normally tool results)
             ;; make that old number stale. Prefer a complete fallback estimate
             ;; over presenting stale provider data as exact.
             {:tokens (M.estimated-context-tokens agent)
-             :source :estimated :estimated? true}))))
+             :source :estimated
+             :estimated? true}))))
 
 ;; @doc fen.util.tokens.usage-totals
 ;; kind: function
@@ -246,10 +246,10 @@
         (set u.output (+ u.output (or msg.usage.output 0)))
         (set u.cache-read (+ u.cache-read (or msg.usage.cache-read 0)))
         (set u.cache-write (+ u.cache-write (or msg.usage.cache-write 0)))
-        (set u.total-tokens (+ u.total-tokens
-                               (or msg.usage.total-tokens
-                                   (+ (or msg.usage.input 0)
-                                      (or msg.usage.output 0)))))))
+        (set u.total-tokens
+             (+ u.total-tokens
+                (or msg.usage.total-tokens
+                    (+ (or msg.usage.input 0) (or msg.usage.output 0)))))))
     u))
 
 ;; @doc fen.util.tokens.fmt-tokens
@@ -270,11 +270,12 @@
 ;; summary: Build the one-line input/output/cache/context token summary shown by status UIs.
 ;; tags: tokens format status
 (fn M.format-token-summary [usage context ?estimated?]
-  (let [estimated? (if (= ?estimated? nil) true ?estimated?)]
-    (.. "↑" (M.fmt-tokens usage.input)
-        " ↓" (M.fmt-tokens usage.output)
-        " R" (M.fmt-tokens usage.cache-read)
-        " W" (M.fmt-tokens usage.cache-write)
-        "  ctx:" (if estimated? "~" "") (M.fmt-tokens context))))
+  (let [estimated? (if (= ?estimated? nil)
+                       true
+                       ?estimated?)]
+    (.. "↑" (M.fmt-tokens usage.input) " ↓" (M.fmt-tokens usage.output)
+        " R" (M.fmt-tokens usage.cache-read) " W"
+        (M.fmt-tokens usage.cache-write) "  ctx:" (if estimated? "~" "")
+        (M.fmt-tokens context))))
 
 M

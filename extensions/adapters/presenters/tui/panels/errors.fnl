@@ -29,10 +29,12 @@
       (while (<= i n)
         (let [j (string.find text "\n" i true)]
           (if j
-              (do (table.insert out (string.sub text i (- j 1)))
-                  (set i (+ j 1)))
-              (do (table.insert out (string.sub text i n))
-                  (set i (+ n 1))))))
+              (do
+                (table.insert out (string.sub text i (- j 1)))
+                (set i (+ j 1)))
+              (do
+                (table.insert out (string.sub text i n))
+                (set i (+ n 1))))))
       (when (and (= n 0))
         (table.insert out "")))
     out))
@@ -40,8 +42,8 @@
 (fn error-summary [ev]
   (if (= ev.type :extension-error)
       (.. "extension handler failed owner=" (tostring (or ev.owner "?"))
-          " event=" (tostring (or ev.event "?"))
-          ": " (tostring (or ev.error "")))
+          " event=" (tostring (or ev.event "?")) ": "
+          (tostring (or ev.error "")))
       (tostring (or ev.error ev.text ""))))
 
 (fn error-detail [ev]
@@ -107,12 +109,15 @@
 
 (fn panel-render [_ctx]
   (M.ensure-defaults!)
-  (let [rows [(line "Errors — /errors to close, /errors clear to remove error rows" :error)]
+  (let [rows [(line "Errors — /errors to close, /errors clear to remove error rows"
+                    :error)]
         errs (recent-errors)]
     (if (= (length errs) 0)
         (table.insert rows (line "  no errors in this transcript" :dim))
         (each [idx ev (ipairs errs)]
-          (table.insert rows (line (.. "#" (tostring idx) " " (error-summary ev)) :error))
+          (table.insert rows (line (.. "#" (tostring idx) " "
+                                       (error-summary ev))
+                                   :error))
           (let [detail (error-detail ev)]
             (when detail
               (var n 0)

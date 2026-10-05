@@ -34,116 +34,120 @@
   retained?)
 
 (describe "fen_http cooperative yield"
-  (fn []
-    (it "does not retain callbacks when malformed headers raise"
-      (fn []
-        (let [on-chunk (fn [_] nil)
-              yield (fn [] nil)
-              (ok? err) (pcall fen-http.request
-                                {:url "http://127.0.0.1/"
-                                 :method "GET"
-                                 :headers "not-a-table"
-                                 :on_chunk on-chunk
-                                 :yield yield})]
-          (assert.is_false ok?)
-          (assert.is_truthy (string.find (tostring err) "headers" 1 true))
-          (assert.is_false (retained-in-registry? on-chunk))
-          (assert.is_false (retained-in-registry? yield)))))
-
-    (it "yields through the C boundary without panicking"
-      (fn []
-        (let [server (assert (socket.bind "127.0.0.1" 0))
-              (host port) (server:getsockname)
-              url (.. "http://" host ":" port "/")
-              yield-count [0]
-              response [nil]
-              co (coroutine.create
-                   (fn []
-                     (let [r (fen-http.request
-                              {:url url
-                               :method "GET"
-                               :timeout_ms 500
-                               :connect_timeout_ms 500
-                               :yield (fn []
-                                        (tset yield-count 1
-                                              (+ (. yield-count 1) 1))
-                                        (coroutine.yield))})]
-                       (tset response 1 r))))
-              resumes (drive co)]
-          (server:close)
-          (assert.is_true (> resumes 1)
-                          (.. "expected > 1 resume (cooperative yield); got "
-                              (tostring resumes)))
-          (assert.is_true (> (. yield-count 1) 0)
-                          "yield callback never ran")
-          (let [r (. response 1)]
-            (assert.is_table r)
-            (when r.error
-              (assert.is_number r.curl_code)
-              (assert.is_nil
-                (string.find r.error "yield across" 1 true)
-                (.. "fen_http leaked a C-yield error: " r.error)))))))
-
-    (it "propagates a raised cancel marker through the C boundary with cleanup"
-      (fn []
-        (let [server (assert (socket.bind "127.0.0.1" 0))
-              (host port) (server:getsockname)
-              url (.. "http://" host ":" port "/")
-              marker {:type :cancel-marker}
-              calls [0]
-              co (coroutine.create
-                   (fn []
-                     (fen-http.request
-                       {:url url
-                        :method "GET"
-                        :timeout_ms 5000
-                        :connect_timeout_ms 5000
-                        :yield (fn []
-                                 (tset calls 1 (+ (. calls 1) 1))
-                                 (coroutine.yield)
-                                 (when (>= (. calls 1) 2)
-                                   (error marker)))})))]
-          ;; The agent's make-yield raises a unique table on cancel. With the
-          ;; pre-fix lua_callk the raise longjmped past cleanup (leaking the
-          ;; curl easy/multi handles); the protected lua_pcallk path frees
-          ;; them and re-raises the same object. The freed handles aren't
-          ;; observable from Lua, but the exact error identity propagating
-          ;; (no swallow into {error=...}, no C-boundary panic) is the guard.
-          (var ok? true)
-          (var err nil)
-          (while (and ok? (not= (coroutine.status co) :dead))
-            (let [(o e) (coroutine.resume co)]
-              (set ok? o)
-              (when (not o) (set err e))))
-          (server:close)
-          (assert.is_false ok? "the raised marker must propagate, not be swallowed")
-          (assert.are.equal marker err
-                            "the exact error object identity must survive the C boundary"))))
-
-    (it "aborts a silent stream within the idle window, not the full timeout"
-      (fn []
-        (let [server (assert (socket.bind "127.0.0.1" 0))
-              (host port) (server:getsockname)
-              url (.. "http://" host ":" port "/")
-              response [nil]
-              start (socket.gettime)
-              co (coroutine.create
-                   (fn []
-                     (tset response 1
-                           (fen-http.request
-                             {:url url
-                              :method "GET"
-                              :timeout_ms 20000
-                              :connect_timeout_ms 4000
-                              :idle_timeout_ms 1000
-                              :yield (fn [] (coroutine.yield))}))))
-              resumes (drive co)]
-          (server:close)
-          (let [elapsed (- (socket.gettime) start)
-                r (. response 1)]
-            (assert.is_table r)
-            (assert.is_string r.error)
-            (assert.are.equal 28 r.curl_code)
-            (assert.is_true (< elapsed 10)
-                            (.. "idle abort should fire near idle_timeout_ms, not timeout_ms; took "
-                                (tostring elapsed) "s"))))))))
+          (fn []
+            (it "does not retain callbacks when malformed headers raise"
+                (fn []
+                  (let [on-chunk (fn [_] nil)
+                        yield (fn [] nil)
+                        (ok? err) (pcall fen-http.request
+                                         {:url "http://127.0.0.1/"
+                                          :method "GET"
+                                          :headers "not-a-table"
+                                          :on_chunk on-chunk
+                                          :yield yield})]
+                    (assert.is_false ok?)
+                    (assert.is_truthy (string.find (tostring err) "headers" 1
+                                                   true))
+                    (assert.is_false (retained-in-registry? on-chunk))
+                    (assert.is_false (retained-in-registry? yield)))))
+            (it "yields through the C boundary without panicking"
+                (fn []
+                  (let [server (assert (socket.bind "127.0.0.1" 0))
+                        (host port) (server:getsockname)
+                        url (.. "http://" host ":" port "/")
+                        yield-count [0]
+                        response [nil]
+                        co (coroutine.create (fn []
+                                               (let [r (fen-http.request {:url url
+                                                                          :method "GET"
+                                                                          :timeout_ms 500
+                                                                          :connect_timeout_ms 500
+                                                                          :yield (fn []
+                                                                                   (tset yield-count
+                                                                                         1
+                                                                                         (+ (. yield-count
+                                                                                               1)
+                                                                                            1))
+                                                                                   (coroutine.yield))})]
+                                                 (tset response 1 r))))
+                        resumes (drive co)]
+                    (server:close)
+                    (assert.is_true (> resumes 1)
+                                    (.. "expected > 1 resume (cooperative yield); got "
+                                        (tostring resumes)))
+                    (assert.is_true (> (. yield-count 1) 0)
+                                    "yield callback never ran")
+                    (let [r (. response 1)]
+                      (assert.is_table r)
+                      (when r.error
+                        (assert.is_number r.curl_code)
+                        (assert.is_nil (string.find r.error "yield across" 1
+                                                    true)
+                                       (.. "fen_http leaked a C-yield error: "
+                                           r.error)))))))
+            (it "propagates a raised cancel marker through the C boundary with cleanup"
+                (fn []
+                  (let [server (assert (socket.bind "127.0.0.1" 0))
+                        (host port) (server:getsockname)
+                        url (.. "http://" host ":" port "/")
+                        marker {:type :cancel-marker}
+                        calls [0]
+                        co (coroutine.create (fn []
+                                               (fen-http.request {:url url
+                                                                  :method "GET"
+                                                                  :timeout_ms 5000
+                                                                  :connect_timeout_ms 5000
+                                                                  :yield (fn []
+                                                                           (tset calls
+                                                                                 1
+                                                                                 (+ (. calls
+                                                                                       1)
+                                                                                    1))
+                                                                           (coroutine.yield)
+                                                                           (when (>= (. calls
+                                                                                        1)
+                                                                                     2)
+                                                                             (error marker)))})))]
+                    ;; The agent's make-yield raises a unique table on cancel. With the
+                    ;; pre-fix lua_callk the raise longjmped past cleanup (leaking the
+                    ;; curl easy/multi handles); the protected lua_pcallk path frees
+                    ;; them and re-raises the same object. The freed handles aren't
+                    ;; observable from Lua, but the exact error identity propagating
+                    ;; (no swallow into {error=...}, no C-boundary panic) is the guard.
+                    (var ok? true)
+                    (var err nil)
+                    (while (and ok? (not= (coroutine.status co) :dead))
+                      (let [(o e) (coroutine.resume co)]
+                        (set ok? o)
+                        (when (not o) (set err e))))
+                    (server:close)
+                    (assert.is_false ok?
+                                     "the raised marker must propagate, not be swallowed")
+                    (assert.are.equal marker err
+                                      "the exact error object identity must survive the C boundary"))))
+            (it "aborts a silent stream within the idle window, not the full timeout"
+                (fn []
+                  (let [server (assert (socket.bind "127.0.0.1" 0))
+                        (host port) (server:getsockname)
+                        url (.. "http://" host ":" port "/")
+                        response [nil]
+                        start (socket.gettime)
+                        co (coroutine.create (fn []
+                                               (tset response 1
+                                                     (fen-http.request {:url url
+                                                                        :method "GET"
+                                                                        :timeout_ms 20000
+                                                                        :connect_timeout_ms 4000
+                                                                        :idle_timeout_ms 1000
+                                                                        :yield (fn []
+                                                                                 (coroutine.yield))}))))
+                        resumes (drive co)]
+                    (server:close)
+                    (let [elapsed (- (socket.gettime) start)
+                          r (. response 1)]
+                      (assert.is_table r)
+                      (assert.is_string r.error)
+                      (assert.are.equal 28 r.curl_code)
+                      (assert.is_true (< elapsed 10)
+                                      (.. "idle abort should fire near idle_timeout_ms, not timeout_ms; took "
+                                          (tostring elapsed) "s"))))))))

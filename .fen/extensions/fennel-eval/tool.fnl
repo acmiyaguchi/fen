@@ -9,8 +9,7 @@
 (local MAX-BYTES 8192)
 
 (fn result [text is-error?]
-  {:content [(types.text-block (or text ""))]
-   :is-error? (or is-error? false)})
+  {:content [(types.text-block (or text ""))] :is-error? (or is-error? false)})
 
 (fn truncate [s max-bytes]
   (let [cap (or max-bytes MAX-BYTES)]
@@ -34,20 +33,19 @@
       (result "error: missing expr" true)
       (do
         (when ?yield-fn (?yield-fn))
-        (let [(ok? value-or-err)
-              (pcall
-                (fn []
-                  (let [value (fennel.eval args.expr
-                                           {:env (live-env ctx extensions)
-                                            :filename "fennel_eval"})]
-                    (truncate (fennel.view value {:one-line? false
-                                                  :max-sparse-gap 3})
-                              args.max_bytes)))) ]
+        (let [(ok? value-or-err) (pcall (fn []
+                                          (let [value (fennel.eval args.expr
+                                                                   {:env (live-env ctx
+                                                                                   extensions)
+                                                                    :filename "fennel_eval"})]
+                                            (truncate (fennel.view value
+                                                                   {:one-line? false
+                                                                    :max-sparse-gap 3})
+                                                      args.max_bytes))))]
           (if ok?
               (result value-or-err false)
               (result (truncate (.. "error: " (tostring value-or-err))
-                                args.max_bytes)
-                      true))))))
+                                args.max_bytes) true))))))
 
 (fn register [api]
   (api.register :tool
@@ -62,6 +60,4 @@
                             (execute args ctx api ?yield-fn))})
   true)
 
-{:register register
- :execute execute
- :live-env live-env}
+{:register register :execute execute :live-env live-env}

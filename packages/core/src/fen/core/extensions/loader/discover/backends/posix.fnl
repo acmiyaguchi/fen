@@ -12,41 +12,41 @@
 (local M {})
 
 (local embedded-first-party-manifests
-  [:fen.extensions.agent_state.manifest
-   :fen.extensions.builtin_tools.manifest
-   :fen.extensions.decide.manifest
-   :fen.extensions.default_prompt.manifest
-   :fen.extensions.docs.manifest
-   :fen.extensions.essentials.manifest
-   :fen.extensions.extensions_inspector.manifest
-   :fen.extensions.compact.manifest
-   :fen.extensions.goal.manifest
-   :fen.extensions.goal_headless.manifest
-   :fen.extensions.handoff.manifest
-   :fen.extensions.json.manifest
-   :fen.extensions.mem.manifest
-   :fen.extensions.plan.manifest
-   :fen.extensions.todo.manifest
-   :fen.extensions.print.manifest
-   :fen.extensions.prompt.manifest
-   :fen.extensions.profiler.manifest
-   :fen.extensions.provider_anthropic.manifest
-   :fen.extensions.provider_openai.manifest
-   :fen.extensions.provider_openrouter.manifest
-   :fen.extensions.provider_sakana.manifest
-   :fen.extensions.provider_shared.manifest
-   :fen.extensions.queue.manifest
-   :fen.extensions.rpc.manifest
-   :fen.extensions.session_jsonl.manifest
-   :fen.extensions.sessions.manifest
-   :fen.extensions.simplify.manifest
-   :fen.extensions.skills.manifest
-   :fen.extensions.status.manifest
-   :fen.extensions.stdio.manifest
-   :fen.extensions.steering.manifest
-   :fen.extensions.subagent.manifest
-   :fen.extensions.tui.manifest
-   :fen.extensions.web.manifest])
+       [:fen.extensions.agent_state.manifest
+        :fen.extensions.builtin_tools.manifest
+        :fen.extensions.decide.manifest
+        :fen.extensions.default_prompt.manifest
+        :fen.extensions.docs.manifest
+        :fen.extensions.essentials.manifest
+        :fen.extensions.extensions_inspector.manifest
+        :fen.extensions.compact.manifest
+        :fen.extensions.goal.manifest
+        :fen.extensions.goal_headless.manifest
+        :fen.extensions.handoff.manifest
+        :fen.extensions.json.manifest
+        :fen.extensions.mem.manifest
+        :fen.extensions.plan.manifest
+        :fen.extensions.todo.manifest
+        :fen.extensions.print.manifest
+        :fen.extensions.prompt.manifest
+        :fen.extensions.profiler.manifest
+        :fen.extensions.provider_anthropic.manifest
+        :fen.extensions.provider_openai.manifest
+        :fen.extensions.provider_openrouter.manifest
+        :fen.extensions.provider_sakana.manifest
+        :fen.extensions.provider_shared.manifest
+        :fen.extensions.queue.manifest
+        :fen.extensions.rpc.manifest
+        :fen.extensions.session_jsonl.manifest
+        :fen.extensions.sessions.manifest
+        :fen.extensions.simplify.manifest
+        :fen.extensions.skills.manifest
+        :fen.extensions.status.manifest
+        :fen.extensions.stdio.manifest
+        :fen.extensions.steering.manifest
+        :fen.extensions.subagent.manifest
+        :fen.extensions.tui.manifest
+        :fen.extensions.web.manifest])
 
 (fn hidden-or-disabled? [name]
   (let [c (string.sub name 1 1)]
@@ -68,20 +68,19 @@
 (fn direct-children [dir ?yield-fn]
   (if (not (path.dir-exists? dir))
       []
-      (command-output-lines
-        (.. "find " (path.shell-quote dir)
-            " -mindepth 1 -maxdepth 1 -print")
-        ?yield-fn)))
+      (command-output-lines (.. "find " (path.shell-quote dir)
+                                " -mindepth 1 -maxdepth 1 -print")
+                            ?yield-fn)))
 
 (fn manifest-dirs [dir ?yield-fn]
   (if (not (path.dir-exists? dir))
       []
       (let [seen {}
             out []]
-        (each [_ file (ipairs (command-output-lines
-                                (.. "find " (path.shell-quote dir)
-                                    " -type f \\( -name manifest.fnl -o -name manifest.lua \\) -print")
-                                ?yield-fn))]
+        (each [_ file (ipairs (command-output-lines (.. "find "
+                                                        (path.shell-quote dir)
+                                                        " -type f \\( -name manifest.fnl -o -name manifest.lua \\) -print")
+                                                    ?yield-fn))]
           (let [parent (path.dirname file)]
             (when (not (. seen parent))
               (tset seen parent true)
@@ -89,10 +88,8 @@
         out)))
 
 (fn marker-root? [dir]
-  (or (path.dir-exists? (.. dir "/.git"))
-      (path.file-exists? (.. dir "/.git"))
-      (path.dir-exists? (.. dir "/.hg"))
-      (path.file-exists? (.. dir "/.hg"))))
+  (or (path.dir-exists? (.. dir "/.git")) (path.file-exists? (.. dir "/.git"))
+      (path.dir-exists? (.. dir "/.hg")) (path.file-exists? (.. dir "/.hg"))))
 
 (fn split-path-list [s]
   (let [out []]
@@ -162,8 +159,7 @@
 (fn spec-from-single-file [file-path ?source]
   "Single-file extension: no manifest, the file itself is the entry. The
    extension's name is derived from the basename."
-  (when (or (string.match file-path "%.fnl$")
-            (string.match file-path "%.lua$"))
+  (when (or (string.match file-path "%.fnl$") (string.match file-path "%.lua$"))
     (let [source (or ?source :explicit)]
       {:name (manifest-mod.strip-ext (path.basename file-path))
        :dir (path.dirname file-path)
@@ -194,7 +190,8 @@
         (when spec
           (tset spec :first-party? (under-first-party-root? target)))
         spec)
-      (path.file-exists? target) (spec-from-single-file target)
+      (path.file-exists? target)
+      (spec-from-single-file target)
       nil))
 
 (fn discover-from-roots [roots source ?yield-fn]
@@ -222,8 +219,7 @@
               (let [base (path.basename child)
                     name (manifest-mod.strip-ext base)]
                 (when (and (not (hidden-or-disabled? base))
-                           (not (. dir-bases name))
-                           (path.file-exists? child))
+                           (not (. dir-bases name)) (path.file-exists? child))
                   (let [spec (spec-from-single-file child source)]
                     (when spec (table.insert out spec)))))))))
     out))
@@ -264,9 +260,11 @@
         (if spec
             (table.insert specs spec)
             (log.warn (.. "extension: no manifest or .fnl/.lua entry at " p)))))
-    (each [_ s (ipairs (discover-from-roots (M.first-party-roots) :first-party ?yield-fn))]
+    (each [_ s (ipairs (discover-from-roots (M.first-party-roots) :first-party
+                                            ?yield-fn))]
       (table.insert specs s))
-    (each [_ s (ipairs (discover-from-roots (M.project-roots) :project ?yield-fn))]
+    (each [_ s (ipairs (discover-from-roots (M.project-roots) :project
+                                            ?yield-fn))]
       (table.insert specs s))
     (each [_ s (ipairs (discover-from-roots (M.user-roots) :user ?yield-fn))]
       (table.insert specs s))

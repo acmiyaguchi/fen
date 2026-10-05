@@ -9,8 +9,7 @@
 
 (local fennel (require :fennel))
 (set fennel.path
-     (.. fennel.path
-         ";./scripts/?.fnl;./scripts/?/init.fnl"
+     (.. fennel.path ";./scripts/?.fnl;./scripts/?/init.fnl"
          ";./packages/core/src/?.fnl;./packages/core/src/?/init.fnl"
          ";./packages/util/src/?.fnl;./packages/util/src/?/init.fnl"))
 
@@ -18,34 +17,39 @@
 
 ;; Canonical register kinds — keep in sync with
 ;; packages/core/src/fen/core/extensions/register/init.fnl.
-(local CANONICAL-REGISTER-KINDS
-  ["auth-backend" "command" "control" "hook" "panel"
-   "presenter" "prompt-fragment" "provider" "session-backend"
-   "status" "tool"])
+(local CANONICAL-REGISTER-KINDS ["auth-backend"
+                                 "command"
+                                 "control"
+                                 "hook"
+                                 "panel"
+                                 "presenter"
+                                 "prompt-fragment"
+                                 "provider"
+                                 "session-backend"
+                                 "status"
+                                 "tool"])
 
 ;; Modules whose "exports" are data tables, not callable functions —
 ;; they're documented through contracts.md, not core.md, so excluding
 ;; them from the function-coverage count keeps the percentage honest.
-(local FN-COVERAGE-EXCLUDE-PREFIX
-  ["fen.core.docs."])
+(local FN-COVERAGE-EXCLUDE-PREFIX ["fen.core.docs."])
 
 (fn excluded-from-fn-coverage? [id]
   (var hit? false)
   (each [_ p (ipairs FN-COVERAGE-EXCLUDE-PREFIX)]
-    (when (= (string.sub id 1 (# p)) p)
+    (when (= (string.sub id 1 (length p)) p)
       (set hit? true)))
   hit?)
 
 (fn pct [n total]
-  (if (= total 0) "100.0%"
-      (string.format "%.1f%%" (* 100 (/ n total)))))
+  (if (= total 0) "100.0%" (string.format "%.1f%%" (* 100 (/ n total)))))
 
 (fn line [s] (print s))
 
 (fn header [title]
   (line "")
   (line title)
-  (line (string.rep "-" (# title))))
+  (line (string.rep "-" (length title))))
 
 (fn function-kind? [e]
   (or (= e.kind :function) (= e.kind nil)))
@@ -53,15 +57,11 @@
 (fn data-kind? [e] (= e.kind :data))
 
 (fn core-fn? [e]
-  (and e.path
-       (string.match e.path "^packages/")
-       (not (excluded-from-fn-coverage? e.id))
-       (function-kind? e)))
+  (and e.path (string.match e.path "^packages/")
+       (not (excluded-from-fn-coverage? e.id)) (function-kind? e)))
 
 (fn extension-fn? [e]
-  (and e.path
-       (string.match e.path "^extensions/")
-       (function-kind? e)))
+  (and e.path (string.match e.path "^extensions/") (function-kind? e)))
 
 (fn report-fn-coverage-group [title exports include?]
   (var total 0)
@@ -74,14 +74,15 @@
             (set documented (+ documented 1))
             (table.insert missing e))))
     (header title)
-    (line (.. "  " documented " / " total " documented  " (pct documented total)))
-    (when (> (# missing) 0)
-      (line (.. "  Missing @doc blocks (" (# missing) "):"))
+    (line (.. "  " documented " / " total " documented  "
+              (pct documented total)))
+    (when (> (length missing) 0)
+      (line (.. "  Missing @doc blocks (" (length missing) "):"))
       (each [i e (ipairs missing)]
         (when (<= i 20)
           (line (.. "    " e.id "  (" e.path ":" (or e.line "?") ")"))))
-      (when (> (# missing) 20)
-        (line (.. "    ... and " (- (# missing) 20) " more"))))))
+      (when (> (length missing) 20)
+        (line (.. "    ... and " (- (length missing) 20) " more"))))))
 
 (fn count-data-exports [exports]
   "Tally :data exports — split by package/extension and by whether a
@@ -97,12 +98,13 @@
       (let [doc? (and e.doc e.doc.summary)
             in-pkg? (string.match (or e.path "") "^packages/")]
         (if in-pkg?
-            (do (set pkg-total (+ pkg-total 1))
-                (when doc? (set pkg-doc (+ pkg-doc 1))))
-            (do (set ext-total (+ ext-total 1))
-                (when doc? (set ext-doc (+ ext-doc 1))))))))
-  {:pkg-total pkg-total :pkg-doc pkg-doc
-   :ext-total ext-total :ext-doc ext-doc})
+            (do
+              (set pkg-total (+ pkg-total 1))
+              (when doc? (set pkg-doc (+ pkg-doc 1))))
+            (do
+              (set ext-total (+ ext-total 1))
+              (when doc? (set ext-doc (+ ext-doc 1))))))))
+  {:pkg-total pkg-total :pkg-doc pkg-doc :ext-total ext-total :ext-doc ext-doc})
 
 (fn report-register-coverage [contracts]
   (let [documented {}
@@ -113,10 +115,11 @@
       (when (not (. documented k))
         (table.insert missing k)))
     (header "Extension register kinds")
-    (let [doc-count (- (# CANONICAL-REGISTER-KINDS) (# missing))
-          total (# CANONICAL-REGISTER-KINDS)]
-      (line (.. "  " doc-count " / " total " documented  " (pct doc-count total)))
-      (when (> (# missing) 0)
+    (let [doc-count (- (length CANONICAL-REGISTER-KINDS) (length missing))
+          total (length CANONICAL-REGISTER-KINDS)]
+      (line (.. "  " doc-count " / " total " documented  "
+                (pct doc-count total)))
+      (when (> (length missing) 0)
         (line "  Missing contracts.register-kinds entries:")
         (each [_ k (ipairs missing)]
           (line (.. "    :" k)))))))
@@ -143,10 +146,10 @@
         (when (not (. documented k))
           (table.insert missing k)))
       (header "Event shapes")
-      (let [doc-count (- (# ordered) (# missing))]
-        (line (.. "  " doc-count " / " (# ordered)
-                  " documented  " (pct doc-count (# ordered))))
-        (when (> (# missing) 0)
+      (let [doc-count (- (length ordered) (length missing))]
+        (line (.. "  " doc-count " / " (length ordered) " documented  "
+                  (pct doc-count (length ordered))))
+        (when (> (length missing) 0)
           (line "  Emitted but undocumented:")
           (each [_ k (ipairs missing)]
             (let [sites (. emit-types k)
@@ -165,13 +168,10 @@
 ;; Register kinds whose specs conventionally carry no :description
 ;; (status providers are short identifiers; presenter/hook are typed
 ;; by other fields). Coverage for these depends only on a literal :name.
-(local DESCRIPTION-OPTIONAL-KINDS
-  {:status true :presenter true :hook true})
+(local DESCRIPTION-OPTIONAL-KINDS {:status true :presenter true :hook true})
 
 (fn site-documented? [r]
-  (and r.name
-       (or (. DESCRIPTION-OPTIONAL-KINDS r.kind)
-           r.has-description?)))
+  (and r.name (or (. DESCRIPTION-OPTIONAL-KINDS r.kind) r.has-description?)))
 
 (fn site-indirect? [r]
   ;; Spec passed as a variable or function-call result — the static
@@ -185,8 +185,7 @@
       (let [k (or r.kind "unknown")]
         (when (not (. groups k))
           (table.insert order k)
-          (tset groups k {:total 0 :documented 0 :indirect 0
-                          :missing []}))
+          (tset groups k {:total 0 :documented 0 :indirect 0 :missing []}))
         (let [b (. groups k)]
           (tset b :total (+ b.total 1))
           (if (site-indirect? r)
@@ -194,10 +193,10 @@
               (site-documented? r)
               (tset b :documented (+ b.documented 1))
               (table.insert b.missing
-                {:name r.name
-                 :reason "no :description"
-                 :path r.path
-                 :line r.line})))))
+                            {:name r.name
+                             :reason "no :description"
+                             :path r.path
+                             :line r.line})))))
     (table.sort order)
     (header "First-party register sites (per kind)")
     (each [_ k (ipairs order)]
@@ -206,14 +205,14 @@
               tail (if (> b.indirect 0)
                        (.. "  (" b.indirect " indirect — dynamic spec)")
                        "")]
-          (line (.. "  :" k ": " b.documented " / " inspectable
-                    "  " (pct b.documented inspectable) tail)))
+          (line (.. "  :" k ": " b.documented " / " inspectable "  "
+                    (pct b.documented inspectable) tail)))
         (each [i m (ipairs b.missing)]
           (when (<= i 5)
-            (line (.. "    - " m.name "  [" m.reason "]  ("
-                      m.path ":" m.line ")"))))
-        (when (> (# b.missing) 5)
-          (line (.. "    ... and " (- (# b.missing) 5) " more")))))))
+            (line (.. "    - " m.name "  [" m.reason "]  (" m.path ":" m.line
+                      ")"))))
+        (when (> (length b.missing) 5)
+          (line (.. "    ... and " (- (length b.missing) 5) " more")))))))
 
 (fn main []
   (let [tree (scanner.scan-tree)
@@ -221,10 +220,9 @@
         contracts (scanner.read-contracts)]
     (line "Doc coverage")
     (line (string.rep "=" 12))
-    (report-fn-coverage-group "Core exported functions"
-                              agg.exports core-fn?)
-    (report-fn-coverage-group "Extension exported functions"
-                              agg.exports extension-fn?)
+    (report-fn-coverage-group "Core exported functions" agg.exports core-fn?)
+    (report-fn-coverage-group "Extension exported functions" agg.exports
+                              extension-fn?)
     (let [d (count-data-exports agg.exports)]
       (header "Data / value exports (informational)")
       (line (.. "  Core:       " d.pkg-doc " / " d.pkg-total
@@ -236,6 +234,6 @@
     (report-type-coverage contracts)
     (report-extension-sites agg.register-sites)
     (line "")
-    (line (.. "(" (# tree.sources) " Fennel sources scanned.)"))))
+    (line (.. "(" (length tree.sources) " Fennel sources scanned.)"))))
 
 (main)

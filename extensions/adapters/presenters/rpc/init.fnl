@@ -26,7 +26,7 @@
 ;; Headroom for the result envelope and JSON escaping around final-text.
 (local RESULT-OVERHEAD-BYTES 1024)
 (local DEFAULT-FINALIZE-NOTE
-  "Stop working now. Without calling tools, give your final answer from what you have so far.")
+       "Stop working now. Without calling tools, give your final answer from what you have so far.")
 
 (fn env [name]
   (text.blank->nil (os.getenv name)))
@@ -43,8 +43,9 @@
    channel keeps running."
   (let [(line rej) (wire.next! ch.sender typ ?payload)]
     (if line
-        (do (ch.out:write line "\n")
-            (ch.out:flush))
+        (do
+          (ch.out:write line "\n")
+          (ch.out:flush))
         (report! (.. "cannot send " (tostring typ) ": "
                      (tostring (?. rej :reason)))))))
 
@@ -63,8 +64,7 @@
 (fn M.forward! [ch ev]
   "Forward a bus event when it is a wire display event type."
   (let [typ (?. ev :type)]
-    (when (and (not ch.exited?)
-               (wire.event-type? typ)
+    (when (and (not ch.exited?) (wire.event-type? typ)
                (not (wire-session.lifecycle-event? typ)))
       (let [out (wire.normalize ev)]
         (when (. INJECTED-QUEUE typ)
@@ -82,8 +82,9 @@
       (tset ch.pending kind []))
     (when (> n 0)
       ((. (steering) :clear-queues!))
-      (send! ch :info {:summary (.. "dropped " n " queued input line(s)")
-                       :refs (when (> (length refs) 0) refs)}))))
+      (send! ch :info
+             {:summary (.. "dropped " n " queued input line(s)")
+              :refs (when (> (length refs) 0) refs)}))))
 
 (fn run-messages [ch]
   (let [messages (or (?. ch.state :agent :messages) [])
@@ -102,7 +103,8 @@
 (fn exit! [ch status ?error]
   (when (not ch.exited?)
     (drop-queued! ch)
-    (send! ch :exit {: status :error (when ?error (text.first-line (tostring ?error)))})
+    (send! ch :exit
+           {: status :error (when ?error (text.first-line (tostring ?error)))})
     (set ch.exited? true)
     (set ch.exit-status status)))
 
@@ -112,16 +114,19 @@
         f (when ok? (io.open path :wb))]
     (if (and f (f:write s) (f:close))
         path
-        (do (when f (pcall #(f:close)))
-            (when ok? (os.remove path))
-            nil))))
+        (do
+          (when f
+            (pcall #(f:close)))
+          (when ok? (os.remove path))
+          nil))))
 
 (fn result-line [ch payload]
   "Encode the result. A final-text too long for one line is spilled whole to
    :final-text-path and cut until the line fits, marked :truncated?; the last
    resort drops final-text and usage."
   (let [full payload.final-text
-        encode #(wire.encode (wire.message :result ch.run (+ ch.sender.seq 1) payload)
+        encode #(wire.encode (wire.message :result ch.run (+ ch.sender.seq 1)
+                                           payload)
                              :event)]
     (var line (encode))
     (when (and (not line) full)
@@ -145,13 +150,16 @@
   (let [messages (run-messages ch)
         asst (turn-result.last-assistant messages)
         final-text (when asst (text.blank->nil (types.assistant-text asst)))
-        line (result-line ch {:final-text final-text
-                              :stop-reason (tostring (or (?. asst :stop-reason) :none))
-                              :usage (turn-result.sum-usage messages)})]
+        line (result-line ch
+                          {:final-text final-text
+                           :stop-reason (tostring (or (?. asst :stop-reason)
+                                                      :none))
+                           :usage (turn-result.sum-usage messages)})]
     (if line
-        (do (set ch.sender.seq (+ ch.sender.seq 1))
-            (ch.out:write line "\n")
-            (ch.out:flush))
+        (do
+          (set ch.sender.seq (+ ch.sender.seq 1))
+          (ch.out:write line "\n")
+          (ch.out:flush))
         (report! "cannot encode result"))
     (exit! ch :done)))
 
@@ -161,9 +169,10 @@
         agent-step (fn [agent line cancel-fn]
                      (agent-mod.step agent line cancel-fn step-opts))]
     (set ch.turn (+ ch.turn 1))
-    (set ch.active {:turn ch.turn
-                    :final? ?final?
-                    :start-index (+ (length (or state.agent.messages [])) 1)})
+    (set ch.active
+         {:turn ch.turn
+          :final? ?final?
+          :start-index (+ (length (or state.agent.messages [])) 1)})
     (turn-submit.start! state prompt agent-step)
     (set ch.active.co state.turn)
     (send! ch :turn-started {:turn ch.turn})))
@@ -174,7 +183,8 @@
     (set ch.state.cancel-requested? true)))
 
 (fn queue! [ch kind msg]
-  (table.insert (. ch.pending kind) {:ref (math.tointeger msg.seq) :text msg.text})
+  (table.insert (. ch.pending kind)
+                {:ref (math.tointeger msg.seq) :text msg.text})
   ((. (steering) :queue!) kind msg.text))
 
 (fn perform! [ch action ?msg]
@@ -182,14 +192,13 @@
       (= action :queue-steering) (queue! ch :steering ?msg)
       (= action :queue-follow-up) (queue! ch :follow-up ?msg)
       (= action :start-finalize-turn)
-      (start-turn! ch (or (text.blank->nil ch.finalize-note) DEFAULT-FINALIZE-NOTE) true)
-      (= action :interrupt-turn) (interrupt-turn! ch)
-      (= action :abort) (if ch.active
-                            (interrupt-turn! ch)
-                            (exit! ch ch.status ch.error))
-      (= action :exit) (exit! ch ch.status ch.error)
-      (= action :finish) (finish! ch)
-      nil))
+      (start-turn! ch (or (text.blank->nil ch.finalize-note)
+                          DEFAULT-FINALIZE-NOTE) true)
+      (= action :interrupt-turn) (interrupt-turn! ch) (= action :abort)
+      (if ch.active
+          (interrupt-turn! ch)
+          (exit! ch ch.status ch.error)) (= action :exit)
+      (exit! ch ch.status ch.error) (= action :finish) (finish! ch) nil))
 
 (fn advance! [ch event]
   (let [entry (wire-session.advance ch.status event)]
@@ -206,7 +215,8 @@
                   (wire-session.decide ch.status msg.type)
                   {:status :rejected
                    :reason (.. "run " (tostring msg.run) " is not " ch.run)})]
-    (send! ch :control-ack {:ref msg.seq :status entry.status
+    (send! ch :control-ack {:ref msg.seq
+                            :status entry.status
                             :reason entry.reason})
     (when (not= entry.status :rejected)
       (when (and (= msg.type :finalize) (= entry.status :accepted))
@@ -218,17 +228,16 @@
 
 (fn handle-line! [ch line]
   (let [(msg rej) (wire.receive! ch.receiver line)]
-    (if msg
-        (apply-control! ch msg)
-        (?. rej :fatal?)
-        (fatal! ch rej.reason)
+    (if msg (apply-control! ch msg)
+        (?. rej :fatal?) (fatal! ch rej.reason)
         (send! ch :control-ack (wire.rejection-ack rej)))))
 
 (fn poll-controls! [ch]
   (let [(lines status) (wire.read-lines! ch.reader)]
     (if (= status :truncated)
         (when (not (wire-session.terminal? ch.status))
-          (fatal! ch (.. "control file truncated below offset " ch.reader.offset)))
+          (fatal! ch (.. "control file truncated below offset "
+                         ch.reader.offset)))
         (each [_ line (ipairs lines)]
           (when (and (not ch.exited?) (not= line ""))
             (handle-line! ch line))))))
@@ -240,26 +249,31 @@
         messages (messages-from ch active.start-index)
         asst (turn-result.last-assistant messages)]
     (set ch.active nil)
-    (send! ch :turn-complete {:turn active.turn
-                              :stop-reason (if err "error"
-                                               (tostring (or (?. asst :stop-reason) :none)))
-                              :usage (turn-result.sum-usage messages)})
+    (send! ch :turn-complete
+           {:turn active.turn
+            :stop-reason (if err "error"
+                             (tostring (or (?. asst :stop-reason) :none)))
+            :usage (turn-result.sum-usage messages)})
     (if err
         (fatal! ch (tostring err))
         (advance! ch (if active.final? :final-turn-done :turn-done)))
     ;; Never idle in a terminal state with nothing left to unwind.
-    (when (and (not ch.exited?) (not ch.active) (wire-session.terminal? ch.status))
+    (when (and (not ch.exited?) (not ch.active)
+               (wire-session.terminal? ch.status))
       (exit! ch ch.status ch.error))))
 
 (fn adopt-turn! [ch]
   "A turn this presenter did not start (the runtime's idle follow-up tick)
    is tracked like a prompt in `ready`; anywhere else it is fatal."
   (if (= ch.status :ready)
-      (do (set ch.status :running)
-          (set ch.turn (+ ch.turn 1))
-          (set ch.active {:turn ch.turn :co ch.state.turn
-                          :start-index (+ (length (or ch.state.agent.messages [])) 1)})
-          (send! ch :turn-started {:turn ch.turn}))
+      (do
+        (set ch.status :running)
+        (set ch.turn (+ ch.turn 1))
+        (set ch.active {:turn ch.turn
+                        :co ch.state.turn
+                        :start-index (+ (length (or ch.state.agent.messages []))
+                                        1)})
+        (send! ch :turn-started {:turn ch.turn}))
       (fatal! ch "untracked turn started")))
 
 (fn tick! [ch]
@@ -283,7 +297,8 @@
         run (or o.run (env :FEN_WIRE_RUN_ID) "run")
         deadline (or o.deadline (tonumber (env :FEN_WIRE_DEADLINE)))]
     (if (not (and control-path event-path))
-        (values nil "FEN_WIRE_CONTROL_PATH and FEN_WIRE_EVENT_PATH are required")
+        (values nil
+                "FEN_WIRE_CONTROL_PATH and FEN_WIRE_EVENT_PATH are required")
         (let [(out err) (io.open event-path :a)]
           (if (not out)
               (values nil (.. "cannot open " event-path ": " (tostring err)))
@@ -300,15 +315,18 @@
                :receiver (wire.receiver :control)
                :status :starting
                :turn 0
-               :run-start-index (+ (length (or (?. ctx :state :agent :messages) [])) 1)})))))
+               :run-start-index (+ (length (or (?. ctx :state :agent :messages)
+                                               []))
+                                   1)})))))
 
 (fn M.init [ctx]
   "Open the channel before startup events so `agent-started` is forwarded."
   (let [(ch err) (open-channel ctx)]
     (if ch
-        (do (set ctx.state.wire-channel ch)
-            (events.unregister-by-owner OWNER)
-            (events.on :* (fn [ev] (M.forward! ch ev)) OWNER))
+        (do
+          (set ctx.state.wire-channel ch)
+          (events.unregister-by-owner OWNER)
+          (events.on :* (fn [ev] (M.forward! ch ev)) OWNER))
         (error (.. "rpc presenter: " err)))))
 
 (fn M.shutdown [ctx]

@@ -13,13 +13,12 @@
     out))
 
 (fn usage []
-  (table.concat
-    ["usage: /profile start [--period N] [--mode functions|lines]"
-     "       /profile mark [name]"
-     "       /profile status|stop|reset|report"
-     "       /profile save [output-directory]"
-     "samples are Lua VM instruction-count samples, not wall-clock time"]
-    "\n"))
+  (table.concat ["usage: /profile start [--period N] [--mode functions|lines]"
+                 "       /profile mark [name]"
+                 "       /profile status|stop|reset|report"
+                 "       /profile save [output-directory]"
+                 "samples are Lua VM instruction-count samples, not wall-clock time"]
+                "\n"))
 
 (fn emit-info [api text]
   (api.emit {:type :info :source :profiler :text text}))
@@ -38,35 +37,32 @@
         (if (= part "--period")
             (let [n (tonumber value)]
               (if (and n (>= n 100) (= n (math.floor n)))
-                  (do (set opts.period n) (set i (+ i 2)))
+                  (do
+                    (set opts.period n)
+                    (set i (+ i 2)))
                   (set err "--period must be an integer of at least 100")))
             (= part "--mode")
             (if (or (= value "functions") (= value "lines"))
-                (do (set opts.mode value) (set i (+ i 2)))
+                (do
+                  (set opts.mode value)
+                  (set i (+ i 2)))
                 (set err "--mode must be functions or lines"))
             (set err (.. "unknown profile option: " (tostring part))))))
     (values opts err)))
 
 (fn status-text []
-  (string.format
-    "profile: %s; mode=%s period=%d samples=%d dropped=%d frames=%d stacks=%d wall_ms=%d wall_gaps=%d dropped_wall_gaps=%d cpu=%.3fs"
-    (if state.enabled? "running" "stopped")
-    (tostring state.mode)
-    state.period
-    state.sample-count
-    state.dropped-samples
-    (length state.frames)
-    (length state.stacks)
-    (state.elapsed-wall-ms)
-    (length state.wall-gaps)
-    state.dropped-wall-gaps
-    (state.elapsed-cpu)))
+  (string.format "profile: %s; mode=%s period=%d samples=%d dropped=%d frames=%d stacks=%d wall_ms=%d wall_gaps=%d dropped_wall_gaps=%d cpu=%.3fs"
+                 (if state.enabled? "running" "stopped") (tostring state.mode)
+                 state.period state.sample-count state.dropped-samples
+                 (length state.frames) (length state.stacks)
+                 (state.elapsed-wall-ms) (length state.wall-gaps)
+                 state.dropped-wall-gaps (state.elapsed-cpu)))
 
 (fn save-profile [output ?tool-output?]
-  (let [(safe-output output-error)
-        (if (and ?tool-output? output (not= output ""))
-            (export.model-output-dir output)
-            (values output nil))]
+  (let [(safe-output output-error) (if (and ?tool-output? output
+                                            (not= output ""))
+                                       (export.model-output-dir output)
+                                       (values output nil))]
     (if output-error
         (values output-error true)
         (let [was-running? state.enabled?]
@@ -91,13 +87,17 @@
                     (.. "profile started: mode=" (tostring opts.mode)
                         " period=" (tostring opts.period)
                         " (Lua VM instruction samples, not wall time)")
-                    (values (.. "profile start failed: " (tostring result)) true)))))
+                    (values (.. "profile start failed: " (tostring result))
+                            true)))))
         (= sub "stop")
-        (do (state.stop!) (status-text))
+        (do
+          (state.stop!)
+          (status-text))
         (= sub "status")
         (status-text)
         (= sub "report")
-        (.. (status-text) "\nLua widths are instruction samples, not wall time; "
+        (.. (status-text)
+            "\nLua widths are instruction samples, not wall time; "
             "qualifying native/blocking TUI work is listed separately as measured wall gaps")
         (= sub "mark")
         (let [name (or (string.match (or args "") "^%s*mark%s+(.+)%s*$") "mark")]
@@ -105,12 +105,15 @@
               (.. "profile mark: " name)
               (values "profile mark requires a running capture" true)))
         (= sub "reset")
-        (do (state.reset!) "profile capture reset")
+        (do
+          (state.reset!)
+          "profile capture reset")
         (= sub "save")
         (save-profile (. parts 2))
         (or (= sub "help") (= sub "--help") (= sub "-h"))
         (usage)
-        (values (.. "unknown profile command: " (tostring sub) "\n" (usage)) true))))
+        (values (.. "unknown profile command: " (tostring sub) "\n" (usage))
+                true))))
 
 (fn handle [api args]
   (let [(text error?) (perform args)]
@@ -145,15 +148,16 @@
 ;; tags: profiler performance commands register
 (fn M.register [api]
   (api.register :command
-    {:name :profile
-     :order 95
-     :description "Capture Lua instruction samples and measured TUI wall gaps; start|mark|stop|status|report|save|reset; exports Speedscope and folded flame-graph stacks"
-     :handler (fn [args _ctx] (handle api args))})
+                {:name :profile
+                 :order 95
+                 :description "Capture Lua instruction samples and measured TUI wall gaps; start|mark|stop|status|report|save|reset; exports Speedscope and folded flame-graph stacks"
+                 :handler (fn [args _ctx] (handle api args))})
   (api.register :introspect
-    {:name :capture
-     :description "Full profiler workflow for self-introspection: /profile start --period 50000 --mode functions; perform /reload, an agent turn, or tools; /profile status; /profile save [directory] stops and writes profile.speedscope.json, profile.folded, and profile.json. Speedscope/folded widths are Lua VM instruction samples, not milliseconds; correlate native or blocking gaps with tui-stall, make stall-check, or perf. The agent may inspect this capture snapshot with agent_state; controlling capture lifecycle needs the contributor-only profile tool (docs/extensions.md#discovery)."
-     :snapshot (fn [_]
-                 ;; Resolve reloadable export behavior at snapshot time.
-                 ((. (require :fen.extensions.profiler.export) :snapshot)))}))
+                {:name :capture
+                 :description "Full profiler workflow for self-introspection: /profile start --period 50000 --mode functions; perform /reload, an agent turn, or tools; /profile status; /profile save [directory] stops and writes profile.speedscope.json, profile.folded, and profile.json. Speedscope/folded widths are Lua VM instruction samples, not milliseconds; correlate native or blocking gaps with tui-stall, make stall-check, or perf. The agent may inspect this capture snapshot with agent_state; controlling capture lifecycle needs the contributor-only profile tool (docs/extensions.md#discovery)."
+                 :snapshot (fn [_]
+                             ;; Resolve reloadable export behavior at snapshot time.
+                             ((. (require :fen.extensions.profiler.export)
+                                 :snapshot)))}))
 
 M

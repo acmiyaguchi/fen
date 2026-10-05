@@ -68,9 +68,6 @@
         version (or info.version "unknown")
         source (or info.source "unknown")
         target info.targetSystem]
-    (.. "fen " version
-        " (" source
-        (if target (.. ", " target) "")
-        ")")))
+    (.. "fen " version " (" source (if target (.. ", " target) "") ")")))
 
 M

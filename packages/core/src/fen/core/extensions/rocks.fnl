@@ -21,8 +21,7 @@
 ;; summary: Build the package.path fragment that exposes pure-Lua modules installed in a fen rocks tree.
 ;; tags: extensions rocks paths
 (fn M.lua-path-fragment [tree]
-  (.. tree "/share/lua/5.4/?.lua;"
-      tree "/share/lua/5.4/?/init.lua"))
+  (.. tree "/share/lua/5.4/?.lua;" tree "/share/lua/5.4/?/init.lua"))
 
 ;; @doc fen.core.extensions.rocks.lua-cpath-fragment
 ;; kind: function
@@ -41,8 +40,10 @@
   "Prepend a rocks tree to package.path/package.cpath when the tree exists."
   (let [tree (or ?tree (M.default-tree))]
     (when (path.dir-exists? tree)
-      (set package.path (prepend-search-path package.path (M.lua-path-fragment tree)))
-      (set package.cpath (prepend-search-path package.cpath (M.lua-cpath-fragment tree)))
+      (set package.path
+           (prepend-search-path package.path (M.lua-path-fragment tree)))
+      (set package.cpath
+           (prepend-search-path package.cpath (M.lua-cpath-fragment tree)))
       true)))
 
 (fn command-output-lines [cmd]
@@ -83,8 +84,9 @@
         (values (. items 1) nil)
         (= (length items) 0)
         (values nil (.. "no .rockspec found in " dir))
-        (values nil (.. "multiple .rockspec files found in " dir
-                        "; keep exactly one for `fen ext build` v1")))))
+        (values nil
+                (.. "multiple .rockspec files found in " dir
+                    "; keep exactly one for `fen ext build` v1")))))
 
 (fn M.parse-missing-module [err]
   "Extract X from Lua's standard `module 'X' not found` require error."
@@ -125,10 +127,10 @@
   (let [dir spec.dir
         shared-msg (shared-libs-message spec)]
     (if (M.rockspec-present? dir)
-        (.. "missing Lua module '" module-name "' while loading extension " spec.name
-            "; run: " (M.build-command dir) shared-msg)
-        (.. "missing Lua module '" module-name "' while loading extension " spec.name
-            "; install module " module-name " ("
+        (.. "missing Lua module '" module-name "' while loading extension "
+            spec.name "; run: " (M.build-command dir) shared-msg)
+        (.. "missing Lua module '" module-name "' while loading extension "
+            spec.name "; install module " module-name " ("
             (M.manual-install-command module-name) ")" shared-msg))))
 
 ;; @doc fen.core.extensions.rocks.missing-modules-message
@@ -141,13 +143,12 @@
     (each [_ m (ipairs modules)] (table.insert names (tostring m)))
     (let [joined (table.concat names ", ")]
       (if (M.rockspec-present? spec.dir)
-          (.. "missing Lua modules [" joined "] while loading extension " spec.name
-              "; run: " (M.build-command spec.dir)
+          (.. "missing Lua modules [" joined "] while loading extension "
+              spec.name "; run: " (M.build-command spec.dir)
               (shared-libs-message spec))
-          (.. "missing Lua modules [" joined "] while loading extension " spec.name
-              "; install them into the fen rocks tree, e.g. "
-              (M.manual-install-command (. names 1))
-              (shared-libs-message spec))))))
+          (.. "missing Lua modules [" joined "] while loading extension "
+              spec.name "; install them into the fen rocks tree, e.g. "
+              (M.manual-install-command (. names 1)) (shared-libs-message spec))))))
 
 (fn lua-exe-for-luarocks []
   ;; LuaRocks requires cfg.variables.LUA even for pure-Lua builds; /bin/false is a safe placeholder that makes native rocks fail clearly.
@@ -166,23 +167,22 @@
           (lfs.chdir dir)
           (let [old-arg0 (?. _G :arg 0)]
             (when _G.arg (tset _G.arg 0 (lua-exe-for-luarocks)))
-            (let [(ok? err) (xpcall
-                              #(cmd.run_command
-                                 "fen bundled LuaRocks"
-                                 {:make :luarocks.cmd.make}
-                                 :luarocks.cmd.external
-                                 :make
-                                 :--tree tree
-                                 rockspec-name
-                                 (.. "LUA=" (lua-exe-for-luarocks)))
-                              debug.traceback)]
+            (let [(ok? err) (xpcall #(cmd.run_command "fen bundled LuaRocks"
+                                                      {:make :luarocks.cmd.make}
+                                                      :luarocks.cmd.external
+                                                      :make :--tree tree
+                                                      rockspec-name
+                                                      (.. "LUA="
+                                                          (lua-exe-for-luarocks)))
+                                    debug.traceback)]
               (when _G.arg (tset _G.arg 0 old-arg0))
               (when old-cwd (pcall lfs.chdir old-cwd))
               (if ok?
                   0
-                  (do (io.stderr:write (.. "bundled luarocks failed: "
-                                          (tostring err) "\n"))
-                      1))))))))
+                  (do
+                    (io.stderr:write (.. "bundled luarocks failed: "
+                                         (tostring err) "\n"))
+                    1))))))))
 
 ;; Best-effort in-process precompile; the .fen-precompiled marker lets the rockspec build_command skip its own bootstrap compile.
 (fn precompile-in-process [dir]
@@ -194,9 +194,10 @@
               (chdir-ok? chdir-err) (lfs.chdir dir)]
           (if (not chdir-ok?)
               ;; Never run the build (it rm -rf's .lrbuild) in the wrong cwd.
-              (do (io.stderr:write (.. "fen ext build: cannot enter " dir ": "
-                                       (tostring chdir-err) "\n"))
-                  false)
+              (do
+                (io.stderr:write (.. "fen ext build: cannot enter " dir ": "
+                                     (tostring chdir-err) "\n"))
+                false)
               (let [(ok? result) (pcall build.build-lrbuild-dir)]
                 (when (and ok? result)
                   (os.execute "mkdir -p .lrbuild")
@@ -214,13 +215,16 @@
   (let [(rockspec err) (M.single-rockspec dir)
         tree (M.default-tree)]
     (if err
-        (do (io.stderr:write (.. err "\n")) 2)
+        (do
+          (io.stderr:write (.. err "\n"))
+          2)
         (do
           (precompile-in-process dir)
           (let [bundled-rc (run-bundled-luarocks dir rockspec tree)]
             (if bundled-rc
                 bundled-rc
-                (do (io.stderr:write "bundled LuaRocks is unavailable in this fen runtime; run `fen ext build` with the Nix-built fen binary\n")
-                    127)))))))
+                (do
+                  (io.stderr:write "bundled LuaRocks is unavailable in this fen runtime; run `fen ext build` with the Nix-built fen binary\n")
+                  127)))))))
 
 M

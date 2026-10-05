@@ -23,8 +23,7 @@
 (fn default-agent-dir []
   "Return fen's writable auth directory. Kept as the public name because
    callers historically used it for the default write target."
-  (or (os.getenv "FEN_AUTH_DIR")
-      (.. (xdg-config-home) "/fen")))
+  (or (os.getenv "FEN_AUTH_DIR") (.. (xdg-config-home) "/fen")))
 
 (fn default-auth-path []
   "Return fen's writable auth.json path."
@@ -73,8 +72,9 @@
         (let [(ok? value) (pcall json.decode content)]
           (if (and ok? (= (type value) :table))
               value
-              (do (log.warn (.. "auth.storage: malformed " auth-path))
-                  {}))))))
+              (do
+                (log.warn (.. "auth.storage: malformed " auth-path))
+                {}))))))
 
 (fn get [provider-id ?path]
   "Return a provider record. With an explicit path, read only that file.
@@ -98,8 +98,8 @@
     (let [(ok? err) (os.rename tmp auth-path)]
       (when (not ok?)
         (os.remove tmp)
-        (error (.. "auth.storage: rename " tmp " -> " auth-path
-                   " failed: " (tostring err))))
+        (error (.. "auth.storage: rename " tmp " -> " auth-path " failed: "
+                   (tostring err))))
       ;; Defensive: if the file existed before with looser perms, rename
       ;; preserves them on most filesystems but tightening explicitly
       ;; matches pi-mono's behavior.

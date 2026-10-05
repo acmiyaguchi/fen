@@ -1,4 +1,3 @@
-
 (local test-api (require :fen.core.extensions.test_api))
 (local events (require :fen.core.extensions.events))
 (local command-registry (require :fen.core.extensions.register.command))
@@ -31,33 +30,35 @@
   (table.concat (icollect [_ row (ipairs rows)] row.text) "\n"))
 
 (describe "fen.extensions.status"
-  (fn []
-    (it "/status toggles the status panel"
-      (fn []
-        (tset package.loaded :fen.version "test-version")
-        (tset package.loaded :fen.extensions.tui.state nil)
-        (let [panel-state (require :fen.extensions.status.state.status)]
-          (set panel-state.visible? false)
-          (let [seen (fresh-bus [:status])
-                state {:opts {:provider :openai}
-                       :agent {:model :gpt-test
-                               :provider-name :openai
-                               :max-tokens 123
-                               :system-prompt "system"
-                               :tool-restriction {:flag "--denied-tools"
-                                                  :active-names ["read" "grep"]
-                                                  :total 3}
-                               :messages []}
-                       :session nil}]
-            (command-registry.dispatch "/status" state)
-            (assert.is_true panel-state.visible?)
-            (let [ev (find-event seen :info)
-                  rows ((. extension-state.panel-extra 1 :render) {:w 120})]
-              (assert.is_not_nil ev)
-              (assert.is_not_nil
-                (string.find ev.text "status panel: on" 1 true))
-              (assert.is_not_nil
-                (string.find (rows-text rows)
-                             "restricted by --denied-tools" 1 true)))
-            (command-registry.dispatch "/status" state)
-            (assert.is_false (or panel-state.visible? false))))))))
+          (fn []
+            (it "/status toggles the status panel"
+                (fn []
+                  (tset package.loaded :fen.version "test-version")
+                  (tset package.loaded :fen.extensions.tui.state nil)
+                  (let [panel-state (require :fen.extensions.status.state.status)]
+                    (set panel-state.visible? false)
+                    (let [seen (fresh-bus [:status])
+                          state {:opts {:provider :openai}
+                                 :agent {:model :gpt-test
+                                         :provider-name :openai
+                                         :max-tokens 123
+                                         :system-prompt "system"
+                                         :tool-restriction {:flag "--denied-tools"
+                                                            :active-names ["read"
+                                                                           "grep"]
+                                                            :total 3}
+                                         :messages []}
+                                 :session nil}]
+                      (command-registry.dispatch "/status" state)
+                      (assert.is_true panel-state.visible?)
+                      (let [ev (find-event seen :info)
+                            rows ((. extension-state.panel-extra 1 :render) {:w 120})]
+                        (assert.is_not_nil ev)
+                        (assert.is_not_nil (string.find ev.text
+                                                        "status panel: on" 1
+                                                        true))
+                        (assert.is_not_nil (string.find (rows-text rows)
+                                                        "restricted by --denied-tools"
+                                                        1 true)))
+                      (command-registry.dispatch "/status" state)
+                      (assert.is_false (or panel-state.visible? false))))))))

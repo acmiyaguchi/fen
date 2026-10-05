@@ -17,7 +17,11 @@
         (do
           ;; Minimal fallback for the simple artifact records written here.
           (fn esc [s]
-            (.. "\"" (string.gsub (string.gsub (string.gsub (tostring s) "\\" "\\\\") "\n" "\\n") "\"" "\\\"") "\""))
+            (.. "\"" (string.gsub (string.gsub (string.gsub (tostring s) "\\"
+                                                            "\\\\")
+                                               "\n" "\\n")
+                                  "\"" "\\\"") "\""))
+
           (fn enc [v]
             (case (type v)
               :string (esc v)
@@ -27,13 +31,15 @@
                            parts []]
                        (if array?
                            (do
-                             (each [_ item (ipairs v)] (table.insert parts (enc item)))
+                             (each [_ item (ipairs v)]
+                               (table.insert parts (enc item)))
                              (.. "[" (table.concat parts ",") "]"))
                            (do
                              (each [k item (pairs v)]
                                (table.insert parts (.. (esc k) ":" (enc item))))
                              (.. "{" (table.concat parts ",") "}"))))
               _ (if (= v nil) "null" (esc v))))
+
           (enc x)))))
 
 (fn ensure-dir [path]
@@ -99,8 +105,9 @@
     (while (< (now) deadline)
       (let [(chunk err) (child:read 20 max-bytes)]
         (if (and chunk (not= chunk ""))
-            (do (table.insert chunks chunk)
-                (when on-chunk (on-chunk chunk)))
+            (do
+              (table.insert chunks chunk)
+              (when on-chunk (on-chunk chunk)))
             (set deadline 0))))
     (table.concat chunks "")))
 

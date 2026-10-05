@@ -38,8 +38,7 @@
 ;; tags: util text truncate
 (fn truncate-line [s n]
   (let [s (or s "")]
-    (if (<= (length s) n) s
-        (.. (string.sub s 1 (math.max 0 (- n 1))) "…"))))
+    (if (<= (length s) n) s (.. (string.sub s 1 (math.max 0 (- n 1))) "…"))))
 
 (fn parse-positive-int [s]
   (let [n (tonumber s)]
@@ -75,25 +74,18 @@
       (and (>= b 224) (<= b 239))
       (let [b2 (string.byte s (+ i 1))
             b3 (string.byte s (+ i 2))]
-        (when (and (<= (+ i 2) n)
-                   (continuation? b3)
-                   (if (= b 224)
-                       (and b2 (>= b2 160) (<= b2 191))
-                       (= b 237)
-                       (and b2 (>= b2 128) (<= b2 159))
+        (when (and (<= (+ i 2) n) (continuation? b3)
+                   (if (= b 224) (and b2 (>= b2 160) (<= b2 191))
+                       (= b 237) (and b2 (>= b2 128) (<= b2 159))
                        (continuation? b2)))
           3))
       (and (>= b 240) (<= b 244))
       (let [b2 (string.byte s (+ i 1))
             b3 (string.byte s (+ i 2))
             b4 (string.byte s (+ i 3))]
-        (when (and (<= (+ i 3) n)
-                   (continuation? b3)
-                   (continuation? b4)
-                   (if (= b 240)
-                       (and b2 (>= b2 144) (<= b2 191))
-                       (= b 244)
-                       (and b2 (>= b2 128) (<= b2 143))
+        (when (and (<= (+ i 3) n) (continuation? b3) (continuation? b4)
+                   (if (= b 240) (and b2 (>= b2 144) (<= b2 191))
+                       (= b 244) (and b2 (>= b2 128) (<= b2 143))
                        (continuation? b2)))
           4))
       nil))
@@ -151,7 +143,8 @@
                   (let [seq-len (utf8-seq-len input i n b)]
                     (if seq-len
                         (do
-                          (table.insert out (string.sub input i (+ i seq-len -1)))
+                          (table.insert out
+                                        (string.sub input i (+ i seq-len -1)))
                           (set i (+ i seq-len)))
                         (do
                           (table.insert out (hex-byte b))

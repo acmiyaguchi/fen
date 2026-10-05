@@ -24,7 +24,4 @@
 ;; summary: Terminal width associated with cached /status rows so resize events rebuild aligned panel text.
 ;; tags: builtin commands state status cache
 
-{:visible? false
- :cached-rows nil
- :cached-at 0
- :cached-w 0}
+{:visible? false :cached-rows nil :cached-at 0 :cached-w 0}

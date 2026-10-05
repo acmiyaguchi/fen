@@ -20,7 +20,9 @@
 (local socket (require :socket))
 (local clock (require :fen.util.clock))
 
-(local DRAIN-BUDGET 65536) ;; FEN_CHUNK_DRAIN_BUDGET in fen_http.c
+(local DRAIN-BUDGET 65536)
+
+;; FEN_CHUNK_DRAIN_BUDGET in fen_http.c
 
 (fn env-num [name dflt]
   (let [v (os.getenv name)
@@ -43,16 +45,12 @@
     (table.concat parts)))
 
 (fn http-response [body]
-  (.. "HTTP/1.1 200 OK\r\n"
-      "Content-Type: text/event-stream\r\n"
-      "Content-Length: " (length body) "\r\n"
-      "Connection: close\r\n\r\n"
-      body))
+  (.. "HTTP/1.1 200 OK\r\n" "Content-Type: text/event-stream\r\n"
+      "Content-Length: " (length body) "\r\n" "Connection: close\r\n\r\n" body))
 
 (fn median [sorted]
   (let [n (length sorted)]
-    (if (= n 0) 0
-        (= (% n 2) 1) (. sorted (// (+ n 1) 2))
+    (if (= n 0) 0 (= (% n 2) 1) (. sorted (// (+ n 1) 2))
         (/ (+ (. sorted (// n 2)) (. sorted (+ (// n 2) 1))) 2))))
 
 ;; Drive the cooperative request against a one-shot localhost server, timing
@@ -63,25 +61,26 @@
         url (.. "http://" host ":" port "/")
         resp-bytes (http-response body)
         events [0]
-        parser (sse.new-parser
-                 (fn [ev]
-                   (when (and (not= ev.data nil) (not= ev.data "")
-                              (not= ev.data "[DONE]"))
-                     (pcall json.decode ev.data)
-                     (tset events 1 (+ (. events 1) 1)))))
+        parser (sse.new-parser (fn [ev]
+                                 (when (and (not= ev.data nil)
+                                            (not= ev.data "")
+                                            (not= ev.data "[DONE]"))
+                                   (pcall json.decode ev.data)
+                                   (tset events 1 (+ (. events 1) 1)))))
         response [nil]
         gaps []
-        co (coroutine.create
-             (fn []
-               (tset response 1
-                     (http.request {:url url
-                                    :method "GET"
-                                    :timeout-ms 30000
-                                    :connect-timeout-ms 5000
-                                    :accumulate-body? accumulate?
-                                    :on-chunk (fn [c] (parser.feed c))
-                                    :yield (fn [] (coroutine.yield))}))
-               (parser.finish)))]
+        co (coroutine.create (fn []
+                               (tset response 1
+                                     (http.request {:url url
+                                                    :method "GET"
+                                                    :timeout-ms 30000
+                                                    :connect-timeout-ms 5000
+                                                    :accumulate-body? accumulate?
+                                                    :on-chunk (fn [c]
+                                                                (parser.feed c))
+                                                    :yield (fn []
+                                                             (coroutine.yield))}))
+                               (parser.finish)))]
     (server:settimeout 0)
     (var client nil)
     (var sent 0)
@@ -102,41 +101,42 @@
     (values (. response 1) gaps (. events 1))))
 
 (describe "stall-check harness #smoke #stall"
-  (fn []
-    (it "keeps per-resume work bounded under injected per-chunk delay"
-      (fn []
-        (let [size-kb (env-num :FEN_STALL_BODY_KB 1536)
-              budget (env-num :FEN_STALL_BUDGET_MS 250)
-              delay (or (tonumber (os.getenv :FEN_DEBUG_CHUNK_DELAY_MS)) 0)
-              body (build-payload (* size-kb 1024))
-              slices (math.ceil (/ (length body) DRAIN-BUDGET))
-              (r gaps events) (run body false)]
-          (assert.is_true (> delay 0)
-                          "stall-check needs FEN_DEBUG_CHUNK_DELAY_MS>0 (run via `make stall-check`)")
-          (assert.is_table r)
-          (assert.is_nil r.error (.. "transport error: " (tostring (?. r :error))))
-          (assert.are.equal 200 r.status)
-          (assert.is_true (> events 0) "no SSE events were parsed")
-          (let [sorted (doto (icollect [_ g (ipairs gaps)] g) (table.sort))
-                n (length sorted)
-                worst (. sorted n)
-                med (median sorted)]
-            (var sum 0)
-            (each [_ g (ipairs gaps)] (set sum (+ sum g)))
-            (print (string.format
-                     "\nstall-check: body=%dKB slices=%d delay_ms=%d resumes=%d events=%d"
-                     size-kb slices delay n events))
-            (print (string.format
-                     "stall-check: gap_ms min=%d max=%d avg=%.1f median=%d budget=%d injected_total_ms=%d"
-                     (. sorted 1) worst (/ sum n) med budget (* slices delay)))
-            (assert.is_true (>= sum (* (* slices delay) 0.5))
-                            (string.format
-                              "observed total %dms far below injected %dms — delay knob not applied"
-                              sum (* slices delay)))
-            (assert.is_true (<= worst budget)
-                            (string.format
-                              "worst resume %dms exceeded budget %dms (stall regression)"
-                              worst budget))
-            (when (and (> delay 0) (> slices 4))
-              (assert.is_true (< worst (* slices delay))
-                              "all chunk work landed in one resume (draining not cooperative)"))))))))
+          (fn []
+            (it "keeps per-resume work bounded under injected per-chunk delay"
+                (fn []
+                  (let [size-kb (env-num :FEN_STALL_BODY_KB 1536)
+                        budget (env-num :FEN_STALL_BUDGET_MS 250)
+                        delay (or (tonumber (os.getenv :FEN_DEBUG_CHUNK_DELAY_MS))
+                                  0)
+                        body (build-payload (* size-kb 1024))
+                        slices (math.ceil (/ (length body) DRAIN-BUDGET))
+                        (r gaps events) (run body false)]
+                    (assert.is_true (> delay 0)
+                                    "stall-check needs FEN_DEBUG_CHUNK_DELAY_MS>0 (run via `make stall-check`)")
+                    (assert.is_table r)
+                    (assert.is_nil r.error
+                                   (.. "transport error: "
+                                       (tostring (?. r :error))))
+                    (assert.are.equal 200 r.status)
+                    (assert.is_true (> events 0) "no SSE events were parsed")
+                    (let [sorted (doto (icollect [_ g (ipairs gaps)] g)
+                                   (table.sort))
+                          n (length sorted)
+                          worst (. sorted n)
+                          med (median sorted)]
+                      (var sum 0)
+                      (each [_ g (ipairs gaps)] (set sum (+ sum g)))
+                      (print (string.format "\nstall-check: body=%dKB slices=%d delay_ms=%d resumes=%d events=%d"
+                                            size-kb slices delay n events))
+                      (print (string.format "stall-check: gap_ms min=%d max=%d avg=%.1f median=%d budget=%d injected_total_ms=%d"
+                                            (. sorted 1) worst (/ sum n) med
+                                            budget (* slices delay)))
+                      (assert.is_true (>= sum (* (* slices delay) 0.5))
+                                      (string.format "observed total %dms far below injected %dms — delay knob not applied"
+                                                     sum (* slices delay)))
+                      (assert.is_true (<= worst budget)
+                                      (string.format "worst resume %dms exceeded budget %dms (stall regression)"
+                                                     worst budget))
+                      (when (and (> delay 0) (> slices 4))
+                        (assert.is_true (< worst (* slices delay))
+                                        "all chunk work landed in one resume (draining not cooperative)"))))))))

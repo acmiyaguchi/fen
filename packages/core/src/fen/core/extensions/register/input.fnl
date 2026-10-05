@@ -32,8 +32,7 @@
 ;; summary: Remove all input handlers installed by owner during extension reload or teardown.
 ;; tags: extensions register input reload
 (fn M.unregister-by-owner [owner]
-  (util.remove-where (handlers)
-                     (fn [h _] (= h.__owner owner))))
+  (util.remove-where (handlers) (fn [h _] (= h.__owner owner))))
 
 (fn by-order [a b]
   (let [ao (or a.order 100)

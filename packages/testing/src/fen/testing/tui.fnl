@@ -73,59 +73,97 @@
    no-op stub for existing state/logic tests."
   (let [opts (or ?opts {})
         stub {:capture? (= opts.capture? true)}
-        consts {:DEFAULT 0 :BLACK 0 :CYAN 6 :GREEN 2 :RED 1 :YELLOW 3
-                :WHITE 7 :BLUE 4 :MAGENTA 5
-                :BOLD 1 :DIM 2 :REVERSE 4 :UNDERLINE 8 :ITALIC 16
+        consts {:DEFAULT 0
+                :BLACK 0
+                :CYAN 6
+                :GREEN 2
+                :RED 1
+                :YELLOW 3
+                :WHITE 7
+                :BLUE 4
+                :MAGENTA 5
+                :BOLD 1
+                :DIM 2
+                :REVERSE 4
+                :UNDERLINE 8
+                :ITALIC 16
                 :STRIKEOUT 32
-                :KEY_ENTER 13 :KEY_CTRL_C 3 :KEY_CTRL_D 4
-                :KEY_CTRL_J 10 :KEY_CTRL_O 15 :KEY_CTRL_T 20
-                :KEY_TAB 9 :KEY_CTRL_A 1 :KEY_CTRL_E 5
-                :KEY_CTRL_B 2 :KEY_CTRL_F 6
-                :KEY_CTRL_P 16 :KEY_CTRL_N 14
-                :KEY_CTRL_W 23 :KEY_CTRL_U 21 :KEY_CTRL_Y 25
-                :KEY_CTRL_L 12 :KEY_CTRL_Z 26
-                :KEY_BACKSPACE 8 :KEY_BACKSPACE2 127
-                :KEY_HOME 1001 :KEY_END 1002
-                :KEY_ARROW_LEFT 1003 :KEY_ARROW_RIGHT 1004
-                :KEY_ARROW_UP 1005 :KEY_ARROW_DOWN 1006
-                :KEY_PGUP 1007 :KEY_PGDN 1008
-                :KEY_MOUSE_WHEEL_UP 1009 :KEY_MOUSE_WHEEL_DOWN 1010
-                :KEY_MOUSE_LEFT 1011 :KEY_MOUSE_RIGHT 1012
-                :KEY_MOUSE_MIDDLE 1013 :KEY_MOUSE_RELEASE 1014
-                :KEY_SPACE 32 :MOD_ALT 1 :MOD_MOTION 8
-                :EVENT_KEY 1 :EVENT_RESIZE 2 :EVENT_MOUSE 3
-                :OUTPUT_NORMAL 1 :INPUT_ESC 4 :INPUT_ALT 1 :INPUT_MOUSE 2
+                :KEY_ENTER 13
+                :KEY_CTRL_C 3
+                :KEY_CTRL_D 4
+                :KEY_CTRL_J 10
+                :KEY_CTRL_O 15
+                :KEY_CTRL_T 20
+                :KEY_TAB 9
+                :KEY_CTRL_A 1
+                :KEY_CTRL_E 5
+                :KEY_CTRL_B 2
+                :KEY_CTRL_F 6
+                :KEY_CTRL_P 16
+                :KEY_CTRL_N 14
+                :KEY_CTRL_W 23
+                :KEY_CTRL_U 21
+                :KEY_CTRL_Y 25
+                :KEY_CTRL_L 12
+                :KEY_CTRL_Z 26
+                :KEY_BACKSPACE 8
+                :KEY_BACKSPACE2 127
+                :KEY_HOME 1001
+                :KEY_END 1002
+                :KEY_ARROW_LEFT 1003
+                :KEY_ARROW_RIGHT 1004
+                :KEY_ARROW_UP 1005
+                :KEY_ARROW_DOWN 1006
+                :KEY_PGUP 1007
+                :KEY_PGDN 1008
+                :KEY_MOUSE_WHEEL_UP 1009
+                :KEY_MOUSE_WHEEL_DOWN 1010
+                :KEY_MOUSE_LEFT 1011
+                :KEY_MOUSE_RIGHT 1012
+                :KEY_MOUSE_MIDDLE 1013
+                :KEY_MOUSE_RELEASE 1014
+                :KEY_SPACE 32
+                :MOD_ALT 1
+                :MOD_MOTION 8
+                :EVENT_KEY 1
+                :EVENT_RESIZE 2
+                :EVENT_MOUSE 3
+                :OUTPUT_NORMAL 1
+                :INPUT_ESC 4
+                :INPUT_ALT 1
+                :INPUT_MOUSE 2
                 :ERR_NO_EVENT 0}]
     (each [k v (pairs consts)]
       (tset stub k v))
     (set stub.width-value (or opts.cols opts.width 80))
     (set stub.height-value (or opts.rows opts.height 24))
-    (each [_ name (ipairs [:init :shutdown :set_input_mode :set_output_mode
+    (each [_ name (ipairs [:init
+                           :shutdown
+                           :set_input_mode
+                           :set_output_mode
                            :peek_event])]
       (tset stub name (fn [] 0)))
-    (tset stub :set_cell
-          (fn [x y ch _fg _bg]
-            (ensure-screen! stub)
-            (when stub.capture?
-              (put-utf8-text! stub.screen x y (cell-text (or ch 32))))
-            0))
-    (tset stub :print
-          (fn [x y _fg _bg text]
-            (ensure-screen! stub)
-            (when stub.capture?
-              (put-utf8-text! stub.screen x y text))
-            0))
-    (tset stub :set_cursor
-          (fn [x y]
-            (set stub.cursor {:x x :y y :hidden? false})
-            0))
-    (tset stub :hide_cursor
-          (fn []
-            (set stub.cursor {:hidden? true})
-            0))
+    (tset stub :set_cell (fn [x y ch _fg _bg]
+                           (ensure-screen! stub)
+                           (when stub.capture?
+                             (put-utf8-text! stub.screen x y
+                                             (cell-text (or ch 32))))
+                           0))
+    (tset stub :print (fn [x y _fg _bg text]
+                        (ensure-screen! stub)
+                        (when stub.capture?
+                          (put-utf8-text! stub.screen x y text))
+                        0))
+    (tset stub :set_cursor (fn [x y]
+                             (set stub.cursor {:x x :y y :hidden? false})
+                             0))
+    (tset stub :hide_cursor (fn []
+                              (set stub.cursor {:hidden? true})
+                              0))
     ;; Ctrl-Z suspend would stop the test runner; record the call instead.
     (tset stub :raise_sigtstp (fn []
-                                (set stub.sigtstp-count (+ (or stub.sigtstp-count 0) 1))
+                                (set stub.sigtstp-count
+                                     (+ (or stub.sigtstp-count 0) 1))
                                 0))
     (tset stub :width (fn [] (or stub.width-value 80)))
     (tset stub :height (fn [] (or stub.height-value 24)))
@@ -134,7 +172,8 @@
                         (reset-screen! stub)
                         0))
     (tset stub :present (fn []
-                          (set stub.present-count (+ (or stub.present-count 0) 1))
+                          (set stub.present-count
+                               (+ (or stub.present-count 0) 1))
                           (when stub.capture?
                             (ensure-screen! stub)
                             (set stub.presented-screen (clone-grid stub.screen)))
@@ -149,7 +188,8 @@
    keep full-width rows."
   (let [opts (or ?opts {})
         trim? (not= opts.trim-trailing? false)]
-    (assert stub.capture? "screen-lines requires install-termbox-stub! {:capture? true}")
+    (assert stub.capture?
+            "screen-lines requires install-termbox-stub! {:capture? true}")
     (ensure-screen! stub)
     (grid-lines stub.screen trim?)))
 
@@ -204,7 +244,9 @@
     (set state.new-content-below? false)
     (set state.last-user-jump-index nil)
     (set state.expand-tool-results? false)
-    (set state.markdown? (if (= opts.markdown? nil) false opts.markdown?))
+    (set state.markdown? (if (= opts.markdown? nil)
+                             false
+                             opts.markdown?))
     (set state.hide-thinking-block? false)
     (set state.animations? true)
     (set state.pending-quit? false)
@@ -218,15 +260,26 @@
     (set state.errors [])
     (set state.errors-visible? false)
     (set state.error-presence-cache nil)
-    (set state.status-info
-         {:model nil :provider nil
-          :cum-input 0 :cum-output 0
-          :cum-cache-read 0 :cum-cache-write 0
-          :last-input 0 :start-ms 0
-          :running-label nil :thinking? false :retrying? false
-          :retry-attempt 0 :retry-max-attempts 0 :retry-delay-ms 0
-          :retry-reason nil :cancelling? false :turn-start 0
-          :spin-frame 0 :steering-queued 0 :follow-up-queued 0})
+    (set state.status-info {:model nil
+                            :provider nil
+                            :cum-input 0
+                            :cum-output 0
+                            :cum-cache-read 0
+                            :cum-cache-write 0
+                            :last-input 0
+                            :start-ms 0
+                            :running-label nil
+                            :thinking? false
+                            :retrying? false
+                            :retry-attempt 0
+                            :retry-max-attempts 0
+                            :retry-delay-ms 0
+                            :retry-reason nil
+                            :cancelling? false
+                            :turn-start 0
+                            :spin-frame 0
+                            :steering-queued 0
+                            :follow-up-queued 0})
     state))
 
 M

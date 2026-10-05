@@ -19,32 +19,27 @@
 ;; metadata to derive this from, so it is maintained by hand. It is an
 ;; allowlist, so it fails safe: any tool not listed here (including newly added
 ;; ones) is blocked while planning. Keep it in sync as inspection tools land.
-(local READ_ONLY_TOOLS
-  {:read true
-   :grep true
-   :find true
-   :ls true
-   :agent_state true
-   :models true
-   :fen_docs true})
+(local READ_ONLY_TOOLS {:read true
+                        :grep true
+                        :find true
+                        :ls true
+                        :agent_state true
+                        :models true
+                        :fen_docs true})
 
-(local PLAN_PROMPT
-  (table.concat
-    ["Enter plan mode for this request."
-     "Investigate only with read-only tools."
-     "Allowed tools while planning: read, grep, find, ls, agent_state, models, fen_docs."
-     "Do not use bash, edit, write, or any tool that mutates files, state, sessions, or external systems."
-     "Produce a concise execution plan only; do not make changes yet."
-     "Include risks, files likely to change, and tests/checks to run."
-     "End with a short note that the user can run /plan approve to execute or /plan revise <guidance> to revise."]
-    "\n"))
+(local PLAN_PROMPT (table.concat ["Enter plan mode for this request."
+                                  "Investigate only with read-only tools."
+                                  "Allowed tools while planning: read, grep, find, ls, agent_state, models, fen_docs."
+                                  "Do not use bash, edit, write, or any tool that mutates files, state, sessions, or external systems."
+                                  "Produce a concise execution plan only; do not make changes yet."
+                                  "Include risks, files likely to change, and tests/checks to run."
+                                  "End with a short note that the user can run /plan approve to execute or /plan revise <guidance> to revise."]
+                                 "\n"))
 
-(local REVISE_PROMPT
-  (table.concat
-    ["Revise the current plan using the user's guidance."
-     "Continue plan mode and continue using only read-only tools if more inspection is needed."
-     "Produce the revised execution plan only; do not make changes yet."]
-    "\n"))
+(local REVISE_PROMPT (table.concat ["Revise the current plan using the user's guidance."
+                                    "Continue plan mode and continue using only read-only tools if more inspection is needed."
+                                    "Produce the revised execution plan only; do not make changes yet."]
+                                   "\n"))
 
 (fn tool-key [name]
   (let [s (tostring (or name ""))]
@@ -53,8 +48,7 @@
         s)))
 
 (fn planning? []
-  (or (= state.mode :planning)
-      (= state.mode :revising)))
+  (or (= state.mode :planning) (= state.mode :revising)))
 
 (fn active? []
   (not= state.mode :idle))
@@ -88,35 +82,33 @@
 
 (fn planning-prompt [goal]
   (let [goal (trim goal)]
-    (table.concat
-      [PLAN_PROMPT
-       ""
-       "User request to plan:"
-       (if (= goal "") "Plan the next requested work from the conversation context." goal)]
-      "\n")))
+    (table.concat [PLAN_PROMPT
+                   ""
+                   "User request to plan:"
+                   (if (= goal "")
+                       "Plan the next requested work from the conversation context."
+                       goal)] "\n")))
 
 (fn revision-prompt [guidance]
-  (table.concat
-    [REVISE_PROMPT
-     ""
-     "Current plan:"
-     (or state.last-plan "")
-     ""
-     "Revision guidance:"
-     (trim guidance)]
-    "\n"))
+  (table.concat [REVISE_PROMPT
+                 ""
+                 "Current plan:"
+                 (or state.last-plan "")
+                 ""
+                 "Revision guidance:"
+                 (trim guidance)] "\n"))
 
 (fn approved-text []
-  (table.concat
-    ["Approved plan:"
-     ""
-     (or state.last-plan "")
-     ""
-     "Execute this plan now."]
-    "\n"))
+  (table.concat ["Approved plan:"
+                 ""
+                 (or state.last-plan "")
+                 ""
+                 "Execute this plan now."] "\n"))
 
 (fn tool-result [text ?error? ?details]
-  {:content [(types.text-block text)] :is-error? (or ?error? false) :details ?details})
+  {:content [(types.text-block text)]
+   :is-error? (or ?error? false)
+   :details ?details})
 
 (fn submit-plan-turn! [api run-state prompt mode goal ?when-busy]
   (clear-blocked!)
@@ -124,8 +116,9 @@
   (set-mode! mode)
   (when goal (set state.last-goal goal))
   (set state.run-state run-state)
-  (let [result (api.turn.submit! run-state prompt {:when-busy (or ?when-busy :reject)
-                                                  :emit-user? false})]
+  (let [result (api.turn.submit! run-state prompt
+                                 {:when-busy (or ?when-busy :reject)
+                                  :emit-user? false})]
     (when result.ok
       (set state.active-turn-id (or run-state.turn-id result.turn-id)))
     (when (not result.ok)
@@ -135,25 +128,30 @@
     result))
 
 (fn start-plan! [api args run-state ?when-busy]
-  (submit-plan-turn! api run-state (planning-prompt args) :planning (trim args) ?when-busy))
+  (submit-plan-turn! api run-state (planning-prompt args) :planning (trim args)
+                     ?when-busy))
 
 (fn revise-plan! [api args run-state ?when-busy]
   (if (not state.last-plan)
-      (api.emit {:type :error :error "/plan revise: no captured plan to revise"})
+      (api.emit {:type :error
+                 :error "/plan revise: no captured plan to revise"})
       (do
         (set state.revision-count (+ (or state.revision-count 0) 1))
-        (submit-plan-turn! api run-state (revision-prompt args) :revising state.last-goal ?when-busy))))
+        (submit-plan-turn! api run-state (revision-prompt args) :revising
+                           state.last-goal ?when-busy))))
 
 (fn approve-plan! [api _args run-state]
   (if (not state.last-plan)
-      (api.emit {:type :error :error "/plan approve: no captured plan to approve"})
+      (api.emit {:type :error
+                 :error "/plan approve: no captured plan to approve"})
       (let [text (approved-text)]
         ;; Execution is no longer plan mode; normal tools are available.
         (set-mode! :idle)
         (let [result (api.turn.submit! run-state text {:when-busy :reject})]
           (when (not result.ok)
             (set state.last-error result.error)
-            (api.emit {:type :error :error (.. "/plan approve: " (tostring result.error))}))
+            (api.emit {:type :error
+                       :error (.. "/plan approve: " (tostring result.error))}))
           result))))
 
 (fn show-plan! [api]
@@ -165,15 +163,14 @@
 
 (fn usage! [api]
   (api.emit {:type :assistant-text
-             :text (table.concat
-                     ["Usage:"
-                      "/plan <request>      Draft a read-only plan"
-                      "/plan revise <notes> Revise the captured plan"
-                      "/plan approve        Execute the captured plan"
-                      "/plan show           Show the captured plan"
-                      "/plan cancel         Leave plan mode and clear the plan"
-                      "/plan panel on|off   Toggle the plan panel"]
-                     "\n")}))
+             :text (table.concat ["Usage:"
+                                  "/plan <request>      Draft a read-only plan"
+                                  "/plan revise <notes> Revise the captured plan"
+                                  "/plan approve        Execute the captured plan"
+                                  "/plan show           Show the captured plan"
+                                  "/plan cancel         Leave plan mode and clear the plan"
+                                  "/plan panel on|off   Toggle the plan panel"]
+                                 "\n")}))
 
 (fn set-visible! [api visible? announce?]
   (set state.visible? visible?)
@@ -194,8 +191,9 @@
         (= lower "show")
         (show-plan! api)
         (= lower "cancel")
-        (do (clear-plan!)
-            (api.emit {:type :info :text "plan cleared"}))
+        (do
+          (clear-plan!)
+          (api.emit {:type :info :text "plan cleared"}))
         (= lower "panel")
         ;; Bare `/plan panel` (no on|off) toggles; guard the nil first-arg so
         ;; string.lower never sees nil.
@@ -214,22 +212,29 @@
         (if (or (not run-state) (not run-state.turn-id))
             (tool-result "plan draft requires an active agent turn" true)
             (let [r (start-plan! api (or args.request "") run-state :follow-up)]
-              (tool-result (if r.ok "Plan draft queued" (or r.error "plan draft failed"))
+              (tool-result (if r.ok "Plan draft queued"
+                               (or r.error "plan draft failed"))
                            (not r.ok))))
         (= action "revise")
         (if (or (not run-state) (not run-state.turn-id))
             (tool-result "plan revision requires an active agent turn" true)
             (if (not state.last-plan)
                 (tool-result "no captured plan to revise" true)
-                (let [r (revise-plan! api (or args.guidance "") run-state :follow-up)]
-                  (tool-result (if r.ok "Plan revision queued" (or r.error "plan revision failed"))
+                (let [r (revise-plan! api (or args.guidance "") run-state
+                                      :follow-up)]
+                  (tool-result (if r.ok "Plan revision queued"
+                                   (or r.error "plan revision failed"))
                                (not r.ok)))))
         (= action "show")
         (if state.last-plan
-            (tool-result state.last-plan false {:mode state.mode :revision-count state.revision-count})
+            (tool-result state.last-plan false
+                         {:mode state.mode
+                          :revision-count state.revision-count})
             (tool-result "no plan captured yet" true))
         (= action "cancel")
-        (do (clear-plan!) (tool-result "Plan cancelled" false {:mode state.mode}))
+        (do
+          (clear-plan!)
+          (tool-result "Plan cancelled" false {:mode state.mode}))
         (tool-result (.. "unknown plan action: " (tostring action)) true))))
 
 (fn before-tool [ctx]
@@ -245,9 +250,7 @@
              (or (= ev.agent nil) (= ev.agent (?. state.run-state :agent)))
              (or (= ev.turn-id nil)
                  (and state.active-turn-id (= ev.turn-id state.active-turn-id))))
-    (if (and (= ev.status :ok)
-             ev.result
-             (not= ev.result ""))
+    (if (and (= ev.status :ok) ev.result (not= ev.result ""))
         (do
           (set state.last-plan ev.result)
           (set-mode! :ready))
@@ -259,7 +262,8 @@
           (clear-blocked!)
           (set-mode! :idle))
         (do
-          (set state.last-error (or ev.error "plan turn did not produce a result"))
+          (set state.last-error
+               (or ev.error "plan turn did not produce a result"))
           (set-mode! :idle)))))
 
 (fn on-error [ev]
@@ -272,20 +276,23 @@
 
 (fn status-render [_ctx]
   (when (active?)
-    {:text (.. "plan:" state.mode)
-     :style :status}))
+    {:text (.. "plan:" state.mode) :style :status}))
 
 (fn plan-summary-lines [w]
   (let [width (math.max 20 (or w 80))
         out [{:text (.. "Plan mode: " state.mode) :style :assistant}]]
     (when state.last-goal
-      (table.insert out {:text (.. "Goal: " (truncate-line state.last-goal (- width 8))) :style :dim}))
+      (table.insert out {:text (.. "Goal: "
+                                   (truncate-line state.last-goal (- width 8)))
+                         :style :dim}))
     (if state.last-plan
         (do
           (table.insert out {:text "Captured plan:" :style :dim})
           (each [line (string.gmatch state.last-plan "([^\n]+)")]
             (when (< (length out) 8)
-              (table.insert out {:text (.. "  " (truncate-line line (- width 4))) :style :dim}))))
+              (table.insert out {:text (.. "  "
+                                           (truncate-line line (- width 4)))
+                                 :style :dim}))))
         (table.insert out {:text "No plan captured yet." :style :dim}))
     (when state.last-blocked
       (table.insert out {:text (.. "Blocked tool: " state.last-blocked)
@@ -296,8 +303,7 @@
   ;; :height and :render both call this each frame; cache on (width, version)
   ;; so the row list is built at most once per change, like todo/mem.
   (let [w (or (?. ctx :w) 80)]
-    (when (or (not state.cached-rows)
-              (not= state.cached-w w)
+    (when (or (not state.cached-rows) (not= state.cached-w w)
               (not= state.cached-version state.version))
       (set state.cached-rows (plan-summary-lines w))
       (set state.cached-w w)
@@ -330,33 +336,36 @@
 
 (fn register! [api]
   (api.register :command
-    {:name :plan
-     :order 28
-     :description "Draft, revise, show, and approve a read-only execution plan"
-     :handler (fn [args run-state]
-                (handle-command api args run-state))})
+                {:name :plan
+                 :order 28
+                 :description "Draft, revise, show, and approve a read-only execution plan"
+                 :handler (fn [args run-state]
+                            (handle-command api args run-state))})
   (api.register :tool
-    {:name :plan
-     :label "Plan"
-     :exposure :search
-     :description "Draft, revise, show, or cancel a read-only execution plan. This tool never approves or executes a plan."
-     :parameters {:type :object
-                  :properties {:action {:type :string :enum ["draft" "revise" "show" "cancel"]}
-                               :request {:type :string}
-                               :guidance {:type :string}}
-                  :required [:action]}
-     :execute (fn [args ctx _yield] (execute-tool api args ctx.state))})
+                {:name :plan
+                 :label "Plan"
+                 :exposure :search
+                 :description "Draft, revise, show, or cancel a read-only execution plan. This tool never approves or executes a plan."
+                 :parameters {:type :object
+                              :properties {:action {:type :string
+                                                    :enum ["draft"
+                                                           "revise"
+                                                           "show"
+                                                           "cancel"]}
+                                           :request {:type :string}
+                                           :guidance {:type :string}}
+                              :required [:action]}
+                 :execute (fn [args ctx _yield]
+                            (execute-tool api args ctx.state))})
   (api.register :hook {:before-tool before-tool})
-  (api.register :status
-    {:name :plan
-     :side :left
-     :order 34
-     :render status-render})
+  (api.register :status {:name :plan
+                         :side :left
+                         :order 34
+                         :render status-render})
   (api.register :panel (panel-spec))
-  (api.register :introspect
-    {:name :state
-     :description "Current plan companion mode and captured plan"
-     :snapshot snapshot})
+  (api.register :introspect {:name :state
+                             :description "Current plan companion mode and captured plan"
+                             :snapshot snapshot})
   (api.on :agent-turn-complete on-turn-complete)
   (api.on :error on-error)
   (api.on :reset-conversation on-reset)

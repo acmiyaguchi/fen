@@ -54,30 +54,29 @@
 (fn chat-response [body]
   (let [model (request-model body "mock-chat")]
     (if (has-chat-tool-result? body)
-        (string.format
-          "{\"id\":\"chatcmpl_mock_final\",\"object\":\"chat.completion\",\"created\":%d,\"model\":\"%s\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"OK\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}"
-          (os.time) (json-escape model))
+        (string.format "{\"id\":\"chatcmpl_mock_final\",\"object\":\"chat.completion\",\"created\":%d,\"model\":\"%s\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"OK\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}"
+                       (os.time) (json-escape model))
         (let [args (json-escape "{\"path\":\"README.md\",\"limit\":1}")]
-          (string.format
-            "{\"id\":\"chatcmpl_mock_tool\",\"object\":\"chat.completion\",\"created\":%d,\"model\":\"%s\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_read_1\",\"type\":\"function\",\"function\":{\"name\":\"read\",\"arguments\":\"%s\"}}]},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}"
-            (os.time) (json-escape model) args)))))
+          (string.format "{\"id\":\"chatcmpl_mock_tool\",\"object\":\"chat.completion\",\"created\":%d,\"model\":\"%s\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_read_1\",\"type\":\"function\",\"function\":{\"name\":\"read\",\"arguments\":\"%s\"}}]},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}"
+                         (os.time) (json-escape model) args)))))
 
 (fn responses-stream [body]
   (if (has-responses-tool-result? body)
-      (sse
-        ["{\"type\":\"response.created\",\"response\":{\"id\":\"resp_mock_final\"}}"
-         "{\"type\":\"response.output_item.added\",\"item\":{\"id\":\"msg_mock_final\",\"type\":\"message\",\"status\":\"in_progress\"}}"
-         "{\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}"
-         "{\"type\":\"response.output_item.done\",\"item\":{\"id\":\"msg_mock_final\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"text\":\"OK\",\"annotations\":[]}]}}"
-         "{\"type\":\"response.completed\",\"response\":{\"id\":\"resp_mock_final\",\"status\":\"completed\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}"])
+      (sse ["{\"type\":\"response.created\",\"response\":{\"id\":\"resp_mock_final\"}}"
+            "{\"type\":\"response.output_item.added\",\"item\":{\"id\":\"msg_mock_final\",\"type\":\"message\",\"status\":\"in_progress\"}}"
+            "{\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}"
+            "{\"type\":\"response.output_item.done\",\"item\":{\"id\":\"msg_mock_final\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"text\":\"OK\",\"annotations\":[]}]}}"
+            "{\"type\":\"response.completed\",\"response\":{\"id\":\"resp_mock_final\",\"status\":\"completed\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}"])
       (let [args (json-escape "{\"path\":\"README.md\",\"limit\":1}")]
-        (sse
-          ["{\"type\":\"response.created\",\"response\":{\"id\":\"resp_mock_tool\"}}"
-           "{\"type\":\"response.output_item.added\",\"item\":{\"id\":\"fc_mock_1\",\"type\":\"function_call\",\"call_id\":\"call_read_1\",\"name\":\"read\",\"arguments\":\"\"}}"
-           (string.format "{\"type\":\"response.function_call_arguments.delta\",\"delta\":\"%s\"}" args)
-           (string.format "{\"type\":\"response.function_call_arguments.done\",\"arguments\":\"%s\"}" args)
-           (string.format "{\"type\":\"response.output_item.done\",\"item\":{\"id\":\"fc_mock_1\",\"type\":\"function_call\",\"call_id\":\"call_read_1\",\"name\":\"read\",\"arguments\":\"%s\",\"status\":\"completed\"}}" args)
-           "{\"type\":\"response.completed\",\"response\":{\"id\":\"resp_mock_tool\",\"status\":\"completed\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}"]))))
+        (sse ["{\"type\":\"response.created\",\"response\":{\"id\":\"resp_mock_tool\"}}"
+              "{\"type\":\"response.output_item.added\",\"item\":{\"id\":\"fc_mock_1\",\"type\":\"function_call\",\"call_id\":\"call_read_1\",\"name\":\"read\",\"arguments\":\"\"}}"
+              (string.format "{\"type\":\"response.function_call_arguments.delta\",\"delta\":\"%s\"}"
+                             args)
+              (string.format "{\"type\":\"response.function_call_arguments.done\",\"arguments\":\"%s\"}"
+                             args)
+              (string.format "{\"type\":\"response.output_item.done\",\"item\":{\"id\":\"fc_mock_1\",\"type\":\"function_call\",\"call_id\":\"call_read_1\",\"name\":\"read\",\"arguments\":\"%s\",\"status\":\"completed\"}}"
+                             args)
+              "{\"type\":\"response.completed\",\"response\":{\"id\":\"resp_mock_tool\",\"status\":\"completed\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}"]))))
 
 (fn read-request [client]
   (let [request-line (client:receive :*l)]
@@ -101,8 +100,7 @@
 (fn should-fail-once? [path body]
   (let [model (request-model body "")
         key (.. path ":" model)]
-    (when (and (string.find model "retry" 1 true)
-               (not (. fail-once-seen key)))
+    (when (and (string.find model "retry" 1 true) (not (. fail-once-seen key)))
       (tset fail-once-seen key true)
       (io.stderr:write (.. "mock transient 500 for " key "\n"))
       true)))
@@ -122,9 +120,12 @@
                             "{\"error\":{\"message\":\"transient mock failure\"}}"
                             {:Retry-After "0"})
             (= path "/v1/chat/completions")
-            (write-response client 200 "application/json" (chat-response (or body "")))
+            (write-response client 200 "application/json"
+                            (chat-response (or body "")))
             (= path "/v1/responses")
-            (write-response client 200 "text/event-stream" (responses-stream (or body "")))
+            (write-response client 200 "text/event-stream"
+                            (responses-stream (or body "")))
             path
-            (write-response client 404 "application/json" "{\"error\":{\"message\":\"unknown path\"}}")))
+            (write-response client 404 "application/json"
+                            "{\"error\":{\"message\":\"unknown path\"}}")))
       (client:close))))

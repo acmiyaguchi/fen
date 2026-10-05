@@ -48,21 +48,26 @@
         (if name-prefix
             (let [after (string.sub buf (+ cursor 1))
                   rel-space (string.find after "%s")
-                  token-end (if rel-space (+ cursor (- rel-space 1)) (length buf))]
+                  token-end (if rel-space (+ cursor (- rel-space 1))
+                                (length buf))]
               {:kind :command :prefix name-prefix :token-end token-end})
             (let [cmd (string.match before "^/([^%s]+)%s")]
               (when cmd
                 (let [word (or (string.match before "([^%s]*)$") "")
                       arg-start (- cursor (length word))]
-                  {:kind :arg :command cmd :arg-prefix word :arg-start arg-start}))))))))
+                  {:kind :arg
+                   :command cmd
+                   :arg-prefix word
+                   :arg-start arg-start}))))))))
 
 (fn lower [s] (string.lower (or s "")))
 
 (fn sort-choices! [choices]
-  (table.sort choices (fn [a b]
-                        (if (= (or a.rank 0) (or b.rank 0))
-                            (< (lower a.label) (lower b.label))
-                            (< (or a.rank 0) (or b.rank 0)))))
+  (table.sort choices
+              (fn [a b]
+                (if (= (or a.rank 0) (or b.rank 0))
+                    (< (lower a.label) (lower b.label))
+                    (< (or a.rank 0) (or b.rank 0)))))
   choices)
 
 (fn command-choice [cmd rank]
@@ -75,8 +80,7 @@
   (let [needle (lower needle)
         name (lower (tostring cmd.name))
         desc (lower (or cmd.description ""))]
-    (or (= needle "")
-        (string.find name needle 1 true)
+    (or (= needle "") (string.find name needle 1 true)
         (string.find desc needle 1 true))))
 
 (fn M.command-candidates [prefix]
@@ -123,7 +127,8 @@
           {:label label
            :value (if (not= choice.value nil) choice.value label)
            :description (if (not= choice.description nil)
-                            (tostring choice.description) "")}))
+                            (tostring choice.description)
+                            "")}))
       (or (= (type choice) :string) (= (type choice) :number))
       (let [label (tostring choice)]
         (when (not= label "")
@@ -144,8 +149,7 @@
           (table.insert choices choice))))
     (fuzzy.ranked (or arg-prefix "") choices
                   (fn [choice]
-                    [(or choice.label "")
-                     (or choice.description "")]))))
+                    [(or choice.label "") (or choice.description "")]))))
 
 ;; @doc fen.extensions.tui.completion.candidates
 ;; kind: function
@@ -155,9 +159,9 @@
 (fn M.candidates [ctx completion-ctx]
   (if (= completion-ctx.kind :command)
       (values :command (M.command-candidates completion-ctx.prefix))
-      (values :arg (M.arg-candidates completion-ctx.command
-                                     completion-ctx.arg-prefix
-                                     ctx))))
+      (values :arg
+              (M.arg-candidates completion-ctx.command
+                                completion-ctx.arg-prefix ctx))))
 
 (fn same-snapshot? [c buf cursor]
   (and (= c.buf-snapshot buf) (= c.cursor-snapshot cursor)))
@@ -187,16 +191,21 @@
           (set c.buf-snapshot buf)
           (set c.cursor-snapshot cursor)
           (if (= comp-ctx nil)
-              (do (M.close!) false)
+              (do
+                (M.close!)
+                false)
               (let [(kind items) (M.candidates (or ?ctx {}) comp-ctx)]
                 (if (= (length items) 0)
-                    (do (M.close!) false)
+                    (do
+                      (M.close!)
+                      false)
                     (do
                       (set c.kind kind)
                       (set c.ctx comp-ctx)
                       (set c.items items)
                       (set c.active? true)
-                      (set c.cursor (math.max 1 (math.min c.cursor (length items))))
+                      (set c.cursor
+                           (math.max 1 (math.min c.cursor (length items))))
                       true))))))))
 
 (fn clear! [c]
@@ -276,10 +285,7 @@
   (M.ensure-defaults!)
   (let [comp-ctx (M.context (or state.input-buf "") (or state.input-cursor 0))
         choice (M.selected)]
-    (and state.completion.active?
-         comp-ctx
-         (= comp-ctx.kind :command)
-         choice
+    (and state.completion.active? comp-ctx (= comp-ctx.kind :command) choice
          (= choice.label comp-ctx.prefix))))
 
 (fn splice-command [name comp-ctx]
@@ -296,7 +302,8 @@
   (let [buf state.input-buf
         text (tostring value)
         before (string.sub buf 1 comp-ctx.arg-start)
-        after (string.sub buf (+ comp-ctx.arg-start (length comp-ctx.arg-prefix) 1))
+        after (string.sub buf
+                          (+ comp-ctx.arg-start (length comp-ctx.arg-prefix) 1))
         need-space? (not (string.match after "^%s"))
         replacement (.. text (if need-space? " " ""))]
     (set state.input-buf (.. before replacement after))
@@ -356,17 +363,18 @@
               cap (math.min MENU-MAX-ROWS n)
               (first item-h) (M.visible-window n c.cursor cap)
               rows []
-              label-w (do (var lw 0)
-                          (for [i first (+ first item-h -1)]
-                            (let [it (. items i)]
-                              (when it (set lw (math.max lw (length (or it.label "")))))))
-                          lw)
+              label-w (do
+                        (var lw 0)
+                        (for [i first (+ first item-h -1)]
+                          (let [it (. items i)]
+                            (when it
+                              (set lw (math.max lw (length (or it.label "")))))))
+                        lw)
               inner-w (math.max 4 (- w 2))
               title (if (= c.kind :command)
                         (.. "commands (" (tostring n) ")")
                         (.. "args (" (tostring n) ")"))]
-          (table.insert rows {:text (fit (.. "┌─ " title " ")
-                                         w)
+          (table.insert rows {:text (fit (.. "┌─ " title " ") w)
                               :style :dim})
           (for [i first (+ first item-h -1)]
             (let [it (. items i)
@@ -379,12 +387,11 @@
                            label
                            (.. label (string.rep " " gap) "  " descr))
                   text (.. "│" marker (fit body (- inner-w 1)))]
-              (table.insert rows {:text text
-                                  :style (if selected? :user :normal)})))
-          (table.insert rows
-                        {:text (fit (.. "└─ tab/↑↓ move · enter select · esc close")
-                                    w)
-                         :style :dim})
+              (table.insert rows
+                            {:text text :style (if selected? :user :normal)})))
+          (table.insert rows {:text (fit (.. "└─ tab/↑↓ move · enter select · esc close")
+                                         w)
+                              :style :dim})
           rows))))
 
 ;; @doc fen.extensions.tui.completion.panel-spec
@@ -395,7 +402,8 @@
 (fn M.panel-spec []
   {:name :completion
    :placement :above-input
-   :order 5  ;; closest to the input line so it reads like an inline dropdown
+   :order 5
+   ;; closest to the input line so it reads like an inline dropdown
    :height (fn [ctx]
              (if (M.active?)
                  (length (M.rows (or (?. ctx :w) 80)))

@@ -24,7 +24,4 @@
 ;; summary: Terminal width associated with cached /prompt rows so resize events rebuild wrapped preview text.
 ;; tags: builtin commands state prompt cache
 
-{:visible? false
- :cached-rows nil
- :cached-at 0
- :cached-w 0}
+{:visible? false :cached-rows nil :cached-at 0 :cached-w 0}

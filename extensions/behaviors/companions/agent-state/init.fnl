@@ -13,16 +13,20 @@
 
 (fn models-result [value is-error?]
   (let [text (if (= (type value) :string) value (json.encode value))]
-    {:content [(types.text-block text)]
-     :is-error? (or is-error? false)}))
+    {:content [(types.text-block text)] :is-error? (or is-error? false)}))
 
 (fn models-providers-view [providers]
   (let [out []]
     (each [_ p (ipairs providers)]
-      (table.insert out {:name p.name :api p.api :builtin? p.builtin?
-                         :default-model p.default-model :available? p.available?
-                         :auth p.auth :catalog p.catalog
-                         :model-count (length (or p.models []))}))
+      (table.insert out
+                    {:name p.name
+                     :api p.api
+                     :builtin? p.builtin?
+                     :default-model p.default-model
+                     :available? p.available?
+                     :auth p.auth
+                     :catalog p.catalog
+                     :model-count (length (or p.models []))}))
     out))
 
 (fn models-list-view [providers wanted include-unavailable?]
@@ -32,16 +36,21 @@
                      (= (tostring p.name) (tostring wanted)))
                  (or include-unavailable? p.available?))
         (each [_ m (ipairs (or p.models []))]
-          (table.insert out {:provider p.name :id m.id
-                             :canonical-id m.canonical-id :default? m.default?
-                             :source m.source :available? p.available?}))))
+          (table.insert out
+                        {:provider p.name
+                         :id m.id
+                         :canonical-id m.canonical-id
+                         :default? m.default?
+                         :source m.source
+                         :available? p.available?}))))
     out))
 
 (fn models-current-view [providers ctx]
   (let [agent (?. ctx :agent)
         provider-name (?. agent :provider-name)
         model (?. agent :model)
-        out {:provider provider-name :model model
+        out {:provider provider-name
+             :model model
              :canonical-id (.. (tostring provider-name) "/" (tostring model))}]
     (var found nil)
     (each [_ p (ipairs providers) &until found]
@@ -76,46 +85,58 @@
             (models-result (models-providers-view providers) false)
             (= action :list)
             (models-result (models-list-view providers args.provider
-                                             args.include_unavailable) false)
-            (models-result (.. "error: unknown action: " (tostring action)) true)))))
+                                             args.include_unavailable)
+                           false)
+            (models-result (.. "error: unknown action: " (tostring action))
+                           true)))))
 
 (fn M.register [api]
   (api.register :tool
-              {:name :agent_state
-               :label "Agent State"
-               :exposure :search
-               :snippet "Inspect read-only agent state"
-               :description "Read structured state of the running agent. Read-only; does not evaluate code. Query is a tiny Fennel-shaped data language. Examples: (:get :model), (:get :thinking), (:count (:get :messages)), (:get :messages -1), (:pluck (:get :tools) :name), (:get :extensions :panels), (:where (:get :messages) :role :assistant), (:last (:where (:get :messages) :role :assistant)), (:slice (:get :messages) -5 5), (:keys (:get)). Prefer narrow queries over dumping large roots. Output defaults to JSON; use format=fennel for Fennel rendering when available."
-               :parameters {:type :object
-                            :properties {:query {:type :string
-                                                 :description "Read-only query form, e.g. (:get :messages -1 :content)"}
-                                         :format {:type :string
-                                                  :enum [:json :fennel]
-                                                  :description "Output format; defaults to json"}
-                                         :max_bytes {:type :integer
-                                                     :description "Maximum output bytes before truncation (default 8192)"}}
-                            :required [:query]}
-               :execute (fn [args ctx ?yield-fn]
-                          (agent-state.execute args ctx api ?yield-fn))})
+                {:name :agent_state
+                 :label "Agent State"
+                 :exposure :search
+                 :snippet "Inspect read-only agent state"
+                 :description "Read structured state of the running agent. Read-only; does not evaluate code. Query is a tiny Fennel-shaped data language. Examples: (:get :model), (:get :thinking), (:count (:get :messages)), (:get :messages -1), (:pluck (:get :tools) :name), (:get :extensions :panels), (:where (:get :messages) :role :assistant), (:last (:where (:get :messages) :role :assistant)), (:slice (:get :messages) -5 5), (:keys (:get)). Prefer narrow queries over dumping large roots. Output defaults to JSON; use format=fennel for Fennel rendering when available."
+                 :parameters {:type :object
+                              :properties {:query {:type :string
+                                                   :description "Read-only query form, e.g. (:get :messages -1 :content)"}
+                                           :format {:type :string
+                                                    :enum [:json :fennel]
+                                                    :description "Output format; defaults to json"}
+                                           :max_bytes {:type :integer
+                                                       :description "Maximum output bytes before truncation (default 8192)"}}
+                              :required [:query]}
+                 :execute (fn [args ctx ?yield-fn]
+                            (agent-state.execute args ctx api ?yield-fn))})
   (api.register :tool
-    {:name :models
-     :label "Models"
-     :exposure :search
-     :snippet "Inspect providers and models"
-     :description "Inspect model providers without exposing credentials. Actions: current, providers, and list."
-     :parameters {:type :object
-                  :properties {:action {:type :string :enum [:current :providers :list]}
-                               :provider {:type :string}
-                               :include_unavailable {:type :boolean}}}
-     :execute (fn [args ctx ?yield-fn]
-                (execute-models args ctx api ?yield-fn))})
+                {:name :models
+                 :label "Models"
+                 :exposure :search
+                 :snippet "Inspect providers and models"
+                 :description "Inspect model providers without exposing credentials. Actions: current, providers, and list."
+                 :parameters {:type :object
+                              :properties {:action {:type :string
+                                                    :enum [:current
+                                                           :providers
+                                                           :list]}
+                                           :provider {:type :string}
+                                           :include_unavailable {:type :boolean}}}
+                 :execute (fn [args ctx ?yield-fn]
+                            (execute-models args ctx api ?yield-fn))})
   (api.register :introspect
-    {:name :tool
-     :description "agent_state query language capabilities"
-     :snapshot (fn [_]
-                 {:max-bytes-default 8192
-                  :formats [:json :fennel]
-                  :ops [:get :keys :count :pluck :where :slice :first :last]})})
+                {:name :tool
+                 :description "agent_state query language capabilities"
+                 :snapshot (fn [_]
+                             {:max-bytes-default 8192
+                              :formats [:json :fennel]
+                              :ops [:get
+                                    :keys
+                                    :count
+                                    :pluck
+                                    :where
+                                    :slice
+                                    :first
+                                    :last]})})
   true)
 
 M

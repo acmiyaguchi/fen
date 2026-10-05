@@ -39,8 +39,7 @@
       v))
 
 (fn result [_api text is-error?]
-  {:content [(types.text-block (or text ""))]
-   :is-error? (or is-error? false)})
+  {:content [(types.text-block (or text ""))] :is-error? (or is-error? false)})
 
 (fn err [api msg] (result api (.. "error: " msg) true))
 (fn ok [api text] (result api text false))
@@ -71,10 +70,8 @@
                     (set i (+ i 1)))))
             (table.insert out c)))
       (set i (+ i 1)))
-    (if error-msg
-        (values nil i error-msg)
-        done?
-        (values (table.concat out) i nil)
+    (if error-msg (values nil i error-msg)
+        done? (values (table.concat out) i nil)
         (values nil i "unterminated string"))))
 
 (fn atom-value [tok]
@@ -89,9 +86,7 @@
 (fn parse-atom [s pos]
   (let [n (length s)]
     (var i pos)
-    (while (and (<= i n)
-                (not (whitespace? (ch s i)))
-                (not= (ch s i) "(")
+    (while (and (<= i n) (not (whitespace? (ch s i))) (not= (ch s i) "(")
                 (not= (ch s i) ")"))
       (set i (+ i 1)))
     (if (= i pos)
@@ -118,32 +113,27 @@
       (if (> i n)
           (set error-msg "unterminated list")
           (= (ch s i) ")")
-          (do (set done? true)
-              (set i (+ i 1)))
+          (do
+            (set done? true)
+            (set i (+ i 1)))
           (let [(v next-i err-msg) (parse-expr s i)]
             (if err-msg
                 (set error-msg err-msg)
-                (do (table.insert items v)
-                    (set i next-i))))))
-    (if error-msg
-        (values nil i error-msg)
-        (not done?)
-        (values nil i "unterminated list")
+                (do
+                  (table.insert items v)
+                  (set i next-i))))))
+    (if error-msg (values nil i error-msg)
+        (not done?) (values nil i "unterminated list")
         (values items i nil))))
 
-(set parse-expr
-     (fn [s pos]
-       (let [i (skip-ws s pos)
-             c (ch s i)]
-         (if (= c "")
-             (values nil i "empty query")
-             (= c "(")
-             (parse-list s i)
-             (= c ")")
-             (values nil i "unexpected ')'" )
-             (= c "\"")
-             (parse-string s i)
-             (parse-atom s i)))))
+(set parse-expr (fn [s pos]
+                  (let [i (skip-ws s pos)
+                        c (ch s i)]
+                    (if (= c "") (values nil i "empty query")
+                        (= c "(") (parse-list s i)
+                        (= c ")") (values nil i "unexpected ')'")
+                        (= c "\"") (parse-string s i)
+                        (parse-atom s i)))))
 
 ;; @doc fen.extensions.agent_state.tool.parse-query
 ;; kind: function
@@ -158,13 +148,12 @@
             (values nil err-msg)
             (let [end-pos (skip-ws s pos)]
               (if (<= end-pos (length s))
-                  (values nil (.. "trailing input near: " (string.sub s end-pos)))
+                  (values nil
+                          (.. "trailing input near: " (string.sub s end-pos)))
                   (values expr nil)))))))
 
 (fn array? [t]
-  (and (= (type t) :table)
-       (or (= (length t) 0)
-           (not= (. t 1) nil))))
+  (and (= (type t) :table) (or (= (length t) 0) (not= (. t 1) nil))))
 
 (fn table-keys [t]
   (let [out []]
@@ -191,8 +180,13 @@
     out))
 
 (fn summarize-usage [agent]
-  (let [u {:input 0 :output 0 :cache-read 0 :cache-write 0 :total-tokens 0
-           :last-input 0 :last-output 0}]
+  (let [u {:input 0
+           :output 0
+           :cache-read 0
+           :cache-write 0
+           :total-tokens 0
+           :last-input 0
+           :last-output 0}]
     (each [_ msg (ipairs (or agent.messages []))]
       (when (and (= msg.role :assistant) msg.usage)
         (let [mu msg.usage
@@ -222,7 +216,10 @@
         (f open-err) (io.open p :r)]
     (var total 0)
     (if (not f)
-        {:path p :tail [] :count 0 :truncated? false
+        {:path p
+         :tail []
+         :count 0
+         :truncated? false
          :unavailable (tostring open-err)}
         (do
           (each [line (f:lines)]
@@ -232,10 +229,7 @@
             (while (> (length tail) max-lines)
               (table.remove tail 1)))
           (f:close)
-          {:path p
-           :tail tail
-           :count total
-           :truncated? (> total (length tail))}))))
+          {:path p :tail tail :count total :truncated? (> total (length tail))}))))
 
 (fn run-state [ctx]
   (let [st (?. ctx :state)
@@ -296,10 +290,10 @@
     out))
 
 (fn model-info [api agent]
-  (let [out {:provider agent.provider-name
-             :model agent.model}
+  (let [out {:provider agent.provider-name :model agent.model}
         available (api.models.list {})
-        canonical-query (.. (tostring agent.provider-name) "/" (tostring agent.model))
+        canonical-query (.. (tostring agent.provider-name) "/"
+                            (tostring agent.model))
         first-resolved (api.models.resolve canonical-query available)
         resolved (if (= first-resolved.status :ok)
                      first-resolved
@@ -330,12 +324,9 @@
              :other 0}
         last-msg (. (or agent.messages []) (length (or agent.messages [])))]
     (each [_ msg (ipairs (or agent.messages []))]
-      (if (= msg.role :user)
-          (set out.user (+ out.user 1))
-          (= msg.role :assistant)
-          (set out.assistant (+ out.assistant 1))
-          (= msg.role :tool-result)
-          (set out.tool-result (+ out.tool-result 1))
+      (if (= msg.role :user) (set out.user (+ out.user 1))
+          (= msg.role :assistant) (set out.assistant (+ out.assistant 1))
+          (= msg.role :tool-result) (set out.tool-result (+ out.tool-result 1))
           (set out.other (+ out.other 1))))
     (set out.last-role (?. last-msg :role))
     (set out.last-stop-reason (?. last-msg :stop-reason))
@@ -354,10 +345,12 @@
                  :placement p.placement
                  :order p.order}]
         (if ok?
-            (do (set rec.height (or h-or-err 0))
-                (set rec.visible? (> (or h-or-err 0) 0)))
-            (do (set rec.height-error (tostring h-or-err))
-                (set rec.visible? false)))
+            (do
+              (set rec.height (or h-or-err 0))
+              (set rec.visible? (> (or h-or-err 0) 0)))
+            (do
+              (set rec.height-error (tostring h-or-err))
+              (set rec.visible? false)))
         (table.insert out rec)))
     out))
 
@@ -419,7 +412,8 @@
     (tset state :errors (lazy #(api.diagnostics.list-errors)))
     (tset state :logs (lazy #(log.list-recent)))
     (tset state :error-log (lazy #(error-log api)))
-    (tset state :extensions (lazy (fn [] (when ?yield-fn (?yield-fn)) (extensions-state api ?ctx))))
+    (tset state :extensions
+          (lazy (fn [] (when ?yield-fn (?yield-fn)) (extensions-state api ?ctx))))
     state))
 
 (fn normalize-index [idx len]
@@ -496,9 +490,11 @@
             (table.insert out (. items i)))
           out)
         (= op :first)
-        (let [items (eval-query (. expr 2) state)] (. items 1))
+        (let [items (eval-query (. expr 2) state)]
+          (. items 1))
         (= op :last)
-        (let [items (eval-query (. expr 2) state)] (. items (length (or items []))))
+        (let [items (eval-query (. expr 2) state)]
+          (. items (length (or items []))))
         (error (.. "unknown operator: " (tostring op))))))
 
 ;; @doc fen.extensions.agent_state.tool.eval-query
@@ -506,12 +502,11 @@
 ;; signature: (eval-query expr state) -> any
 ;; summary: Evaluate the parsed agent_state query operators against the sanitized snapshot without exposing general code execution.
 ;; tags: tool agent-state query eval
-(set eval-query
-     (fn [expr state]
-       (if (= (type expr) :table)
-           (eval-list expr state)
-           ;; A bare atom is a root lookup shorthand, e.g. :model.
-           (get-key state expr))))
+(set eval-query (fn [expr state]
+                  (if (= (type expr) :table)
+                      (eval-list expr state)
+                      ;; A bare atom is a root lookup shorthand, e.g. :model.
+                      (get-key state expr))))
 
 (fn render-json [value]
   (let [(ok? encoded) (pcall json.encode value)]

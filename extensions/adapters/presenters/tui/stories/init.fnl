@@ -42,7 +42,6 @@
     (set state.spinner-ticks 0)
     (set state.spinner-interval-ticks 8)
     (set state.animations? true)
-
     (set state.workspaces [])
     (set state.active-workspace-id :main-session)
     (set state.closed-subagent-workspaces {})
@@ -52,22 +51,18 @@
     (set state.scroll-offset 0)
     (set state.new-content-below? false)
     (set state.last-user-jump-index nil)
-
     (set state.input-buf "")
     (set state.input-cursor 0)
     (set state.paste-active? false)
     (set state.paste-buffer "")
     (set state.paste-counter 0)
     (set state.pastes {})
-
     (set state.selection nil)
     (set state.selection-paint nil)
     (set state.copy-status nil)
-
     (set state.history [])
     (set state.history-pos 0)
     (set state.history-draft "")
-
     (set state.expand-tool-results? false)
     (set state.markdown? false)
     (set state.hide-thinking-block? false)
@@ -76,7 +71,6 @@
     (set state.cancel-pressed? false)
     (set state.on-tick nil)
     (set state.presenter-ctx nil)
-
     (set state.completion {:active? false
                            :cursor 1
                            :items []
@@ -92,10 +86,9 @@
 (fn transcript-rows [n]
   (let [rows []]
     (for [i 1 n]
-      (table.insert rows
-                    {:type (if (= (% i 3) 1) :user :assistant-text)
-                     :text (.. (if (= (% i 3) 1) "prompt " "response ")
-                               (tostring i))}))
+      (table.insert rows {:type (if (= (% i 3) 1) :user :assistant-text)
+                          :text (.. (if (= (% i 3) 1) "prompt " "response ")
+                                    (tostring i))}))
     rows))
 
 (fn seed-idle [_state _opts]
@@ -105,22 +98,25 @@
   (set s.status-info.running-label "$ make test")
   (set s.status-info.turn-start 0)
   (set s.status-info.spin-frame 0)
-  (set s.transcript [{:type :user :text "run the focused tests"}
-                     {:type :assistant-text
-                      :text "I'll run the focused test command now."}]))
+  (set s.transcript
+       [{:type :user :text "run the focused tests"}
+        {:type :assistant-text :text "I'll run the focused test command now."}]))
 
 (fn seed-completion [s _opts]
   (set s.input-buf "/re")
   (set s.input-cursor (length s.input-buf))
-  (set s.completion {:active? true
-                     :cursor 1
-                     :kind :command
-                     :buf-snapshot s.input-buf
-                     :cursor-snapshot s.input-cursor
-                     :items [{:label "reload" :value "reload"
-                              :description "Reload extensions from source"}
-                             {:label "redraw" :value "redraw"
-                              :description "Force a full TUI redraw"}]}))
+  (set s.completion
+       {:active? true
+        :cursor 1
+        :kind :command
+        :buf-snapshot s.input-buf
+        :cursor-snapshot s.input-cursor
+        :items [{:label "reload"
+                 :value "reload"
+                 :description "Reload extensions from source"}
+                {:label "redraw"
+                 :value "redraw"
+                 :description "Force a full TUI redraw"}]}))
 
 (fn seed-scrolled [s _opts]
   (set s.transcript (transcript-rows 14))
@@ -129,15 +125,16 @@
   (set s.last-user-jump-index 10))
 
 (fn seed-errors [s _opts]
-  (set s.transcript [{:type :user :text "load the extension"}
-                     {:type :error
-                      :error "example failure while loading extension"
-                      :traceback "stack traceback:\n  stories/example.fnl:12: boom"}
-                     {:type :extension-error
-                      :owner :demo
-                      :event :turn-complete
-                      :error "handler failed"
-                      :traceback "stack traceback:\n  demo/init.fnl:8: bad argument"}])
+  (set s.transcript
+       [{:type :user :text "load the extension"}
+        {:type :error
+         :error "example failure while loading extension"
+         :traceback "stack traceback:\n  stories/example.fnl:12: boom"}
+        {:type :extension-error
+         :owner :demo
+         :event :turn-complete
+         :error "handler failed"
+         :traceback "stack traceback:\n  demo/init.fnl:8: bad argument"}])
   (set s.error-panel-visible? true))
 
 (fn seed-narrow-status [s _opts]
@@ -148,47 +145,47 @@
   (set s.status-info.follow-up-queued 1)
   (set s.scroll-offset 4)
   (set s.new-content-below? true)
-  (set s.transcript [{:type :user :text "summarize the narrow layout"}
-                     {:type :assistant-text
-                      :text "This state stresses status item clipping."}]))
+  (set s.transcript
+       [{:type :user :text "summarize the narrow layout"}
+        {:type :assistant-text
+         :text "This state stresses status item clipping."}]))
 
-(local STORIES
-  [{:name :idle-empty
-    :description "Idle TUI with an empty input and empty transcript"
-    :tags [:idle]
-    :cols 80
-    :rows 24
-    :setup seed-idle}
-   {:name :busy-tool
-    :description "Busy panel while one tool command is running"
-    :tags [:busy :tool]
-    :cols 80
-    :rows 24
-    :setup seed-busy-tool}
-   {:name :slash-completion
-    :description "Slash-command completion menu open above the input"
-    :tags [:completion :input]
-    :cols 80
-    :rows 24
-    :setup seed-completion}
-   {:name :scrolled-transcript
-    :description "Transcript scrolled away from the live bottom with new content below"
-    :tags [:scroll :transcript]
-    :cols 80
-    :rows 12
-    :setup seed-scrolled}
-   {:name :errors-panel
-    :description "Errors panel open with recent error and extension-error rows"
-    :tags [:errors :panel]
-    :cols 80
-    :rows 24
-    :setup seed-errors}
-   {:name :narrow-status
-    :description "Small terminal stressing compact status bar layout"
-    :tags [:status :narrow]
-    :cols 32
-    :rows 10
-    :setup seed-narrow-status}])
+(local STORIES [{:name :idle-empty
+                 :description "Idle TUI with an empty input and empty transcript"
+                 :tags [:idle]
+                 :cols 80
+                 :rows 24
+                 :setup seed-idle}
+                {:name :busy-tool
+                 :description "Busy panel while one tool command is running"
+                 :tags [:busy :tool]
+                 :cols 80
+                 :rows 24
+                 :setup seed-busy-tool}
+                {:name :slash-completion
+                 :description "Slash-command completion menu open above the input"
+                 :tags [:completion :input]
+                 :cols 80
+                 :rows 24
+                 :setup seed-completion}
+                {:name :scrolled-transcript
+                 :description "Transcript scrolled away from the live bottom with new content below"
+                 :tags [:scroll :transcript]
+                 :cols 80
+                 :rows 12
+                 :setup seed-scrolled}
+                {:name :errors-panel
+                 :description "Errors panel open with recent error and extension-error rows"
+                 :tags [:errors :panel]
+                 :cols 80
+                 :rows 24
+                 :setup seed-errors}
+                {:name :narrow-status
+                 :description "Small terminal stressing compact status bar layout"
+                 :tags [:status :narrow]
+                 :cols 32
+                 :rows 10
+                 :setup seed-narrow-status}])
 
 (fn story-metadata [story]
   {:name story.name

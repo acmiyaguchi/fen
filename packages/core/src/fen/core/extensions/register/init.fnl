@@ -23,20 +23,55 @@
 (local M {})
 
 ;; :cacheable? only for kinds whose list is a pure function of the bucket (memoized on state.registry-version); kinds reading extra live state must stay uncached.
-(local REGISTER-KINDS
-  [{:kind :tool :list-kind :tools :module tool :public? true}
-   {:kind :command :list-kind :commands :module command :public? true}
-   {:kind :control :list-kind :controls :module control :public? true}
-   {:kind :status :list-kind :status :module status :public? true :cacheable? true}
-   {:kind :panel :list-kind :panels :module panel :public? true :cacheable? true}
-   {:kind :hook :list-kind :hooks :module hook :public? true}
-   {:kind :input-handler :list-kind :input-handlers :module input :public? true}
-   {:kind :presenter :list-kind :presenters :module presenter}
-   {:kind :introspect :list-kind :introspectors :module introspect :public? true}
-   {:kind :action :list-kind :actions :module action :public? true :cacheable? true}
-   {:kind :provider :list-kind :providers :module provider}
-   {:kind :auth-backend :list-kind :auth-backends :module auth-backend}
-   {:kind :session-backend :list-kind :session-backends :module session-backend}])
+(local REGISTER-KINDS [{:kind :tool
+                        :list-kind :tools
+                        :module tool
+                        :public? true}
+                       {:kind :command
+                        :list-kind :commands
+                        :module command
+                        :public? true}
+                       {:kind :control
+                        :list-kind :controls
+                        :module control
+                        :public? true}
+                       {:kind :status
+                        :list-kind :status
+                        :module status
+                        :public? true
+                        :cacheable? true}
+                       {:kind :panel
+                        :list-kind :panels
+                        :module panel
+                        :public? true
+                        :cacheable? true}
+                       {:kind :hook
+                        :list-kind :hooks
+                        :module hook
+                        :public? true}
+                       {:kind :input-handler
+                        :list-kind :input-handlers
+                        :module input
+                        :public? true}
+                       {:kind :presenter
+                        :list-kind :presenters
+                        :module presenter}
+                       {:kind :introspect
+                        :list-kind :introspectors
+                        :module introspect
+                        :public? true}
+                       {:kind :action
+                        :list-kind :actions
+                        :module action
+                        :public? true
+                        :cacheable? true}
+                       {:kind :provider :list-kind :providers :module provider}
+                       {:kind :auth-backend
+                        :list-kind :auth-backends
+                        :module auth-backend}
+                       {:kind :session-backend
+                        :list-kind :session-backends
+                        :module session-backend}])
 
 (local REGISTER-BY-KIND {})
 (local LIST-BY-KIND {})
@@ -86,7 +121,9 @@
   (let [out []]
     (each [name rec (pairs state.extensions)]
       (let [manifest (or rec.manifest {})]
-        (table.insert out {:name name :status rec.status :path rec.path
+        (table.insert out {:name name
+                           :status rec.status
+                           :path rec.path
                            :source rec.source
                            :version-count (or rec.version-count 1)
                            :versions (or rec.versions [])
@@ -95,18 +132,18 @@
                            :description manifest.description
                            :entry-module manifest.entry-module
                            :entry manifest.entry
-                           :interactive-only? (or manifest.interactive-only? false)
+                           :interactive-only? (or manifest.interactive-only?
+                                                  false)
                            :presenter manifest.presenter
                            :reload-modules (or manifest.reload-modules [])
                            :reload-exclude (or manifest.reload-exclude [])
                            :error rec.error})))
     out))
 
-(local EXTRA-LISTERS
-  {:extensions list-extensions
-   :event-handlers events.list
-   :prompt-fragments prompt.list
-   :logs logs.list})
+(local EXTRA-LISTERS {:extensions list-extensions
+                      :event-handlers events.list
+                      :prompt-fragments prompt.list
+                      :logs logs.list})
 
 ;; Module-local cache, so a reload starts cold — correct, just one extra rebuild.
 (local LIST-CACHE {})
@@ -131,10 +168,8 @@
         extra (. EXTRA-LISTERS kind)]
     (if (and entry entry.cacheable?)
         (. (cached-lists entry) :frozen)
-        (util.freeze (if entry
-                         ((. entry.module :list))
-                         extra
-                         (extra)
+        (util.freeze (if entry ((. entry.module :list))
+                         extra (extra)
                          (unknown-list-kind! kind))))))
 
 (fn M.list-raw [kind]
