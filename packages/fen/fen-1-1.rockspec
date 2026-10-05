@@ -60,6 +60,7 @@ printf 'return "%s"\n' "${FEN_VERSION:-unknown}" > .lrbuild/version.lua
          ["fen.cli_flags"] = ".lrbuild/cli_flags.lua",
          ["fen.cli_help"] = ".lrbuild/cli_help.lua",
          ["fen.cli_parse"] = ".lrbuild/cli_parse.lua",
+         ["fen.prompt_source"] = ".lrbuild/prompt_source.lua",
          ["fen.interactive"] = ".lrbuild/interactive.lua",
          ["fen.main"] = ".lrbuild/main.lua",
          ["fen.provider_help"] = ".lrbuild/provider_help.lua",

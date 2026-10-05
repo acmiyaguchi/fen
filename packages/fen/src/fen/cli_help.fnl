@@ -197,8 +197,9 @@ Settings:
   fen goal [options] <objective>
 
 Run the bounded autonomous goal workflow headlessly.
-The objective starts at the first non-option argument; use -- before an
-objective that begins with '-'.
+Provide exactly one objective as inline text, --prompt-file PATH, or --prompt -
+(to read stdin). Use -- before inline objectives that begin with '-'.
+
 
 " (flags.render-options :goal {:width 20}) "\nExit codes (goal contract):
   0  Done: objective completed successfully; --help also exits 0

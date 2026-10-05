@@ -168,19 +168,20 @@
         {:name "--prompt"
          :arg :value
          :placeholder "TEXT"
-         :description "Session turn prompt (pass - to read stdin)"
+         :description "Prompt text (pass - to read stdin)"
          :group :common
-         :applies-to [:session-send]
-         :parse {:action :set-value :dest :prompt}}
+         :applies-to [:goal :session-send]
+         :parse {:action :set-value :dest :prompt}
+         :help {:goal "Read the objective from stdin (pass -)"}}
         {:name "--prompt-file"
          :arg :value
          :placeholder "PATH"
-         :description "Read a one-shot prompt from PATH"
+         :description "Read a prompt from PATH"
          :group :common
-         :applies-to [:top :session-send]
-         :invalid {:goal "--prompt-file cannot be used with `fen goal`"}
+         :applies-to [:top :goal :session-send]
          :parse {:action :set-value :dest :prompt-file}
-         :help {:top-short "Read a one-shot prompt from PATH (no shell interpolation)"
+         :help {:goal "Read the objective from PATH"
+                :top-short "Read a one-shot prompt from PATH (no shell interpolation)"
                 :top-all ["Read a one-shot prompt from PATH (like --print, without"
                           "shell interpolation); cannot be combined with --print."]}}
         {:name "--tail"

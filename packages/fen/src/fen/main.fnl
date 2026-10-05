@@ -16,6 +16,7 @@
 (var cli-help nil)
 (var cli-flags nil)
 (var cli-parse nil)
+(var prompt-source nil)
 (var tool-policy nil)
 
 (fn ensure-version! []
@@ -69,7 +70,8 @@
 (fn ensure-cli-flags! []
   (when (not cli-flags)
     (set cli-flags (require :fen.cli_flags))
-    (set cli-parse (require :fen.cli_parse)))
+    (set cli-parse (require :fen.cli_parse))
+    (set prompt-source (require :fen.prompt_source)))
   cli-flags)
 
 (fn ensure-tool-policy! []
@@ -328,11 +330,20 @@
               (os.exit 2))
             (die-usage! (.. "unknown arg: " a)))))
     (when ?goal-mode
-      (set opts.objective (table.concat opts.objective-parts " "))
-      (set opts.objective-parts nil)
-      (when (and (= opts.objective "") (not opts.help?))
-        (io.stderr:write "usage: fen goal [options] <objective>\n")
-        (os.exit 2))
+      (let [inline (table.concat opts.objective-parts " ")]
+        (set opts.objective-parts nil)
+        (when (and opts.prompt (not= opts.prompt "-") (not opts.help?))
+          (die-usage! "fen goal --prompt only accepts - (stdin)"))
+        (when (and (> (prompt-source.count opts inline) 1) (not opts.help?))
+          (die-usage! "choose exactly one of --prompt, --prompt-file, or inline objective"))
+        (when (and (= (prompt-source.count opts inline) 0) (not opts.help?))
+          (die-usage! "fen goal requires a non-empty objective"))
+        (when (not opts.help?)
+          (let [(objective err) (prompt-source.read opts inline)]
+            (when err (die-usage! err))
+            (when (or (not objective) (= objective ""))
+              (die-usage! "fen goal requires a non-empty objective"))
+            (set opts.objective objective))))
       (when (and opts.max-iterations-given? (not opts.max-iterations))
         (io.stderr:write (goal-iterations-error))
         (os.exit 2))
@@ -344,10 +355,10 @@
                 (> opts.max-iterations GOAL-MAX-ITERATIONS))
         (io.stderr:write (goal-iterations-error))
         (os.exit 2)))
-    (when (and opts.print opts.prompt-file)
+    (when (and (not ?goal-mode) opts.print opts.prompt-file)
       (io.stderr:write "--print and --prompt-file cannot be combined\n")
       (os.exit 2))
-    (when opts.prompt-file
+    (when (and (not ?goal-mode) opts.prompt-file)
       (let [f (io.open opts.prompt-file :r)]
         (when (not f)
           (io.stderr:write (.. "cannot read --prompt-file: " opts.prompt-file

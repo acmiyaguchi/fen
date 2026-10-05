@@ -25,6 +25,8 @@ Flags:
 
 `fen --print` exits `0` only after a successful final assistant reply and exits `1` for provider, HTTP, tool-safety-cap, or runtime failures.
 `fen goal` exits `0` when done, `2` when blocked or at its iteration cap, and `1` for provider, tool, runtime, or internal failures.
+Its objective may be passed inline, read from `--prompt-file PATH`, or read from stdin with `--prompt -`.
+Choose exactly one source; file and stdin behavior matches `fen session send`.
 A `stopped` goal (the explicit terminal status set when the user stops or cancels the run) also exits `2` and is folded into the JSON `blocked` status.
 Plain-text goal runs always end with `GOAL_STATUS: done`, `GOAL_STATUS: blocked`, or `GOAL_STATUS: error`, with the final line being authoritative when partial model output contained an earlier marker.
 Set `FEN_JSON_OUTPUT_PATH=out.json` for `fen goal` to write the existing JSON-presenter result blob to that path instead of plain output.
