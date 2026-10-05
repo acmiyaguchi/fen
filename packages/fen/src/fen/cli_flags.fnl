@@ -98,7 +98,8 @@
                  :dest :retry-max-attempts
                  :value-kind :number}
          :suggest? false
-         :help {:top-all ["Provider HTTP attempts for transient failures"
+         :help {:top-short "Provider HTTP attempts for transient failures"
+                :top-all ["Provider HTTP attempts for transient failures"
                           "(default: 4; use 1 to disable)"]
                 :goal "Provider HTTP attempts for transient failures"}}
         {:name "--thinking"

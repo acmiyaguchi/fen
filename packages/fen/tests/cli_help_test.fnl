@@ -119,6 +119,9 @@
                     (assert.is_truthy (contains? out
                                                  "fen --provider openai-codex --model gpt-5.6-sol --print"))
                     (assert.is_truthy (contains? out "fen --continue"))
+                    (assert.is_truthy (contains? out "--retries N"))
+                    (assert.is_truthy (contains? out
+                                                 "Provider HTTP attempts for transient failures"))
                     (assert.is_false (contains? out "--dev-path"))
                     (assert.is_false (contains? out "--extension-root"))
                     (assert.is_false (contains? out "FEN_DEV_PATH"))
