@@ -81,7 +81,7 @@
 
 (fn now-ms [] (* (os.time) 1000))
 
-(fn refresh! [refresh-token]
+(fn refresh! [refresh-token ?opts]
   "POST to the token endpoint with refresh_token grant. Returns the fresh
    credential record on success, errors on transport or HTTP failure."
   (when (or (not refresh-token) (= refresh-token ""))
@@ -95,7 +95,8 @@
                                       :accept "application/json"}
                             :body body
                             :timeout-ms 30000
-                            :connect-timeout-ms 10000})]
+                            :connect-timeout-ms 10000
+                            :yield (?. ?opts :yield)})]
     (when resp.error
       (error (.. "auth.openai_codex: refresh transport failed: " resp.error)))
     (when (or (< resp.status 200) (>= resp.status 300))
@@ -148,13 +149,13 @@
     (and creds (= creds.type :oauth) creds.access (not= creds.access "")
          creds.refresh (not= creds.refresh ""))))
 
-(fn get-fresh-creds! [?path]
+(fn get-fresh-creds! [?path ?opts]
   "Read auth.json, refresh the openai-codex record if it's missing, expired,
    or expiring within REFRESH-MARGIN-MS, and persist any refresh atomically.
    Errors with a friendly message if no credentials exist."
   (let [creds (validate-stored-creds (storage.get PROVIDER-ID ?path))]
     (if (expiring-soon? creds)
-        (let [fresh (refresh! creds.refresh)]
+        (let [fresh (refresh! creds.refresh ?opts)]
           (storage.set PROVIDER-ID fresh ?path)
           (log.info "auth.openai_codex: refreshed access token")
           fresh)

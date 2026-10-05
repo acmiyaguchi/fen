@@ -144,6 +144,25 @@ It also exposes the pinned `gpt-5.6-luna`, `gpt-5.6-sol`, and `gpt-5.6-terra` ID
 It falls back to the shipped default if the catalog is unavailable.
 The `openai-codex` provider defaults to `gpt-6.1-sol` unless a saved or explicit model preference overrides it.
 
+## Codex account quota (phase 1)
+
+The OpenAI extension owns the discoverable `account_usage` tool, which reads account-wide subscription quota rather than conversation token totals or context-window capacity.
+Activate it through `tool_search` and call it with `{}` for a bounded demand refresh using existing Codex OAuth credentials and `fen.util.http.request`.
+The authenticated read-only `GET https://chatgpt.com/backend-api/wham/usage` was verified on 2026-10-05 to expose `rate_limit.primary_window` and `rate_limit.secondary_window` with `used_percent`, `limit_window_seconds`, `reset_at` (Unix epoch seconds), and `reset_after_seconds` (seconds until reset).
+The observed window lengths were 18000 seconds (five hours) and 604800 seconds (seven days); lengths are parsed, not hard-coded.
+No `x-codex-*` response headers or exact remaining-token counts were observed, so neither is assumed or synthesized.
+Only validated primary/secondary windows under `rate_limit` and `code_review_rate_limit` are supported in this phase; other allowances and model-specific quotas are not inferred.
+The sanitized snapshot has `provider`, `scope: account-quota`, `windows` (each with `name`, `used-percent`, `remaining-percent`, `length-seconds`, and `reset-at`), `retrieved-at`, `attempted-at`, `status`, and optional `failure`.
+Timestamps are Unix epoch seconds, and percentages are upstream percentages with remaining calculated as 100 minus used.
+`fresh` means the last successful retrieval is younger than 60 seconds, no known failure occurred, and no reported window has reset; otherwise retained windows are `stale`.
+Without usable windows, the status is `unavailable` for auth/network/API failures or before retrieval, and `unsupported` for HTTP 404/405 or a successful JSON response with no supported windows.
+Failures expose only `auth`, `network`, `api`, `unsupported`, or the initial `unavailable` marker, never exception text, raw responses, credentials, or account identifiers.
+Attempts are limited to once per 60 seconds, including failed or cancelled attempts, with no background polling or retries.
+A demand refresh allows at most one existing OAuth refresh (30-second HTTP timeout) followed by one usage GET (10-second timeout), passing the cooperative tool yield callback through both and preserving cancellation.
+The in-memory sanitized cache survives `/reload` but not restart, and may retain stale data after authentication changes; stale windows are not a promise of current allowance.
+`agent_state` collects the same cached snapshot under owner `provider_openai`, name `account-usage`, through the existing introspection interface without reading credentials or touching the network.
+There is no TUI view, status item, panel, or slash command in phase 1; presentation and additional upstream quota shapes remain follow-ups.
+
 ## Wire-shape differences
 
 The agent loop only ever sees canonical messages; each provider converts to and
