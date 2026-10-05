@@ -173,7 +173,7 @@
          :group :common
          :applies-to [:goal :session-send]
          :parse {:action :set-value :dest :prompt}
-         :help {:goal "Read the objective from stdin (pass -)"}}
+         :help {:goal "Read the objective text, or pass - to read stdin"}}
         {:name "--prompt-file"
          :arg :value
          :placeholder "PATH"

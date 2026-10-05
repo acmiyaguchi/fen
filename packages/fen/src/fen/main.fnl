@@ -332,8 +332,6 @@
     (when ?goal-mode
       (let [inline (table.concat opts.objective-parts " ")]
         (set opts.objective-parts nil)
-        (when (and opts.prompt (not= opts.prompt "-") (not opts.help?))
-          (die-usage! "fen goal --prompt only accepts - (stdin)"))
         (when (and (> (prompt-source.count opts inline) 1) (not opts.help?))
           (die-usage! "choose exactly one of --prompt, --prompt-file, or inline objective"))
         (when (and (= (prompt-source.count opts inline) 0) (not opts.help?))

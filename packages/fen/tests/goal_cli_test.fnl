@@ -35,6 +35,13 @@
                     (assert.is_truthy (contains? output
                                                  "Objective: file objective second line")
                                       output))))
+            (it "accepts literal text with --prompt"
+                (fn []
+                  (let [(output _) (run nil "--prompt 'literal objective'")]
+                    (assert.is_truthy (contains? output
+                                                 "Objective: literal objective")
+                                      output)
+                    (assert.is_false (contains? output "only accepts - (stdin)")))))
             (it "reads its objective from --prompt - stdin"
                 (fn []
                   (let [(output _) (run "stdin objective" "--prompt -")]

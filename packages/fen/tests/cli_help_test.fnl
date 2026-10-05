@@ -42,6 +42,11 @@
                       (assert.is_false (contains? out
                                                   "Slash commands (interactive mode):"))
                       (assert.is_false (contains? out "Subcommands:"))))))
+            (it "keeps exactly one blank line before goal options"
+                (fn []
+                  (let [out (cli-help.for-subcommand :goal)]
+                    (assert.is_truthy (contains? out
+                                                 "to read stdin. Use -- before inline objectives that begin with '-'.\n\nOptions:")))))
             (it "documents the goal 0/2/1 exit-code contract prominently"
                 (fn []
                   (let [out (cli-help.for-subcommand :goal)]
