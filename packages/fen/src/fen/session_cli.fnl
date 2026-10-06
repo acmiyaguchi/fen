@@ -5,6 +5,7 @@
 (local json (require :fen.util.json))
 (local control (require :fen.session_control))
 (local tool-policy (require :fen.tool_policy))
+(local prompt-source (require :fen.prompt_source))
 
 (local M {})
 
@@ -90,25 +91,14 @@
         (and opts.tail (or (not= opts.tail (math.floor opts.tail))
                            (< opts.tail 0)))
         "--tail must be a non-negative integer"
-        (and (= opts.verb :send) (> (+ (if opts.prompt 1 0)
-                                       (if opts.prompt-file 1 0)
-                                       (if opts.inline-prompt 1 0))
+        (and (= opts.verb :send) (> (prompt-source.count opts
+                                                         opts.inline-prompt)
                                     1))
         "choose exactly one of --prompt, --prompt-file, or text after --"
         nil)))
 
 (fn read-prompt [opts]
-  (if opts.prompt-file
-      (let [(f open-error) (io.open opts.prompt-file :r)]
-        (if (not f)
-            (values nil
-                    (.. "cannot read --prompt-file: " (tostring open-error)))
-            (let [text (f:read :*a)]
-              (f:close)
-              (values text nil))))
-      (= opts.prompt "-")
-      (values (io.read :*a) nil)
-      (values (or opts.prompt opts.inline-prompt) nil)))
+  (prompt-source.read opts opts.inline-prompt))
 
 (fn stderr-print [...]
   (let [parts []]
