@@ -16,10 +16,9 @@
            :status-bg tb.DEFAULT})
 
 (fn status-attr [style]
-  (if (= style :error) SC.err
-      (= style :user) SC.user
-      (= style :assistant) SC.assistant
-      (= style :tool) SC.tool
+  (if (= style :error) SC.err (= style :user) SC.user (= style :assistant)
+      SC.assistant (= style :tool) SC.tool (= style :dim)
+      (if tb.DIM (bor SC.status-fg tb.DIM) (bor tb.CYAN tb.REVERSE))
       SC.status-fg))
 
 (fn M.ensure-defaults! []

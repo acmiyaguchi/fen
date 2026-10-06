@@ -160,9 +160,25 @@ Present but malformed supported windows, groups, or response envelopes are `api`
 Failures expose only `auth`, `network`, `api`, `unsupported`, or the initial `unavailable` marker, never exception text, raw responses, credentials, or account identifiers.
 Attempts are limited to once per 60 seconds, including failed or cancelled attempts, with no background polling or retries.
 A demand refresh allows at most one existing OAuth refresh (30-second HTTP timeout) followed by one usage GET (10-second timeout), passing the cooperative tool yield callback through both and preserving cancellation.
-The in-memory sanitized cache survives `/reload` but not restart, and may retain stale data after authentication changes; stale windows are not a promise of current allowance.
+The sanitized cache survives `/reload` and restart in one versioned JSON file at `${XDG_STATE_HOME:-~/.local/state}/fen/codex-usage.json`.
+Its version-1 envelope contains `version`, `account-key` (a SHA-256 hash of the OAuth account id), and `snapshot` containing only the sanitized fields described above; raw account ids, emails, tokens, and response bodies are never written.
+Writes use a unique sibling temporary file and atomic rename; missing, corrupt, newer-version, or account-mismatched cache files are ignored.
+Cached startup windows are always shown stale, without network access, and disk `attempted-at` carries the 60-second demand floor across processes.
+An extension-owned stable `codex-usage.json.lock` inode uses an OS advisory write lock around reading, checking, and persisting the attempt; the existing process-local file mutex also serializes coroutines.
+Contention yields cooperatively (or sleeps in synchronous calls) for at most one second, then skips the refresh; failed persistence also skips network access, and closing the lock file releases ownership on errors or cancellation.
+The lock inode is retained rather than deleted, and the kernel releases ownership if a process exits.
+A changed or missing local account discards the previous account's in-memory cache on the next demand refresh; stale windows are not a promise of current allowance.
 `agent_state` collects the same cached snapshot under owner `provider_openai`, name `account-usage`, through the existing introspection interface without reading credentials or touching the network.
-There is no TUI view, status item, panel, or slash command in phase 1; presentation and additional upstream quota shapes remain follow-ups.
+For the active Codex provider, the TUI status row shows quota remaining for the reported windows, labeled by their parsed duration, such as `5h:78% 7d:95%`.
+The quota helper shows both reported windows at terminal widths of 100 columns or more; below that threshold (including 80 columns), it shows only the window with the least remaining quota.
+The left/order-21 status contribution can still be clipped entirely after earlier left items and the right-side reservation, and very narrow terminals may clip its text.
+`~` identifies stale status data and is rendered dim on the reverse-video status bar when the terminal binding exposes `DIM`, or cyan on reverse video otherwise.
+Yellow warns below 25% remaining, and red warns below 10%.
+After a reported reset time passes, the display shows 100% rather than repeating the old percentage; this is a reset indication, not a new upstream measurement.
+`/usage` toggles a dismissible below-status panel with proportional remaining bars, relative reset times, and retrieval age or sanitized failure category.
+`Esc` or another `/usage` closes it, and unsupported quota or authentication failures get an explanation instead of bars.
+Opening the panel requests a bounded cooperative demand refresh; rendering, ordinary turns, and runtime ticks never initiate quota requests on their own.
+Additional upstream quota shapes remain follow-ups.
 
 ## Wire-shape differences
 

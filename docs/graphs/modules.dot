@@ -626,10 +626,16 @@ digraph fen_modules {
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.sse" [label="require"];
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.stream_chunks" [label="require"];
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.text" [label="require"];
+  "fen.extensions.provider_openai.usage" -> "fen.extensions.provider_openai.openai_codex_keychain" [label="require"];
   "fen.extensions.provider_openai.usage" -> "fen.extensions.provider_openai.openai_codex_oauth" [label="require"];
   "fen.extensions.provider_openai.usage" -> "fen.extensions.provider_openai.usage_state" [label="require"];
+  "fen.extensions.provider_openai.usage" -> "fen.util.clock" [label="require"];
+  "fen.extensions.provider_openai.usage" -> "fen.util.coroutines" [label="require"];
+  "fen.extensions.provider_openai.usage" -> "fen.util.file_mutex" [label="require"];
   "fen.extensions.provider_openai.usage" -> "fen.util.http" [label="require"];
   "fen.extensions.provider_openai.usage" -> "fen.util.json" [label="require"];
+  "fen.extensions.provider_openai.usage" -> "fen.util.path" [label="require"];
+  "fen.extensions.provider_openai.usage" -> "fen.util.sha256" [label="require"];
   "fen.extensions.provider_openrouter" -> "fen.extensions.provider_openrouter.openrouter_completions" [label="require"];
   "fen.extensions.provider_openrouter.openrouter_completions" -> "fen.extensions.provider_openai.openai_completions" [label="require"];
   "fen.extensions.provider_openrouter.openrouter_completions" -> "fen.extensions.provider_openai.openai_model_catalog" [label="require"];
