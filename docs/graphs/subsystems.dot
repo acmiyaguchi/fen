@@ -26,7 +26,7 @@ digraph fen_subsystems {
   "extension.prompt" [fillcolor="lightyellow", label="extension: prompt\n3 modules", style="filled"];
   "extension.provider_anthropic" [fillcolor="lightyellow", label="extension: provider_anthropic\n2 modules", style="filled"];
   "extension.provider_mock" [fillcolor="lightyellow", label="extension: provider_mock\n2 modules", style="filled"];
-  "extension.provider_openai" [fillcolor="lightyellow", label="extension: provider_openai\n9 modules", style="filled"];
+  "extension.provider_openai" [fillcolor="lightyellow", label="extension: provider_openai\n11 modules", style="filled"];
   "extension.provider_openrouter" [fillcolor="lightyellow", label="extension: provider_openrouter\n2 modules", style="filled"];
   "extension.provider_sakana" [fillcolor="lightyellow", label="extension: provider_sakana\n2 modules", style="filled"];
   "extension.provider_shared" [fillcolor="lightyellow", label="extension: provider_shared\n3 modules", style="filled"];

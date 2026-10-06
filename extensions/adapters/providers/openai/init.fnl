@@ -43,6 +43,7 @@
 (local M {})
 
 (fn M.register [api]
+  ((. (require :fen.extensions.provider_openai.usage) :register) api)
   ;; @doc register-site:provider:openai
   ;; summary: OpenAI Chat Completions provider using OPENAI_API_KEY and the default gpt-5.4-nano model.
   ;; tags: provider openai completions

@@ -1,7 +1,9 @@
 {:name :provider_openai
  :description "First-party OpenAI provider family (Chat Completions, Responses, Codex subscription, and Codex OAuth auth)."
  :entry-module :fen.extensions.provider_openai
- :reload-modules [:fen.extensions.provider_openai.openai_model_catalog
+ :reload-exclude [:fen.extensions.provider_openai.usage_state]
+ :reload-modules [:fen.extensions.provider_openai.usage
+                  :fen.extensions.provider_openai.openai_model_catalog
                   :fen.extensions.provider_openai.openai_completions
                   :fen.extensions.provider_openai.openai_responses_shared
                   :fen.extensions.provider_openai.openai_responses
