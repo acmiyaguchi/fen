@@ -9,7 +9,30 @@
   };
 
   outputs = { self, nixpkgs, nixpkgs-unstable, flake-utils }:
-    flake-utils.lib.eachSystem [
+    {
+      overlays.default = final: _prev:
+        let
+          envVersion = builtins.getEnv "FEN_VERSION";
+          baseVersion = final.lib.fileContents ./VERSION;
+          version =
+            if envVersion != "" then envVersion
+            else "v${baseVersion}" + (if (self ? dirtyRev) || (self ? dirtyShortRev) then "-dirty" else "");
+          versionInfo = {
+            inherit version;
+            gitRev = self.rev or self.dirtyRev or "";
+            gitShortRev = self.shortRev or self.dirtyShortRev or "";
+            dirty = (self ? dirtyRev) || (self ? dirtyShortRev);
+            source = "nix";
+            lastModified = self.lastModifiedDate or "";
+            buildSystem = final.stdenv.buildPlatform.system;
+          };
+        in {
+          fen = final.callPackage ./nix/package.nix {
+            pkgs = final;
+            inherit version versionInfo;
+          };
+        };
+    } // flake-utils.lib.eachSystem [
       "x86_64-linux"
       "aarch64-linux"
       "armv7l-linux"
@@ -180,6 +203,10 @@
 
         checks = {
           inherit checkPins;
+          downstream = import ./nix/downstream-check.nix {
+            inherit pkgs nixpkgs system;
+            overlay = self.overlays.default;
+          };
           fennelCheck = native.checks.fennelCheck;
           docs = native.checks.docs;
           tests = native.checks.tests;
