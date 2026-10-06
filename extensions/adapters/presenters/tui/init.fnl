@@ -543,7 +543,8 @@
           :suspend true
           :set-status-info true
           :set-thinking-blocks true
-          :hint true})
+          :hint true
+          :dismiss true})
   (api.on :*
           (fn [ev]
             (when (not (. PRESENTER-CONTROL-EVENTS ev.type))

@@ -87,6 +87,15 @@
 (describe "tui presenter event filtering"
           (fn []
             (before_each reset-state!)
+            (it "does not append presenter-control dismiss events to the transcript"
+                (fn []
+                  (events.emit {:type :dismiss})
+                  (assert.are.equal 0 (length state.transcript))
+                  ;; Nearby lifecycle diagnostics remain visible.
+                  (events.emit {:type :extension-loaded :name :example})
+                  (assert.are.equal 1 (length state.transcript))
+                  (assert.are.equal "extension-loaded: example"
+                                    (. state.transcript 1 :text))))
             (it "does not append internal runtime ticks to the transcript"
                 (fn []
                   (events.emit {:type :runtime-tick :busy? false :agent {}})
