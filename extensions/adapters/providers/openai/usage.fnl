@@ -101,7 +101,7 @@
                                        :used-percent w.used-percent
                                        :remaining-percent w.remaining-percent
                                        :length-seconds w.length-seconds
-                                       :reset-at w.reset-at})
+                                       :reset-at (math.floor w.reset-at)})
                         (set valid? false))))
                 (when (and valid?
                            (or (= (length windows) 0) (number? s.retrieved-at))
@@ -110,15 +110,18 @@
                                     (> s.attempted-at state.attempted-at))))
                   (set state.windows windows)
                   (set state.retrieved-at
-                       (when (number? s.retrieved-at) s.retrieved-at))
+                       (when (number? s.retrieved-at)
+                         (math.floor s.retrieved-at)))
                   (set state.attempted-at
-                       (when (number? s.attempted-at) s.attempted-at))
+                       (when (number? s.attempted-at)
+                         (math.floor s.attempted-at)))
                   (set state.failure
                        (when (or (= s.failure :auth) (= s.failure :network)
                                  (= s.failure :api) (= s.failure :unsupported)
                                  (= s.failure :unavailable))
                          s.failure))
-                  (do nil))))))))))
+                  (do
+                    nil))))))))))
 
 (fn M.save-cache []
   (when (and state.account-key (not= state.cache-path false))
@@ -294,9 +297,10 @@
                          (if snapshot.retrieved-at
                              (.. " - " (if stale? "stale, " "") "updated "
                                  (if (< (- now snapshot.retrieved-at) 60)
-                                     (.. (tostring (math.max 0
-                                                             (- now
-                                                                snapshot.retrieved-at)))
+                                     (.. (string.format "%.0f"
+                                                        (math.max 0
+                                                                  (- now
+                                                                     snapshot.retrieved-at)))
                                          "s")
                                      (M.relative (- now snapshot.retrieved-at)))
                                  " ago")

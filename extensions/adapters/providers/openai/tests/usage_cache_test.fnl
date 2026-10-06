@@ -107,14 +107,16 @@
                   (local (usage state) (instance))
                   (local now (os.time))
                   (local key (sha256.hex-digest account))
-                  (local snapshot {:windows [{:name "rate_limit/primary_window"
-                                              :used-percent 22
-                                              :remaining-percent 78
-                                              :length-seconds 18000
-                                              :reset-at (+ now 600)}]
-                                  :retrieved-at (- now 10)
-                                  :attempted-at (- now 10)})
-                  (write (json.encode {:version 1 :account-key key
+                  (local snapshot
+                         {:windows [{:name "rate_limit/primary_window"
+                                     :used-percent 22
+                                     :remaining-percent 78
+                                     :length-seconds 18000
+                                     :reset-at (+ now 600)}]
+                          :retrieved-at (- now 10)
+                          :attempted-at (- now 10)})
+                  (write (json.encode {:version 1
+                                       :account-key key
                                        :snapshot snapshot}))
                   (usage.load-cache key)
                   (assert.equal :fresh (. (usage.snapshot) :status))
@@ -122,10 +124,35 @@
                   (tset snapshot :attempted-at (- now 90))
                   (set state.account-key nil)
                   (set state.attempted-at nil)
-                  (write (json.encode {:version 1 :account-key key
+                  (write (json.encode {:version 1
+                                       :account-key key
                                        :snapshot snapshot}))
                   (usage.load-cache key)
                   (assert.equal :stale (. (usage.snapshot) :status))))
+            (it "normalizes float timestamps loaded from decoded JSON"
+                (fn []
+                  (local (usage state) (instance))
+                  (local now (os.time))
+                  (local key (sha256.hex-digest account))
+                  (set state.account-key nil)
+                  (write (json.encode {:version 1
+                                       :account-key key
+                                       :snapshot {:windows [{:name "rate_limit/primary_window"
+                                                             :used-percent 22
+                                                             :remaining-percent 78
+                                                             :length-seconds 18000
+                                                             :reset-at (+ now
+                                                                          600.75)}]
+                                                  :retrieved-at (- now 10.75)
+                                                  :attempted-at (- now 5.25)}}))
+                  (usage.load-cache key)
+                  (assert.equal (math.floor (- now 10.75)) state.retrieved-at)
+                  (assert.equal (math.floor (- now 5.25)) state.attempted-at)
+                  (assert.equal (math.floor (+ now 600.75))
+                                (. state.windows 1 :reset-at))
+                  (local rows (usage.rows (usage.snapshot) 100 now))
+                  (assert.is_nil (string.find (. rows 1 :text) "%.0s"))
+                  (assert.is_nil (string.find (. rows 1 :text) "%d+%.0"))))
             (it "tolerates missing corrupt foreign-version and account-mismatched files"
                 (fn []
                   (local (usage state) (instance))
