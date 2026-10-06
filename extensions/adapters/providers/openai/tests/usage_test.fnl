@@ -20,6 +20,9 @@
             (before_each (fn []
                            (set old-auth (. package.loaded auth-name))
                            (set old-http (. package.loaded http-name))
+                           (set state.cache-path false)
+                           (set state.account-key nil)
+                           (set state.loaded? false)
                            (set state.windows [])
                            (set state.retrieved-at nil)
                            (set state.attempted-at nil)
@@ -68,7 +71,8 @@
             (it "refreshes on demand and cached introspection never accesses auth/network"
                 (fn []
                   (local specs {})
-                  (usage.register {:register (fn [kind spec]
+                  (usage.register {:on (fn [_event _handler])
+                                   :register (fn [kind spec]
                                                (tset specs kind spec))})
                   (assert.equal :unavailable
                                 (?. ((. specs :introspect :snapshot) {})
