@@ -93,15 +93,39 @@
                                     :on (fn [_ _])})
                   (assert.equal 1 calls)
                   (assert.equal 1 auth-calls)
-                  (assert.equal :stale (. (second.snapshot) :status))
-                  (assert.equal :dim
+                  (assert.equal :fresh (. (second.snapshot) :status))
+                  (assert.equal :status
                                 (. (second.status (second.snapshot) 80
                                                   (os.time))
                                    :style))
                   (assert.same first-state.windows second-state.windows)
-                  (assert.equal :stale (. (second.refresh) :status))
+                  (assert.equal :fresh (. (second.refresh) :status))
                   (assert.equal 1 calls)
                   (assert.equal 1 auth-calls)))
+            (it "uses cache age rather than whether this process loaded it"
+                (fn []
+                  (local (usage state) (instance))
+                  (local now (os.time))
+                  (local key (sha256.hex-digest account))
+                  (local snapshot {:windows [{:name "rate_limit/primary_window"
+                                              :used-percent 22
+                                              :remaining-percent 78
+                                              :length-seconds 18000
+                                              :reset-at (+ now 600)}]
+                                  :retrieved-at (- now 10)
+                                  :attempted-at (- now 10)})
+                  (write (json.encode {:version 1 :account-key key
+                                       :snapshot snapshot}))
+                  (usage.load-cache key)
+                  (assert.equal :fresh (. (usage.snapshot) :status))
+                  (tset snapshot :retrieved-at (- now 90))
+                  (tset snapshot :attempted-at (- now 90))
+                  (set state.account-key nil)
+                  (set state.attempted-at nil)
+                  (write (json.encode {:version 1 :account-key key
+                                       :snapshot snapshot}))
+                  (usage.load-cache key)
+                  (assert.equal :stale (. (usage.snapshot) :status))))
             (it "tolerates missing corrupt foreign-version and account-mismatched files"
                 (fn []
                   (local (usage state) (instance))

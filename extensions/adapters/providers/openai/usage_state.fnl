@@ -4,6 +4,5 @@
  :attempted-at nil
  :failure :unavailable
  :account-key nil
- :loaded? false
  :visible? false
  :refresh-co nil}

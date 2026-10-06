@@ -66,8 +66,7 @@
   (set state.windows [])
   (set state.retrieved-at nil)
   (set state.attempted-at nil)
-  (set state.failure :unavailable)
-  (set state.loaded? false))
+  (set state.failure :unavailable))
 
 (fn M.load-cache [key]
   (when (not= key state.account-key)
@@ -119,7 +118,7 @@
                                  (= s.failure :api) (= s.failure :unsupported)
                                  (= s.failure :unavailable))
                          s.failure))
-                  (set state.loaded? true))))))))))
+                  (do nil))))))))))
 
 (fn M.save-cache []
   (when (and state.account-key (not= state.cache-path false))
@@ -153,7 +152,7 @@
      :attempted-at state.attempted-at
      :failure state.failure
      :status (if (> (length windows) 0)
-                 (if (or state.loaded? state.failure reset?
+                 (if (or state.failure reset?
                          (>= (- now state.retrieved-at) 60))
                      :stale
                      :fresh)
@@ -238,8 +237,7 @@
                       (do
                         (set state.windows windows)
                         (set state.retrieved-at (os.time))
-                        (set state.failure nil)
-                        (set state.loaded? false))))))))
+                        (set state.failure nil))))))))
     (M.save-cache))
   (M.snapshot))
 
