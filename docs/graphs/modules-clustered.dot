@@ -850,10 +850,16 @@ digraph fen_modules_clustered {
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.sse";
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.stream_chunks";
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.text";
+  "fen.extensions.provider_openai.usage" -> "fen.extensions.provider_openai.openai_codex_keychain";
   "fen.extensions.provider_openai.usage" -> "fen.extensions.provider_openai.openai_codex_oauth";
   "fen.extensions.provider_openai.usage" -> "fen.extensions.provider_openai.usage_state";
+  "fen.extensions.provider_openai.usage" -> "fen.util.clock";
+  "fen.extensions.provider_openai.usage" -> "fen.util.coroutines";
+  "fen.extensions.provider_openai.usage" -> "fen.util.file_mutex";
   "fen.extensions.provider_openai.usage" -> "fen.util.http";
   "fen.extensions.provider_openai.usage" -> "fen.util.json";
+  "fen.extensions.provider_openai.usage" -> "fen.util.path";
+  "fen.extensions.provider_openai.usage" -> "fen.util.sha256";
   "fen.extensions.provider_openrouter" -> "fen.extensions.provider_openrouter.openrouter_completions";
   "fen.extensions.provider_openrouter.openrouter_completions" -> "fen.extensions.provider_openai.openai_completions";
   "fen.extensions.provider_openrouter.openrouter_completions" -> "fen.extensions.provider_openai.openai_model_catalog";

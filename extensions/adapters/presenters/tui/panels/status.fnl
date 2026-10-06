@@ -20,6 +20,7 @@
       (= style :user) SC.user
       (= style :assistant) SC.assistant
       (= style :tool) SC.tool
+      (= style :dim) (bor SC.status-fg (or tb.DIM 0))
       SC.status-fg))
 
 (fn M.ensure-defaults! []
