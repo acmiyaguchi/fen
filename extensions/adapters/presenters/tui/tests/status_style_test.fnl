@@ -41,6 +41,7 @@
                   (status.paint {:w 80 :status-y 0})
                   (set draw.put-clipped original)
                   (set tb.DIM nil)
+                  (set tb.DIM nil)
                   (set draw.put-clipped
                        (fn [x y fg bg text width]
                          (when (= text "~quota") (set observed fg))
