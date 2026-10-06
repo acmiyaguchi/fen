@@ -73,6 +73,40 @@ The Lua samples expose viewport and paint work, while a large burst wall time wi
 Run `make check-tui-scroll-perf` for the same capture with a default 250 ms burst budget, or set `FEN_SCROLL_PROFILE_MAX_MS` to a machine-specific regression ceiling.
 The budget is intentionally opt-in rather than part of `make check` because PTY wall time varies across hosts; compare repeated runs on the same machine when evaluating an optimization.
 
+### Input and streaming visibility latency
+
+Run `make bench-tui-latency` from the repository root with Fennel and LuaSocket available.
+This is separate from `make bench-tui`, which retains the CPU microbenchmarks.
+Use `make bench-tui-latency ARGS=--logical-only` for a fast deterministic scheduling baseline without sleeping.
+The default additionally replays each scenario against real wall time (about 12 seconds total, plus module loading).
+
+The benchmark drives the production `tui.run` loop, real input dispatcher, registered event bus, stream ingestion, Markdown renderer, layout, redraw flags, and captured termbox presentation.
+Only the clock, terminal event source, terminal output, and provider event source are controlled boundaries; no production behavior is changed.
+Keys wake the scheduled termbox poll, but provider deltas become available only when the loop calls `on-tick`, preserving the current 30 ms active poll and 300 ms idle poll.
+Every input sample checks the accumulated draft in a presented frame; every delta has a unique visible marker and is measured from its scheduled availability, not from its eventual ingestion.
+The runner fails if any scheduled sample is undelivered or never appears, rather than silently dropping slow samples from the statistics.
+
+Scenarios cover idle and active typing, 18 slow 8-byte deltas spaced 80 ms apart, a 24-delta burst spaced 1 ms apart, typing during streaming, and the same interaction after 1,000 mixed historical rows.
+The long history contains wrapped Markdown, code blocks, user prompts, and folded tool results.
+All scenarios use a 100×32 terminal, Markdown enabled, animations at their production defaults, and a cold initial frame; the long-history scenario also has a thinking/busy panel.
+Each scenario is a two-second replay with a stream-end flush where applicable.
+The report gives sample counts and median, nearest-rank p95, and maximum input/delta latency in milliseconds, separately for logical and wall replays.
+It also gives frame CPU median/p95/max, total process CPU, total run wall duration, presentation counts, and tick counts.
+Frame CPU includes real paint plus the screen-capture and visibility-observer overhead; total CPU also includes ticks and input handling, but excludes initial fixture seeding and eager module loading.
+Lazy imports during the first replay can make its total CPU higher; repeat the invocation and compare the same scenario on the same hardware.
+
+Logical time advances for scheduled polling and injected stalls, but does not pretend host CPU execution takes virtual time.
+Wall replay actually waits, includes host rendering/capture cost and scheduler oversleep, and timestamps completion of the captured `tb.present` call using LuaSocket's wall clock.
+Wall-clock adjustments during a run can perturb that mode; logical mode has no host-clock dependence.
+These are in-process presentation measurements, **not terminal-emulator pixels** or end-to-end network latency.
+They exclude native termbox diffing/write backpressure, SSH/mosh/tmux, provider transport/parsing, and non-cooperative production tool work.
+No machine-independent wall budget is enforced, and 18–24 samples per channel make p95 a diagnostic, not a precise population estimate.
+
+The deterministic regression suite is `make test TESTS=extensions/adapters/presenters/tui/tests/latency_test.fnl`.
+It proves sensitivity to an injected 100 ms tick stall (including a key queued during the stall), delayed presentation, the real active poll, shared burst frames, 128-byte stream redraw batching, final flush, and responsive typing while pending text remains cached.
+In particular, a draft redraw alone need not expose a small delta: ingestion keeps the historical rendered row cache until the stream byte threshold or stream end invalidates it.
+The suite measures actual intermediate presented text, not just dirty flags or input-buffer mutation.
+
 ### Reproducing TUI stalls
 
 `make stall-check` (wrapper: `scripts/dev/stall-check.sh`) is an opt-in harness for

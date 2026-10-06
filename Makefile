@@ -1,4 +1,4 @@
-.PHONY: help fmt fmt-check test-fmt install-hooks dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-fast test-all test-list test-shuffle test-compile-cache-clear test-pty profile-tui-scroll check-tui-scroll-perf stall-check smoke smoke-mock check check-static check-fennel bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean release-prepare release-tag
+.PHONY: help fmt fmt-check test-fmt install-hooks dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-fast test-all test-list test-shuffle test-compile-cache-clear test-pty profile-tui-scroll check-tui-scroll-perf stall-check smoke smoke-mock check check-static check-fennel bench-tui bench-tui-latency docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean release-prepare release-tag
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -27,7 +27,8 @@ help:
 	@echo '  smoke               — live provider smoke test using FEN_BIN or fen on PATH'
 	@echo '  smoke-mock          — deterministic local mock-provider smoke test'
 	@echo '  check               — fennel-check, generated graph freshness, doc + link validation, and tests'
-	@echo '  bench-tui           — run TUI transcript performance harness'
+	@echo '  bench-tui           — run TUI transcript CPU microbenchmarks'
+	@echo '  bench-tui-latency   — scheduled production-loop logical and wall visibility latency'
 	@echo '  docs                — build all documentation: generated Markdown/JSON, graphs, static HTML site'
 	@echo '  docs-serve          — build and serve the docs site locally (PORT=8000; busybox/python/nix)'
 	@echo '  docs-publish        — package the deployable site into dist/docs/ (consumed by the Pages workflow)'
@@ -140,6 +141,9 @@ check-fennel:
 
 bench-tui:
 	fennel scripts/test/tui-bench.fnl
+
+bench-tui-latency:
+	fennel scripts/test/tui-latency-bench.fnl $(ARGS)
 
 docs:
 	fennel scripts/docs/gen-docs.fnl

@@ -29,6 +29,8 @@
 
 (local EXCEPTIONS {:fen.testing.pty true
                    :fen.testing.tui true
+                   ;; Source-only production-loop benchmark, like the TUI stub.
+                   :fen.testing.tui_latency true
                    :fen.extensions.skills.bundled_data true})
 
 ;; Parse a rockspec (pure Lua data) in a sandbox and return its

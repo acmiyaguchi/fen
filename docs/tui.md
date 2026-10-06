@@ -188,6 +188,10 @@ The busy row switches from the cancel action to the force-quit action after the 
 
 The presenter redraws only when dirty or forced.
 Streaming assistant deltas are coalesced before invalidating the transcript renderer.
+The current stream invalidation threshold is 128 pending bytes (with an immediate first-delta redraw and a final stream-end flush), not a maximum elapsed-time deadline.
+Active cooperative work is polled every 30 ms; clean idle loops use 300 ms, and a terminal key can wake either poll early.
+Small slow deltas may therefore remain invisible across unrelated input redraws while the streamed row's rendered cache is still valid.
+`make bench-tui-latency` measures this baseline through the real production loop with scheduled input and captured presented frames; see [latency benchmark methodology and limits](development.md#input-and-streaming-visibility-latency).
 Historical transcript rows cache their rendered form by width and view toggles.
 Deep scroll uses an indexed layout cache instead of walking from the tail through every skipped row.
 

@@ -421,6 +421,7 @@ digraph fen_modules_clustered {
     "script:scripts/docs/scanner.fnl" [fillcolor="lightcyan", label="script\nscripts/docs/scanner.fnl", shape="component", style="filled", tooltip="scripts/docs/scanner.fnl"];
     "script:scripts/test/busted-helper.lua" [fillcolor="lightcyan", label="script\nscripts/test/busted-helper.lua", shape="component", style="filled", tooltip="scripts/test/busted-helper.lua"];
     "script:scripts/test/tui-bench.fnl" [fillcolor="lightcyan", label="script\nscripts/test/tui-bench.fnl", shape="component", style="filled", tooltip="scripts/test/tui-bench.fnl"];
+    "script:scripts/test/tui-latency-bench.fnl" [fillcolor="lightcyan", label="script\nscripts/test/tui-latency-bench.fnl", shape="component", style="filled", tooltip="scripts/test/tui-latency-bench.fnl"];
   }
   subgraph cluster_testing {
     label="testing";
@@ -431,6 +432,7 @@ digraph fen_modules_clustered {
     "fen.testing.pty" [fillcolor="lightyellow", label="fen.testing.pty", style="filled", tooltip="packages/testing/src/fen/testing/pty.fnl persistent"];
     "fen.testing.tools" [fillcolor="lightyellow", label="fen.testing.tools", style="filled", tooltip="packages/testing/src/fen/testing/tools.fnl persistent"];
     "fen.testing.tui" [fillcolor="lightyellow", label="fen.testing.tui", style="filled", tooltip="packages/testing/src/fen/testing/tui.fnl persistent"];
+    "fen.testing.tui_latency" [fillcolor="lightyellow", label="fen.testing.tui_latency", style="filled", tooltip="packages/testing/src/fen/testing/tui_latency.fnl persistent"];
   }
   subgraph cluster_util {
     label="util";
@@ -1157,6 +1159,13 @@ digraph fen_modules_clustered {
   "fen.testing.tools" -> "fen.testing";
   "fen.testing.tools" -> "fen.util.json";
   "fen.testing.tui" -> "fen.extensions.tui.state";
+  "fen.testing.tui_latency" -> "fen.core.extensions.events";
+  "fen.testing.tui_latency" -> "fen.core.extensions.test_api";
+  "fen.testing.tui_latency" -> "fen.extensions.tui";
+  "fen.testing.tui_latency" -> "fen.extensions.tui.paint";
+  "fen.testing.tui_latency" -> "fen.extensions.tui.state";
+  "fen.testing.tui_latency" -> "fen.testing.tui";
+  "fen.testing.tui_latency" -> "fen.util.clock";
   "fen.turn_lifecycle" -> "fen.core.extensions.events";
   "fen.turn_lifecycle" -> "fen.util.text";
   "fen.turn_submit" -> "fen.extensions.steering.service";
@@ -1219,4 +1228,6 @@ digraph fen_modules_clustered {
   "script:scripts/test/tui-bench.fnl" -> "fen.extensions.tui.select";
   "script:scripts/test/tui-bench.fnl" -> "fen.extensions.tui.state";
   "script:scripts/test/tui-bench.fnl" -> "fen.util.flat_extensions";
+  "script:scripts/test/tui-latency-bench.fnl" -> "fen.testing.tui_latency";
+  "script:scripts/test/tui-latency-bench.fnl" -> "fen.util.flat_extensions";
 }

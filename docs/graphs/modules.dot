@@ -201,6 +201,7 @@ digraph fen_modules {
   "fen.testing.pty" [fillcolor="lightyellow", label="fen.testing.pty", style="filled", tooltip="packages/testing/src/fen/testing/pty.fnl persistent"];
   "fen.testing.tools" [fillcolor="lightyellow", label="fen.testing.tools", style="filled", tooltip="packages/testing/src/fen/testing/tools.fnl persistent"];
   "fen.testing.tui" [fillcolor="lightyellow", label="fen.testing.tui", style="filled", tooltip="packages/testing/src/fen/testing/tui.fnl persistent"];
+  "fen.testing.tui_latency" [fillcolor="lightyellow", label="fen.testing.tui_latency", style="filled", tooltip="packages/testing/src/fen/testing/tui_latency.fnl persistent"];
   "fen.tool_policy" [fillcolor="lightyellow", label="fen.tool_policy", style="filled", tooltip="packages/fen/src/fen/tool_policy.fnl persistent"];
   "fen.turn_lifecycle" [fillcolor="lightyellow", label="fen.turn_lifecycle", style="filled", tooltip="packages/fen/src/fen/turn_lifecycle.fnl persistent"];
   "fen.turn_submit" [fillcolor="lightyellow", label="fen.turn_submit", style="filled", tooltip="packages/fen/src/fen/turn_submit.fnl persistent"];
@@ -265,6 +266,7 @@ digraph fen_modules {
   "script:scripts/docs/scanner.fnl" [fillcolor="lightcyan", label="script\nscripts/docs/scanner.fnl", shape="component", style="filled", tooltip="scripts/docs/scanner.fnl"];
   "script:scripts/test/busted-helper.lua" [fillcolor="lightcyan", label="script\nscripts/test/busted-helper.lua", shape="component", style="filled", tooltip="scripts/test/busted-helper.lua"];
   "script:scripts/test/tui-bench.fnl" [fillcolor="lightcyan", label="script\nscripts/test/tui-bench.fnl", shape="component", style="filled", tooltip="scripts/test/tui-bench.fnl"];
+  "script:scripts/test/tui-latency-bench.fnl" [fillcolor="lightcyan", label="script\nscripts/test/tui-latency-bench.fnl", shape="component", style="filled", tooltip="scripts/test/tui-latency-bench.fnl"];
   "c:packages/fen/fen.c" -> "fen.main" [label="c"];
   "c:packages/fen/fen.c" -> "fen.util.flat_extensions" [label="c"];
   "c:packages/fen/fen.c" -> "native:cjson" [label="preload"];
@@ -932,6 +934,13 @@ digraph fen_modules {
   "fen.testing.tools" -> "fen.testing" [label="require"];
   "fen.testing.tools" -> "fen.util.json" [color="gray50", label="late", style="dashed"];
   "fen.testing.tui" -> "fen.extensions.tui.state" [color="gray50", label="late", style="dashed"];
+  "fen.testing.tui_latency" -> "fen.core.extensions.events" [label="require"];
+  "fen.testing.tui_latency" -> "fen.core.extensions.test_api" [label="require"];
+  "fen.testing.tui_latency" -> "fen.extensions.tui" [label="require"];
+  "fen.testing.tui_latency" -> "fen.extensions.tui.paint" [label="require"];
+  "fen.testing.tui_latency" -> "fen.extensions.tui.state" [label="require"];
+  "fen.testing.tui_latency" -> "fen.testing.tui" [label="require"];
+  "fen.testing.tui_latency" -> "fen.util.clock" [label="require"];
   "fen.turn_lifecycle" -> "fen.core.extensions.events" [label="require"];
   "fen.turn_lifecycle" -> "fen.util.text" [label="require"];
   "fen.turn_submit" -> "fen.extensions.steering.service" [color="gray50", label="late", style="dashed"];
@@ -994,4 +1003,6 @@ digraph fen_modules {
   "script:scripts/test/tui-bench.fnl" -> "fen.extensions.tui.select" [label="script"];
   "script:scripts/test/tui-bench.fnl" -> "fen.extensions.tui.state" [label="script"];
   "script:scripts/test/tui-bench.fnl" -> "fen.util.flat_extensions" [label="script"];
+  "script:scripts/test/tui-latency-bench.fnl" -> "fen.testing.tui_latency" [label="script"];
+  "script:scripts/test/tui-latency-bench.fnl" -> "fen.util.flat_extensions" [label="script"];
 }
