@@ -277,8 +277,7 @@
             (set least text))))
       (let [prefix (if stale? "~" "")
             all (.. prefix (table.concat parts " "))
-            text (if (>= width 65) all
-                    (.. prefix least))]
+            text (if (>= width 100) all (.. prefix least))]
         {:text (string.sub text 1 (math.max 0 width))
          :style (M.style minimum stale?)}))))
 
@@ -354,9 +353,8 @@
                  :order 21
                  :render (fn [ctx]
                            (when (active-codex? ctx)
-                             ;; Reserve space for model/context and right-side identity.
-                             (M.status (M.snapshot) (math.max 0 (- ctx.w 35))
-                                       (os.time))))})
+                             ;; Choose detail by terminal width; the presenter owns clipping.
+                             (M.status (M.snapshot) ctx.w (os.time))))})
   (api.register :panel {:name :codex-quota
                         :placement :below-status
                         :order 20

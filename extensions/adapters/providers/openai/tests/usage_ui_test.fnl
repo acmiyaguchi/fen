@@ -81,7 +81,7 @@
                            (tui.register (test-api.make-runtime-api :tui))
                            (set tui-state.tb-initialized? true)
                            (set tui-state.status-info.provider :openai-codex)
-                           (set tui-state.status-info.model :sol)
+                           (set tui-state.status-info.model :gpt-5.4)
                            (paint.ensure-state-defaults!)
                            (set specs {})
                            (set handlers {})
@@ -106,7 +106,11 @@
                   (assert.same {:text "5h:78% 7d:95%" :style :status}
                                (usage.status snapshot 100 now))
                   (assert.equal "5h:78%"
-                                (. (usage.status snapshot 50 now) :text))
+                                (. (usage.status snapshot 80 now) :text))
+                  (assert.equal "5h:78%"
+                                (. (usage.status snapshot 99 now) :text))
+                  (assert.equal "5h:78% 7d:95%"
+                                (. (usage.status snapshot 120 now) :text))
                   (assert.equal "5h:78%"
                                 (. (usage.status snapshot 34 now) :text))
                   (assert.equal "5h:78%"

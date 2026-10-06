@@ -170,9 +170,9 @@ The lock inode is retained rather than deleted, and the kernel releases ownershi
 A changed or missing local account discards the previous account's in-memory cache on the next demand refresh; stale windows are not a promise of current allowance.
 `agent_state` collects the same cached snapshot under owner `provider_openai`, name `account-usage`, through the existing introspection interface without reading credentials or touching the network.
 For the active Codex provider, the TUI status row shows quota remaining for the reported windows, labeled by their parsed duration, such as `5h:78% 7d:95%`.
-The quota helper falls back to the window with the least remaining quota; it shows both windows only when the quota fits and the available width is at least 65 columns, otherwise it shows the tightest window.
+The quota helper shows both reported windows at terminal widths of 100 columns or more; below that threshold (including 80 columns), it shows only the window with the least remaining quota.
 The left/order-21 status contribution can still be clipped entirely after earlier left items and the right-side reservation, and very narrow terminals may clip its text.
-`~` identifies stale status data and is rendered with muted styling.
+`~` identifies stale status data and is rendered dim on the reverse-video status bar when the terminal binding exposes `DIM`, or cyan on reverse video otherwise.
 Yellow warns below 25% remaining, and red warns below 10%.
 After a reported reset time passes, the display shows 100% rather than repeating the old percentage; this is a reset indication, not a new upstream measurement.
 `/usage` toggles a dismissible below-status panel with proportional remaining bars, relative reset times, and retrieval age or sanitized failure category.
