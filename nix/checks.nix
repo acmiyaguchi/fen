@@ -148,7 +148,17 @@ EOF
     '';
 
   docs = targetPkgs.runCommand "fen-${version}-${artifactSystem}-docs"
-    { nativeBuildInputs = [ buildLuaPkgs.fennel buildPkgs.findutils buildPkgs.graphviz ]; }
+    {
+      # The docs scanner discovers flat extensions through LuaFileSystem.
+      # Without it, discovery falls back to fen_process, which is not built
+      # in this source-only documentation environment.
+      nativeBuildInputs = [
+        buildLuaPkgs.fennel
+        buildLuaPkgs.luafilesystem
+        buildPkgs.findutils
+        buildPkgs.graphviz
+      ];
+    }
     ''
       cp -R ${../.} source
       chmod -R u+w source
