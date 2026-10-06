@@ -126,7 +126,7 @@
                                 (. (usage.status snapshot 8 now) :text))
                   (tset snapshot.windows 1 :reset-at now)
                   (assert.equal "~5h:100%"
-                                (. (usage.status snapshot 50 now) :text))
+                                (. (usage.status snapshot 100 now) :text))
                   (assert.is_truthy (string.find (. (usage.rows snapshot 80 now)
                                                     2 :text)
                                                  "100%% left / reset"))))
