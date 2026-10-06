@@ -119,9 +119,7 @@
                        (when (or (= s.failure :auth) (= s.failure :network)
                                  (= s.failure :api) (= s.failure :unsupported)
                                  (= s.failure :unavailable))
-                         s.failure))
-                  (do
-                    nil))))))))))
+                         s.failure)))))))))))
 
 (fn M.save-cache []
   (when (and state.account-key (not= state.cache-path false))
