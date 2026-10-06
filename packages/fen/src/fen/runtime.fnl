@@ -21,11 +21,13 @@
         (when (path.file-exists? abs) abs)))))
 
 (fn from-proc-self []
-  "Linux: resolve the running executable via /proc/self/exe. Reliable for the
-   compiled single-file binary; used as a fallback after argv[0] (so the dev
-   wrapper, which re-execs with overlays, still wins) and before `which`, so a
-   bare argv[0] with fen off PATH does not leave the subagent tool inert."
-  (let [pipe (io.popen "readlink /proc/self/exe 2>/dev/null" :r)]
+  "Linux: resolve the Lua process executable via /proc/$PPID/exe. The popen
+   shell's /proc/self is not fen's process; $PPID identifies the Lua process.
+   Reliable for the compiled single-file binary; used as a fallback after
+   argv[0] (so the dev wrapper, which re-execs with overlays, still wins) and
+   before `which`, so a bare argv[0] with fen off PATH does not leave the
+   subagent tool inert."
+  (let [pipe (io.popen "readlink /proc/$PPID/exe 2>/dev/null" :r)]
     (when pipe
       (let [out (pipe:read :*l)]
         (pipe:close)
@@ -36,7 +38,7 @@
 ;; signature: (binary-path) -> string|nil
 ;; summary: Best-effort absolute path to fen's own executable. Prefers argv[0]
 ;;   (so a child inherits the same binary and any dev overlays in the
-;;   environment), then $FEN_BIN, then /proc/self/exe, then `fen` on PATH.
+;;   environment), then $FEN_BIN, then /proc/$PPID/exe, then `fen` on PATH.
 ;; tags: runtime process self
 (fn M.binary-path []
   (or (from-arg0) (os.getenv :FEN_BIN) (from-proc-self) (which :fen)))
