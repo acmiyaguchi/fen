@@ -104,7 +104,11 @@
                 (fn []
                   (local snapshot (usage.snapshot))
                   (assert.same {:text "5h:78% 7d:95%" :style :status}
-                               (usage.status snapshot 50 now))
+                               (usage.status snapshot 100 now))
+                  (assert.equal "5h:78%"
+                                (. (usage.status snapshot 50 now) :text))
+                  (assert.equal "5h:78%"
+                                (. (usage.status snapshot 34 now) :text))
                   (assert.equal "5h:78%"
                                 (. (usage.status snapshot 8 now) :text))
                   (assert.equal "1h55m" (usage.relative 6900))
@@ -126,9 +130,16 @@
                   (assert.is_truthy (string.find (. (usage.rows snapshot 80 now)
                                                     2 :text)
                                                  "100%% left / reset"))))
-            (it "shows both fresh windows in the frame and closes on Esc and next toggle"
+            (it "shows the tightest window at 80 columns and both at 100 in the frame"
                 (fn []
                   (toggle)
+                  (set tui-state.tb-cols 80)
+                  (set tb.width-value 80)
+                  (local narrow (frame))
+                  (assert.is_truthy (string.find (. narrow 1) "5h:78%%"))
+                  (assert.is_nil (string.find (. narrow 1) "7d:95%%"))
+                  (set tui-state.tb-cols 100)
+                  (set tb.width-value 100)
                   (local lines (frame))
                   (assert.is_truthy (string.find (. lines 1) "5h:78%% 7d:95%%"))
                   (assert.equal "codex quota - updated 0s ago" (. lines 2))

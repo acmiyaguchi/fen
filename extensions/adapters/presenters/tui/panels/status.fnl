@@ -20,7 +20,8 @@
       (= style :user) SC.user
       (= style :assistant) SC.assistant
       (= style :tool) SC.tool
-      (= style :dim) (bor SC.status-fg (or tb.DIM 0))
+      (= style :dim) (if tb.DIM (bor SC.status-fg tb.DIM)
+                         (bor tb.CYAN tb.REVERSE))
       SC.status-fg))
 
 (fn M.ensure-defaults! []

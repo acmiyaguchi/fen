@@ -33,4 +33,12 @@
                   (status.paint {:w 80 :status-y 0})
                   (set draw.put-clipped original)
                   (set tb.DIM dim)
-                  (assert.equal (bor tb.WHITE tb.REVERSE) observed)))))
+                  (assert.equal (bor tb.WHITE tb.REVERSE) observed)
+                  (set draw.put-clipped
+                       (fn [x y fg bg text width]
+                         (when (= text "~quota") (set observed fg))
+                         (original x y fg bg text width)))
+                  (status.paint {:w 80 :status-y 0})
+                  (set draw.put-clipped original)
+                  (set tb.DIM dim)
+                  (assert.equal (bor tb.WHITE tb.REVERSE tb.DIM) observed)))))

@@ -277,7 +277,8 @@
             (set least text))))
       (let [prefix (if stale? "~" "")
             all (.. prefix (table.concat parts " "))
-            text (if (<= (length all) width) all (.. prefix least))]
+            text (if (>= width 65) all
+                    (.. prefix least))]
         {:text (string.sub text 1 (math.max 0 width))
          :style (M.style minimum stale?)}))))
 
