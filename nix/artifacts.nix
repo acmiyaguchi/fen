@@ -328,7 +328,10 @@ let
       '';
 
       meta = {
-        description = "Single-file prototype of the fen CLI with embedded Lua ZIP archive";
+        description = "Single-file Lua/Fennel coding agent CLI";
+        homepage = "https://github.com/acmiyaguchi/fen";
+        license = lib.licenses.mit;
+        platforms = [ "x86_64-linux" "aarch64-linux" "armv7l-linux" ];
         mainProgram = "fen";
       };
     };

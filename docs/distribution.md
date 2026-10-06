@@ -43,6 +43,69 @@ Supply pure-Lua dependencies through the extension rocks tree (`LUA_PATH` /
 
 Cross artifacts are exposed only from x86_64 Linux.
 
+## Consuming the flake
+
+The flake supports `x86_64-linux`, `aarch64-linux`, and `armv7l-linux`; it does not currently provide a Darwin package.
+Pin a released tag (the examples use `v0.20.0`), or a commit for unreleased changes.
+The overlay and reusable package interface described below are available after v0.20.0; until the next release, pin a commit containing them.
+
+```sh
+nix run github:acmiyaguchi/fen/v0.20.0 -- --help
+nix build github:acmiyaguchi/fen/v0.20.0#fen --no-link
+```
+
+For NixOS or Home Manager, add Fen as an input to your configuration flake:
+
+```nix
+inputs.fen = {
+  url = "github:acmiyaguchi/fen"; # Pin a release tag or commit here.
+  inputs.nixpkgs.follows = "nixpkgs";
+};
+```
+
+Use the preconfigured package directly in a NixOS module receiving `fen` through `specialArgs`:
+
+```nix
+{ pkgs, fen, ... }: {
+  environment.systemPackages = [ fen.packages.${pkgs.stdenv.hostPlatform.system}.fen ];
+}
+```
+
+The equivalent Home Manager module receives `fen` through `extraSpecialArgs`:
+
+```nix
+{ pkgs, fen, ... }: {
+  home.packages = [ fen.packages.${pkgs.stdenv.hostPlatform.system}.fen ];
+}
+```
+
+### Overlay and reusable package
+
+To build against your own package set rather than Fen's preconfigured package set, add the public overlay:
+
+```nix
+{ fen, ... }: {
+  nixpkgs.overlays = [ fen.overlays.default ];
+}
+```
+
+Then install `pkgs.fen` through `environment.systemPackages` or `home.packages`.
+The overlay uses the caller's nixpkgs and does not import Fen's test-only unstable input.
+Without flakes, a pinned source checkout also provides a reusable package function:
+
+```nix
+pkgs.callPackage /path/to/fen/nix/package.nix { }
+```
+
+The supported baseline is the locked nixpkgs release; arbitrary older or newer nixpkgs revisions may require changes to dependency overrides.
+The `downstream` flake check evaluates the overlay and direct package interfaces against stable nixpkgs and smoke-runs the resulting CLI.
+
+The package remains a standalone static binary, not a runtime-tool wrapper.
+Provide tools such as Git and a shell through your environment, and CA certificates through the host or `SSL_CERT_FILE` / `CURL_CA_BUNDLE`.
+Nix store installs are immutable: update the flake lock or pinned tag and rebuild your configuration rather than using `fen update`.
+Keep API keys and credential files out of Nix expressions and generated store files; supply them at runtime.
+There is no public binary cache configured, so expect a substantial first build of the static dependencies.
+
 ## Docker scratch image
 
 The flake exposes a tiny scratch image containing the static `fen` binary, BusyBox, CA certificates, and a writable `/tmp`.
@@ -246,8 +309,8 @@ Environment overrides: `FEN_VERSION=vX.Y.Z` pins a tag, `FEN_BIN_DIR` changes th
 install directory, and `FEN_ARCH=<asset-slug>` forces an asset (e.g.
 `linux-armv7-n900-musleabihf-static` for the N900-tuned build).
 
-Caveats: the prebuilt binaries are **Linux-only** — on other platforms build
-from source (`nix build .#fen` or `make fen`). HTTPS at runtime still needs host
+Caveats: the prebuilt binaries are **Linux-only** — the flake also supports only Linux.
+Other platforms require a supported source-build toolchain; `nix build .#fen` is not a macOS installation path. HTTPS at runtime still needs host
 CA certificates or `SSL_CERT_FILE`/`CURL_CA_BUNDLE` as noted above.
 
 Audit-conscious users can skip the script and download directly:

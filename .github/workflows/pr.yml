@@ -49,3 +49,5 @@ jobs:
           nix build --no-link --print-build-logs \
             .#checks.x86_64-linux.fennelCheck \
             .#checks.x86_64-linux.tests
+            # Exercise the public overlay against the stable consumer package set.
+          nix build --no-link --print-build-logs .#checks.x86_64-linux.downstream
