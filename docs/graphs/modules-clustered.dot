@@ -396,6 +396,7 @@ digraph fen_modules_clustered {
     "fen.cli_help" [fillcolor="lightyellow", label="fen.cli_help", style="filled", tooltip="packages/fen/src/fen/cli_help.fnl persistent"];
     "fen.cli_parse" [fillcolor="lightyellow", label="fen.cli_parse", style="filled", tooltip="packages/fen/src/fen/cli_parse.fnl persistent"];
     "fen.interactive" [fillcolor="lightyellow", label="fen.interactive", style="filled", tooltip="packages/fen/src/fen/interactive.fnl persistent"];
+    "fen.prompt_source" [fillcolor="lightyellow", label="fen.prompt_source", style="filled", tooltip="packages/fen/src/fen/prompt_source.fnl persistent"];
     "fen.provider_help" [fillcolor="lightyellow", label="fen.provider_help", style="filled", tooltip="packages/fen/src/fen/provider_help.fnl persistent"];
     "fen.reload_request" [fillcolor="lightyellow", label="fen.reload_request", style="filled", tooltip="packages/fen/src/fen/reload_request.fnl persistent"];
     "fen.run_state" [fillcolor="lightyellow", label="fen.run_state", style="filled", tooltip="packages/fen/src/fen/run_state.fnl persistent"];
@@ -1115,6 +1116,7 @@ digraph fen_modules_clustered {
   "fen.main" -> "fen.core.settings";
   "fen.main" -> "fen.core.thinking";
   "fen.main" -> "fen.interactive";
+  "fen.main" -> "fen.prompt_source";
   "fen.main" -> "fen.provider_help";
   "fen.main" -> "fen.script_runner";
   "fen.main" -> "fen.session_cli";
@@ -1130,6 +1132,7 @@ digraph fen_modules_clustered {
   "fen.script_runner" -> "fen.cli_help";
   "fen.session_cli" -> "fen.cli_flags";
   "fen.session_cli" -> "fen.cli_parse";
+  "fen.session_cli" -> "fen.prompt_source";
   "fen.session_cli" -> "fen.session_control";
   "fen.session_cli" -> "fen.tool_policy";
   "fen.session_cli" -> "fen.util.json";
