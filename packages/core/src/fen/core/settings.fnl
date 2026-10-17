@@ -1,4 +1,4 @@
-;; settings.json mutable preferences; deliberately separate from the models.json registry.
+;; defaults.json < settings.json preferences; separate from the models.json registry.
 
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
@@ -74,9 +74,23 @@
   (let [p (or ?p (M.config-path))]
     (parse (storage.read p) p)))
 
+(fn merge [base override]
+  "Merge only JSON objects; arrays, scalars, false, and null replace wholesale."
+  (if (and (object? base) (object? override))
+      (let [out {}]
+        (each [k v (pairs base)]
+          (tset out k v))
+        (each [k v (pairs override)]
+          (tset out k (merge (. base k) v)))
+        out)
+      override))
+
 (fn M.load [?p]
-  "Return normalized settings. Missing/malformed files return an empty record."
-  (normalize (raw-load ?p)))
+  "Return normalized defaults.json overlaid by mutable settings.json.
+   Missing/malformed files contribute an empty record. ?p overrides only the
+   mutable document path; declarative defaults always use the config directory."
+  (normalize (merge (raw-load (.. (M.config-dir) "/defaults.json"))
+                    (raw-load ?p))))
 
 (fn M.save! [settings ?p]
   "Write settings atomically, preserving any unknown top-level keys already on disk."
@@ -98,7 +112,7 @@
 
 (fn M.adopt-default-if-unset! [provider model ?p]
   "Adopt provider/model as the default only when nothing is selected yet. Used
-   by first-boot login so an explicit existing choice is never clobbered.
+   by first-boot login so an existing mutable or declarative choice is never clobbered.
    Returns true when it wrote, false when an existing default was kept."
   (let [s (M.load ?p)]
     (if s.default-provider
@@ -114,7 +128,7 @@
 ;; @doc fen.core.settings.extension
 ;; kind: function
 ;; signature: (extension name ?path) -> table
-;; summary: Return extension `name`'s settings.json `extensions.<name>` object without the loader-owned `enabled` flag, or {}.
+;; summary: Return extension `name`'s merged `extensions.<name>` settings without the loader-owned `enabled` flag, or {}.
 ;; tags: settings extensions
 (fn M.extension [name ?p]
   (let [out {}]

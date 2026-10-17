@@ -79,6 +79,22 @@ The equivalent Home Manager module receives `fen` through `extraSpecialArgs`:
 }
 ```
 
+### Declarative defaults
+
+Home Manager can supply defaults while leaving interactive preferences writable:
+
+```nix
+xdg.configFile."fen/defaults.json".text = builtins.toJSON {
+  defaultProvider = "openai";
+  defaultThinking = "medium";
+};
+```
+
+Manage `fen/defaults.json`, not `fen/settings.json`: Fen writes interactive choices to the latter, and those choices override declarative defaults.
+Saved choices also shadow later Nix changes; remove the corresponding keys from `settings.json` to restore inheritance.
+Keep credentials out of these generated Nix-store files and supply them at runtime.
+See [Declarative defaults](providers.md#declarative-defaults) for precedence, merge rules, and reload behavior.
+
 ### Overlay and reusable package
 
 To build against your own package set rather than Fen's preconfigured package set, add the public overlay:

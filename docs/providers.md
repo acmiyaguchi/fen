@@ -316,6 +316,31 @@ Deliberately skipped vs pi-mono: `!shell-cmd`, `modelOverrides`, per-model
 
 Custom provider definitions live in `~/.config/fen/models.json`; persistent user preferences live separately in `~/.config/fen/settings.json`. The latter currently stores `defaultProvider`, `defaultModel`, `defaultThinking`, `defaultWebSearch` (see [Hosted web search](#hosted-web-search)), `pinnedTools` (camelCase on disk, kebab-case internally), and per-extension `extensions` settings (see [extensions.md](extensions.md#discovery)). CLI `--provider`/`--model`/`--thinking` flags win, exact thinking overrides win over `--thinking`, then settings defaults apply, then the built-in `openai` and thinking-off fallbacks. Bare `/model` opens the configured-model selector, and a non-exact `/model QUERY` opens it with `QUERY` as the initial search text when a UI is active; exact model IDs and numeric indexes switch directly. The `/model` command writes provider/model settings after a successful switch, and `/thinking LEVEL` writes `defaultThinking`. Do not put mutable preferences in `models.json`.
 
+### Declarative defaults
+
+Optionally place the same settings keys in `$XDG_CONFIG_HOME/fen/defaults.json` (normally `~/.config/fen/defaults.json`).
+Precedence is CLI overrides, then mutable `settings.json`, then `defaults.json`, then built-in fallbacks.
+JSON objects merge recursively; arrays and scalar values replace wholesale, including explicit `false` and empty arrays (`"pinnedTools": []` disables pinning).
+JSON null retains the existing JSON sentinel behavior; it is not a reset or deletion marker, and settings consumers still validate their usual types.
+Missing files contribute no keys; malformed JSON is warned about and ignored independently for each file.
+Extension settings and `extensions.<name>.enabled` use the same merged view, with explicit `--extension` still taking priority over enable flags.
+First-login adoption respects an inherited default provider rather than saving a different choice over it.
+
+Fen writes only explicit choices to `settings.json`, preserving unrelated mutable keys without copying inherited defaults or modifying `defaults.json`.
+Saved choices (for example `/model`, `/thinking`, or `/extensions enable|disable`) shadow future declarative changes to those keys.
+Remove the corresponding keys from `settings.json` to restore inheritance; do not set them to null.
+Settings are re-read on each settings lookup; extension configuration follows `/reload` or restart, while startup provider/model defaults apply on the next run.
+
+For example, Home Manager can manage the declarative file without owning mutable preferences:
+
+```nix
+xdg.configFile."fen/defaults.json".text = builtins.toJSON {
+  defaultProvider = "openai";
+  defaultThinking = "medium";
+  extensions.decide.enabled = false;
+};
+```
+
 In non-interactive modes (`--print` and the `json`/`goal` presenters, which have no `/model` selector to recover with), an explicit `--model` id is validated client-side against the selected provider's catalog before any request is sent.
 An exact id, canonical `provider/id`, or unambiguous substring/fuzzy match is accepted (a fuzzy match is echoed on stderr and rewritten to its canonical id); an unknown or ambiguous id fails fast with exit code 2 and a `did you mean:` suggestion list drawn from the catalog, instead of forwarding the bad id and surfacing a provider HTTP error.
 When the catalog cannot be consulted — an unregistered provider, missing auth, or a provider that only knows its default because its dynamic catalog is unreachable and it declares no static models — the id is passed through unchanged.
