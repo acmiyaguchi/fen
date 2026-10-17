@@ -589,6 +589,160 @@
                     (assert.is_true (argv-has? argv "--provider" "openrouter"))
                     (assert.is_true (argv-has? argv "--model"
                                                "openrouter/openrouter/auto")))))
+            (it "parses canonical provider/model and prevents double-prefixing"
+                (fn []
+                  (install-mocks (simple "ok") (fn [_] {:name "a" :body "b"}))
+                  (fresh)
+                  ;; Passing model="anthropic/claude-sonnet-4-6" with parent provider="openai-codex"
+                  (let [r (execute-tool {:agent :a
+                                         :task "cross"
+                                         :model "anthropic/claude-sonnet-4-6"}
+                                        {:agent {:provider-name "openai-codex"
+                                                 :model "gpt-5.4"}})
+                        argv (. children 1 :argv)]
+                    (assert.are.equal "anthropic" (. r.details :provider))
+                    (assert.are.equal "claude-sonnet-4-6" (. r.details :model))
+                    (assert.are.equal :frontmatter
+                                      (. r.details :provider-source))
+                    (assert.are.equal :frontmatter (. r.details :model-source))
+                    (assert.is_true (argv-has? argv "--provider" "anthropic"))
+                    (assert.is_true (argv-has? argv "--model"
+                                               "anthropic/claude-sonnet-4-6"))
+                    (assert.is_false (argv-has? argv "--model"
+                                                "openai-codex/anthropic/claude-sonnet-4-6"))
+                    (assert.is_false (argv-has? argv "--model"
+                                                "anthropic/anthropic/claude-sonnet-4-6")))
+                  ;; Explicit provider matching model prefix
+                  (fresh)
+                  (set children [])
+                  (let [r (execute-tool {:agent :a
+                                         :task "match"
+                                         :provider "anthropic"
+                                         :model "anthropic/claude-sonnet-4-6"}
+                                        {:agent {:provider-name "openai-codex"
+                                                 :model "gpt-5.4"}})
+                        argv (. children 1 :argv)]
+                    (assert.are.equal "anthropic" (. r.details :provider))
+                    (assert.are.equal "claude-sonnet-4-6" (. r.details :model))
+                    (assert.is_true (argv-has? argv "--provider" "anthropic"))
+                    (assert.is_true (argv-has? argv "--model"
+                                               "anthropic/claude-sonnet-4-6"))
+                    (assert.is_false (argv-has? argv "--model"
+                                                "anthropic/anthropic/claude-sonnet-4-6")))
+                  ;; Explicit gateway provider preserving slash-containing model
+                  (fresh)
+                  (set children [])
+                  (let [r (execute-tool {:agent :a
+                                         :task "gw"
+                                         :provider "openrouter"
+                                         :model "anthropic/claude-3-opus"}
+                                        {:agent {:provider-name "openai-codex"
+                                                 :model "gpt-5.4"}})
+                        argv (. children 1 :argv)]
+                    (assert.are.equal "openrouter" (. r.details :provider))
+                    (assert.are.equal "anthropic/claude-3-opus"
+                                      (. r.details :model))
+                    (assert.is_true (argv-has? argv "--provider" "openrouter"))
+                    (assert.is_true (argv-has? argv "--model"
+                                               "openrouter/anthropic/claude-3-opus")))))
+            (it "infers provider for bare model when not on inherited provider"
+                (fn []
+                  (install-mocks (simple "ok") (fn [_] {:name "a" :body "b"}))
+                  (fresh)
+                  (let [state (require :fen.core.extensions.state)
+                        saved-anthropic (. state.providers "anthropic")
+                        saved-openai-codex (. state.providers "openai-codex")]
+                    (tset state.providers "anthropic"
+                          {:name "anthropic"
+                           :models [{:id "claude-sonnet-4-6"}]
+                           :__owner :test})
+                    (tset state.providers "openai-codex"
+                          {:name "openai-codex"
+                           :models [{:id "gpt-5.4"}]
+                           :__owner :test})
+                    (let [r (execute-tool {:agent :a
+                                           :task "infer"
+                                           :model "claude-sonnet-4-6"}
+                                          {:agent {:provider-name "openai-codex"
+                                                   :model "gpt-5.4"}})
+                          argv (. children 1 :argv)]
+                      (tset state.providers "anthropic" saved-anthropic)
+                      (tset state.providers "openai-codex" saved-openai-codex)
+                      (assert.are.equal "anthropic" (. r.details :provider))
+                      (assert.are.equal "claude-sonnet-4-6"
+                                        (. r.details :model))
+                      (assert.is_true (argv-has? argv "--provider" "anthropic"))
+                      (assert.is_true (argv-has? argv "--model"
+                                                 "anthropic/claude-sonnet-4-6"))))))
+            (it "propagates thinking level from parent, frontmatter, and inline args"
+                (fn []
+                  (install-mocks (simple "ok") (fn [_] {:name "a" :body "b"}))
+                  (fresh)
+                  ;; Inherited from ctx.agent.thinking
+                  (let [r (execute-tool {:agent :a :task "think-agent"}
+                                        {:agent {:provider-name "anthropic"
+                                                 :model "haiku"
+                                                 :thinking "high"}})
+                        argv (. children 1 :argv)]
+                    (assert.are.equal "high" (. r.details :thinking))
+                    (assert.is_true (argv-has? argv "--thinking" "high")))
+                  ;; Inherited from ctx.opts.thinking
+                  (fresh)
+                  (set children [])
+                  (let [r (execute-tool {:agent :a :task "think-opts"}
+                                        {:agent {:provider-name "anthropic"
+                                                 :model "haiku"}
+                                         :opts {:thinking "medium"}})
+                        argv (. children 1 :argv)]
+                    (assert.are.equal "medium" (. r.details :thinking))
+                    (assert.is_true (argv-has? argv "--thinking" "medium")))
+                  ;; Overridden by frontmatter cfg.thinking
+                  (install-mocks (simple "ok")
+                                 (fn [_] {:name "a" :body "b" :thinking "low"}))
+                  (fresh)
+                  (let [r (execute-tool {:agent :a :task "think-fm"}
+                                        {:agent {:provider-name "anthropic"
+                                                 :model "haiku"
+                                                 :thinking "high"}})
+                        argv (. children 1 :argv)]
+                    (assert.are.equal "low" (. r.details :thinking))
+                    (assert.is_true (argv-has? argv "--thinking" "low")))
+                  ;; Overridden by inline call args.thinking
+                  (install-mocks (simple "ok")
+                                 (fn [_] {:name "a" :body "b" :thinking "low"}))
+                  (fresh)
+                  (let [r (execute-tool {:agent :a
+                                         :task "think-inline"
+                                         :thinking "xhigh"}
+                                        {:agent {:provider-name "anthropic"
+                                                 :model "haiku"
+                                                 :thinking "high"}})
+                        argv (. children 1 :argv)]
+                    (assert.are.equal "xhigh" (. r.details :thinking))
+                    (assert.is_true (argv-has? argv "--thinking" "xhigh")))))
+            (it "forwards base-url when provider matches parent and omits when cross-provider"
+                (fn []
+                  (install-mocks (simple "ok") (fn [_] {:name "a" :body "b"}))
+                  (fresh)
+                  ;; Same provider forwards base-url
+                  (let [r (execute-tool {:agent :a :task "same-prov"}
+                                        {:agent {:provider-name "openai"
+                                                 :model "gpt-4o"}
+                                         :opts {:base-url "http://localhost:11434"}})
+                        argv (. children 1 :argv)]
+                    (assert.is_true (argv-has? argv "--base-url"
+                                               "http://localhost:11434")))
+                  ;; Cross provider does NOT forward base-url
+                  (fresh)
+                  (set children [])
+                  (let [r (execute-tool {:agent :a
+                                         :task "cross-prov"
+                                         :provider "anthropic"}
+                                        {:agent {:provider-name "openai"
+                                                 :model "gpt-4o"}
+                                         :opts {:base-url "http://localhost:11434"}})
+                        argv (. children 1 :argv)]
+                    (assert.is_false (argv-flag? argv "--base-url")))))
             (it "passes the requested cwd through spawn, PWD, prompt context, and details"
                 (fn []
                   (install-mocks (simple "ok") scout)

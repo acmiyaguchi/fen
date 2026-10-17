@@ -602,6 +602,7 @@ digraph fen_modules {
   "fen.extensions.provider_openai" -> "fen.extensions.provider_openai.usage" [color="gray50", label="late", style="dashed"];
   "fen.extensions.provider_openai.openai_codex_keychain" -> "fen.util.json" [label="require"];
   "fen.extensions.provider_openai.openai_codex_keychain" -> "fen.util.log" [label="require"];
+  "fen.extensions.provider_openai.openai_codex_keychain" -> "fen.util.path" [label="require"];
   "fen.extensions.provider_openai.openai_codex_login" -> "fen.extensions.provider_openai.openai_codex_keychain" [label="require"];
   "fen.extensions.provider_openai.openai_codex_login" -> "fen.extensions.provider_openai.openai_codex_oauth" [label="require"];
   "fen.extensions.provider_openai.openai_codex_login" -> "fen.util.base64" [label="require"];
@@ -739,6 +740,8 @@ digraph fen_modules {
   "fen.extensions.steering.service" -> "fen.core.extensions.state" [label="require"];
   "fen.extensions.steering.service" -> "fen.extensions.steering.state" [label="require"];
   "fen.extensions.subagent" -> "fen.core.extensions.register.presenter" [label="require"];
+  "fen.extensions.subagent" -> "fen.core.extensions.register.provider" [label="require"];
+  "fen.extensions.subagent" -> "fen.core.llm.models" [label="require"];
   "fen.extensions.subagent" -> "fen.core.types" [label="require"];
   "fen.extensions.subagent" -> "fen.extensions.steering.service" [color="gray50", label="late", style="dashed"];
   "fen.extensions.subagent" -> "fen.extensions.subagent.channel" [label="require"];

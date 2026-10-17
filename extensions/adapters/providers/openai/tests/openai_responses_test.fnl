@@ -1181,7 +1181,7 @@
 
 (describe "providers.openai_responses_shared.clamp-reasoning-effort"
           (fn []
-            (it "clamps :minimal to :low on gpt-5.2/5.3/5.4/5.5"
+            (it "clamps :minimal to :low on gpt-5.2/5.3/5.4/5.5/5.6 and gpt-6"
                 (fn []
                   (assert.are.equal :low
                                     (shared.clamp-reasoning-effort "gpt-5.5"
@@ -1189,9 +1189,21 @@
                   (assert.are.equal :low
                                     (shared.clamp-reasoning-effort "gpt-5.2"
                                                                    :minimal))
+                  (assert.are.equal :low
+                                    (shared.clamp-reasoning-effort "gpt-5.6-sol"
+                                                                   :minimal))
+                  (assert.are.equal :low
+                                    (shared.clamp-reasoning-effort "gpt-6.1-sol"
+                                                                   :minimal))
+                  (assert.are.equal :low
+                                    (shared.clamp-reasoning-effort "gpt-6-luna"
+                                                                   :minimal))
                   (assert.are.equal :high
                                     (shared.clamp-reasoning-effort "gpt-5.5"
-                                                                   :high))))
+                                                                   :high))
+                  (assert.are.equal :xhigh
+                                    (shared.clamp-reasoning-effort "gpt-6.1-sol"
+                                                                   :xhigh))))
             (it "clamps :xhigh to :high on gpt-5.1"
                 (fn []
                   (assert.are.equal :high

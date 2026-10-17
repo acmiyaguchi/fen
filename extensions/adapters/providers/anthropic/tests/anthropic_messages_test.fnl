@@ -538,7 +538,16 @@
                     (assert.are.equal 2048 (. body.thinking :budget_tokens)))
                   (let [body (am.build-body "claude-x" {:messages [] :tools []}
                                             1024 nil)]
-                    (assert.is_nil body.thinking))))))
+                    (assert.is_nil body.thinking))))
+            (it "bumps max_tokens when thinking-budget is greater than or equal to max-tokens"
+                (fn []
+                  (let [body (am.build-body "claude-x" {:messages [] :tools []}
+                                            16384 {:thinking-budget 16384})]
+                    (assert.are.equal :enabled (. body.thinking :type))
+                    (assert.are.equal 16384 (. body.thinking :budget_tokens))
+                    (assert.is_true (> body.max_tokens
+                                       body.thinking.budget_tokens))
+                    (assert.are.equal 20480 body.max_tokens))))))
 
 (describe "providers.anthropic_messages.build-body cache_control"
           (fn []

@@ -93,7 +93,7 @@
                       (mkdir-p user)
                       (mkdir-p project)
                       (write-file (.. user "/scout.md")
-                                  "---\nname: scout\ndescription: Recon\nmodel: claude-haiku-4-5\nmax-turns: 4\nmax-tool-calls: 10\n---\nYou are a scout.\n")
+                                  "---\nname: scout\ndescription: Recon\nmodel: claude-haiku-4-5\nthinking: high\nmax-turns: 4\nmax-tool-calls: 10\n---\nYou are a scout.\n")
                       (let [discover (fresh-discover [{:path project
                                                        :scope :project}
                                                       {:path user :scope :user}])
@@ -103,6 +103,7 @@
                         (assert.are.equal "scout" cfg.name)
                         (assert.are.equal "Recon" cfg.description)
                         (assert.are.equal "claude-haiku-4-5" cfg.model)
+                        (assert.are.equal "high" cfg.thinking)
                         (assert.are.equal 4 cfg.max-turns)
                         (assert.are.equal 10 cfg.max-tool-calls)
                         (assert.is_truthy (string.find cfg.body

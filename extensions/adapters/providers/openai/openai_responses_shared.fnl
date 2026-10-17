@@ -1212,21 +1212,19 @@
 ;; summary: Apply Codex/OpenAI per-model reasoning-effort limits so request bodies avoid unsupported effort values.
 ;; tags: provider openai codex reasoning
 (set clamp-reasoning-effort (fn [model effort]
-                              "Mirror pi-mono `openai-codex-responses.ts:357-367`: gpt-5.2/.3/.4/.5 do
-     not accept :minimal (downgrade to :low); gpt-5.1-codex-mini caps at
+                              "Mirror pi-mono `openai-codex-responses.ts:357-367`: gpt-5.* (>= 5.2) and
+     gpt-6.* do not accept :minimal (downgrade to :low); gpt-5.1-codex-mini caps at
      :high or :medium; gpt-5.1 does not accept :xhigh (downgrade to :high)."
                               (let [m (tostring (or model ""))]
-                                (if (or (string.match m "^gpt%-5%.2")
-                                        (string.match m "^gpt%-5%.3")
-                                        (string.match m "^gpt%-5%.4")
-                                        (string.match m "^gpt%-5%.5"))
-                                    (if (= effort :minimal) :low effort)
-                                    (string.match m "^gpt%-5%.1%-codex%-mini")
+                                (if (string.match m "^gpt%-5%.1%-codex%-mini")
                                     (if (or (= effort :high) (= effort :xhigh))
                                         :high
                                         :medium)
                                     (string.match m "^gpt%-5%.1")
                                     (if (= effort :xhigh) :high effort)
+                                    (or (string.match m "^gpt%-5")
+                                        (string.match m "^gpt%-6"))
+                                    (if (= effort :minimal) :low effort)
                                     effort))))
 
 {: build-url

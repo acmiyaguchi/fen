@@ -13,6 +13,7 @@
 
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
+(local path (require :fen.util.path))
 
 (fn home []
   (or (os.getenv "HOME") "/"))
@@ -87,23 +88,30 @@
    readers from observing a half-written file."
   (let [auth-path (or ?path (default-auth-path))
         dir (parent-dir auth-path)
-        tmp (.. auth-path ".tmp")]
-    (ensure-dir! dir)
-    (let [f (io.open tmp "w")]
-      (when (not f)
-        (error (.. "auth.storage: cannot open " tmp " for write")))
-      (f:write (json.encode (or data {})))
-      (f:close))
-    (chmod-private! tmp)
-    (let [(ok? err) (os.rename tmp auth-path)]
-      (when (not ok?)
-        (os.remove tmp)
-        (error (.. "auth.storage: rename " tmp " -> " auth-path " failed: "
-                   (tostring err))))
-      ;; Defensive: if the file existed before with looser perms, rename
-      ;; preserves them on most filesystems but tightening explicitly
-      ;; matches pi-mono's behavior.
-      (chmod-private! auth-path))))
+        seed (os.tmpname)]
+    (os.remove seed)
+    (let [tmp (.. auth-path "." (path.basename seed))]
+      (ensure-dir! dir)
+      (let [f (io.open tmp "w")]
+        (when (not f)
+          (error (.. "auth.storage: cannot open " tmp " for write")))
+        (let [(ok? write-err) (pcall #(do
+                                        (f:write (json.encode (or data {})))
+                                        (f:close)))]
+          (when (not ok?)
+            (os.remove tmp)
+            (error (.. "auth.storage: write to " tmp " failed: "
+                       (tostring write-err))))))
+      (chmod-private! tmp)
+      (let [(ok? err) (os.rename tmp auth-path)]
+        (when (not ok?)
+          (os.remove tmp)
+          (error (.. "auth.storage: rename " tmp " -> " auth-path " failed: "
+                     (tostring err))))
+        ;; Defensive: if the file existed before with looser perms, rename
+        ;; preserves them on most filesystems but tightening explicitly
+        ;; matches pi-mono's behavior.
+        (chmod-private! auth-path)))))
 
 ;; @doc fen.extensions.provider_openai.openai_codex_keychain.set
 ;; kind: function
