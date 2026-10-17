@@ -6,7 +6,7 @@ user-invocable: true
 
 # Fen Maintainer
 
-`CLAUDE.md` is already in context and holds the workflow, hot-reload invariants, and gotchas.
+`AGENTS.md` is already in context and holds the workflow, hot-reload invariants, and gotchas.
 This skill adds where to look next and the checks people forget.
 
 ## Read before changing

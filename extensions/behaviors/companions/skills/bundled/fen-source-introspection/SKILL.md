@@ -46,7 +46,7 @@ Use docs/registries before broad state dumps.
 
 If source is present, start with:
 
-- `CLAUDE.md` — repo workflow and pointers.
+- `AGENTS.md` — repo workflow and pointers.
 - `docs/architecture.md` — package/module architecture.
 - `docs/extensions.md` — extension API, discovery, reload, register kinds.
 - `docs/tools.md` — built-in tool contracts.

@@ -23,7 +23,7 @@ Use a routine worker for scoped implementation and a stronger available model fo
 
 ## Contract
 
-Implementers and reviewers enforce `CLAUDE.md` and `docs/architecture.md#design-principles`.
+Implementers and reviewers enforce `AGENTS.md` and `docs/architecture.md#design-principles`.
 A working PR that violates them gets `FIX`, not `MERGE`.
 
 ## Preflight

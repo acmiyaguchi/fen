@@ -52,7 +52,7 @@ git worktree add ../fen-issue-<number>-<slug> issue/<number>-<slug>
 Then re-read local guidance when needed:
 
 ```sh
-sed -n '1,220p' CLAUDE.md
+sed -n '1,220p' AGENTS.md
 ```
 
 ## Optional parallel read-only review
@@ -85,7 +85,7 @@ Revise it as facts change.
 
 ## Implementation discipline
 
-The rules are `CLAUDE.md` (hot reload, gotchas) and `docs/architecture.md#design-principles` (one mechanism per job, kernel-only core, promote on second use, one spelling, prune dead code).
+The rules are `AGENTS.md` (hot reload, gotchas) and `docs/architecture.md#design-principles` (one mechanism per job, kernel-only core, promote on second use, one spelling, prune dead code).
 Treat them as hard constraints: a working diff that violates them is not done.
 
 ## Validate

@@ -14,7 +14,7 @@ and validation results. Use the supplied worktree as `cwd` and read touched
 files in context. If evidence is missing, identify it rather than assuming
 checks passed. If a finding needs a test run, give the caller the exact command.
 
-Review correctness, coverage, and compliance with `CLAUDE.md`,
+Review correctness, coverage, and compliance with `AGENTS.md`,
 `docs/architecture.md#design-principles`, and relevant path-scoped rules in
 `.github/instructions/`. Check lifecycle behavior, public contracts, hot
 reload, core parsimony, and obsolete code left behind. A working change that
