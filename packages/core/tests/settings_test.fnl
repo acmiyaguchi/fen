@@ -34,6 +34,75 @@
                     (assert.is_nil out.default-provider)
                     (assert.is_nil out.default-model)
                     (assert.is_nil out.default-thinking))))
+            (it "inherits defaults and recursively overlays mutable objects"
+                (fn []
+                  (write-file (.. tmp "/fen/defaults.json")
+                              "{\"defaultProvider\":\"openai\",\"defaultThinking\":\"high\",\"extensions\":{\"decide\":{\"enabled\":true,\"nested\":{\"a\":1,\"b\":2},\"items\":[1,2],\"flag\":true}}}")
+                  (write-file (.. tmp "/fen/settings.json")
+                              "{\"defaultThinking\":\"low\",\"extensions\":{\"decide\":{\"enabled\":false,\"nested\":{\"a\":3},\"items\":[],\"flag\":false}}}")
+                  (let [out (settings.load)]
+                    (assert.are.equal :openai out.default-provider)
+                    (assert.are.equal :low out.default-thinking)
+                    (assert.is_false out.extensions.decide.enabled)
+                    (assert.are.same {:nested {:a 3 :b 2}
+                                      :items []
+                                      :flag false}
+                                     (settings.extension :decide)))))
+            (it "replaces arrays and object/scalar type changes wholesale"
+                (fn []
+                  (write-file (.. tmp "/fen/defaults.json")
+                              "{\"pinnedTools\":[\"read\",\"edit\"],\"extensions\":{\"decide\":{\"items\":[1,2],\"scalar\":{\"x\":1},\"object\":false,\"nullable\":{\"x\":1}}}}")
+                  (write-file (.. tmp "/fen/settings.json")
+                              "{\"pinnedTools\":[],\"extensions\":{\"decide\":{\"items\":[3],\"scalar\":false,\"object\":{\"x\":2},\"nullable\":null}}}")
+                  (let [out (settings.load)
+                        json (require :fen.util.json)]
+                    (assert.are.same [] out.pinned-tools)
+                    (assert.are.same [3] out.extensions.decide.items)
+                    (assert.is_false out.extensions.decide.scalar)
+                    (assert.are.same {:x 2} out.extensions.decide.object)
+                    (assert.is_true (json.null? out.extensions.decide.nullable)))))
+            (it "reads defaults without mutable settings and tolerates either malformed file"
+                (fn []
+                  (write-file (.. tmp "/fen/defaults.json")
+                              "{\"defaultProvider\":\"anthropic\"}")
+                  (assert.are.equal :anthropic
+                                    (. (settings.load) :default-provider))
+                  (write-file (.. tmp "/fen/settings.json") "{broken")
+                  (assert.are.equal :anthropic
+                                    (. (settings.load) :default-provider))
+                  (write-file (.. tmp "/fen/defaults.json") "{broken")
+                  (write-file (.. tmp "/fen/settings.json")
+                              "{\"defaultProvider\":\"openai\"}")
+                  (assert.are.equal :openai
+                                    (. (settings.load) :default-provider))))
+            (it "never materializes inherited keys through any settings writer"
+                (fn []
+                  (let [json (require :fen.util.json)
+                        defaults "{\"defaultProvider\":\"anthropic\",\"defaultModel\":\"inherited\",\"defaultThinking\":\"high\",\"pinnedTools\":[],\"extensions\":{\"decide\":{\"enabled\":true,\"model\":\"inherited\"}},\"unknown\":42}"]
+                    (write-file (.. tmp "/fen/defaults.json") defaults)
+                    (assert.is_false (settings.adopt-default-if-unset! :openai
+                                                                       :new))
+                    (assert.is_nil (read-file (.. tmp "/fen/settings.json")))
+                    (settings.set-extension-enabled! :decide false)
+                    (assert.are.same {:extensions {:decide {:enabled false}}}
+                                     (json.decode (read-file (.. tmp
+                                                                 "/fen/settings.json"))))
+                    (settings.set-thinking-default! :low)
+                    (settings.set-defaults! :openai :saved)
+                    (assert.are.same {:extensions {:decide {:enabled false}}
+                                      :defaultThinking :low
+                                      :defaultProvider :openai
+                                      :defaultModel :saved}
+                                     (json.decode (read-file (.. tmp
+                                                                 "/fen/settings.json"))))
+                    (assert.are.equal defaults
+                                      (read-file (.. tmp "/fen/defaults.json")))
+                    ;; Removing mutable keys restores inheritance on the next read.
+                    (write-file (.. tmp "/fen/settings.json") "{}")
+                    (assert.are.equal :anthropic
+                                      (. (settings.load) :default-provider))
+                    (assert.is_true (. (settings.load) :extensions :decide
+                                       :enabled)))))
             (it "normalizes pi-mono-compatible camelCase keys"
                 (fn []
                   (write-file (.. tmp "/fen/settings.json")

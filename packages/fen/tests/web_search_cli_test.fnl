@@ -54,6 +54,24 @@
                        (testing.shellquote (.. tmp "/echo.fnl")))
                    (.. MOCK-ARGS " " args " --print hi")))
 
+            (it "inherits a declarative mode without mutable settings"
+                (fn []
+                  (testing.write-file (.. tmp "/fen/defaults.json")
+                                      "{\"defaultWebSearch\":\"cached\"}")
+                  (let [(out code) (run-mock nil "")]
+                    (assert.are.equal 0 code out)
+                    (assert.is_truthy (contains? out "web-search=cached") out))))
+            (it "keeps CLI above mutable settings above declarative defaults"
+                (fn []
+                  (testing.write-file (.. tmp "/fen/defaults.json")
+                                      "{\"defaultWebSearch\":\"cached\"}")
+                  (let [(out code) (run-mock "{\"defaultWebSearch\":\"off\"}"
+                                             "")]
+                    (assert.are.equal 0 code out)
+                    (assert.is_truthy (contains? out "web-search=off") out))
+                  (let [(out code) (run-mock nil "--web-search live")]
+                    (assert.are.equal 0 code out)
+                    (assert.is_truthy (contains? out "web-search=live") out))))
             (it "applies the saved mode when the flag is absent"
                 (fn []
                   (let [(out code) (run-mock "{\"defaultWebSearch\":\"cached\"}"

@@ -92,7 +92,7 @@ Project-local extensions are enabled by default even without `:enabled-by-defaul
 User-global discovered extensions still honor `:enabled-by-default`.
 Explicit `--extension <path>` always loads regardless of that field and wins name dedupe over a disabled first-party spec.
 
-The `extensions` object in `~/.config/fen/settings.json` holds per-extension settings keyed by extension name:
+The `extensions` object in `~/.config/fen/settings.json` holds per-extension settings keyed by extension name, inheriting from optional [`defaults.json`](providers.md#declarative-defaults):
 
 ```json
 {
@@ -252,7 +252,7 @@ The API table passed to an extension contains:
 | `api.auth` | Auth backend helpers: `find-backend`. |
 | `api.session` | Active session helpers: `active-backend`, `set-info!`, `info`, `append-state!`, `latest-state`. |
 | `api.diagnostics` | Diagnostic helpers: `list-errors`, `error-log-path`. |
-| `api.settings` | Settings proxy: `set-defaults!`, `set-thinking-default!`, and `extension`, which returns this extension's `extensions.<name>` settings (without `enabled`) or `{}`. It re-reads settings.json on each call, so it follows `/reload`; apply your own defaults. |
+| `api.settings` | Settings proxy: `set-defaults!`, `set-thinking-default!`, and `extension`, which returns this extension's `extensions.<name>` settings (without `enabled`) or `{}`. It re-reads defaults.json and settings.json on each call, so it follows `/reload`; apply your own defaults. |
 | `api.models` | Model registry proxy: `list`, `resolve`, `canonical-id`. |
 | `api.ui` | Active presenter UI slot helpers: `has-ui?`, `notify`, `prompt`, `select`. See [UI helper fallback behavior](#ui-helper-fallback-behavior). |
 | `api.load(name)` | File-backed extensions only: load `<manifest-dir>/<name>.{fnl,lua}` and return its value. Use for sibling files without a namespace. |
