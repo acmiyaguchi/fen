@@ -148,9 +148,10 @@ contexts contain only always-visible and activated descriptors.
 
 Selected search-gated tools can be pinned so their schemas appear on the first
 request without a preliminary `tool_search`.
-Set `pinnedTools` in `~/.config/fen/settings.json` to an array of tool names;
-when the key is absent fen pins `todo_write` and `subagent` by default, and an
-explicit empty array disables pinning.
+Set `pinnedTools` in `~/.config/fen/settings.json` to an array of tool names.
+When the key is absent, the default pin list contains `todo_write` and `subagent`; an explicit empty array disables pinning.
+The `todo` companion is disabled by default, so its `todo_write` pin has no effect unless the companion is explicitly enabled.
+Pinning does not enable extensions.
 Pinning only pre-activates a tool's descriptor for the conversation; it does not
 change the tool's registered exposure, and unknown names are ignored.
 Each reset conversation (`/new`, resume, handoff) re-applies the pin set.
@@ -243,8 +244,9 @@ Only tools whose executions do not share mutable Lua state or mutate the same re
 The first-party `subagent` companion is parallel-safe because each call supervises an isolated child `fen` process, and it defaults to a cap of 4 concurrent children per consecutive batch.
 All non-opted-in tools, including file mutation tools, continue to run serially.
 
-The first-party `todo` companion extension separately registers `todo_write`.
-It lets the model overwrite a structured session todo list.
+The first-party `todo` companion extension is disabled by default.
+Enable it with `/extensions enable todo` or `"extensions": {"todo": {"enabled": true}}` in settings.
+When enabled, it separately registers `todo_write`, which lets the model overwrite a structured session todo list.
 It stores the snapshot in the tool-result `details` payload for replay.
 It exposes `/todos`, a TUI panel, a status item, and introspection.
 
