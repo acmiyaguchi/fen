@@ -120,6 +120,26 @@
                       (assert.are.equal 4 (. blob :goal :iterations-used))
                       (assert.are.equal :number
                                         (type (. blob :goal :wall-clock-ms)))))))
+            (it "exposes provider reset details in failed goal JSON"
+                (fn []
+                  (let [out-path (os.tmpname)
+                        fixture (context {:status :error
+                                          :reason "quota exhausted"})]
+                    (set fixture.ctx.state.agent
+                         {:messages [{:role :assistant
+                                      :stop-reason :error
+                                      :error-details {:code :usage_limit_reached
+                                                      :reset-at 1791257459
+                                                      :retryable false}}]})
+                    (set fixture.ctx.state.opts.json-output-file out-path)
+                    (assert.are.equal 1 (presenter.run fixture.ctx))
+                    (let [f (assert (io.open out-path :r))
+                          blob (json.decode (f:read :*a))]
+                      (f:close)
+                      (os.remove out-path)
+                      (assert.are.equal "failure" blob.goal.status)
+                      (assert.are.equal 1791257459 blob.error-details.reset-at)
+                      (assert.is_false blob.error-details.retryable)))))
             (it "forces exit 1 when the JSON write fails"
                 (fn []
                   (let [previous io.open

@@ -104,3 +104,9 @@ Saves are wired in `packages/fen/src/fen/session_lifecycle.fnl` as a flush closu
 The lifecycle bridge listens for `:message-appended`, flushes only after the first assistant message exists, and keeps a final turn-completion flush as a safety net.
 
 
+
+Provider errors may attach sanitized machine-readable `error-details` to the assistant message persisted in the transcript.
+For Codex exhausted subscription quota, `fen session send --json` exposes those details as `error.details` while retaining the stable `error.code: turn_failed` envelope.
+The print JSON presenter and goal JSON result file expose them as top-level `error-details` on failure, keeping their existing human-readable error/outcome fields.
+`code: usage_limit_reached` and `retryable: false` distinguish exhausted quota from transient rate limits; valid `reset-at` (Unix seconds), `resets-in-seconds`, and `length-seconds` let callers schedule a later resume without parsing prose.
+Reset details are an observation, not a guarantee of future allowance, and no automatic resume is scheduled.

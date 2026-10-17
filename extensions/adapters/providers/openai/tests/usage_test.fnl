@@ -57,6 +57,64 @@
                           (tset package.loaded auth-name old-auth)
                           (tset package.loaded http-name old-http)
                           (tset package.loaded module nil)))
+            (it "records exhausted windows without freshening other quota or requesting HTTP"
+                (fn []
+                  (let [sha (require :fen.util.sha256)
+                        reset (+ (os.time) 3410)]
+                    (set state.account-key (sha.hex-digest "synthetic"))
+                    (set state.retrieved-at (- (os.time) 120))
+                    (set state.windows
+                         [{:name "rate_limit/primary_window"
+                           :length-seconds 18000
+                           :reset-at reset
+                           :used-percent 20
+                           :remaining-percent 80}
+                          {:name "rate_limit/secondary_window"
+                           :length-seconds 604800
+                           :reset-at reset
+                           :used-percent 10
+                           :remaining-percent 90}])
+                    (usage.record-limit {:length-seconds 18000 :reset-at reset}
+                                        "synthetic")
+                    (let [snapshot (usage.snapshot)]
+                      (assert.are.equal 0 calls)
+                      (assert.are.equal 2 (length snapshot.windows))
+                      (assert.are.equal 0
+                                        (. snapshot.windows 1
+                                           :remaining-percent))
+                      (assert.are.equal 90
+                                        (. snapshot.windows 2
+                                           :remaining-percent))
+                      (assert.are.equal :stale snapshot.status)
+                      (assert.are.equal 100
+                                        (usage.remaining (. snapshot.windows 1)
+                                                         reset))))))
+            (it "persists a sanitized exhausted quota observation across restart"
+                (fn []
+                  (let [file (os.tmpname)
+                        sha (require :fen.util.sha256)
+                        reset (+ (os.time) 3410)]
+                    (set state.cache-path file)
+                    (os.remove file)
+                    (usage.record-limit {:length-seconds 18000 :reset-at reset}
+                                        "synthetic")
+                    (set state.account-key nil)
+                    (set state.windows [])
+                    (set state.attempted-at nil)
+                    (usage.load-cache (sha.hex-digest "synthetic"))
+                    (let [snapshot (usage.snapshot)
+                          f (assert (io.open file :r))
+                          text (f:read :*a)]
+                      (f:close)
+                      (os.remove file)
+                      (os.remove (.. file ".lock"))
+                      (set state.cache-path false)
+                      (assert.is_nil (string.find text "synthetic" 1 true))
+                      (assert.are.equal 0
+                                        (. snapshot.windows 1
+                                           :remaining-percent))
+                      (assert.are.equal reset (. snapshot.windows 1 :reset-at))
+                      (assert.are.equal 0 calls)))))
             (it "normalizes only validated quota fields"
                 (fn []
                   (assert.same [{:name "rate_limit/primary_window"

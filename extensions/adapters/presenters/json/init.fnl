@@ -72,6 +72,7 @@
                   :messages messages
                   :usage (turn-result.sum-usage messages)
                   :stop-reason (?. asst :stop-reason)
+                  :error-details (when failed? (?. asst :error-details))
                   :error (if failed? (tostring result) nil)}
             wrote? (write-output (output-path state) (encode-blob blob))]
         (if (or failed? (not wrote?)) 1 0)))))

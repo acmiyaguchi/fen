@@ -532,6 +532,7 @@ digraph fen_modules {
   "fen.extensions.goal_headless" -> "fen.extensions.goal.state" [label="require"];
   "fen.extensions.goal_headless" -> "fen.util.headless_progress" [label="require"];
   "fen.extensions.goal_headless" -> "fen.util.json" [label="require"];
+  "fen.extensions.goal_headless" -> "fen.util.turn_result" [label="require"];
   "fen.extensions.handoff" -> "fen.core.agent" [label="require"];
   "fen.extensions.handoff" -> "fen.core.types" [label="require"];
   "fen.extensions.handoff" -> "fen.extensions.steering.service" [label="require"];
@@ -602,8 +603,10 @@ digraph fen_modules {
   "fen.extensions.provider_openai.openai_codex_oauth" -> "fen.util.http" [label="require"];
   "fen.extensions.provider_openai.openai_codex_oauth" -> "fen.util.json" [label="require"];
   "fen.extensions.provider_openai.openai_codex_oauth" -> "fen.util.log" [label="require"];
+  "fen.extensions.provider_openai.openai_codex_responses" -> "fen.core.types" [label="require"];
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.extensions.provider_openai.openai_codex_oauth" [label="require"];
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.extensions.provider_openai.openai_responses_shared" [label="require"];
+  "fen.extensions.provider_openai.openai_codex_responses" -> "fen.extensions.provider_openai.usage" [label="require"];
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.extensions.provider_shared.streaming" [label="require"];
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.util.http" [label="require"];
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.util.json" [label="require"];

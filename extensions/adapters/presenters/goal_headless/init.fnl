@@ -3,6 +3,7 @@
 (local goal-state (require :fen.extensions.goal.state))
 (local headless-progress (require :fen.util.headless_progress))
 (local json (require :fen.util.json))
+(local turn-result (require :fen.util.turn_result))
 (local M {})
 
 (local EXIT-CODES {:done 0 :blocked 2 :cap-reached 2 :stopped 2 :error 1})
@@ -35,8 +36,13 @@
       (or (= status "blocked") (= status "iteration-cap")) "blocked"
       "error"))
 
-(fn write-json-outcome! [path result value]
-  (let [(ok? encoded) (pcall json.encode {:final-text result :goal value})]
+(fn write-json-outcome! [path result value messages]
+  (let [(ok? encoded) (pcall json.encode
+                             {:final-text result
+                              :goal value
+                              :error-details (when (= value.status "failure")
+                                               (?. (turn-result.last-assistant messages)
+                                                   :error-details))})]
     (if (not ok?)
         false
         (let [(f err) (io.open path :w)]
@@ -86,7 +92,8 @@
         json-path (or (?. ctx :state :opts :json-output-file)
                       (os.getenv :FEN_JSON_OUTPUT_PATH))
         wrote? (if (and json-path (not= json-path ""))
-                   (write-json-outcome! json-path goal-state.last-result value)
+                   (write-json-outcome! json-path goal-state.last-result value
+                                        (?. ctx :state :agent :messages))
                    (do
                      (write-plain-outcome! goal-state.last-result value)
                      true))]

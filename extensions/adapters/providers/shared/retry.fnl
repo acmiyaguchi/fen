@@ -170,7 +170,7 @@
   resp)
 
 (fn retryable-response? [resp]
-  (and resp
+  (and resp (not= resp.retryable false)
        (or (. resp :retry-incomplete-stream)
            (transient? resp.status resp.error (. resp :curl-code)))))
 

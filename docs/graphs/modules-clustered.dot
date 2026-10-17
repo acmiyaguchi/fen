@@ -757,6 +757,7 @@ digraph fen_modules_clustered {
   "fen.extensions.goal_headless" -> "fen.extensions.goal.state";
   "fen.extensions.goal_headless" -> "fen.util.headless_progress";
   "fen.extensions.goal_headless" -> "fen.util.json";
+  "fen.extensions.goal_headless" -> "fen.util.turn_result";
   "fen.extensions.handoff" -> "fen.core.agent";
   "fen.extensions.handoff" -> "fen.core.types";
   "fen.extensions.handoff" -> "fen.extensions.steering.service";
@@ -827,8 +828,10 @@ digraph fen_modules_clustered {
   "fen.extensions.provider_openai.openai_codex_oauth" -> "fen.util.http";
   "fen.extensions.provider_openai.openai_codex_oauth" -> "fen.util.json";
   "fen.extensions.provider_openai.openai_codex_oauth" -> "fen.util.log";
+  "fen.extensions.provider_openai.openai_codex_responses" -> "fen.core.types";
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.extensions.provider_openai.openai_codex_oauth";
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.extensions.provider_openai.openai_responses_shared";
+  "fen.extensions.provider_openai.openai_codex_responses" -> "fen.extensions.provider_openai.usage";
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.extensions.provider_shared.streaming";
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.util.http";
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.util.json";

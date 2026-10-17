@@ -93,7 +93,10 @@
                         messages [{:role :user :content "go"}
                                   {:role :assistant
                                    :content [{:type :text :text "[error] boom"}]
-                                   :stop-reason :error}]]
+                                   :stop-reason :error
+                                   :error-details {:code :usage_limit_reached
+                                                   :reset-at 1791257459
+                                                   :retryable false}}]]
                     (tset package.loaded "fen.extensions.json" nil)
                     (tset package.loaded "fen.core.agent"
                           {:step (fn [_ _] "[error] boom")})
@@ -115,6 +118,9 @@
                       (f:close)
                       (os.remove out-path)
                       (let [blob (json.decode text)]
+                        (assert.are.equal 1791257459
+                                          blob.error-details.reset-at)
+                        (assert.is_false blob.error-details.retryable)
                         (assert.are.equal "error" blob.stop-reason)
                         (assert.is_nil blob.final-text)
                         (assert.is_truthy (string.find (tostring blob.error)

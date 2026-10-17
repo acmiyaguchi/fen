@@ -131,13 +131,19 @@
                                          {:role :assistant
                                           :content []
                                           :stop-reason :error
-                                          :error-message "boom"})
+                                          :error-message "boom"
+                                          :error-details {:code :usage_limit_reached
+                                                          :reset-at 1791257459
+                                                          :retryable false}})
                            "[error] boom"))
                     (let [(result code) (control.send "exact-session-id" "fail"
                                                       {:session-backend :fake}
                                                       (fn [_] {}))]
                       (assert.are.equal 1 code)
                       (assert.is_false result.ok)
+                      (assert.are.equal 1791257459
+                                        result.error.details.reset-at)
+                      (assert.is_false result.error.details.retryable)
                       (assert.are.equal :turn_failed result.error.code)))))
             (it "rejects concurrent mutation before loading or appending"
                 (fn []

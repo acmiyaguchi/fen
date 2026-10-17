@@ -387,3 +387,92 @@
                       (assert.is_true ok?)
                       (assert.is_true ok2?)
                       (assert.is_string headers.user-agent)))))))
+
+(describe "Codex exhausted account quota"
+          (fn []
+            (it "returns a friendly terminal error once and updates quota without a usage request"
+                (fn []
+                  (let [old-request http.request
+                        usage (require :fen.extensions.provider_openai.usage)
+                        state (require :fen.extensions.provider_openai.usage_state)
+                        old-state (collect [k v (pairs state)] k v)
+                        reset (+ (os.time) 3410)
+                        events []]
+                    (var calls 0)
+                    (set state.cache-path false)
+                    (set state.windows [])
+                    (set state.account-key nil)
+                    (set state.retrieved-at nil)
+                    (set http.request
+                         (fn [_]
+                           (set calls (+ calls 1))
+                           {:status 429
+                            :body (json.encode {:error {:type :usage_limit_reached
+                                                        :plan_type "private-plan"
+                                                        :resets_at reset
+                                                        :limit_window_minutes 300}})}))
+                    (let [(ok asst) (pcall codex.complete "model"
+                                           {:messages [] :tools []}
+                                           {:creds {:access "AT"
+                                                    :accountId "synthetic-limit"}
+                                            :retry-base-delay-ms 0}
+                                           (fn [ev] (table.insert events ev)))
+                          snapshot (usage.snapshot)]
+                      (set http.request old-request)
+                      (each [k _ (pairs state)] (tset state k nil))
+                      (each [k v (pairs old-state)] (tset state k v))
+                      (assert.is_true ok (tostring asst))
+                      (assert.are.equal 1 calls)
+                      (assert.are.equal :error asst.stop-reason)
+                      (assert.truthy (string.find asst.error-message
+                                                  "codex usage limit reached (5h window)"
+                                                  1 true))
+                      (assert.is_nil (string.find asst.error-message
+                                                  "private-plan" 1 true))
+                      (assert.are.equal reset asst.error-details.reset-at)
+                      (assert.is_false asst.error-details.retryable)
+                      (assert.are.equal :usage_limit_reached
+                                        asst.error-details.code)
+                      (assert.are.equal 0
+                                        (. snapshot.windows 1
+                                           :remaining-percent))
+                      (assert.are.equal reset (. snapshot.windows 1 :reset-at))
+                      (assert.are.equal :error (. events (length events) :type))))))))
+
+(describe "Codex quota contrasts"
+          (fn []
+            (it "retries ordinary 429 responses but not exhausted quota with malformed reset metadata"
+                (fn []
+                  (let [old-request http.request]
+                    (var calls 0)
+                    (set http.request
+                         (fn [_]
+                           (set calls (+ calls 1))
+                           {:status 429
+                            :body "{\"error\":{\"type\":\"rate_limit_exceeded\"}}"}))
+                    (let [(ok _) (pcall codex.complete "model"
+                                        {:messages [] :tools []}
+                                        {:creds {:access "AT"
+                                                 :accountId "synthetic"}
+                                         :retry-base-delay-ms 0
+                                         :retry-max-attempts 2})]
+                      (set http.request old-request)
+                      (assert.is_true ok)
+                      (assert.are.equal 2 calls))
+                    (set calls 0)
+                    (set http.request
+                         (fn [_]
+                           (set calls (+ calls 1))
+                           {:status 429
+                            :body "{\"error\":{\"type\":\"usage_limit_reached\",\"resets_at\":\"invalid\",\"limit_window_minutes\":null}}"}))
+                    (let [(ok asst) (pcall codex.complete "model"
+                                           {:messages [] :tools []}
+                                           {:creds {:access "AT"
+                                                    :accountId "synthetic"}})]
+                      (set http.request old-request)
+                      (assert.is_true ok)
+                      (assert.are.equal 1 calls)
+                      (assert.are.equal "codex usage limit reached"
+                                        asst.error-message)
+                      (assert.is_nil asst.error-details.reset-at)
+                      (assert.is_nil asst.error-details.length-seconds)))))))
