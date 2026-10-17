@@ -175,8 +175,8 @@ The left/order-21 status contribution can still be clipped entirely after earlie
 `~` identifies stale status data and is rendered dim on the reverse-video status bar when the terminal binding exposes `DIM`, or cyan on reverse video otherwise.
 Yellow warns below 25% remaining, and red warns below 10%.
 After a reported reset time passes, the display shows 100% rather than repeating the old percentage; this is a reset indication, not a new upstream measurement.
-`/usage` toggles a dismissible below-status panel with proportional remaining bars, relative reset times, and retrieval age or sanitized failure category.
-`Esc` or another `/usage` closes it, and unsupported quota or authentication failures get an explanation instead of bars.
+`/usage` toggles a dismissible below-status panel with proportional remaining bars, relative reset times, and retrieval age or sanitized failure category; `/usage on` and `/usage off` set visibility explicitly, and `/usage help` shows the command help.
+Opening the panel dismisses competing panels, while `Esc` or opening another shared-toggle panel closes it; unsupported quota or authentication failures get an explanation instead of bars.
 Opening the panel requests a bounded cooperative demand refresh; rendering, ordinary turns, and runtime ticks never initiate quota requests on their own.
 Additional upstream quota shapes remain follow-ups.
 

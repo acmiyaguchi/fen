@@ -10,6 +10,7 @@
 (local lfs (require :lfs))
 (local clock (require :fen.util.clock))
 (local mutex (require :fen.util.file_mutex))
+(local panel-toggle (require :fen.util.panel_toggle))
 (local M {})
 
 (fn number? [n]
@@ -355,31 +356,37 @@
                            (when (active-codex? ctx)
                              ;; Choose detail by terminal width; the presenter owns clipping.
                              (M.status (M.snapshot) ctx.w (os.time))))})
-  (api.register :panel {:name :codex-quota
-                        :placement :below-status
-                        :order 20
-                        :height (fn [ctx]
-                                  (if state.visible?
-                                      (length (M.rows (panel-snapshot) ctx.w
-                                                      (os.time)))
-                                      0))
-                        :render (fn [ctx]
-                                  (if state.visible?
-                                      (M.rows (panel-snapshot) ctx.w (os.time))
-                                      []))})
-  (api.register :command
-                {:name :usage
-                 :description "Toggle Codex account quota; demand refresh at most once per minute."
-                 :idle-only? false
-                 :handler (fn [_args ctx]
-                            (set state.visible? (not state.visible?))
-                            (set state.panel-unsupported?
-                                 (not= (?. ctx :opts :provider) :openai-codex))
-                            (when (and state.visible? (not state.refresh-co))
-                              (when (not state.panel-unsupported?)
-                                (set state.refresh-co
-                                     (coroutines.create #(M.refresh coroutine.yield))))
-                              (api.emit {:type :redraw})))})
+  (panel-toggle.install! api
+                         {:name :usage
+                          :command {:name :usage
+                                    :idle-only? false
+                                    :description "Toggle Codex account quota; demand refresh at most once per minute."}
+                          :panel-spec {:name :codex-quota
+                                       :placement :below-status
+                                       :order 20
+                                       :height (fn [ctx]
+                                                 (if state.visible?
+                                                     (length (M.rows (panel-snapshot)
+                                                                     ctx.w
+                                                                     (os.time)))
+                                                     0))
+                                       :render (fn [ctx]
+                                                 (if state.visible?
+                                                     (M.rows (panel-snapshot)
+                                                             ctx.w (os.time))
+                                                     []))}
+                          :state state
+                          :before-command (fn [ctx]
+                                            (set state.panel-unsupported?
+                                                 (not= (?. ctx :opts :provider)
+                                                       :openai-codex)))
+                          :on-toggle (fn []
+                                       (when (and state.visible?
+                                                  (not state.panel-unsupported?)
+                                                  (not state.refresh-co))
+                                         (set state.refresh-co
+                                              (coroutines.create #(M.refresh coroutine.yield))))
+                                       (api.emit {:type :redraw}))})
   (api.on :runtime-tick
           (fn [_]
             (when state.refresh-co
@@ -388,10 +395,6 @@
                 (when (= (coroutine.status co) :dead)
                   (set state.refresh-co nil)
                   (api.emit {:type :redraw}))))))
-  (api.on :dismiss (fn [_]
-                     (when state.visible?
-                       (set state.visible? false)
-                       (api.emit {:type :redraw}))))
   (api.register :tool
                 {:name :account_usage
                  :label "account usage"
