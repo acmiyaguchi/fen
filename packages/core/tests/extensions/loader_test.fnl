@@ -291,9 +291,10 @@
                   (loader.load! {:extension-paths []} {:interactive? true})
                   (tset package.loaded :termbox2 nil)
                   (let [items (register.list :extensions)]
-                    (assert.are.equal 31 (length items))
+                    (assert.are.equal 32 (length items))
                     (let [expected [:agent_state
                                     :builtin_tools
+                                    :claude_memory
                                     :compact
                                     :decide
                                     :default_prompt
