@@ -818,4 +818,74 @@
                            {:autoCompactTokens (+ (math.ceil (/ n 0.8)) 10)})
                     (complete-turn! state)
                     (assert.is_nil state.turn)
-                    (assert.are.equal 0 (length asks)))))))
+                    (assert.are.equal 0 (length asks)))))
+            (it "bounds oversized tool results in the compaction summarizer input"
+                (fn []
+                  (let [(_ compact) (fresh (fn [] (make-assistant "unused"))
+                                           nil {})
+                        normal-text "normal sized output line 1\nline 2"
+                        huge-text (.. "HEAD-MARKER" (string.rep "A" 60000)
+                                      "TAIL-MARKER")
+                        normal-tr (types.tool-result-message {:tool-call-id "c1"
+                                                              :tool-name "read"
+                                                              :content [(types.text-block normal-text)]})
+                        huge-tr (types.tool-result-message {:tool-call-id "c2"
+                                                            :tool-name "bash"
+                                                            :content [(types.text-block huge-text)]})
+                        normal-serialized (compact._test.serialize-message normal-tr)
+                        huge-serialized (compact._test.serialize-message huge-tr)]
+                    ;; Normal result passes through unchanged without truncation marker
+                    (assert.is_not_nil (string.find normal-serialized
+                                                    normal-text 1 true))
+                    (assert.is_nil (string.find normal-serialized
+                                                "truncated for compaction summary"
+                                                1 true))
+                    ;; Huge result is bounded with head/tail excerpt and truncation marker
+                    (assert.is_not_nil (string.find huge-serialized
+                                                    "HEAD-MARKER" 1 true))
+                    (assert.is_not_nil (string.find huge-serialized
+                                                    "TAIL-MARKER" 1 true))
+                    (assert.is_not_nil (string.find huge-serialized
+                                                    "[... truncated for compaction summary ...]"
+                                                    1 true))
+                    (assert.is_true (< (length huge-serialized) 5000)))))
+            (it "bounds oversized tool results when constructing summarizer prompt during compaction"
+                (fn []
+                  (var captured-prompt nil)
+                  (let [normal-text "regular tool output"
+                        huge-text (.. "HUGE-START-" (string.rep "z" 15000)
+                                      "-HUGE-END")
+                        seen (fresh (fn [_agent
+                                         messages
+                                         _model
+                                         _opts
+                                         _on-event
+                                         yield-fn]
+                                      (set captured-prompt
+                                           (. messages 1 :content))
+                                      (yield-fn)
+                                      (make-assistant "summary text")))
+                        state (make-state)]
+                    (table.insert state.agent.messages 2
+                                  (with-id (types.tool-result-message {:tool-call-id "t1"
+                                                                       :tool-name "normal-tool"
+                                                                       :content [(types.text-block normal-text)]})
+                                    "t1"))
+                    (table.insert state.agent.messages 3
+                                  (with-id (types.tool-result-message {:tool-call-id "t2"
+                                                                       :tool-name "huge-tool"
+                                                                       :content [(types.text-block huge-text)]})
+                                    "t2"))
+                    (command-registry.dispatch "/compact" state)
+                    (let [(ok1? err1) (coroutine.resume state.turn)]
+                      (assert.is_true ok1? err1))
+                    (assert.is_not_nil captured-prompt)
+                    (assert.is_not_nil (string.find captured-prompt normal-text
+                                                    1 true))
+                    (assert.is_not_nil (string.find captured-prompt
+                                                    "HUGE-START-" 1 true))
+                    (assert.is_not_nil (string.find captured-prompt "-HUGE-END"
+                                                    1 true))
+                    (assert.is_not_nil (string.find captured-prompt
+                                                    "[... truncated for compaction summary ...]"
+                                                    1 true)))))))

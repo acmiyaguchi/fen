@@ -1048,6 +1048,39 @@
                                       (length (. fake.calls 2 :context :tools)))
                     (assert.are.equal :profile
                                       (. fake.calls 2 :context :tools 2 :name)))))
+            (it "orders always-visible tools stably and appends active search tools in sorted name order"
+                (fn []
+                  (let [agent (agent-mod.make-agent {:model "mock"
+                                                     :api-key :test
+                                                     :tools [{:name :z-always
+                                                              :exposure :always
+                                                              :parameters {}}
+                                                             {:name :zebra-search
+                                                              :exposure :search
+                                                              :parameters {}}
+                                                             {:name :a-always
+                                                              :exposure :always
+                                                              :parameters {}}
+                                                             {:name :apple-search
+                                                              :exposure :search
+                                                              :parameters {}}
+                                                             {:name :middle-always
+                                                              :exposure :always
+                                                              :parameters {}}]
+                                                     :active-tool-names {"zebra-search" true
+                                                                         "apple-search" true}
+                                                     :on-event (fn [_])})]
+                    (set fake.default-response (text-response "ok"))
+                    (agent-mod.step agent "call")
+                    (let [tools (. fake.calls 1 :context :tools)
+                          names (icollect [_ t (ipairs tools)]
+                                  (tostring t.name))]
+                      (assert.are.same ["z-always"
+                                        "a-always"
+                                        "middle-always"
+                                        "apple-search"
+                                        "zebra-search"]
+                                       names)))))
             (it "exposes a searched tool on the immediately following provider call"
                 (fn []
                   (let [tool-search (require :fen.extensions.builtin_tools.tool_search)

@@ -43,7 +43,28 @@
                                           "Write only the compact summary. Be concise but complete enough that the session can continue without the old messages."]
                                          "\n"))
 
-(local trim (. (require :fen.util.text) :trim))
+(local text-util (require :fen.util.text))
+(local trim text-util.trim)
+
+(local MAX-TOOL-RESULT-BYTES 4000)
+(local TRUNCATE-HEAD-BYTES 2000)
+(local TRUNCATE-TAIL-BYTES 2000)
+(local TRUNCATE-MARKER "\n[... truncated for compaction summary ...]\n")
+
+(fn utf8-suffix [s n]
+  "Last n bytes of s, advanced past any split UTF-8 continuation bytes."
+  (var i (math.max 1 (+ (- (length s) n) 1)))
+  (while (and (<= i (length s))
+              (let [b (string.byte s i)] (and (>= b 0x80) (< b 0xC0))))
+    (set i (+ i 1)))
+  (string.sub s i))
+
+(fn bound-tool-result-text [raw]
+  (if (<= (length raw) MAX-TOOL-RESULT-BYTES)
+      raw
+      (let [h (text-util.utf8-prefix raw TRUNCATE-HEAD-BYTES)
+            t (utf8-suffix raw TRUNCATE-TAIL-BYTES)]
+        (.. h TRUNCATE-MARKER t))))
 
 (fn tool-result [text is-error? ?details]
   (let [result {:content [(types.text-block text)]
@@ -76,11 +97,14 @@
       ""))
 
 (fn serialize-message [m]
-  (.. (string.upper (tostring (or m.role :unknown))) ":\n"
-      (content-text m.content) (if (= m.role :tool-result)
-                                  (.. "\n[tool-result for "
-                                      (tostring m.tool-name) "]")
-                                  "")))
+  (let [body (content-text m.content)
+        body (if (= m.role :tool-result)
+                 (bound-tool-result-text body)
+                 body)]
+    (.. (string.upper (tostring (or m.role :unknown))) ":\n" body
+        (if (= m.role :tool-result)
+            (.. "\n[tool-result for " (tostring m.tool-name) "]")
+            ""))))
 
 (fn message-tokens [m]
   (+ (tokens.approx-tokens m.role) (tokens.content-tokens m.content)
@@ -408,4 +432,5 @@
  :_test {:find-cut-point find-cut-point
          :prepare-compaction prepare-compaction
          :messages-tokens messages-tokens
-         :finish-compact! finish-compact!}}
+         :finish-compact! finish-compact!
+         :serialize-message serialize-message}}

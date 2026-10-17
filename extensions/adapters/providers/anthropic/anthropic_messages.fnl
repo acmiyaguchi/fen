@@ -98,19 +98,37 @@
 (fn convert-messages [messages _system-prompt]
   "Canonical Messages → Anthropic MessageParam[]. The system prompt is NOT
    included; it goes in the top-level `system` field. Consecutive
-   tool-result messages are batched into one user message, since Anthropic
-   requires that grouping."
+   user messages and consecutive tool-result messages are each batched
+   into one user message, since Anthropic requires alternating roles."
   (let [out []
         n (length (or messages []))]
     (var i 1)
     (while (<= i n)
       (let [m (. messages i)]
         (if (= m.role :user)
-            (do
-              (table.insert out
-                            {:role :user
-                             :content (user-content-to-wire m.content)})
-              (set i (+ i 1)))
+            ;; Batch this and any directly-following user messages.
+            (let [user-msgs []]
+              (var j i)
+              (while (and (<= j n) (= (. messages j :role) :user))
+                (table.insert user-msgs (. messages j))
+                (set j (+ j 1)))
+              (if (= (length user-msgs) 1)
+                  (table.insert out
+                                {:role :user
+                                 :content (user-content-to-wire m.content)})
+                  (let [blocks []]
+                    (each [_ u (ipairs user-msgs)]
+                      (if (= (type u.content) :string)
+                          (table.insert blocks {:type :text :text u.content})
+                          (= (type u.content) :table)
+                          (each [_ b (ipairs (or u.content []))]
+                            (when (= b.type :text)
+                              (let [block {:type :text :text (or b.text "")}]
+                                (when b.cache_control
+                                  (set block.cache_control b.cache_control))
+                                (table.insert blocks block))))))
+                    (table.insert out {:role :user :content blocks})))
+              (set i j))
             (= m.role :assistant)
             (do
               (table.insert out

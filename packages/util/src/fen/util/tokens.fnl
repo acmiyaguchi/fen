@@ -215,7 +215,7 @@
 ;; @doc fen.util.tokens.context-token-info
 ;; kind: function
 ;; signature: (context-token-info agent) -> {:tokens number :source keyword :estimated? boolean}
-;; summary: Prefer exact provider-reported context at the latest assistant boundary, otherwise return the wire-aware fallback estimate.
+;; summary: Prefer exact provider-reported context at the latest assistant boundary, otherwise return baseline plus subsequent messages or complete fallback estimate.
 ;; tags: tokens context usage status
 (fn M.context-token-info [agent]
   (if (not agent)
@@ -226,9 +226,18 @@
             {:tokens reported.tokens
              :source :provider-reported
              :estimated? false}
+            reported
             ;; Messages after the reported boundary (normally tool results)
-            ;; make that old number stale. Prefer a complete fallback estimate
-            ;; over presenting stale provider data as exact.
+            ;; make that exact number stale. Keep the provider baseline and
+            ;; add estimated tokens for the subsequent messages only.
+            (let [msgs (or agent.messages [])]
+              (var extra 0)
+              (for [i (+ reported.index 1) message-count]
+                (set extra (+ extra (M.message-tokens (. msgs i)))))
+              {:tokens (+ reported.tokens extra)
+               :source :estimated
+               :estimated? true})
+            ;; No reported boundary available. Return complete fallback estimate.
             {:tokens (M.estimated-context-tokens agent)
              :source :estimated
              :estimated? true}))))

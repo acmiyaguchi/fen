@@ -34,12 +34,57 @@
 ;; signature: cjson.null
 ;; summary: Re-export cjson.null for callers that need to preserve explicit JSON null values in Lua tables.
 ;; tags: util json
+;; @doc fen.util.json.encode-deterministic
+;; kind: function
+;; signature: (encode-deterministic value) -> string
+;; summary: Encode a Lua value to JSON with object keys sorted lexicographically for cache-friendly wire payloads.
+;; tags: util json cache
+(fn is-array? [t]
+  (or (= t cjson.empty_array) (= (getmetatable t) cjson.array_mt)
+      (let [n (length t)]
+        (when (> n 0)
+          (var ok? true)
+          (var count 0)
+          (each [k _ (pairs t)]
+            (set count (+ count 1))
+            (when (or (not= (type k) :number) (< k 1) (> k n)
+                      (not= k (math.floor k)))
+              (set ok? false)))
+          (and ok? (= count n))))))
+
+(fn encode-deterministic [v]
+  (if (or (= v nil) (= v cjson.null))
+      "null"
+      (= v cjson.empty_array)
+      "[]"
+      (let [tv (type v)]
+        (if (or (= tv :boolean) (= tv :number) (= tv :string))
+            (cjson.encode v)
+            (= tv :table)
+            (if (is-array? v)
+                (let [parts []]
+                  (for [i 1 (length v)]
+                    (table.insert parts (encode-deterministic (. v i))))
+                  (.. "[" (table.concat parts ",") "]"))
+                (let [keys []]
+                  (each [k _ (pairs v)]
+                    (table.insert keys k))
+                  (table.sort keys (fn [a b] (< (tostring a) (tostring b))))
+                  (let [parts []]
+                    (each [_ k (ipairs keys)]
+                      (table.insert parts
+                                    (.. (cjson.encode (tostring k)) ":"
+                                        (encode-deterministic (. v k)))))
+                    (.. "{" (table.concat parts ",") "}"))))
+            (error (.. "json: unsupported type: " tv))))))
+
 ;; @doc fen.util.json.empty-array
 ;; kind: data
 ;; signature: cjson.empty_array
 ;; summary: Sentinel table that serializes as [] instead of {}, used when provider wire payloads require literal empty arrays.
 ;; tags: util json
 {:encode cjson.encode
+ :encode-deterministic encode-deterministic
  :decode cjson.decode
  :null cjson.null
  :null? null?

@@ -158,4 +158,31 @@
                                                   (. decoded.tool_calls 1 :id))
                                 (assert.are.equal "f"
                                                   (. decoded.tool_calls 1
-                                                     :function :name)))))))))
+                                                     :function :name)))))))
+            (describe "deterministic encoding"
+                      (fn []
+                        (it "encodes primitives, null, and empty collections cleanly"
+                            (fn []
+                              (assert.are.equal "null"
+                                                (json.encode-deterministic nil))
+                              (assert.are.equal "null"
+                                                (json.encode-deterministic json.null))
+                              (assert.are.equal "true"
+                                                (json.encode-deterministic true))
+                              (assert.are.equal "false"
+                                                (json.encode-deterministic false))
+                              (assert.are.equal "42"
+                                                (json.encode-deterministic 42))
+                              (assert.are.equal "\"foo\""
+                                                (json.encode-deterministic "foo"))
+                              (assert.are.equal "[]"
+                                                (json.encode-deterministic json.empty-array))
+                              (assert.are.equal "{}"
+                                                (json.encode-deterministic {}))))
+                        (it "sorts object keys in lexicographical order at all levels"
+                            (fn []
+                              (let [data {:z 1
+                                          :a {:y 2 :b 3}
+                                          :m [{:delta 4 :alpha 5}]}]
+                                (assert.are.equal "{\"a\":{\"b\":3,\"y\":2},\"m\":[{\"alpha\":5,\"delta\":4}],\"z\":1}"
+                                                  (json.encode-deterministic data)))))))))

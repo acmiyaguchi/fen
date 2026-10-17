@@ -128,7 +128,43 @@
                     (assert.are.equal :user (. out 1 :role))
                     (assert.are.equal 2 (length (. out 1 :content)))
                     (assert.are.equal "a" (. out 1 :content 1 :tool_use_id))
-                    (assert.are.equal "b" (. out 1 :content 2 :tool_use_id)))))))
+                    (assert.are.equal "b" (. out 1 :content 2 :tool_use_id)))))
+            (it "coalesces consecutive user messages into a single user wire message with blocks"
+                (fn []
+                  (let [u1 (types.user-message "first instruction")
+                        u2 (types.user-message "second instruction")
+                        out (am.convert-messages [u1 u2] nil)]
+                    (assert.are.equal 1 (length out))
+                    (assert.are.equal :user (. out 1 :role))
+                    (let [content (. out 1 :content)]
+                      (assert.is_table content)
+                      (assert.are.equal 2 (length content))
+                      (assert.are.equal :text (. content 1 :type))
+                      (assert.are.equal "first instruction" (. content 1 :text))
+                      (assert.are.equal :text (. content 2 :type))
+                      (assert.are.equal "second instruction"
+                                        (. content 2 :text))))))
+            (it "coalesces compaction summary followed by kept user message with string or blocks"
+                (fn []
+                  (let [summary (types.user-message "Compaction summary of earlier session")
+                        kept-str (types.user-message "continue where we left off")
+                        kept-block (types.user-message [(types.text-block "detailed instruction")])
+                        out1 (am.convert-messages [summary kept-str] nil)
+                        out2 (am.convert-messages [summary kept-block] nil)]
+                    (assert.are.equal 1 (length out1))
+                    (assert.are.equal :user (. out1 1 :role))
+                    (assert.are.equal 2 (length (. out1 1 :content)))
+                    (assert.are.equal "Compaction summary of earlier session"
+                                      (. out1 1 :content 1 :text))
+                    (assert.are.equal "continue where we left off"
+                                      (. out1 1 :content 2 :text))
+                    (assert.are.equal 1 (length out2))
+                    (assert.are.equal :user (. out2 1 :role))
+                    (assert.are.equal 2 (length (. out2 1 :content)))
+                    (assert.are.equal "Compaction summary of earlier session"
+                                      (. out2 1 :content 1 :text))
+                    (assert.are.equal "detailed instruction"
+                                      (. out2 1 :content 2 :text)))))))
 
 (describe "providers.anthropic_messages.map-stop-reason"
           (fn []
@@ -556,6 +592,23 @@
                         last-msg (. body.messages (length body.messages))
                         block (. last-msg.content 1)]
                     (assert.are.equal :ephemeral (. block :cache_control :type)))))
+            (it "preserves cache_control on the last block of coalesced consecutive user messages"
+                (fn []
+                  (let [summary (types.user-message "Compaction summary")
+                        kept (types.user-message [(types.text-block "user task")])
+                        body (am.build-body "claude-x"
+                                            {:messages [summary kept]
+                                             :tools []}
+                                            1024 nil)]
+                    (assert.are.equal 1 (length body.messages))
+                    (let [msg (. body.messages 1)
+                          blocks msg.content]
+                      (assert.are.equal :user msg.role)
+                      (assert.are.equal 2 (length blocks))
+                      (assert.is_nil (. blocks 1 :cache_control))
+                      (assert.are.equal :ephemeral
+                                        (. blocks 2 :cache_control :type))
+                      (assert.are.equal :1h (. blocks 2 :cache_control :ttl))))))
             (it "options.no-cache? suppresses all cache markers"
                 (fn []
                   (let [body (am.build-body "claude-x"
