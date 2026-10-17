@@ -88,6 +88,9 @@ A candidate may be either:
   name comes from the basename
 
 First-party extensions are enabled unless their manifest sets `:enabled-by-default false`.
+The structured todo companion is off by default; enable it with `/extensions enable todo` or `"extensions": {"todo": {"enabled": true}}` in settings.
+This restores `todo_write`, `/todos`, and its status/panel views.
+Plan and goal remain enabled by default.
 Project-local extensions are enabled by default even without `:enabled-by-default true`, because placing an extension under a project's own `.fen/extensions/` is treated as intent to run it.
 User-global discovered extensions still honor `:enabled-by-default`.
 Explicit `--extension <path>` always loads regardless of that field and wins name dedupe over a disabled first-party spec.
@@ -764,7 +767,7 @@ A failed auto-compaction reports one error and is not retried until another turn
 The first-party `goal` extension (`extensions/behaviors/companions/goal/`) adds `/goal` for bounded autonomous objective execution.
 It is the interactive MVP for the goal-orchestration roadmap: a user gives fen an objective, fen works through normal model turns, and the extension stops the run when the model reports completion/blockage/error or when the iteration cap is reached.
 The MVP composes existing primitives instead of adding a second agent loop.
-The submitted goal prompt tells the model to maintain `todo_write`, use `subagent` for self-contained scout/plan/review work when helpful, run appropriate checks, and end every iteration with an explicit `GOAL_STATUS: ...` marker.
+The submitted goal prompt tells the model to draft or reuse a short plan, use `subagent` for self-contained scout/plan/review work when helpful, run appropriate checks, and end every iteration with an explicit `GOAL_STATUS: ...` marker.
 
 ### Subcommands
 

@@ -305,6 +305,7 @@
                     (assert.are.equal 1 goal._state.iteration-count)
                     (assert.are.equal 2 goal._state.max-iterations)
                     (let [text (. submitted 1 :text)]
+                      (assert.is_nil (string.find text "todo_write" 1 true))
                       (assert.is_truthy (string.find text
                                                      "bounded autonomous goal workflow"
                                                      1 true))

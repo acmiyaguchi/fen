@@ -1,7 +1,7 @@
 ;; Goal companion extension.
 ;;
 ;; /goal starts a bounded autonomous objective run by composing existing
-;; primitives: normal turns through api.turn.submit!, todo_write, subagents,
+;; primitives: normal turns through api.turn.submit!, subagents,
 ;; steering/follow-up semantics, and visible status/panel/introspection state.
 ;; This MVP deliberately stays model-driven and bounded; it does not add a
 ;; second agent loop. It uses the agent-callable compact tool as a conservative
@@ -62,7 +62,6 @@
 (local BASE_GOAL_PROMPT (table.concat ["You are running a bounded autonomous goal workflow in fen."
                                        "Work toward the objective below without waiting for the user unless you are blocked, done, or the iteration cap is reached."
                                        "Start by restating the objective and drafting or reusing a short plan."
-                                       "Maintain the session todo list with todo_write for non-trivial multi-step work."
                                        "Use subagents for self-contained scouting, planning, review, or other independent work when helpful."
                                        "Run appropriate checks before declaring completion."
                                        "Respect normal tool policy, confirmation surfaces, and project constraints; autonomous continuation never grants permission for destructive or external actions."
