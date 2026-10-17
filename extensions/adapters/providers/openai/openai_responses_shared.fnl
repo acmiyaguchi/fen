@@ -353,7 +353,12 @@
        :id (.. "msg_" msg-index)}
       (= block.type :tool-call)
       (let [(call-id item-id) (split-compound-id block.id)
-            args (json.encode (or block.arguments {}))
+            args (if (= (type block.arguments) :string)
+                     (let [(ok? parsed) (pcall json.decode block.arguments)]
+                       (if (and ok? (= (type parsed) :table))
+                           (json.encode-deterministic parsed)
+                           block.arguments))
+                     (json.encode-deterministic (or block.arguments {})))
             out {:type :function_call
                  :call_id call-id
                  :name (or block.name "")

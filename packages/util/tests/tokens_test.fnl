@@ -66,6 +66,39 @@
                     (let [fallback (tokens.context-token-info agent)]
                       (assert.are.equal :estimated fallback.source)
                       (assert.is_true fallback.estimated?)))))
+            (it "preserves provider-reported baseline and adds estimated tokens for messages after reported boundary"
+                (fn []
+                  (let [agent {:system-prompt (string.rep "s" 4000)
+                               :messages [{:role :user :content "hello"}
+                                          {:role :assistant
+                                           :content "answer"
+                                           :usage {:input 100
+                                                   :output 20
+                                                   :cache-read 30
+                                                   :cache-write 10}}]}
+                        baseline (tokens.context-token-info agent)
+                        tr1 {:role :tool-result
+                             :tool-name :read
+                             :content "first tool result"}
+                        tr2 {:role :tool-result
+                             :tool-name :grep
+                             :content "second tool result"}]
+                    (assert.are.equal 160 baseline.tokens)
+                    (assert.are.equal :provider-reported baseline.source)
+                    (assert.is_false baseline.estimated?)
+                    (table.insert agent.messages tr1)
+                    (let [after-tr1 (tokens.context-token-info agent)
+                          expected-tr1 (+ 160 (tokens.message-tokens tr1))]
+                      (assert.are.equal expected-tr1 after-tr1.tokens)
+                      (assert.are.equal :estimated after-tr1.source)
+                      (assert.is_true after-tr1.estimated?))
+                    (table.insert agent.messages tr2)
+                    (let [after-tr2 (tokens.context-token-info agent)
+                          expected-tr2 (+ 160 (tokens.message-tokens tr1)
+                                          (tokens.message-tokens tr2))]
+                      (assert.are.equal expected-tr2 after-tr2.tokens)
+                      (assert.are.equal :estimated after-tr2.source)
+                      (assert.is_true after-tr2.estimated?)))))
             (it "excludes persisted failed assistant turns from context"
                 (fn []
                   (let [agent {:system-prompt "sys"

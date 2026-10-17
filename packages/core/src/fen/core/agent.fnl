@@ -125,11 +125,22 @@
       (= true (. (or agent.active-tool-names {}) (tostring tool.name)))))
 
 (fn visible-tools [agent]
-  (let [out []]
+  "Visible tools for provider context: always-visible tools (exposure != :search)
+   come first in their stable agent.tools order, followed by dynamically
+   activated :search tools sorted deterministically by tool name so tool
+   prefixes never shuffle across turns or reloads."
+  (let [always []
+        search-tools []]
     (each [_ tool (ipairs (or agent.tools []))]
-      (when (tool-visible? agent tool)
-        (table.insert out tool)))
-    out))
+      (if (not= tool.exposure :search)
+          (table.insert always tool)
+          (when (= true
+                   (. (or agent.active-tool-names {}) (tostring tool.name)))
+            (table.insert search-tools tool))))
+    (table.sort search-tools (fn [a b] (< (tostring a.name) (tostring b.name))))
+    (each [_ tool (ipairs search-tools)]
+      (table.insert always tool))
+    always))
 
 (fn build-context [agent]
   (let [msgs []]

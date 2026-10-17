@@ -448,6 +448,22 @@
                         out (shared.convert-messages [asst])]
                     (assert.are.equal :function_call (. out 1 :type))
                     (assert.are.equal "fc_y" (. out 1 :id)))))
+            (it "encodes replayed function_call arguments with deterministic sorted keys"
+                (fn []
+                  (let [asst (types.assistant-message {:api :openai-responses
+                                                       :provider :openai
+                                                       :model "m"
+                                                       :content [(types.tool-call-block "call_1|fc_1"
+                                                                                        "write_file"
+                                                                                        {:path "out.txt"
+                                                                                         :content "data"
+                                                                                         :options {:overwrite true
+                                                                                                   :backup false}})]
+                                                       :stop-reason :tool-use})
+                        out (shared.convert-messages [asst])]
+                    (assert.are.equal :function_call (. out 1 :type))
+                    (assert.are.equal "{\"content\":\"data\",\"options\":{\"backup\":false,\"overwrite\":true},\"path\":\"out.txt\"}"
+                                      (. out 1 :arguments)))))
             (it "drops a reasoning-only assistant turn with no following output (#2)"
                 ;; stop-reason :length/:incomplete after reasoning-only: a lone
                 ;; reasoning item 400s ("provided without its required following item").
