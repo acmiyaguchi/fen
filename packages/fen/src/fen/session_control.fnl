@@ -227,6 +227,8 @@
                                                (when failed?
                                                  (set result.error
                                                       {:code :turn_failed
+                                                       :details (?. assistant
+                                                                    :error-details)
                                                        :message (tostring (or complete.error
                                                                               value
                                                                               "turn failed"))}))

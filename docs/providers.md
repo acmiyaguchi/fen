@@ -442,3 +442,13 @@ This lets a test assert on the request — system prompt placement, the canonica
 `extensions/adapters/providers/mock/tests/agent_loop_test.fnl` drives the real agent loop through the mock this way; the cooperative/transport/cancellation contract that must program the dispatcher directly stays in `packages/core/tests/agent_test.fnl`.
 
 
+
+### Codex exhausted usage limits
+
+A Codex HTTP 429 with `error.type: usage_limit_reached` is terminal rather than automatically retried; ordinary rate-limit 429s retain the usual retry policy.
+Fen reports a short quota-window/reset message instead of the raw body, and does not write a provider-failure diagnostic containing subscription plan details for this error.
+The canonical assistant message carries sanitized `error-details` with `code: usage_limit_reached`, `retryable: false`, and, when valid upstream values are available, `length-seconds`, `reset-at` (Unix seconds), and `resets-in-seconds` measured when the error was received.
+Missing or malformed reset/window fields are omitted rather than guessed.
+A valid window and reset update the account-scoped shared quota cache under its existing lock without another HTTP request: matching `rate_limit` windows become 0% remaining, while unrelated windows retain their measurements and retrieval age.
+If no matching window is cached, a duration-labeled exhausted window is added without guessing primary/secondary identity.
+The observation is persisted and establishes the usual 60-second demand-refresh floor; lock contention or unavailable storage can prevent persistence.

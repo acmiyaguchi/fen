@@ -69,7 +69,7 @@
   (set state.attempted-at nil)
   (set state.failure :unavailable))
 
-(fn M.load-cache [key]
+(fn M.load-cache [key ?force]
   (when (not= key state.account-key)
     (clear-cache)
     (set state.account-key key))
@@ -106,7 +106,7 @@
                         (set valid? false))))
                 (when (and valid?
                            (or (= (length windows) 0) (number? s.retrieved-at))
-                           (or (not state.attempted-at)
+                           (or ?force (not state.attempted-at)
                                (and (number? s.attempted-at)
                                     (> s.attempted-at state.attempted-at))))
                   (set state.windows windows)
@@ -164,16 +164,7 @@
 ;; the inode, whereas the cache itself is replaced atomically. Kernel release
 ;; on process exit avoids stale lock ownership after a crash. The local mutex
 ;; also serializes coroutines (fcntl locks alone are process-owned).
-(fn claim-attempt [?yield]
-  (fn claim []
-    (M.load-cache (account-key))
-    (let [now (os.time)]
-      (when (or (not state.attempted-at) (>= (- now state.attempted-at) 60))
-        (set state.attempted-at now)
-        (if (= state.cache-path false)
-            true
-            (M.save-cache)))))
-
+(fn with-cache-lock [?yield claim]
   (if (= state.cache-path false)
       (claim)
       (let [file (M.cache-path)]
@@ -198,6 +189,45 @@
                   ;; close releases the kernel lock on success, failure, or cancellation.
                   (f:close)
                   (if ok result (error result 0))))))))))
+
+(fn claim-attempt [?yield]
+  (with-cache-lock ?yield
+    (fn []
+      (M.load-cache (account-key) true)
+      (let [now (os.time)]
+        (when (or (not state.attempted-at) (>= (- now state.attempted-at) 60))
+          (set state.attempted-at now)
+          (if (= state.cache-path false)
+              true
+              (M.save-cache)))))))
+
+;; A completion's 429 is an observation, not another demand request.
+(fn M.record-limit [details account-id ?yield]
+  (when (and details.length-seconds details.reset-at
+             (= (type account-id) :string) (not= account-id ""))
+    (with-cache-lock ?yield
+      (fn []
+        (M.load-cache (sha256.hex-digest account-id) true)
+        (var matched? false)
+        (each [_ w (ipairs state.windows)]
+          (when (and (string.match w.name "^rate_limit/")
+                     (= w.length-seconds details.length-seconds))
+            (set w.used-percent 100)
+            (set w.remaining-percent 0)
+            (set w.reset-at details.reset-at)
+            (set matched? true)))
+        (when (not matched?)
+          (table.insert state.windows
+                        {:name "rate_limit/usage_limit_reached"
+                         :used-percent 100
+                         :remaining-percent 0
+                         :length-seconds details.length-seconds
+                         :reset-at details.reset-at}))
+        ;; Do not freshen unrelated windows from a partial observation.
+        (set state.retrieved-at (or state.retrieved-at (os.time)))
+        (set state.failure nil)
+        (set state.attempted-at (os.time))
+        (M.save-cache)))))
 
 (fn M.refresh [?yield]
   (when (claim-attempt ?yield)

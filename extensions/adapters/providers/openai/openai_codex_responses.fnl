@@ -16,6 +16,9 @@
 (local json (require :fen.util.json))
 (local http (require :fen.util.http))
 
+(local usage (require :fen.extensions.provider_openai.usage))
+(local types (require :fen.core.types))
+
 (local API :openai-codex-responses)
 (local PROVIDER :openai-codex)
 (local DEFAULT-BASE-URL "https://chatgpt.com/backend-api")
@@ -187,6 +190,58 @@
    read of auth.json so /reload picks up rotated tokens."
   (or opts.creds (codex-auth.get-fresh-creds!)))
 
+;; Only a recognized quota envelope changes ordinary 429 retry policy.
+(fn limit-response [resp creds yield-fn]
+  (when (= resp.status 429)
+    (let [(ok body) (pcall json.decode (or resp.body ""))
+          err (when (and ok (= (type body) :table))
+                body.error)]
+      (when (and (= (type err) :table) (= err.type :usage_limit_reached))
+        (fn positive [n]
+          (and (= (type n) :number) (= n n) (> n 0) (< n math.huge)))
+
+        (let [seconds (when (and (positive err.limit_window_minutes)
+                                 (< err.limit_window_minutes 5259600000))
+                        (* 60 err.limit_window_minutes))
+              reset (when (and (positive err.resets_at)
+                               (<= err.resets_at 253402300799))
+                      (math.floor err.resets_at))
+              details {:code :usage_limit_reached
+                       :retryable false
+                       :length-seconds seconds
+                       :reset-at reset
+                       :resets-in-seconds (when reset
+                                            (math.max 0 (- reset (os.time))))}
+              message (.. "codex usage limit reached"
+                          (if seconds
+                              (.. " ("
+                                  (usage.label {:length-seconds seconds
+                                                :name "quota"})
+                                  " window)")
+                              "")
+                          (if reset
+                              (.. "; resets " (os.date "!%H:%M UTC" reset)
+                                  " (in "
+                                  (usage.relative details.resets-in-seconds) ")")
+                              ""))]
+          (set resp.retryable false)
+          (set resp.error message)
+          (set resp.error-details details)
+          ;; The known error must never enter raw-body diagnostic logging.
+          (set resp.body "")
+          (var cancelled nil)
+          (local cache-yield
+                 (when yield-fn
+                   (fn []
+                     (let [(ok value) (pcall yield-fn)]
+                       (when (not ok)
+                         (set cancelled value)
+                         (error value 0))))))
+          ;; Cache/storage failure must not replace the actionable provider error.
+          (pcall usage.record-limit details creds.accountId cache-yield)
+          (when cancelled (error cancelled 0))))))
+  resp)
+
 ;; @doc fen.extensions.provider_openai.openai_codex_responses.list-models
 ;; kind: function
 ;; signature: (list-models opts) -> [{:id string}]
@@ -230,6 +285,10 @@
                                    :options opts
                                    :on-event ?on-event
                                    :yield-fn ?yield-fn
+                                   :process-response (fn [resp]
+                                                       (limit-response resp
+                                                                       creds
+                                                                       ?yield-fn))
                                    :make-stream-pipeline (fn [model on-event]
                                                            (compat.make-stream-pipeline model
                                                                                         on-event
@@ -256,15 +315,26 @@
                                                          resp
                                                          on-event
                                                          request-opts]
-                                                      (compat.finalize-stream state
-                                                                              parser
-                                                                              parser-error
-                                                                              API
-                                                                              PROVIDER
-                                                                              model
-                                                                              resp
-                                                                              on-event
-                                                                              request-opts))})))
+                                                      (if resp.error-details
+                                                          (let [asst (types.assistant-error API
+                                                                                            PROVIDER
+                                                                                            model
+                                                                                            resp.error)]
+                                                            (set asst.error-details
+                                                                 resp.error-details)
+                                                            (when on-event
+                                                              (on-event {:type :error
+                                                                         :message asst}))
+                                                            asst)
+                                                          (compat.finalize-stream state
+                                                                                  parser
+                                                                                  parser-error
+                                                                                  API
+                                                                                  PROVIDER
+                                                                                  model
+                                                                                  resp
+                                                                                  on-event
+                                                                                  request-opts)))})))
 
 ;; @doc fen.extensions.provider_openai.openai_codex_responses.api
 ;; kind: data

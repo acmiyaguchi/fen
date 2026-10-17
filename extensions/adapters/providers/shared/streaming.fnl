@@ -154,7 +154,10 @@
                      (set latest.parser-error parser-error)
                      (set latest.request-opts req-opts)
                      (set req-opts.yield yield-fn)
-                     (let [resp (http.request req-opts)]
+                     (let [raw (http.request req-opts)
+                           resp (if config.process-response
+                                    (config.process-response raw)
+                                    raw)]
                        (when (not resp.error) (parser.finish))
                        (retry.mark-incomplete-stream resp
                                                      (and (not parser-error.message)

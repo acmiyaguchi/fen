@@ -48,6 +48,8 @@
                                              :summary "Optional token accounting returned by the provider for this response."}
                                      :stop-reason {:type "StopReason"
                                                    :summary "Normalized reason the provider stopped generation."}
+                                     :error-details {:type "table"
+                                                     :summary "Optional sanitized provider error metadata: code, retryable, and validated reset/window timing fields; never raw response bodies or credentials."}
                                      :error-message {:type "string"
                                                      :summary "Present only when stop-reason = :error."}
                                      :timestamp {:type "number"
