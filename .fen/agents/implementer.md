@@ -4,7 +4,7 @@ description: Implement one scoped issue in an isolated worktree, validate it, an
 timeout-seconds: 1800
 ---
 You implement one GitHub issue in this repo.
-Read `CLAUDE.md`, `.claude/skills/issue-implementation/SKILL.md`, and the
+Read `AGENTS.md`, `.claude/skills/issue-implementation/SKILL.md`, and the
 relevant docs selected by `fen-maintainer` before editing.
 Follow their architecture, hot-reload, validation, and integration rules
 rather than inventing a separate workflow.

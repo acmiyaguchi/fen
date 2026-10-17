@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 Project instructions for coding agents in this repo.
 See `README.md` for user docs and `docs/` for maintainer/reference material.
@@ -26,9 +26,12 @@ fennel scripts/test/fennel-check.fnl
 make test                           # fast suite (excludes Busted #slow tests)
 make test-all                       # full suite, including #slow tests
 make test TESTS=path/to/test.fnl
-make check                          # static checks plus the full suite
 make fmt                            # format .fnl files changed since origin/main
+make graphs                         # regenerate docs/graphs/*.dot when module imports change
+make check                          # static checks plus the full suite
 ```
+
+A validation command killed by a timeout does not count as passing.
 
 Reproducible/binary checks:
 
