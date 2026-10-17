@@ -121,6 +121,7 @@ digraph fen_modules_clustered {
     style=rounded;
     color=gray70;
     "fen.extensions.default_prompt" [fillcolor="lightyellow", label="fen.extensions.default_prompt", style="filled", tooltip="extensions/behaviors/kernel/default-prompt/init.fnl persistent"];
+    "fen.extensions.default_prompt.prefer" [fillcolor="lightyellow", label="fen.extensions.default_prompt.prefer", style="filled", tooltip="extensions/behaviors/kernel/default-prompt/prefer.fnl persistent"];
     "fen.extensions.default_prompt.resources" [fillcolor="lightyellow", label="fen.extensions.default_prompt.resources", style="filled", tooltip="extensions/behaviors/kernel/default-prompt/resources.fnl persistent"];
   }
   subgraph cluster_extension_docs {
@@ -734,8 +735,12 @@ digraph fen_modules_clustered {
   "fen.extensions.decide.service" -> "fen.util.clock";
   "fen.extensions.decide.service" -> "fen.util.coroutines";
   "fen.extensions.decide.service" -> "fen.util.path";
+  "fen.extensions.default_prompt" -> "fen.extensions.default_prompt.prefer";
   "fen.extensions.default_prompt" -> "fen.extensions.default_prompt.resources";
   "fen.extensions.default_prompt" -> "fen.util.path";
+  "fen.extensions.default_prompt.prefer" -> "fen.util.path";
+  "fen.extensions.default_prompt.prefer" -> "fen.util.subcommands";
+  "fen.extensions.default_prompt.prefer" -> "fen.util.text";
   "fen.extensions.default_prompt.resources" -> "fen.util.log";
   "fen.extensions.default_prompt.resources" -> "fen.util.path";
   "fen.extensions.docs" -> "fen.core.types";

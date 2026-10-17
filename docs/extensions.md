@@ -1325,6 +1325,10 @@ Every consumer is advisory: without an answer, fen keeps its behavior without de
   Each prompt submitted while idle after at least two earlier prompts is checked in the background for a move to an unrelated topic.
   The decision state is the new prompt plus the last three prompts and the reply that ended each, clipped.
   At a probability of at least 0.85, and only if no newer line was submitted or the conversation reset meanwhile, it emits a `topic changed · /handoff` [`:hint`](#event-bus); nothing runs until the user does.
+- **Durable-preference hint.**
+  Each prompt submitted while idle is checked in the background for a durable preference meant to apply beyond the current task (e.g. "always use X", "never do Y", "from now on...").
+  At a probability of at least 0.85, and only if no newer line was submitted or the conversation reset meanwhile, it emits a `save as preference? · /prefer` [`:hint`](#event-bus); nothing is written until the user runs the command.
+  The `/prefer` command appends the preference to the project or user instruction file (`AGENTS.md`/`CLAUDE.md`) that `default-prompt` loads.
 - **Busy-line classification.**
   A plain line submitted while busy is classified as a correction, a follow-up, or a cancel request; slash and `>`-prefixed lines never are.
   The line queues as steering at once, so classification never delays input.
@@ -1334,7 +1338,7 @@ Every consumer is advisory: without an answer, fen keeps its behavior without de
   The question's state is the new line, the latest earlier user message (possibly an injected steering line, since the turn's original request is not marked), and the agent's latest step, each capped at 2000 bytes.
 
 The compaction consumers live in `fen.extensions.decide.compaction`, the only decide module `compact` calls.
-The two input consumers share one [`:input-handler`](#input-handler-pipeline) at order 900, before the steering fallback, which never changes or holds the input; a failure is logged and the line proceeds.
+The input consumers share one [`:input-handler`](#input-handler-pipeline) at order 900, before the steering fallback, which never changes or holds the input; a failure is logged and the line proceeds.
 
 ### Service API
 
