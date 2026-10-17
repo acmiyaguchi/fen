@@ -30,13 +30,32 @@
                                      :output_tokens 59
                                      :cost 0.000018774}}))
 
-(fn ok-response [_opts]
-  {:status 200 :body OK-BODY :headers {}})
+(local OPENAI-OK-BODY
+       (json.encode {:model "gpt-6-luna"
+                     :answers [{:type "predicate" :name "a" :probability 0.99}
+                               {:type "choice"
+                                :name "b"
+                                :choice "follow-up"
+                                :probabilities [{:value "cancel"
+                                                 :probability 0}
+                                                {:value "correction"
+                                                 :probability 0}
+                                                {:value "follow-up"
+                                                 :probability 1}]
+                                :confidence 0.99}]
+                     :usage {:input_tokens 320 :total_tokens 320}}))
+
+(fn ok-response [req]
+  (let [body (if (and req req.url (string.find req.url "api.openai.com" 1 true))
+                 OPENAI-OK-BODY
+                 OK-BODY)]
+    {:status 200 :body body :headers {}}))
 
 (fn clear-modules! []
   (tset package.loaded :fen.extensions.decide nil)
   (tset package.loaded :fen.extensions.decide.service nil)
-  (tset package.loaded :fen.extensions.decide.jev nil))
+  (tset package.loaded :fen.extensions.decide.jev nil)
+  (tset package.loaded :fen.extensions.decide.openai nil))
 
 (fn fresh! [?opts]
   "Load decide with a mocked transport; returns the service."
@@ -57,7 +76,11 @@
     (when (not= opts.key false)
       (tset ext-state.providers :openrouter
             {:api (or opts.provider-api :openrouter-completions)
-             :api-key (or opts.key "sk-test")}))
+             :api-key (or opts.key "sk-test")})
+      (when (not= opts.openai-key false)
+        (tset ext-state.providers :openai
+              {:api :openai-completions
+               :api-key (or opts.openai-key "sk-openai-test")})))
     (let [api (test-api.make-runtime-api :decide manifest)
           decide (require :fen.extensions.decide)]
       (set api.settings {:extension (fn [] ctx.settings)})
@@ -379,4 +402,203 @@
                     (tick!)
                     (tick!)
                     (assert.are.equal 1 (length seen))
-                    (assert.is_nil (. seen 1 :answers)))))))
+                    (assert.is_nil (. seen 1 :answers)))))
+            (describe "backend selection"
+                      (fn []
+                        (it "defaults to Jev backend and ~typesafe/jev-latest when backend is omitted"
+                            (fn []
+                              (let [service (fresh!)]
+                                (service.ask {} QUESTIONS)
+                                (assert.are.equal 1 (length ctx.calls))
+                                (let [req (. ctx.calls 1)
+                                      body (json.decode req.body)]
+                                  (assert.are.equal "https://openrouter.ai/api/alpha/decisions"
+                                                    req.url)
+                                  (assert.are.equal "~typesafe/jev-latest"
+                                                    body.model)))))
+                        (it "selects OpenAI backend and defaults model to gpt-6-luna"
+                            (fn []
+                              (let [service (fresh! {:settings {:backend "openai"}})]
+                                (let [answers (service.ask {} QUESTIONS)]
+                                  (assert.is_table answers)
+                                  (assert.are.same {:type :noul :noul 0.99}
+                                                   answers.a)
+                                  (assert.are.equal "follow-up"
+                                                    answers.b.choice))
+                                (assert.are.equal 1 (length ctx.calls))
+                                (let [req (. ctx.calls 1)
+                                      body (json.decode req.body)]
+                                  (assert.are.equal "https://api.openai.com/v1/decisions"
+                                                    req.url)
+                                  (assert.are.equal "Bearer sk-openai-test"
+                                                    req.headers.authorization)
+                                  (assert.are.equal "gpt-6-luna" body.model)))))
+                        (it "respects explicit model with OpenAI backend"
+                            (fn []
+                              (let [service (fresh! {:settings {:backend :openai
+                                                                :model "gpt-6-luna-custom"}})]
+                                (service.ask {} QUESTIONS)
+                                (let [req (. ctx.calls 1)
+                                      body (json.decode req.body)]
+                                  (assert.are.equal "gpt-6-luna-custom"
+                                                    body.model)))))
+                        (it "rejects unknown backend without network work"
+                            (fn []
+                              (let [service (fresh! {:settings {:backend "anthropic"}})]
+                                (assert.is_nil (service.ask {} QUESTIONS))
+                                (assert.are.equal 0 (length ctx.calls))
+                                (assert.is_true (logged? "unknown backend: anthropic")))))))
+            (describe "openai backend credentials"
+                      (fn []
+                        (it "resolves key from openai provider api-key-var"
+                            (fn []
+                              (let [service (fresh! {:key false
+                                                     :settings {:backend "openai"}})
+                                    path (require :fen.util.path)
+                                    original-getenv path.getenv]
+                                (tset ext-state.providers :openai
+                                      {:api-key-var :FEN_TEST_OPENAI_KEY})
+                                (set path.getenv
+                                     (fn [name]
+                                       (if (= name :FEN_TEST_OPENAI_KEY)
+                                           "sk-env-openai"
+                                           (original-getenv name))))
+                                (let [(ok? answers) (pcall service.ask {}
+                                                           QUESTIONS
+                                                           {:yield nil})]
+                                  (set path.getenv original-getenv)
+                                  (assert.is_true ok? answers)
+                                  (assert.is_table answers)
+                                  (assert.are.equal "Bearer sk-env-openai"
+                                                    (. ctx.calls 1 :headers
+                                                       :authorization))))))
+                        (it "resolves key from openai-responses provider when openai provider is absent"
+                            (fn []
+                              (let [service (fresh! {:key false
+                                                     :settings {:backend "openai"}})]
+                                (tset ext-state.providers :openai-responses
+                                      {:api-key "sk-responses-key"})
+                                (let [answers (service.ask {} QUESTIONS)]
+                                  (assert.is_table answers)
+                                  (assert.are.equal "Bearer sk-responses-key"
+                                                    (. ctx.calls 1 :headers
+                                                       :authorization))))))
+                        (it "does not resolve key from openai-codex auth backend"
+                            (fn []
+                              (let [service (fresh! {:key false
+                                                     :settings {:backend "openai"}})]
+                                (tset ext-state.providers :openai-codex
+                                      {:auth-backend :openai-codex})
+                                (assert.is_nil (service.ask {} QUESTIONS))
+                                (assert.are.equal 0 (length ctx.calls))
+                                (assert.is_true (logged? "no OpenAI API key")))))
+                        (it "returns nil when no OpenAI key is configured"
+                            (fn []
+                              (let [service (fresh! {:key false
+                                                     :settings {:backend "openai"}})]
+                                (assert.is_nil (service.ask {} QUESTIONS))
+                                (assert.are.equal 0 (length ctx.calls))
+                                (assert.is_true (logged? "no OpenAI API key")))))))
+            (describe "openai backend error and refusal handling"
+                      (fn []
+                        (it "handles refusal by logging and returning nil"
+                            (fn []
+                              (let [service (fresh! {:settings {:backend "openai"}
+                                                     :respond (fn [_]
+                                                                {:status 200
+                                                                 :body (json.encode {:answers [{:type "refusal"
+                                                                                                :name "a"
+                                                                                                :refusal "Refused"}]})})})]
+                                (assert.is_nil (service.ask {} QUESTIONS))
+                                (assert.are.equal 1 (length ctx.calls))
+                                (assert.is_true (logged? "refusal for a")))))
+                        (it "handles duplicate answers by logging and returning nil"
+                            (fn []
+                              (let [service (fresh! {:settings {:backend "openai"}
+                                                     :respond (fn [_]
+                                                                {:status 200
+                                                                 :body (json.encode {:answers [{:type "predicate"
+                                                                                                :name "a"
+                                                                                                :probability 0.5}
+                                                                                               {:type "predicate"
+                                                                                                :name "a"
+                                                                                                :probability 0.8}
+                                                                                               {:type "choice"
+                                                                                                :name "b"
+                                                                                                :choice "cancel"
+                                                                                                :probabilities [{:value "cancel"
+                                                                                                                 :probability 1}]}]})})})]
+                                (assert.is_nil (service.ask {} QUESTIONS))
+                                (assert.is_true (logged? "duplicate answer for a")))))
+                        (it "handles HTTP error by logging and returning nil"
+                            (fn []
+                              (let [service (fresh! {:settings {:backend "openai"}
+                                                     :respond (fn [_]
+                                                                {:status 429
+                                                                 :body (json.encode {:error {:message "rate limit"
+                                                                                             :code 429}})})})]
+                                (assert.is_nil (service.ask {} QUESTIONS))
+                                (assert.is_true (logged? "HTTP 429: rate limit")))))))
+            (describe "openai backend async and size guards"
+                      (fn []
+                        (it "skips requests over size guard with openai backend"
+                            (fn []
+                              (let [service (fresh! {:settings {:backend "openai"}})
+                                    big {:blob (string.rep "x"
+                                                           (+ service.max-request-bytes
+                                                              1))}]
+                                (assert.is_nil (service.ask big QUESTIONS))
+                                (assert.are.equal 0 (length ctx.calls))
+                                (assert.is_true (logged? "guard")))))
+                        (it "ask-async! completes through runtime-tick with openai backend"
+                            (fn []
+                              (let [service (fresh! {:settings {:backend "openai"}
+                                                     :respond (fn [req]
+                                                                (req.yield)
+                                                                (ok-response req))})
+                                    seen []]
+                                (service.ask-async! {} QUESTIONS
+                                                    (fn [answers]
+                                                      (table.insert seen
+                                                                    answers)))
+                                (assert.are.equal 0 (length seen))
+                                (tick!)
+                                (assert.are.equal 1 (length ctx.calls))
+                                (tick!)
+                                (assert.are.equal 1 (length seen))
+                                (assert.are.equal 0.99 (. seen 1 :a :noul))))))
+                      (describe "consumer compatibility with openai backend"
+                                (fn []
+                                  (it "rate-tool-results works end-to-end with openai backend"
+                                      (fn []
+                                        (let [types (require :fen.core.types)
+                                              read-out (.. "READ-HEAD "
+                                                           (string.rep "r" 2000)
+                                                           " READ-TAIL")
+                                              span [(types.tool-result-message {:tool-call-id "tc1"
+                                                                                :tool-name :read
+                                                                                :content [(types.text-block read-out)]})]
+                                              messages [(types.user-message "do this work")]
+                                              service (fresh! {:settings {:backend "openai"}
+                                                               :respond (fn [req]
+                                                                          (assert.is_truthy (string.find req.url
+                                                                                                         "api.openai.com"
+                                                                                                         1
+                                                                                                         true))
+                                                                          {:status 200
+                                                                           :body (json.encode {:model "gpt-6-luna"
+                                                                                               :answers [{:type "predicate"
+                                                                                                          :name "r1"
+                                                                                                          :probability 0.95}]})})})
+                                              compaction (require :fen.extensions.decide.compaction)
+                                              (out-span dropped) (compaction.rate-tool-results messages
+                                                                                               span)]
+                                          (assert.are.equal 1 dropped)
+                                          (assert.are.equal 1
+                                                            (length ctx.calls))
+                                          (let [content (. out-span 1 :content
+                                                           1 :text)]
+                                            (assert.is_truthy (string.find content
+                                                                           "tool result omitted"
+                                                                           1
+                                                                           true)))))))))))

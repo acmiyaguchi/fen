@@ -71,6 +71,7 @@ digraph fen_modules {
   "fen.extensions.decide.compaction" [fillcolor="lightyellow", label="fen.extensions.decide.compaction", style="filled", tooltip="extensions/behaviors/kernel/decide/compaction.fnl persistent"];
   "fen.extensions.decide.input" [fillcolor="lightyellow", label="fen.extensions.decide.input", style="filled", tooltip="extensions/behaviors/kernel/decide/input.fnl persistent"];
   "fen.extensions.decide.jev" [fillcolor="lightyellow", label="fen.extensions.decide.jev", style="filled", tooltip="extensions/behaviors/kernel/decide/jev.fnl persistent"];
+  "fen.extensions.decide.openai" [fillcolor="lightyellow", label="fen.extensions.decide.openai", style="filled", tooltip="extensions/behaviors/kernel/decide/openai.fnl persistent"];
   "fen.extensions.decide.service" [fillcolor="lightyellow", label="fen.extensions.decide.service", style="filled", tooltip="extensions/behaviors/kernel/decide/service.fnl persistent"];
   "fen.extensions.decide.state" [fillcolor="lightyellow", label="fen.extensions.decide.state", style="filled", tooltip="extensions/behaviors/kernel/decide/state.fnl persistent"];
   "fen.extensions.default_prompt" [fillcolor="lightyellow", label="fen.extensions.default_prompt", style="filled", tooltip="extensions/behaviors/kernel/default-prompt/init.fnl persistent"];
@@ -494,8 +495,11 @@ digraph fen_modules {
   "fen.extensions.decide.input" -> "fen.util.text" [label="require"];
   "fen.extensions.decide.jev" -> "fen.util.http" [label="require"];
   "fen.extensions.decide.jev" -> "fen.util.json" [label="require"];
+  "fen.extensions.decide.openai" -> "fen.util.http" [label="require"];
+  "fen.extensions.decide.openai" -> "fen.util.json" [label="require"];
   "fen.extensions.decide.service" -> "fen.core.extensions.state" [label="require"];
   "fen.extensions.decide.service" -> "fen.extensions.decide.jev" [label="require"];
+  "fen.extensions.decide.service" -> "fen.extensions.decide.openai" [label="require"];
   "fen.extensions.decide.service" -> "fen.extensions.decide.state" [label="require"];
   "fen.extensions.decide.service" -> "fen.util.clock" [label="require"];
   "fen.extensions.decide.service" -> "fen.util.coroutines" [label="require"];

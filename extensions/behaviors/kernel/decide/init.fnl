@@ -1,6 +1,6 @@
 ;; Decide extension entry point. Experimental.
 ;;
-;; Opt-in (`:enabled-by-default false`). Everything Jev-backed lives in this
+;; Opt-in (`:enabled-by-default false`). Decision backends live in this
 ;; extension: the decision service (`fen.extensions.decide.service`), the
 ;; compaction questions compact calls (`fen.extensions.decide.compaction`),
 ;; and the input-time questions registered here (`fen.extensions.decide.input`).
@@ -24,12 +24,12 @@
 (fn register-command! [api]
   (let [sub (subcommands.build {:name :decide
                                 :emit api.emit
-                                :summary "Experimental Jev decisions"
+                                :summary "Experimental decisions"
                                 :subcommands {:undo {:description "move the line last reclassified as follow-up back to steering"
                                                      :handler (fn [_ _]
                                                                 (undo-command! api))}}})]
     (api.register :command {:name :decide
-                            :description "Experimental Jev decisions: /decide undo"
+                            :description "Experimental decisions: /decide undo"
                             :usage sub.usage
                             :subcommands sub.descriptor
                             :handler sub.handler

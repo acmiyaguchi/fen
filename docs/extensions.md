@@ -1274,21 +1274,40 @@ can run before it.
 
 ## Experimental: decide
 
-The first-party `decide` extension (`extensions/behaviors/kernel/decide/`) is an experiment with TypeSafe's Jev model on OpenRouter's Decisions API: fast advisory judgement calls that would otherwise be fixed heuristics or a full-context call to the main model.
-It is not recommended for general use yet.
-Everything Jev-backed lives in this extension, and with it disabled fen behaves as if it did not exist.
+The first-party `decide` extension (`extensions/behaviors/kernel/decide/`) provides fast advisory judgment calls using either TypeSafe's Jev model on OpenRouter or the OpenAI Decisions API (`gpt-6-luna`).
+These decisions replace fixed heuristics or avoid full-context calls to the main model for tasks like tool-result pruning, auto-compaction timing, topic-shift hints, and busy-line routing.
+It is an experiment and is not recommended for general use yet.
+With the extension disabled, fen behaves as if it did not exist.
 Decisions never touch the main transcript or its prompt-cache prefix.
 
 It is off by default.
-Enable it with `/extensions enable decide` or `"extensions": {"decide": {"enabled": true}}` in settings.json (see [Discovery](#discovery)).
-It authenticates with the `openrouter` provider's key (`OPENROUTER_API_KEY`); Jev is not a chat model and stays out of `/model`.
-Decision state is sent to TypeSafe through OpenRouter: excerpts of tool results, recent messages, and the lines you type.
+Enable it with `/extensions enable decide` or `"extensions": {"decide": {"enabled": true}}` in `settings.json` (see [Discovery](#discovery)).
+
+### Backends and Credentials
+
+Decide supports two pluggable backends:
+
+- **`jev` (default):** TypeSafe's Jev on OpenRouter (`POST https://openrouter.ai/api/alpha/decisions`).
+  Default model: `~typesafe/jev-latest`.
+  Authenticates with the `openrouter` provider's key (`OPENROUTER_API_KEY`).
+  Decision state is sent to TypeSafe through OpenRouter: excerpts of tool results, recent messages, and input lines.
+- **`openai`:** OpenAI Decisions API (`POST https://api.openai.com/v1/decisions`).
+  Default model: `gpt-6-luna`.
+  Authenticates with the `openai` provider's API key (`OPENAI_API_KEY`).
+  Requires direct OpenAI API key credentials with Decisions API billing access.
+  ChatGPT subscription OAuth credentials (`fen --login openai-codex`) or Codex subscription quotas do not grant access to this endpoint.
+  Decision state is sent to OpenAI: excerpts of tool results, recent messages, and input lines.
+  Billed at $0.10 per 1M input tokens during public beta, with no output-token or cache charges.
+
+There is no silent backend fallback or cross-provider data transmission.
+If the configured backend fails, returns an error, or lacks credentials, the service returns `nil` and consumers retain their fallback behavior.
 
 Settings under `extensions.decide`:
 
 | key | default | meaning |
 | --- | --- | --- |
-| `model` | `~typesafe/jev-latest` | Decisions API model id. |
+| `backend` | `"jev"` | Decisions backend: `"jev"` (OpenRouter) or `"openai"` (OpenAI Decisions API). |
+| `model` | backend default | Decisions API model id (`~typesafe/jev-latest` for Jev, `gpt-6-luna` for OpenAI). |
 | `timeoutMs` | `3000` | Overall request timeout; the connect timeout is capped at 2000 ms. |
 
 ### Consumers
