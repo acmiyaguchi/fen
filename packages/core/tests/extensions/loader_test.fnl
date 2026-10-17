@@ -208,14 +208,14 @@
                     (assert.are.equal :loaded (. by-name :agent_state :status))
                     (assert.are.equal :loaded (. by-name :mem :status))
                     (assert.are.equal :loaded (. by-name :plan :status))
-                    (assert.are.equal :loaded (. by-name :todo :status))
+                    (assert.are.equal :disabled (. by-name :todo :status))
                     (assert.are.equal :loaded
                                       (. by-name :session_jsonl :status))
                     (assert.is_true (. tool-names :bash))
                     (assert.is_true (. tool-names :compact))
                     (assert.is_true (. tool-names :agent_state))
                     (assert.is_true (. tool-names :models))
-                    (assert.is_true (. tool-names :todo_write))
+                    (assert.is_nil (. tool-names :todo_write))
                     (assert.is_true (. tool-names :reload))
                     (assert.is_nil (tool :profile))
                     (assert.is_not_nil (command :profile))
@@ -368,7 +368,7 @@
                       (assert.is_true (. by-name :mem :first-party?))
                       (assert.are.equal :loaded (. by-name :plan :status))
                       (assert.is_true (. by-name :plan :first-party?))
-                      (assert.are.equal :loaded (. by-name :todo :status))
+                      (assert.are.equal :disabled (. by-name :todo :status))
                       (assert.is_true (. by-name :todo :first-party?))
                       (assert.are.equal :loaded
                                         (. by-name :session_jsonl :status))
@@ -467,7 +467,7 @@
                       (assert.is_true (. names :bash))
                       (assert.is_true (. names :compact))
                       (assert.is_true (. names :agent_state))
-                      (assert.is_true (. names :todo_write))
+                      (assert.is_nil (. names :todo_write))
                       (assert.is_true (. names :reload))
                       (assert.is_nil (. names :profile))
                       (assert.is_true (. names "auto-tool"))))))
@@ -535,6 +535,19 @@
                     (let [(ok? err) (loader.reload-extension! "off")]
                       (assert.is_false ok?)
                       (assert.is_truthy (string.find err "not loaded" 1 true))))))
+            (it "allows explicit settings opt-in for the todo companion"
+                (fn []
+                  (loader.load! {:extension-paths []} {:interactive? false})
+                  (assert.is_nil (tool :todo_write))
+                  (assert.is_nil (command :todos))
+                  (write-file (.. tmp "/fen/settings.json")
+                              "{\"extensions\":{\"todo\":{\"enabled\":true}}}")
+                  (loader.load! {:extension-paths []}
+                                {:interactive? false :reload? true})
+                  (assert.is_not_nil (tool :todo_write))
+                  (assert.is_not_nil (command :todos))
+                  (assert.is_not_nil (tool :goal))
+                  (assert.is_not_nil (command :plan))))
             (it "keeps an explicit extension loaded when settings disable it"
                 (fn []
                   (let [path (.. tmp "/pinned.lua")]
