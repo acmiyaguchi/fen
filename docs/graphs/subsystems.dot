@@ -8,6 +8,7 @@ digraph fen_subsystems {
   "core.llm" [fillcolor="palegreen", label="core.llm\n2 modules", style="filled"];
   "extension.agent_state" [fillcolor="lightyellow", label="extension: agent_state\n2 modules", style="filled"];
   "extension.builtin_tools" [fillcolor="lightyellow", label="extension: builtin_tools\n12 modules", style="filled"];
+  "extension.claude_memory" [fillcolor="lightyellow", label="extension: claude_memory\n1 modules", style="filled"];
   "extension.compact" [fillcolor="lightyellow", label="extension: compact\n1 modules", style="filled"];
   "extension.decide" [fillcolor="lightyellow", label="extension: decide\n6 modules", style="filled"];
   "extension.default_prompt" [fillcolor="lightyellow", label="extension: default_prompt\n2 modules", style="filled"];
@@ -68,6 +69,7 @@ digraph fen_subsystems {
   "extension.agent_state" -> "util";
   "extension.builtin_tools" -> "core";
   "extension.builtin_tools" -> "util";
+  "extension.claude_memory" -> "util";
   "extension.compact" -> "core";
   "extension.compact" -> "core.extensions";
   "extension.compact" -> "extension.decide";

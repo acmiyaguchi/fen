@@ -1558,3 +1558,25 @@ FEN_BIN=$PWD/result/bin/fen scripts/dev/fen-dev --extension /path/to/hello
 
 `--extension` accepts a manifest dir or a single `.fnl`/`.lua` file, and
 always loads regardless of `:enabled-by-default`.
+
+## Claude Code memory interoperability
+
+The optional `claude_memory` extension exposes Claude Code's project memory index read-only.
+Enable it with `/extensions enable claude_memory` and inspect resolution with `/claude-memory`.
+It adds at most 8192 bytes of `MEMORY.md`, plus provenance and stale-context guidance, to the prompt; it never automatically imports linked memory bodies or writes memory files.
+Use existing file tools to read relevant linked files relative to the reported memory directory.
+Current project instructions take precedence; historical memories and Claude-specific orchestration guidance are not authoritative fen instructions.
+
+By default, resolution uses the physical nearest Git worktree root (or the launch directory outside a repository), replaces every non-alphanumeric character with `-`, and looks in `~/.claude/projects/<project-key>/memory/MEMORY.md`.
+Each worktree uses its **own** path key, not the main checkout's key; subdirectories within a Git worktree use its root.
+Claude path naming can vary, so no search of unrelated project directories or implicit main-worktree fallback is attempted.
+Set an absolute directory override when the mapping differs or when deliberately sharing main-checkout memories:
+
+```json
+{"extensions": {"claude_memory": {"enabled": true, "directory": "/home/me/.claude/projects/-my-project/memory"}}}
+```
+
+Missing default indexes add nothing to the prompt and produce no startup notice.
+The inspection command reports missing/unreadable indexes, invalid overrides, inclusion, and truncation.
+Settings and the index are read when the prompt is assembled or inspected; `/reload` refreshes the extension normally.
+Enabling this extension sends the included index to the active model provider as prompt context, so review its contents first.
