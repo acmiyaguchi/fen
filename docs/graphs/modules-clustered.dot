@@ -832,6 +832,7 @@ digraph fen_modules_clustered {
   "fen.extensions.provider_openai" -> "fen.extensions.provider_openai.usage";
   "fen.extensions.provider_openai.openai_codex_keychain" -> "fen.util.json";
   "fen.extensions.provider_openai.openai_codex_keychain" -> "fen.util.log";
+  "fen.extensions.provider_openai.openai_codex_keychain" -> "fen.util.path";
   "fen.extensions.provider_openai.openai_codex_login" -> "fen.extensions.provider_openai.openai_codex_keychain";
   "fen.extensions.provider_openai.openai_codex_login" -> "fen.extensions.provider_openai.openai_codex_oauth";
   "fen.extensions.provider_openai.openai_codex_login" -> "fen.util.base64";
@@ -969,6 +970,8 @@ digraph fen_modules_clustered {
   "fen.extensions.steering.service" -> "fen.core.extensions.state";
   "fen.extensions.steering.service" -> "fen.extensions.steering.state";
   "fen.extensions.subagent" -> "fen.core.extensions.register.presenter";
+  "fen.extensions.subagent" -> "fen.core.extensions.register.provider";
+  "fen.extensions.subagent" -> "fen.core.llm.models";
   "fen.extensions.subagent" -> "fen.core.types";
   "fen.extensions.subagent" -> "fen.extensions.steering.service";
   "fen.extensions.subagent" -> "fen.extensions.subagent.channel";

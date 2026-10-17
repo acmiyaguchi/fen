@@ -152,6 +152,7 @@ digraph fen_subsystems {
   "extension.steering" -> "core.extensions";
   "extension.subagent" -> "core";
   "extension.subagent" -> "core.extensions";
+  "extension.subagent" -> "core.llm";
   "extension.subagent" -> "extension.steering";
   "extension.subagent" -> "other";
   "extension.subagent" -> "util";

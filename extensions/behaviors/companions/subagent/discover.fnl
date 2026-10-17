@@ -85,6 +85,7 @@
                      :description (or fields.description "")
                      :model (blank->nil fields.model)
                      :provider (blank->nil fields.provider)
+                     :thinking (blank->nil fields.thinking)
                      :timeout-seconds (parse-timeout (or fields.timeout-seconds
                                                          fields.timeout_seconds)
                                                      file)

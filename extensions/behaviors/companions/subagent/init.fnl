@@ -28,6 +28,8 @@
 (local runs (require :fen.extensions.subagent.runs))
 (local usage-util (require :fen.util.usage))
 (local presenter-registry (require :fen.core.extensions.register.presenter))
+(local provider-registry (require :fen.core.extensions.register.provider))
+(local models (require :fen.core.llm.models))
 
 (local M {})
 
@@ -262,31 +264,121 @@
 (fn blank? [s]
   (or (not s) (= s "")))
 
+(fn provider-has-model? [provider-name model-id]
+  (let [p (provider-registry.find provider-name)]
+    (if (and p p.models (> (length p.models) 0))
+        (accumulate [found? false _ m (ipairs p.models) &until found?]
+          (let [id (if (= (type m) :table) m.id m)]
+            (= (tostring id) (tostring model-id))))
+        (let [res (models.resolve-cli-model model-id provider-name
+                                            {:dynamic-mode :cached})]
+          (= res.status :ok)))))
+
+(fn infer-provider-for-model [model-id]
+  (let [matches []]
+    (each [_ p (ipairs (provider-registry.list))]
+      (when (provider-has-model? p.name model-id)
+        (table.insert matches p.name)))
+    (if (= (length matches) 1)
+        (. matches 1)
+        nil)))
+
 (fn effective-routing [cfg ctx]
   "Resolve the child process provider/model policy.
 
    With no frontmatter override, inherit the parent provider/model when the
    tool context exposes ctx.agent. A model-only override keeps the inherited
-   provider and replaces the model. A provider+model override uses both
-   frontmatter values. A provider-only override deliberately omits the inherited
-   model rather than pairing it with a different provider."
+   provider and replaces the model, or infers the provider when the model belongs
+   to a known provider. Passing a canonical `provider/model` extracts the provider
+   and bare model. A provider+model override uses both frontmatter values.
+   A provider-only override deliberately omits the inherited model rather than
+   pairing it with a different provider."
   (let [agent (and ctx ctx.agent)
         inherited-provider (and agent agent.provider-name)
         inherited-model (and agent agent.model)
         fm-provider (and (present? cfg.provider) cfg.provider)
         fm-model (and (present? cfg.model) cfg.model)
-        provider-override? (present? fm-provider)]
-    {:provider (or fm-provider inherited-provider)
-     :model (if fm-model fm-model
-                provider-override? nil
-                inherited-model)
-     :provider-source (if fm-provider :frontmatter
-                          inherited-provider :inherited
-                          :unset)
-     :model-source (if fm-model :frontmatter
-                       provider-override? :omitted-provider-override
-                       inherited-model :inherited
-                       :unset)}))
+        (model-prefix bare-model) (if fm-model
+                                      (models.split-model-ref fm-model)
+                                      (values nil nil))]
+    (var resolved-provider nil)
+    (var resolved-model nil)
+    (var provider-source :unset)
+    (var model-source :unset)
+    (if fm-model
+        (if model-prefix
+            (if (or (not fm-provider)
+                    (= (tostring fm-provider) (tostring model-prefix)))
+                (do
+                  (set resolved-provider model-prefix)
+                  (set resolved-model bare-model)
+                  (set provider-source :frontmatter)
+                  (set model-source :frontmatter))
+                (do
+                  ;; Explicit provider that disagrees with prefix keeps the whole value (e.g. gateway ids)
+                  (set resolved-provider fm-provider)
+                  (set resolved-model fm-model)
+                  (set provider-source :frontmatter)
+                  (set model-source :frontmatter)))
+            ;; fm-model has no slash (bare model)
+            (if fm-provider
+                (do
+                  (set resolved-provider fm-provider)
+                  (set resolved-model fm-model)
+                  (set provider-source :frontmatter)
+                  (set model-source :frontmatter))
+                (let [inferred (and (not (and inherited-provider
+                                              (provider-has-model? inherited-provider
+                                                                   fm-model)))
+                                    (infer-provider-for-model fm-model))]
+                  (if inferred
+                      (do
+                        (set resolved-provider inferred)
+                        (set resolved-model fm-model)
+                        (set provider-source :frontmatter)
+                        (set model-source :frontmatter))
+                      (do
+                        (set resolved-provider inherited-provider)
+                        (set resolved-model fm-model)
+                        (set provider-source
+                             (if inherited-provider :inherited :unset))
+                        (set model-source :frontmatter))))))
+        ;; no fm-model
+        (if fm-provider
+            (do
+              (set resolved-provider fm-provider)
+              (set resolved-model nil)
+              (set provider-source :frontmatter)
+              (set model-source :omitted-provider-override))
+            (do
+              (set resolved-provider inherited-provider)
+              (set resolved-model inherited-model)
+              (set provider-source (if inherited-provider :inherited :unset))
+              (set model-source (if inherited-model :inherited :unset)))))
+    ;; Resolve thinking and base-url
+    (let [thinking (or (and (present? cfg.thinking) cfg.thinking)
+                       (and ctx ctx.opts (present? ctx.opts.thinking)
+                            ctx.opts.thinking)
+                       (and ctx ctx.agent
+                            (or (and (present? ctx.agent.thinking)
+                                     ctx.agent.thinking)
+                                (and (present? ctx.agent.thinking-status)
+                                     ctx.agent.thinking-status))))
+          parent-base-url (and ctx ctx.opts
+                               (or (and (present? ctx.opts.base-url)
+                                        ctx.opts.base-url)
+                                   (and (present? ctx.opts.baseUrl)
+                                        ctx.opts.baseUrl)))
+          base-url (when (and parent-base-url inherited-provider
+                              (= (tostring resolved-provider)
+                                 (tostring inherited-provider)))
+                     parent-base-url)]
+      {:provider resolved-provider
+       :model resolved-model
+       :provider-source provider-source
+       :model-source model-source
+       :thinking thinking
+       :base-url base-url})))
 
 (fn tool-name-in-list? [names wanted]
   (accumulate [found? false _ name (ipairs (or names [])) &until found?]
@@ -385,7 +477,15 @@
    `provider/` as the canonical prefix, which would otherwise cut an id that
    starts with the provider name (OpenRouter's `openrouter/auto`)."
   (if (and routing.model routing.provider)
-      (.. (tostring routing.provider) "/" (tostring routing.model))
+      (let [prov (tostring routing.provider)
+            m (tostring routing.model)]
+        (if (= prov "openrouter")
+            (if (string.find m "^openrouter/openrouter/")
+                m
+                (.. prov "/" m))
+            (if (string.find m (.. "^" (string.gsub prov "%p" "%%%1") "/"))
+                m
+                (.. prov "/" m))))
       routing.model))
 
 (fn child-argv [bin sys-path routing child-policy]
@@ -395,7 +495,9 @@
    --continue."
   (let [argv [bin "--presenter" "rpc" "--system-file" sys-path "--no-session"]]
     (each [_ [flag val] (ipairs [["--model" (child-model-arg routing)]
-                                 ["--provider" routing.provider]])]
+                                 ["--provider" routing.provider]
+                                 ["--thinking" routing.thinking]
+                                 ["--base-url" routing.base-url]])]
       (when val
         (table.insert argv flag)
         (table.insert argv val)))
@@ -442,6 +544,7 @@
                      ["provider source" :provider-source]
                      ["model" :model]
                      ["model source" :model-source]
+                     ["thinking" :thinking]
                      ["exit code" :exit-code]
                      ["signal" :signal]
                      ["timed out" :timed-out?]
@@ -802,6 +905,7 @@
                    :model routing.model
                    :provider-source routing.provider-source
                    :model-source routing.model-source
+                   :thinking routing.thinking
                    :usage res.usage
                    :stop-reason res.stop-reason
                    :result-truncated? cut?
@@ -1576,7 +1680,7 @@
       (when (> (length agents) 0)
         (let [lines ["Available subagents (activate `subagent` through `tool_search` first):"
                      "Subagent policy:"
-                     "- Before launch, run action=models and pass an exact listed provider/model pair."
+                     "- Omitting `model` and `provider` inherits the parent agent's provider and model. To select an alternate or cross-provider model, run action=models first and pass an exact listed provider/model pair."
                      "- Delegate a self-contained task with cwd, expected artifact, and short bounds; parallelize only independent work."
                      "- After failure, inspect or steer the retained run instead of repeating it unchanged; verify child evidence before reporting completion."]
               limit (math.min (length agents) MAX-PROMPT-AGENTS)]
@@ -1632,6 +1736,7 @@
     ;; definition and makes the routing visible in the launch tool call.
     (when (present? args.provider) (set out.provider args.provider))
     (when (present? args.model) (set out.model args.model))
+    (when (present? args.thinking) (set out.thinking args.thinking))
     out))
 
 (fn inline-cfg [args]
@@ -1644,6 +1749,7 @@
    :description ""
    :model (and (present? args.model) args.model)
    :provider (and (present? args.provider) args.provider)
+   :thinking (and (present? args.thinking) args.thinking)
    :timeout-seconds nil
    :artifact-checkpoint-seconds nil
    :max-turns nil
@@ -2052,12 +2158,13 @@
                                   "blocking; completion is queued as a follow-up and the "
                                   "full stored result is available through `/subagents show`. "
                                   "Background jobs are read-only and never auto-start a turn. "
-                                  "Before launching, use action=models to refresh model "
+                                  "Launches inherit the parent provider, model, and thinking level by default when omitted. "
+                                  "When selecting an explicit cross-provider or alternate model, use action=models first to refresh model "
                                   "catalogs for authenticated providers, select an exact "
                                   "provider/model pair from the result, and pass both "
                                   "fields explicitly on the launch. Per-call routing "
                                   "overrides named-agent frontmatter. Do not guess model "
-                                  "IDs or rely on inherited routing. Use action=list/show/"
+                                  "IDs. Use action=list/show/"
                                   "usage/wait/steer/cancel/cancel-all/remove/retry/clear/"
                                   "reset to inspect and manage stored "
                                   "runs, including per-run and workflow token usage, "
@@ -2101,9 +2208,11 @@
                                            :worktree-count {:type :number
                                                             :description "Number of detached sibling review worktrees to create (1–4) for action=review-worktrees."}
                                            :model {:type :string
-                                                   :description "Exact model id selected from action=models. Pass explicitly with `provider` on every launch; overrides named-agent frontmatter."}
+                                                   :description "Optional model id override. When omitted, inherits parent model (or agent frontmatter). For cross-provider or alternate models, select an exact id from action=models."}
                                            :provider {:type :string
-                                                      :description "Exact provider selected from action=models. Pass explicitly with `model` on every launch; overrides named-agent frontmatter."}
+                                                      :description "Optional provider override. When omitted, inherits parent provider (or agent frontmatter or inferred from model). For cross-provider models, select an exact provider from action=models."}
+                                           :thinking {:type :string
+                                                      :description "Optional thinking level override (off, minimal, low, medium, high, xhigh); inherits parent thinking level when omitted."}
                                            :timeout-seconds {:type :number
                                                              :description "For launches, set a shorter positive child timeout capped by policy. For action=wait, set the polling budget (default 30 seconds)."}
                                            :max-turns {:type :number

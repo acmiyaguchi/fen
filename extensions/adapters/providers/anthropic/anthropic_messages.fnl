@@ -291,9 +291,12 @@
         ;; or pathological one-shot requests where caching would hurt.
         cache? (not (and options options.no-cache?))
         wire-messages (convert-messages context.messages context.system-prompt)
-        body {: model
-              :max_tokens (or max-tokens 16384)
-              :messages wire-messages}]
+        raw-max (or max-tokens 16384)
+        budget (and options options.thinking-budget)
+        effective-max (if (and budget (>= budget raw-max))
+                          (+ budget 4096)
+                          raw-max)
+        body {: model :max_tokens effective-max :messages wire-messages}]
     (when (and context.system-prompt (not= context.system-prompt ""))
       (if cache?
           ;; Convert string system → array form so we can attach
