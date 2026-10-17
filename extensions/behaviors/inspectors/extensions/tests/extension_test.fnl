@@ -193,6 +193,84 @@
                       (h.restore-getenv!)
                       (h.rmtree tmp)
                       (assert.is_true ok? err)))))
+            (it "refuses disabling the active presenter and recovery command owners without saving or reloading"
+                (fn []
+                  (let [h (require :fen.testing)
+                        tmp (h.make-tmpdir)
+                        ext-state (require :fen.core.extensions.state)
+                        reloads []
+                        errors []]
+                    (h.stub-getenv! (fn [name orig]
+                                      (if (= name :XDG_CONFIG_HOME) tmp
+                                          (orig name))))
+                    (let [(ok? err) (pcall (fn []
+                                             (let [api (test-api.make-runtime-api "inspector")
+                                                   mod (fresh-extension-module)
+                                                   settings (require :fen.core.settings)]
+                                               (mod.register api)
+                                               (api.on :error
+                                                       #(table.insert errors
+                                                                      $1.error))
+                                               (each [_ name (ipairs ["presenter"
+                                                                      "sessions"
+                                                                      "inspector"])]
+                                                 (tset ext-state.extensions
+                                                       name
+                                                       {:manifest {}
+                                                        :status :loaded}))
+                                               (let [p (test-api.make-runtime-api "presenter")
+                                                     s (test-api.make-runtime-api "sessions")]
+                                                 (p.register :presenter
+                                                             {:name :screen
+                                                              :active? true})
+                                                 (s.register :command
+                                                             {:name :reload
+                                                              :handler (fn [_
+                                                                            _]
+                                                                         (table.insert reloads
+                                                                                       true))}))
+                                               (each [_ name (ipairs ["presenter"
+                                                                      "sessions"
+                                                                      "inspector"])]
+                                                 (api.commands.dispatch (.. "/extensions disable "
+                                                                            name)
+                                                                        {}))
+                                               (assert.are.equal 3
+                                                                 (length errors))
+                                               (assert.is_not_nil (string.find (. errors
+                                                                                  1)
+                                                                               "active presenter"
+                                                                               1
+                                                                               true))
+                                               (assert.is_not_nil (string.find (. errors
+                                                                                  2)
+                                                                               "/reload"
+                                                                               1
+                                                                               true))
+                                               (assert.is_not_nil (string.find (. errors
+                                                                                  3)
+                                                                               "/extensions"
+                                                                               1
+                                                                               true))
+                                               (assert.are.same [] reloads)
+                                               (assert.is_nil (. (or (. (settings.load)
+                                                                        :extensions
+                                                                        :presenter)
+                                                                     {})
+                                                                 :enabled))
+                                               (assert.is_nil (. (or (. (settings.load)
+                                                                        :extensions
+                                                                        :sessions)
+                                                                     {})
+                                                                 :enabled))
+                                               (assert.is_nil (. (or (. (settings.load)
+                                                                        :extensions
+                                                                        :inspector)
+                                                                     {})
+                                                                 :enabled)))))]
+                      (h.restore-getenv!)
+                      (h.rmtree tmp)
+                      (assert.is_true ok? err)))))
             (it "renders registry-wide rows grouped by kind and owner"
                 (fn []
                   (let [api (test-api.make-runtime-api "demo-ext"

@@ -109,7 +109,9 @@ A boolean `enabled` overrides the manifest's `:enabled-by-default` and the proje
 An absent `enabled` keeps the rules above.
 Changes take effect on `/reload` or restart; a disabled extension's contributions are removed through the same owner cleanup reload uses.
 `/extensions enable <name>` and `/extensions disable <name>` write that flag, preserving every other settings key, and then run `/reload`.
-They accept any extension `/extensions` lists, including discovered-but-disabled ones, and reject unknown names.
+They accept listed extensions, including discovered-but-disabled ones, and reject unknown names.
+`/extensions disable` refuses the active presenter and the current owners of `/reload` and `/extensions`, to avoid breaking the running UI or its recovery commands.
+To override this guard deliberately, edit `settings.json` directly and reload or restart; settings-based disablement remains unrestricted.
 The model-facing `extension` tool cannot change it: enabling code stays a user decision.
 `/extensions` marks a status decided by settings rather than the manifest with `(settings)`.
 The remaining keys are the extension's own settings, read with `api.settings.extension`.

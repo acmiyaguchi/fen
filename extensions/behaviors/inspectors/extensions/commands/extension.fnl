@@ -504,6 +504,18 @@
           (invalidate-cache!)
           (values true nil)))))
 
+(fn disable-guard [api name]
+  (var reason nil)
+  (each [_ p (ipairs (api.list :presenters))]
+    (when (and p.active? (= (tostring p.owner) name))
+      (set reason "the active presenter")))
+  (each [_ command (ipairs ["reload" "extensions"])]
+    (each [_ entry (ipairs (api.list :commands))]
+      (when (and (= (tostring entry.name) command)
+                 (= (tostring entry.owner) name))
+        (set reason (.. "the owner of /" command)))))
+  reason)
+
 (fn set-extension-enabled! [api state name enabled?]
   "Persist settings.json `extensions.<name>.enabled` for a discovered extension,
    then apply it through the ordinary /reload command."
@@ -518,6 +530,11 @@
         (api.emit {:type :error
                    :error (.. "/extensions " verb
                               " is disabled while the agent is running")})
+        (and (not enabled?) (disable-guard api (tostring e.name)))
+        (api.emit {:type :error
+                   :error (.. "cannot disable " (tostring e.name) ": "
+                              (disable-guard api (tostring e.name))
+                              "; edit settings.json directly to override")})
         (let [settings (require :fen.core.settings)
               key (tostring e.name)
               (ok? err) (pcall settings.set-extension-enabled! key enabled?)]
