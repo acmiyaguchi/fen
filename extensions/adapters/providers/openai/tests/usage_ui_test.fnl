@@ -10,6 +10,7 @@
 (local paint (require :fen.extensions.tui.paint))
 (local input (require :fen.extensions.tui.input))
 (local state (require :fen.extensions.provider_openai.usage_state))
+(local panel-toggle (require :fen.util.panel_toggle))
 (local module :fen.extensions.provider_openai.usage)
 (local auth-name :fen.extensions.provider_openai.openai_codex_oauth)
 (local http-name :fen.util.http)
@@ -25,6 +26,8 @@
             (var handlers nil)
             (var requests 0)
             (var now nil)
+            (var api nil)
+            (var emitted nil)
 
             (fn windows []
               [{:name "rate_limit/primary_window"
@@ -42,8 +45,10 @@
               (paint.paint-frame!)
               (tui-test.screen-lines tb))
 
-            (fn toggle []
-              ((. specs :command :handler) "" {:opts {:provider :openai-codex}}))
+            (fn toggle [?args ?provider]
+              ((. specs :command :handler) (or ?args "")
+                                           {:opts {:provider (or ?provider
+                                                                 :openai-codex)}}))
 
             (before_each (fn []
                            (set now (os.time))
@@ -85,8 +90,15 @@
                            (paint.ensure-state-defaults!)
                            (set specs {})
                            (set handlers {})
-                           (local api
+                           (set emitted [])
+                           (local base-api
                                   (test-api.make-runtime-api :provider_openai))
+                           (set api
+                                {:register base-api.register
+                                 :on base-api.on
+                                 :emit (fn [ev]
+                                         (table.insert emitted ev)
+                                         (base-api.emit ev))})
                            (usage.register {:emit api.emit
                                             :register (fn [kind spec]
                                                         (tset specs kind spec)
@@ -165,6 +177,60 @@
                   (assert.is_true state.visible?)
                   (toggle)
                   (assert.is_nil (string.find (. (frame) 2) "codex quota"))))
+            (it "supports explicit idempotent toggles, help, completion, and announcements"
+                (fn []
+                  (set state.attempted-at nil)
+                  (toggle "off")
+                  (toggle "off")
+                  (assert.is_false state.visible?)
+                  (assert.is_nil state.refresh-co)
+                  (assert.equal 0 requests)
+                  (toggle "on")
+                  (var dismiss-count 0)
+                  (each [_ ev (ipairs emitted)]
+                    (when (= ev.type :dismiss)
+                      (set dismiss-count (+ dismiss-count 1))))
+                  (toggle "on")
+                  (assert.is_true state.visible?)
+                  (var after-on-count 0)
+                  (each [_ ev (ipairs emitted)]
+                    (when (= ev.type :dismiss)
+                      (set after-on-count (+ after-on-count 1))))
+                  (assert.equal dismiss-count after-on-count)
+                  (assert.is_not_nil state.refresh-co)
+                  (assert.equal 0 requests)
+                  ((. specs :command :handler) "help"
+                                               {:opts {:provider :openai-codex}})
+                  (assert.is_truthy (string.find (. (. emitted (length emitted))
+                                                    :text)
+                                                 "/usage [off|on|help]" 1 true))
+                  (assert.equal 3 (length ((. specs :command :complete) "" {})))
+                  (toggle "off")
+                  (assert.is_false state.visible?)
+                  (assert.is_truthy (string.find (. (. emitted (length emitted))
+                                                    :text)
+                                                 "usage panel: off" 1 true))))
+            (it "dismisses usage when another shared-toggle panel opens"
+                (fn []
+                  (local other-state {:visible? false})
+                  (panel-toggle.install! api
+                                         {:name :other
+                                          :command {:name :other}
+                                          :panel-spec {:name :other
+                                                       :height (fn [_] 0)
+                                                       :render (fn [_] [])}
+                                          :state other-state})
+                  (set state.attempted-at nil)
+                  (toggle "on")
+                  (assert.is_true state.visible?)
+                  (local other-command
+                         (. (require :fen.core.extensions.state)
+                            :commands-extra :other))
+                  (assert.is_truthy other-command)
+                  (other-command.handler "on" {})
+                  (assert.is_true other-state.visible?)
+                  (assert.is_false state.visible?)
+                  (assert.equal 0 requests)))
             (it "renders stale age and failure without promising old percentages after reset"
                 (fn []
                   (set state.retrieved-at (- now 7200))

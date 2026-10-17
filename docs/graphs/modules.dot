@@ -636,6 +636,7 @@ digraph fen_modules {
   "fen.extensions.provider_openai.usage" -> "fen.util.file_mutex" [label="require"];
   "fen.extensions.provider_openai.usage" -> "fen.util.http" [label="require"];
   "fen.extensions.provider_openai.usage" -> "fen.util.json" [label="require"];
+  "fen.extensions.provider_openai.usage" -> "fen.util.panel_toggle" [label="require"];
   "fen.extensions.provider_openai.usage" -> "fen.util.path" [label="require"];
   "fen.extensions.provider_openai.usage" -> "fen.util.sha256" [label="require"];
   "fen.extensions.provider_openrouter" -> "fen.extensions.provider_openrouter.openrouter_completions" [label="require"];

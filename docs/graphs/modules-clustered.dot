@@ -861,6 +861,7 @@ digraph fen_modules_clustered {
   "fen.extensions.provider_openai.usage" -> "fen.util.file_mutex";
   "fen.extensions.provider_openai.usage" -> "fen.util.http";
   "fen.extensions.provider_openai.usage" -> "fen.util.json";
+  "fen.extensions.provider_openai.usage" -> "fen.util.panel_toggle";
   "fen.extensions.provider_openai.usage" -> "fen.util.path";
   "fen.extensions.provider_openai.usage" -> "fen.util.sha256";
   "fen.extensions.provider_openrouter" -> "fen.extensions.provider_openrouter.openrouter_completions";

@@ -88,7 +88,8 @@
                   (assert.equal 2 (length (path.list-dir dir)))
                   (local (second second-state) (instance))
                   (local specs {})
-                  (second.register {:register (fn [kind spec]
+                  (second.register {:emit (fn [_])
+                                    :register (fn [kind spec]
                                                 (tset specs kind spec))
                                     :on (fn [_ _])})
                   (assert.equal 1 calls)

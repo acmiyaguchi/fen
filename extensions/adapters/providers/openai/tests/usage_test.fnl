@@ -71,7 +71,8 @@
             (it "refreshes on demand and cached introspection never accesses auth/network"
                 (fn []
                   (local specs {})
-                  (usage.register {:on (fn [_event _handler])
+                  (usage.register {:emit (fn [_event])
+                                   :on (fn [_event _handler])
                                    :register (fn [kind spec]
                                                (tset specs kind spec))})
                   (assert.equal :unavailable
