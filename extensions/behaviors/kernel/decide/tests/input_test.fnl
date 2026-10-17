@@ -179,6 +179,82 @@
                     (assert.are.equal 1 (length (of-type seen :hint))))))))
 
 ;; ---------------------------------------------------------------------------
+;; Durable preference (idle prompts) (#567)
+;; ---------------------------------------------------------------------------
+
+(fn answer-pref! [call p]
+  (call.on-done (when p {:durable_preference {:type :noul :noul p}})))
+
+(describe "decide durable-preference hint"
+          (fn []
+            (after_each restore-modules!)
+            (it "suggests /prefer through a :hint event when a durable preference is stated"
+                (fn []
+                  (let [seen (fresh! {:steering? false})
+                        action (submit "from now on, always use python 3.12")]
+                    (assert.are.equal :continue action.action)
+                    (assert.are.equal "from now on, always use python 3.12"
+                                      action.input.text)
+                    (assert.are.equal 1 (length asks))
+                    (let [{:state st : questions} (. asks 1)]
+                      (assert.are.equal "from now on, always use python 3.12"
+                                        st.new_message)
+                      (assert.are.equal :noul questions.durable_preference.type)
+                      (assert.is_truthy questions.durable_preference.criteria.true)
+                      (assert.is_truthy questions.durable_preference.criteria.false))
+                    (assert.are.equal 0 (length (of-type seen :hint)))
+                    (answer-pref! (. asks 1) 0.9)
+                    (let [hints (of-type seen :hint)]
+                      (assert.are.equal 1 (length hints))
+                      (assert.are.equal "save as preference? · /prefer"
+                                        (. hints 1 :text))
+                      (assert.are.equal "prefer/durable:from now on, always use python 3.12"
+                                        (. hints 1 :key))
+                      (assert.are.equal "from now on, always use python 3.12"
+                                        (. hints 1 :preference))))))
+            (it "asks preference even on the first prompt without prior conversation"
+                (fn []
+                  (fresh! {:steering? false})
+                  (submit "never use tabs" {:messages []})
+                  (assert.are.equal 1 (length (asks-for :durable_preference)))
+                  ;; Topic shift is skipped without two earlier prompts
+                  (assert.are.equal 0 (length (asks-for :topic_shift)))))
+            (it "stays quiet below threshold or when decide has no answer"
+                (fn []
+                  (let [seen (fresh! {:steering? false})]
+                    (submit "always write comments")
+                    (answer-pref! (. asks 1) 0.84)
+                    (submit "never write comments")
+                    (answer-pref! (. asks 2) nil)
+                    (assert.are.equal 2 (length asks))
+                    (assert.are.equal 0 (length (of-type seen :hint))))))
+            (it "asks nothing while decide is disabled"
+                (fn []
+                  (let [seen (fresh! {:enabled? false :steering? false})
+                        action (submit "always use pytest")]
+                    (assert.are.equal :continue action.action)
+                    (assert.are.equal 0 (length asks))
+                    (assert.are.equal 0 (length (of-type seen :hint))))))
+            (it "drops a late answer once another message was submitted or reset"
+                (fn []
+                  (let [seen (fresh! {:steering? false})
+                        emit (. (test-api.make-runtime-api :probe) :emit)]
+                    (submit "first pref")
+                    (submit "second pref")
+                    (answer-pref! (. asks 1) 0.99)
+                    (assert.are.equal 0 (length (of-type seen :hint)))
+                    (answer-pref! (. asks 2) 0.99)
+                    (assert.are.equal 1 (length (of-type seen :hint)))
+                    ;; Slash command or user message makes it stale
+                    (submit "third pref")
+                    (emit {:type :user :text "/model"})
+                    (answer-pref! (. asks 3) 0.99)
+                    (submit "fourth pref")
+                    (emit {:type :reset-conversation})
+                    (answer-pref! (. asks 4) 0.99)
+                    (assert.are.equal 1 (length (of-type seen :hint))))))))
+
+;; ---------------------------------------------------------------------------
 ;; Busy-line classification and /decide undo
 ;; ---------------------------------------------------------------------------
 

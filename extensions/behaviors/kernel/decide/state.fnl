@@ -15,5 +15,6 @@
  :tasks []
  ;; Replaced on each prompt; cleared by any later user line or reset.
  :topic-pending nil
+ :preference-pending nil
  ;; string|nil; cleared once the follow-up queue is empty.
  :reclassified nil}

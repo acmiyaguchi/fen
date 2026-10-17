@@ -6,6 +6,7 @@
 
 (local path (require :fen.util.path))
 (local resources (require :fen.extensions.default_prompt.resources))
+(local prefer (require :fen.extensions.default_prompt.prefer))
 
 (local OWNER :default_prompt)
 (local M {})
@@ -140,6 +141,7 @@
                :id :current-working-directory
                :title "Current working directory"
                :description "The process working directory for path-sensitive tasks."})
+  (prefer.register! api current-loader)
   true)
 
 ;; @doc fen.extensions.default_prompt.default-prompt

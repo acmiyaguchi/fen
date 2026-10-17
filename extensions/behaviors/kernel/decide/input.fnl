@@ -40,6 +40,15 @@
                       :criteria {:true "new_message starts a task or subject unrelated to recent, so the earlier context would not help with it."
                                  :false "new_message continues, refines, follows up on, or relates to the work in recent."}}})
 
+;; Durable preferences (#567).
+(local PREFERENCE-THRESHOLD 0.85)
+(local PREFERENCE-HINT "save as preference? · /prefer")
+(local PREFERENCE-QUESTIONS
+       {:durable_preference {:type :noul
+                             :instructions "Did the user state a durable preference meant to apply beyond this task? Examine new_message."
+                             :criteria {:true "new_message states a persistent rule, instruction, or preference intended to apply across sessions or future tasks (e.g. 'always use X', 'never do Y', 'from now on...')."
+                                        :false "new_message gives task-specific instructions, queries, or corrections that apply only to the current task."}}})
+
 ;; Busy-line classification. Only a choice with at least MIN-CONFIDENCE acts.
 (local MIN-CONFIDENCE 0.7)
 (local MAX-LINE-BYTES 2000)
@@ -104,30 +113,49 @@
       (set i (- i 1)))
     (values entries prompts)))
 
-(fn ask-topic-shift! [api prompt token ctx]
-  (let [(recent prompts) (recent-digest (or (?. ctx :state :agent :messages) []))]
+(fn ask-idle! [api prompt token ctx]
+  (let [(recent prompts) (recent-digest (or (?. ctx :state :agent :messages) []))
+        questions {:durable_preference (. PREFERENCE-QUESTIONS
+                                          :durable_preference)}]
     (when (>= prompts MIN-PRIOR-USER-TURNS)
-      (service.ask-async! {:new_message (clip prompt NEW-MESSAGE-BYTES)
-                           : recent} SHIFT-QUESTIONS
-                          (fn [answers]
-                            (let [p (?. answers :topic_shift :noul)]
-                              (when (and (= store.topic-pending token)
-                                         (= (type p) :number)
-                                         (>= p SHIFT-THRESHOLD))
-                                (set store.topic-pending nil)
-                                (api.emit {:type :hint
-                                           :text SHIFT-HINT
-                                           :key (.. "handoff/topic-shift:"
-                                                    (text.utf8-prefix prompt
-                                                                      HINT-KEY-BYTES))}))))))))
+      (tset questions :topic_shift (. SHIFT-QUESTIONS :topic_shift)))
+    (service.ask-async! {:new_message (clip prompt NEW-MESSAGE-BYTES) : recent}
+                        questions
+                        (fn [answers]
+                          (let [p-pref (?. answers :durable_preference :noul)
+                                p-shift (?. answers :topic_shift :noul)]
+                            (if (and (= store.preference-pending token)
+                                     (= (type p-pref) :number)
+                                     (>= p-pref PREFERENCE-THRESHOLD))
+                                (do
+                                  (set store.preference-pending nil)
+                                  (set store.topic-pending nil)
+                                  (api.emit {:type :hint
+                                             :text PREFERENCE-HINT
+                                             :key (.. "prefer/durable:"
+                                                      (text.utf8-prefix prompt
+                                                                        HINT-KEY-BYTES))
+                                             :preference prompt}))
+                                (and (= store.topic-pending token)
+                                     (= (type p-shift) :number)
+                                     (>= p-shift SHIFT-THRESHOLD))
+                                (do
+                                  (set store.topic-pending nil)
+                                  (set store.preference-pending nil)
+                                  (api.emit {:type :hint
+                                             :text SHIFT-HINT
+                                             :key (.. "handoff/topic-shift:"
+                                                      (text.utf8-prefix prompt
+                                                                        HINT-KEY-BYTES))}))))))))
 
 ;; @doc fen.extensions.decide.input.forget-pending!
 ;; kind: function
 ;; signature: (forget-pending! ev) -> nil
-;; summary: Drop the pending topic-shift token so a late answer for an older prompt never emits a hint; wired to :user and :reset-conversation.
+;; summary: Drop pending idle tokens so a late answer for an older prompt never emits a hint; wired to :user and :reset-conversation.
 ;; tags: decide input hint
 (fn M.forget-pending! [_ev]
-  (set store.topic-pending nil))
+  (set store.topic-pending nil)
+  (set store.preference-pending nil))
 
 ;; ---------------------------------------------------------------------------
 ;; Busy-line classification
@@ -243,16 +271,17 @@
 ;; @doc fen.extensions.decide.input.observe!
 ;; kind: function
 ;; signature: (observe! api input ctx) -> nil
-;; summary: Observe one submitted line: an idle prompt starts a background topic-shift check, a plain busy line a background classification; nothing asks while decide is disabled, and the input is never changed.
+;; summary: Observe one submitted line: an idle prompt starts a background preference and topic-shift check, a plain busy line a background classification; nothing asks while decide is disabled, and the input is never changed.
 ;; tags: decide input
 (fn M.observe! [api input ctx]
   (let [ctx (or ctx {})
         line (tostring (or (?. input :text) ""))
         token {}]
-    ;; Any newer line makes an older topic-shift answer stale.
+    ;; Any newer line makes older idle answers stale.
     (set store.topic-pending token)
+    (set store.preference-pending token)
     (when (service.enabled?)
-      (if (not ctx.busy?) (ask-topic-shift! api line token ctx)
+      (if (not ctx.busy?) (ask-idle! api line token ctx)
           (steering-line? input line ctx) (classify-busy-line! api line ctx))))
   nil)
 
