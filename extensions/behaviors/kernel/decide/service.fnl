@@ -1,4 +1,4 @@
-;; Advisory decision service backed by TypeSafe's Jev on OpenRouter.
+;; Advisory decision service backed by TypeSafe's Jev on OpenRouter or OpenAI Decisions API.
 ;;
 ;; Consumers require this module, not the `fen.extensions.decide` entry: the
 ;; loader cache-busts entry modules on a fresh load!, while non-entry modules
@@ -15,6 +15,7 @@
 
 (local store (require :fen.extensions.decide.state))
 (local jev (require :fen.extensions.decide.jev))
+(local openai (require :fen.extensions.decide.openai))
 (local ext-state (require :fen.core.extensions.state))
 (local coroutines (require :fen.util.coroutines))
 (local clock (require :fen.util.clock))
@@ -22,9 +23,17 @@
 
 (local M {})
 
-(local DEFAULT-MODEL "~typesafe/jev-latest")
 (local DEFAULT-TIMEOUT-MS 3000)
-(local KEY-PROVIDER :openrouter)
+
+(local BACKENDS
+       {:jev {:adapter jev
+              :default-model "~typesafe/jev-latest"
+              :key-provider :openrouter
+              :key-error "decide: no OpenRouter API key (the openrouter provider's OPENROUTER_API_KEY)"}
+        :openai {:adapter openai
+                 :default-model "gpt-6-luna"
+                 :key-provider :openai
+                 :key-error "decide: no OpenAI API key (the openai provider's OPENAI_API_KEY)"}})
 
 ;; @doc fen.extensions.decide.service.max-request-bytes
 ;; kind: data
@@ -69,25 +78,40 @@
        (accumulate [ok? true id q (pairs questions)]
          (and ok? (= (type id) :string) (valid-question? q)))))
 
+(fn normalize-backend [b]
+  (let [s (string.lower (tostring (or b "")))]
+    (if (or (= s "jev") (= s ":jev")) :jev
+        (or (= s "openai") (= s ":openai")) :openai
+        :invalid)))
+
 (fn read-settings []
   (let [(ok? s) (pcall store.api.settings.extension)
-        s (if (and ok? (= (type s) :table)) s {})]
-    {:model (or (nonblank s.model) DEFAULT-MODEL)
+        s (if (and ok? (= (type s) :table)) s {})
+        backend-key (if (not= s.backend nil)
+                        (normalize-backend s.backend)
+                        :jev)
+        backend-def (when (not= backend-key :invalid)
+                      (. BACKENDS backend-key))]
+    {:backend backend-key
+     :raw-backend s.backend
+     :backend-def backend-def
+     :model (or (nonblank s.model) (?. backend-def :default-model))
      :timeout-ms (if (and (= (type s.timeoutMs) :number) (> s.timeoutMs 0))
                      (math.floor s.timeoutMs)
                      DEFAULT-TIMEOUT-MS)}))
 
-(fn api-key []
-  "The OpenRouter provider's key, resolved the way the provider resolves it:
+(fn api-key [provider-name]
+  "The provider's key, resolved the way the provider resolves it:
    a configured literal key, else its api-key-var from the environment."
   (accumulate [key nil _ p (ipairs (or (store.api.list :providers) []))]
     (or key
-        (when (= p.name KEY-PROVIDER)
+        (when (or (= p.name provider-name)
+                  (and (= provider-name :openai) (= p.name :openai-responses)))
           (or (nonblank p.api-key)
               (and p.api-key-var (nonblank (path.getenv p.api-key-var))))))))
 
-(fn post! [body key timeout-ms ?yield]
-  "POST through jev, converting transport raises into {:error} while letting an
+(fn post! [adapter body key timeout-ms ?yield]
+  "POST through adapter, converting transport raises into {:error} while letting an
    error raised by the caller's yield propagate with its identity intact."
   (var yield-error nil)
   (let [wrapped (when ?yield
@@ -96,7 +120,7 @@
                       (when (not ok?)
                         (set yield-error {:value err})
                         (error err 0)))))
-        (ok? resp) (pcall jev.post body key timeout-ms wrapped)]
+        (ok? resp) (pcall adapter.post body key timeout-ms wrapped)]
     (if ok? resp
         yield-error (error yield-error.value 0)
         {:error (tostring resp)})))
@@ -104,7 +128,7 @@
 ;; @doc fen.extensions.decide.service.ask
 ;; kind: function
 ;; signature: (ask state questions ?opts) -> answers|nil
-;; summary: Ask Jev typed questions ({id {:type :noul|:choice :instructions str :criteria tbl}}) about one JSON-encodable state; cooperative when ?opts.yield is given, blocking otherwise. Returns answers keyed by id or nil on any failure; errors raised by ?opts.yield propagate.
+;; summary: Ask the configured decisions backend (Jev on OpenRouter or OpenAI Decisions) typed questions ({id {:type :noul|:choice :instructions str :criteria tbl}}) about one JSON-encodable state; cooperative when ?opts.yield is given, blocking otherwise. Returns answers keyed by id or nil on any failure; errors raised by ?opts.yield propagate.
 ;; tags: decide service
 (fn M.ask [state questions ?opts]
   (if (not (M.enabled?))
@@ -112,37 +136,45 @@
       (not (valid-questions? questions))
       (fail :warn
             "decide: invalid questions; each needs :type :noul|:choice, :instructions, and string :criteria (noul: true/false)")
-      (let [key (api-key)]
-        (if (not key)
+      (let [settings (read-settings)]
+        (if (= settings.backend :invalid)
             (fail :warn
-                  "decide: no OpenRouter API key (the openrouter provider's OPENROUTER_API_KEY)")
-            (let [settings (read-settings)
-                  (encoded? body) (pcall jev.encode-request settings.model
-                                         state questions)]
-              (if (not encoded?)
-                  (fail :warn
-                        (.. "decide: state is not JSON-encodable: "
-                            (tostring body)))
-                  (> (length body) M.max-request-bytes)
-                  (fail :debug
-                        (.. "decide: skipped a " (length body)
-                            "-byte request over the " M.max-request-bytes
-                            "-byte guard"))
-                  (let [started (clock.monotonic-ms)
-                        resp (post! body key settings.timeout-ms
-                                    (?. ?opts :yield))
-                        (answers info) (jev.parse-response resp questions)]
-                    (if answers
-                        (do
-                          (log! :debug
-                                {:event :decision
-                                 :model settings.model
-                                 :elapsed-ms (- (clock.monotonic-ms) started)
-                                 :request-bytes (length body)
-                                 :usage (when (= (type info) :table) info)})
-                          answers)
-                        (fail (if (?. resp :error) :debug :warn)
-                              (.. "decide: " (tostring info)))))))))))
+                  (.. "decide: unknown backend: "
+                      (tostring settings.raw-backend)))
+            (let [backend-def settings.backend-def
+                  key (api-key backend-def.key-provider)]
+              (if (not key)
+                  (fail :warn backend-def.key-error)
+                  (let [adapter backend-def.adapter
+                        (encoded? body) (pcall adapter.encode-request
+                                               settings.model state questions)]
+                    (if (not encoded?)
+                        (fail :warn
+                              (.. "decide: state is not JSON-encodable: "
+                                  (tostring body)))
+                        (> (length body) M.max-request-bytes)
+                        (fail :debug
+                              (.. "decide: skipped a " (length body)
+                                  "-byte request over the " M.max-request-bytes
+                                  "-byte guard"))
+                        (let [started (clock.monotonic-ms)
+                              resp (post! adapter body key settings.timeout-ms
+                                          (?. ?opts :yield))
+                              (answers info) (adapter.parse-response resp
+                                                                     questions)]
+                          (if answers
+                              (do
+                                (log! :debug
+                                      {:event :decision
+                                       :backend settings.backend
+                                       :model settings.model
+                                       :elapsed-ms (- (clock.monotonic-ms)
+                                                      started)
+                                       :request-bytes (length body)
+                                       :usage (when (= (type info) :table) info)})
+                                answers)
+                              (fail (if (?. resp :error) :debug :warn)
+                                    (.. "decide: " (tostring info)))))))))))))
 
 ;; @doc fen.extensions.decide.service.ask-async!
 ;; kind: function
