@@ -858,46 +858,69 @@
       (set state.current-block nil)
       (set state.current-item nil))))
 
-(fn handle-completed! [state response]
+(fn extract-usage [response ?event]
+  (let [usage (or (and (table? response) (field response :usage))
+                  (and (table? ?event) (field ?event :usage)))]
+    (when (table? usage)
+      (let [cached (number-or-zero (or (field (field usage
+                                                     :input_tokens_details)
+                                              :cached_tokens)
+                                       (field (field usage
+                                                     :prompt_tokens_details)
+                                              :cached_tokens)
+                                       (field usage :cache_read_input_tokens)
+                                       (field usage :cached_tokens)))
+            raw-input (number-or-zero (or usage.input_tokens
+                                          usage.prompt_tokens usage.input))
+            input (if (> raw-input cached) (- raw-input cached) 0)
+            output (number-or-zero (or usage.output_tokens
+                                       usage.completion_tokens usage.output))
+            total (number-or-zero (or usage.total_tokens usage.total))]
+        {: input
+         : output
+         :cache-read cached
+         :cache-write 0
+         :total-tokens (if (> total 0) total (+ input output))}))))
+
+(fn handle-completed! [state response ?event]
   (set state.saw-terminal? true)
-  (when (table? response)
-    (when response.id (set state.response-id response.id))
-    (let [usage (field response :usage)]
-      (when (table? usage)
-        (let [cached (number-or-zero (field (field usage :input_tokens_details)
-                                            :cached_tokens))
-              raw-input (number-or-zero usage.input_tokens)
-              input (if (> raw-input cached) (- raw-input cached) 0)]
-          (set state.usage
-               {: input
-                :output (number-or-zero usage.output_tokens)
-                :cache-read cached
-                :cache-write 0
-                :total-tokens (number-or-zero usage.total_tokens)}))))
-    (let [(stop err) (map-stop-reason response.status)]
-      (set state.stop-reason stop)
-      (set state.error-message err))
+  (let [resp (or (and (table? response) response)
+                 (and (table? ?event) (table? (field ?event :response))
+                      (field ?event :response))
+                 (and (table? ?event) ?event) {})]
+    (when resp.id (set state.response-id resp.id))
+    (let [u (extract-usage resp ?event)]
+      (when u (set state.usage u)))
+    (let [(stop err) (map-stop-reason resp.status)]
+      (when stop (set state.stop-reason stop))
+      (when err (set state.error-message err)))
     ;; Recover any reasoning item the stream dropped (parallel tool-call
     ;; turns, or turns following a mid-stream error): without its rs_ item
     ;; the turn's fc_ ids 400 forever on the store:false Codex backend (#132).
-    (let [output (field response :output)]
+    (let [output (field resp :output)]
       (when (and (table? output) (> (length output) 0)
                  (reasoning-output-missing? state output))
         (reconcile-dropped-reasoning! state output)))))
 
-(fn handle-failed! [state response]
+(fn handle-failed! [state response ?event]
   (set state.saw-terminal? true)
   (set state.stop-reason :error)
-  (let [err (field response :error)
-        details (field response :incomplete_details)
-        reason (field details :reason)]
-    (set state.error-message
-         (if (table? err)
-             (.. (tostring (or err.code "unknown")) ": "
-                 (tostring (or err.message "no message")))
-             reason
-             (.. "incomplete: " (tostring reason))
-             "Unknown error (no error details in response)"))))
+  (let [resp (or (and (table? response) response)
+                 (and (table? ?event) (table? (field ?event :response))
+                      (field ?event :response))
+                 (and (table? ?event) ?event) {})
+        u (extract-usage resp ?event)]
+    (when u (set state.usage u))
+    (let [err (field resp :error)
+          details (field resp :incomplete_details)
+          reason (field details :reason)]
+      (set state.error-message
+           (if (table? err)
+               (.. (tostring (or err.code "unknown")) ": "
+                   (tostring (or err.message "no message")))
+               reason
+               (.. "incomplete: " (tostring reason))
+               "Unknown error (no error details in response)")))))
 
 (fn handle-error-event! [state event]
   (set state.saw-terminal? true)
@@ -941,14 +964,16 @@
     :response.output_item.done
     (handle-output-item-done! state (field event :item) emit)
     :response.completed
-    (handle-completed! state (field event :response))
+    (handle-completed! state (field event :response) event)
+    :response.done
+    (handle-completed! state (field event :response) event)
     ;; Terminal incomplete response (e.g. max_output_tokens). handle-completed!
     ;; maps response.status :incomplete -> :length. Codex aliases this to
     ;; response.completed upstream; vanilla Responses emits it directly.
     :response.incomplete
-    (handle-completed! state (field event :response))
+    (handle-completed! state (field event :response) event)
     :response.failed
-    (handle-failed! state (field event :response))
+    (handle-failed! state (field event :response) event)
     :error
     (handle-error-event! state event)
     _

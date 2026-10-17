@@ -63,64 +63,76 @@
     (when (and ok (= (type (?. creds :accountId)) :string))
       (sha256.hex-digest creds.accountId))))
 
+(fn file-sig [file]
+  (let [attr (lfs.attributes file)]
+    (when attr
+      (.. (tostring attr.ino) ":" (tostring attr.modification) ":"
+          (tostring attr.change) ":" (tostring attr.size)))))
+
 (fn clear-cache []
   (set state.windows [])
   (set state.retrieved-at nil)
   (set state.attempted-at nil)
-  (set state.failure :unavailable))
+  (set state.failure :unavailable)
+  (set state.file-sig nil))
 
 (fn M.load-cache [key ?force]
   (when (not= key state.account-key)
     (clear-cache)
     (set state.account-key key))
   (when (and key (not= state.cache-path false))
-    (let [f (io.open (M.cache-path) :r)]
-      (when f
-        (let [text (f:read "*a")]
-          (f:close)
-          (let [(ok data) (pcall json.decode text)]
-            (when (and ok (object? data) (= data.version 1)
-                       (= data.account-key key) (object? data.snapshot))
-              (let [s data.snapshot
-                    windows []]
-                (var valid?
-                     (and (= (type s.windows) :table)
-                          (or (not (present? s.retrieved-at))
-                              (number? s.retrieved-at))
-                          (or (not (present? s.attempted-at))
-                              (number? s.attempted-at))))
-                (when valid?
-                  (each [_ w (ipairs s.windows)]
-                    (if (and (object? w) (= (type w.name) :string)
-                             (number? w.used-percent) (<= 0 w.used-percent 100)
-                             (number? w.remaining-percent)
-                             (= w.remaining-percent (- 100 w.used-percent))
-                             (number? w.length-seconds) (> w.length-seconds 0)
-                             (number? w.reset-at) (> w.reset-at 0))
-                        (table.insert windows
-                                      {:name w.name
-                                       :used-percent w.used-percent
-                                       :remaining-percent w.remaining-percent
-                                       :length-seconds w.length-seconds
-                                       :reset-at (math.floor w.reset-at)})
-                        (set valid? false))))
-                (when (and valid?
-                           (or (= (length windows) 0) (number? s.retrieved-at))
-                           (or ?force (not state.attempted-at)
-                               (and (number? s.attempted-at)
-                                    (> s.attempted-at state.attempted-at))))
-                  (set state.windows windows)
-                  (set state.retrieved-at
-                       (when (number? s.retrieved-at)
-                         (math.floor s.retrieved-at)))
-                  (set state.attempted-at
-                       (when (number? s.attempted-at)
-                         (math.floor s.attempted-at)))
-                  (set state.failure
-                       (when (or (= s.failure :auth) (= s.failure :network)
-                                 (= s.failure :api) (= s.failure :unsupported)
-                                 (= s.failure :unavailable))
-                         s.failure)))))))))))
+    (let [file (M.cache-path)
+          sig (file-sig file)]
+      (when sig (set state.file-sig sig))
+      (let [f (io.open file :r)]
+        (when f
+          (let [text (f:read "*a")]
+            (f:close)
+            (let [(ok data) (pcall json.decode text)]
+              (when (and ok (object? data) (= data.version 1)
+                         (= data.account-key key) (object? data.snapshot))
+                (let [s data.snapshot
+                      windows []]
+                  (var valid?
+                       (and (= (type s.windows) :table)
+                            (or (not (present? s.retrieved-at))
+                                (number? s.retrieved-at))
+                            (or (not (present? s.attempted-at))
+                                (number? s.attempted-at))))
+                  (when valid?
+                    (each [_ w (ipairs s.windows)]
+                      (if (and (object? w) (= (type w.name) :string)
+                               (number? w.used-percent)
+                               (<= 0 w.used-percent 100)
+                               (number? w.remaining-percent)
+                               (= w.remaining-percent (- 100 w.used-percent))
+                               (number? w.length-seconds) (> w.length-seconds 0)
+                               (number? w.reset-at) (> w.reset-at 0))
+                          (table.insert windows
+                                        {:name w.name
+                                         :used-percent w.used-percent
+                                         :remaining-percent w.remaining-percent
+                                         :length-seconds w.length-seconds
+                                         :reset-at (math.floor w.reset-at)})
+                          (set valid? false))))
+                  (when (and valid?
+                             (or (= (length windows) 0)
+                                 (number? s.retrieved-at))
+                             (or ?force (not state.attempted-at)
+                                 (and (number? s.attempted-at)
+                                      (> s.attempted-at state.attempted-at))))
+                    (set state.windows windows)
+                    (set state.retrieved-at
+                         (when (number? s.retrieved-at)
+                           (math.floor s.retrieved-at)))
+                    (set state.attempted-at
+                         (when (number? s.attempted-at)
+                           (math.floor s.attempted-at)))
+                    (set state.failure
+                         (when (or (= s.failure :auth) (= s.failure :network)
+                                   (= s.failure :api) (= s.failure :unsupported)
+                                   (= s.failure :unavailable))
+                           s.failure))))))))))))
 
 (fn M.save-cache []
   (when (and state.account-key (not= state.cache-path false))
@@ -137,10 +149,23 @@
                                                               :snapshot (M.snapshot)})))]
               (local closed (f:close))
               (local renamed (and ok written closed (os.rename temp file)))
+              (when renamed
+                (set state.file-sig (file-sig file)))
               (os.remove temp)
               renamed)))))))
 
+(fn check-disk-cache! []
+  (when (not= state.cache-path false)
+    (let [key (or state.account-key (account-key))]
+      (when key
+        (let [file (M.cache-path)
+              sig (file-sig file)]
+          (when (and sig (not= sig state.file-sig))
+            (M.load-cache key true)
+            true))))))
+
 (fn M.snapshot []
+  (check-disk-cache!)
   (let [now (os.time)
         windows (icollect [_ w (ipairs state.windows)]
                   (collect [k v (pairs w)] k v))]
@@ -155,7 +180,7 @@
      :failure state.failure
      :status (if (> (length windows) 0)
                  (if (or state.failure reset?
-                         (>= (- now state.retrieved-at) 60))
+                         (>= (- now (or state.retrieved-at 0)) 60))
                      :stale
                      :fresh)
                  (if (= state.failure :unsupported) :unsupported :unavailable))}))
@@ -364,12 +389,22 @@
     rows))
 
 (fn active-codex? [ctx]
-  (var provider (?. ctx :status-info :provider))
-  (when (and ctx.state (not= ctx.state.active-workspace-id :main-session))
+  (var provider (or (?. ctx :agent :provider-name)
+                    (?. ctx :state :agent :provider-name)
+                    (?. ctx :status-info :provider) (?. ctx :opts :provider)
+                    state.last-llm-provider))
+  (when (and (?. ctx :state) (not= ctx.state.active-workspace-id :main-session))
     (each [_ workspace (ipairs (or ctx.state.workspaces []))]
       (when (= workspace.id ctx.state.active-workspace-id)
         (set provider workspace.provider))))
-  (= provider :openai-codex))
+  (or (= provider :openai-codex) (= provider "openai-codex")))
+
+(fn any-expired-window? [windows now]
+  (var expired? false)
+  (each [_ w (ipairs (or windows []))]
+    (when (>= now w.reset-at)
+      (set expired? true)))
+  expired?)
 
 (fn panel-snapshot []
   (if state.panel-unsupported?
@@ -408,8 +443,7 @@
                           :state state
                           :before-command (fn [ctx]
                                             (set state.panel-unsupported?
-                                                 (not= (?. ctx :opts :provider)
-                                                       :openai-codex)))
+                                                 (not (active-codex? ctx))))
                           :on-toggle (fn []
                                        (when (and state.visible?
                                                   (not state.panel-unsupported?)
@@ -419,12 +453,44 @@
                                        (api.emit {:type :redraw}))})
   (api.on :runtime-tick
           (fn [_]
+            (when (check-disk-cache!)
+              (api.emit {:type :redraw}))
+            (when (not state.refresh-co)
+              (let [now (os.time)
+                    snapshot (M.snapshot)]
+                (when (and (not state.panel-unsupported?)
+                           (or state.visible?
+                               (any-expired-window? state.windows now))
+                           (or (= snapshot.status :stale)
+                               (any-expired-window? state.windows now))
+                           (or (not state.attempted-at)
+                               (>= (- now state.attempted-at) 60)))
+                  (set state.refresh-co
+                       (coroutines.create #(M.refresh coroutine.yield))))))
             (when state.refresh-co
               (let [co state.refresh-co]
                 (coroutine.resume co)
                 (when (= (coroutine.status co) :dead)
                   (set state.refresh-co nil)
                   (api.emit {:type :redraw}))))))
+  (api.on :llm-start
+          (fn [ev]
+            (when ev.provider
+              (set state.last-llm-provider ev.provider))))
+  (api.on :llm-end
+          (fn [ev]
+            (let [prov (or (?. ev :provider) state.last-llm-provider)]
+              (when (or (= prov :openai-codex) (= prov "openai-codex"))
+                (when (not state.refresh-co)
+                  (let [now (os.time)
+                        snapshot (M.snapshot)]
+                    (when (or (= snapshot.status :stale)
+                              (= snapshot.status :unavailable)
+                              (any-expired-window? state.windows now)
+                              (not state.attempted-at)
+                              (>= (- now state.attempted-at) 60))
+                      (set state.refresh-co
+                           (coroutines.create #(M.refresh coroutine.yield))))))))))
   (api.register :tool
                 {:name :account_usage
                  :label "account usage"

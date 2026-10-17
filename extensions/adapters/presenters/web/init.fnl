@@ -124,8 +124,11 @@
                              {:text (.. "ctx:"
                                         (if (= s.context-estimated? false) ""
                                             "~")
-                                        (fmt-tokens (or s.approx-context
-                                                        s.last-input)))
+                                        (fmt-tokens (if (and s.approx-context
+                                                             (> s.approx-context
+                                                                0))
+                                                        s.approx-context
+                                                        (or s.last-input 0))))
                               :style :status}))})
   (api.register :status
                 {:name :steering-queue

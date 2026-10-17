@@ -280,4 +280,18 @@
                   (set os.rename rename)
                   (assert.is_true ok (tostring err))
                   (assert.equal original (read))
-                  (assert.equal 2 (length (path.list-dir dir)))))))
+                  (assert.equal 2 (length (path.list-dir dir)))))
+            (it "reloads disk cache when modified by another process without waiting for claim-attempt"
+                (fn []
+                  (local (first first-state) (instance))
+                  (first.refresh)
+                  (assert.equal 78
+                                (. (first.snapshot) :windows 1
+                                   :remaining-percent))
+                  (local (second second-state) (instance))
+                  (second.record-limit {:length-seconds 18000
+                                        :reset-at (+ (os.time) 600)}
+                                       account)
+                  (local snap (first.snapshot))
+                  (assert.equal 0 (. snap :windows 1 :remaining-percent))
+                  (assert.equal 0 (. first-state.windows 1 :remaining-percent))))))

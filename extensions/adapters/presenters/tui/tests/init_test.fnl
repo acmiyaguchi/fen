@@ -647,6 +647,26 @@
                   (assert.are.equal 0 state.status-info.turn-start)
                   (assert.is_false state.status-info.thinking?)
                   (assert.is_false state.status-info.cancelling?)))
+            (it "tracks cumulative and last-input token accounting including prompt cache on :llm-end"
+                (fn []
+                  (set state.status-info.cum-input 0)
+                  (set state.status-info.cum-output 0)
+                  (set state.status-info.cum-cache-read 0)
+                  (set state.status-info.cum-cache-write 0)
+                  (set state.status-info.last-input 0)
+                  (set state.status-info.approx-context 0)
+                  (set state.status-info.context-estimated? true)
+                  (ingest.append-event {:type :llm-end
+                                        :usage {:input 200
+                                                :output 50
+                                                :cache-read 1000
+                                                :cache-write 0}})
+                  (assert.are.equal 200 state.status-info.cum-input)
+                  (assert.are.equal 50 state.status-info.cum-output)
+                  (assert.are.equal 1000 state.status-info.cum-cache-read)
+                  (assert.are.equal 1200 state.status-info.last-input)
+                  (assert.are.equal 1250 state.status-info.approx-context)
+                  (assert.is_false state.status-info.context-estimated?)))
             (it "normalizes extension-loaded events into durable info rows"
                 (fn []
                   (ingest.append-event {:type :extension-loaded

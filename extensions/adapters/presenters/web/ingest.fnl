@@ -92,7 +92,16 @@
         (do
           (set s.thinking? false)
           (when ev.usage
-            (set s.last-input (or ev.usage.input s.last-input))))
+            (let [u ev.usage
+                  prompt-tokens (+ (or u.input 0) (or u.cache-read 0)
+                                   (or u.cache-write 0))
+                  total-context (+ prompt-tokens (or u.output 0))]
+              (set s.last-input
+                   (if (> prompt-tokens 0) prompt-tokens
+                       (or u.input s.last-input)))
+              (when (> total-context 0)
+                (set s.approx-context total-context)
+                (set s.context-estimated? false)))))
         (= ev.type :tool-call)
         (do
           (set ev.args-pretty (args->string ev.arguments))
