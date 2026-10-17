@@ -194,13 +194,13 @@
               output (or mu.output 0)
               cr (or mu.cache-read 0)
               cw (or mu.cache-write 0)
-              total (or mu.total-tokens (+ input output cr cw))]
+              total (or mu.total-tokens (+ input output))]
           (set u.input (+ u.input input))
           (set u.output (+ u.output output))
           (set u.cache-read (+ u.cache-read cr))
           (set u.cache-write (+ u.cache-write cw))
           (set u.total-tokens (+ u.total-tokens total))
-          (set u.last-input input)
+          (set u.last-input (+ input cr cw))
           (set u.last-output output))))
     u))
 

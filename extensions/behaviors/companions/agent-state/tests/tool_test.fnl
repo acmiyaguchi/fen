@@ -319,4 +319,24 @@
                                    {:agent (agent reg)})]
                     (assert.is_true r.is-error?)
                     (assert.is_truthy (string.find (first-text r.content)
-                                                   "unterminated")))))))
+                                                   "unterminated")))))
+            (it "summarizes message usage accounting for cached prompt tokens in last-input"
+                (fn []
+                  (let [reg (agent-state-registry)
+                        a (agent reg)]
+                    (set a.messages
+                         [(types.assistant-message {:content [(types.text-block "test")]
+                                                    :usage {:input 50
+                                                            :output 20
+                                                            :cache-read 400
+                                                            :cache-write 0}})])
+                    (let [r (execute reg :agent_state {:query "(:get :usage)"}
+                                     {:agent a})
+                          decoded (json.decode (first-text r.content))]
+                      (assert.is_false r.is-error?)
+                      (assert.are.equal 50 decoded.input)
+                      (assert.are.equal 20 decoded.output)
+                      (assert.are.equal 400 (. decoded "cache-read"))
+                      (assert.are.equal 70 (. decoded "total-tokens"))
+                      (assert.are.equal 450 (. decoded "last-input"))
+                      (assert.are.equal 20 (. decoded "last-output"))))))))

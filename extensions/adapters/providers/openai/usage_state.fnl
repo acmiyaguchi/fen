@@ -4,5 +4,7 @@
  :attempted-at nil
  :failure :unavailable
  :account-key nil
+ :file-sig nil
+ :last-llm-provider nil
  :visible? false
  :refresh-co nil}

@@ -289,4 +289,32 @@
                   (toggle)
                   (toggle)
                   ((. handlers :runtime-tick) {})
-                  (assert.equal 1 requests)))))
+                  (assert.equal 1 requests)))
+            (it "allows toggling usage panel when active agent provider is openai-codex even if initial CLI opts differed"
+                (fn []
+                  (set state.attempted-at (os.time))
+                  ((. specs :command :handler) ""
+                                               {:opts {:provider :anthropic}
+                                                :agent {:provider-name :openai-codex}})
+                  (assert.is_false state.panel-unsupported?)
+                  ((. specs :command :handler) "off"
+                                               {:opts {:provider :anthropic}
+                                                :agent {:provider-name :anthropic}})
+                  (assert.is_true state.panel-unsupported?)))
+            (it "automatically refreshes expired quota on runtime-tick when reset-at has passed"
+                (fn []
+                  (set state.panel-unsupported? false)
+                  (set state.refresh-co nil)
+                  (set state.attempted-at (- (os.time) 120))
+                  (tset state.windows 1 :reset-at (- (os.time) 10))
+                  (assert.is_nil state.refresh-co)
+                  ((. handlers :runtime-tick) {})
+                  (assert.is_not_nil state.refresh-co)))
+            (it "triggers background refresh on llm-end when codex turn completes and quota is stale"
+                (fn []
+                  (set state.refresh-co nil)
+                  (set state.attempted-at (- (os.time) 120))
+                  (set state.retrieved-at (- (os.time) 120))
+                  (assert.is_nil state.refresh-co)
+                  ((. handlers :llm-end) {:provider :openai-codex})
+                  (assert.is_not_nil state.refresh-co)))))

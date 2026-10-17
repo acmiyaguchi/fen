@@ -174,14 +174,22 @@
           (set state.status-info.retry-reason nil)
           (when ev.usage
             (let [u ev.usage
-                  s state.status-info]
+                  s state.status-info
+                  prompt-tokens (+ (or u.input 0) (or u.cache-read 0)
+                                   (or u.cache-write 0))
+                  total-context (+ prompt-tokens (or u.output 0))]
               (set s.cum-input (+ (or s.cum-input 0) (or u.input 0)))
               (set s.cum-output (+ (or s.cum-output 0) (or u.output 0)))
               (set s.cum-cache-read
                    (+ (or s.cum-cache-read 0) (or u.cache-read 0)))
               (set s.cum-cache-write
                    (+ (or s.cum-cache-write 0) (or u.cache-write 0)))
-              (set s.last-input (or u.input s.last-input)))))
+              (set s.last-input
+                   (if (> prompt-tokens 0) prompt-tokens
+                       (or u.input s.last-input)))
+              (when (> total-context 0)
+                (set s.approx-context total-context)
+                (set s.context-estimated? false)))))
         (= ev.type :provider-retry)
         (let [s state.status-info]
           (clear-hosted-tools!)

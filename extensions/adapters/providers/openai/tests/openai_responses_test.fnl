@@ -853,6 +853,70 @@
                     (assert.are.equal 20 asst.usage.input)
                     (assert.are.equal 80 asst.usage.cache-read)
                     (assert.are.equal 5 asst.usage.output))))
+            (it "captures usage from response.done events"
+                (fn []
+                  (let [events [{:type :response.output_item.added
+                                 :item {:type :message
+                                        :id "msg_1"
+                                        :role :assistant
+                                        :content []}}
+                                {:type :response.output_text.delta
+                                 :delta "done"}
+                                {:type :response.output_item.done
+                                 :item {:type :message
+                                        :id "msg_1"
+                                        :role :assistant
+                                        :content [{:type :output_text
+                                                   :text "done"}]}}
+                                {:type :response.done
+                                 :response {:status :completed
+                                            :usage {:input_tokens 50
+                                                    :output_tokens 10
+                                                    :total_tokens 60}}}]
+                        asst (run-events events nil)]
+                    (assert.are.equal :stop asst.stop-reason)
+                    (assert.are.equal 50 asst.usage.input)
+                    (assert.are.equal 10 asst.usage.output)
+                    (assert.are.equal 60 asst.usage.total-tokens))))
+            (it "extracts usage when prompt_tokens and cached details are present"
+                (fn []
+                  (let [events [{:type :response.output_item.added
+                                 :item {:type :message
+                                        :id "msg_1"
+                                        :role :assistant
+                                        :content []}}
+                                {:type :response.output_text.delta :delta "ok"}
+                                {:type :response.output_item.done
+                                 :item {:type :message
+                                        :id "msg_1"
+                                        :role :assistant
+                                        :content [{:type :output_text
+                                                   :text "ok"}]}}
+                                {:type :response.completed
+                                 :response {:status :completed
+                                            :usage {:prompt_tokens 120
+                                                    :completion_tokens 8
+                                                    :total_tokens 128
+                                                    :prompt_tokens_details {:cached_tokens 100}}}}]
+                        asst (run-events events nil)]
+                    (assert.are.equal 20 asst.usage.input)
+                    (assert.are.equal 100 asst.usage.cache-read)
+                    (assert.are.equal 8 asst.usage.output)
+                    (assert.are.equal 128 asst.usage.total-tokens))))
+            (it "preserves usage on failed responses when usage is provided"
+                (fn []
+                  (let [events [{:type :response.failed
+                                 :response {:status :failed
+                                            :error {:code "rate_limit"
+                                                    :message "limit reached"}
+                                            :usage {:input_tokens 45
+                                                    :output_tokens 0
+                                                    :total_tokens 45}}}]
+                        asst (run-events events nil)]
+                    (assert.are.equal :error asst.stop-reason)
+                    (assert.are.equal 45 asst.usage.input)
+                    (assert.are.equal 0 asst.usage.output)
+                    (assert.are.equal 45 asst.usage.total-tokens))))
             (it "buffers streamed tool-call arguments and parses on done"
                 (fn []
                   (let [events [{:type :response.output_item.added
