@@ -12,7 +12,7 @@ Streaming rows on retry, error, and cancel are covered in [network](../network/F
 
 ## Bugs
 
-### T1. Ctrl-C on a side or subagent tab cancels, then force-quits, the hidden main turn
+### #660: Ctrl-C on a side or subagent tab cancels, then force-quits, the hidden main turn
 
 Counterexamples: `ctrlCActsOnShownTurn` (`type → submitMain → openSide`) and `busyHintTruthful` (`type → submitMain → subStart → focusMouse`).
 `handle-key` first calls `workspaces.cancel-active!`.
@@ -40,7 +40,7 @@ PROBE 2nd ctrl-c: quit?	true
 
 On the idle side tab, Ctrl-C also does not clear the side draft (`"side draft"` survives) as it would with main idle.
 
-### T2. A quit armed on one tab carries over to another tab after a mouse click
+### #661: A quit armed on one tab carries over to another tab after a mouse click
 
 Counterexample (`quitArmOnFocusedTab`): `subStart → arm → focusMouse`.
 Every key except Ctrl-C clears `pending-quit?` at the top of `handle-key`, so Alt-arrow switching disarms it.
@@ -60,7 +60,7 @@ PROBE after alt-right: focused	btw	pending	false      (control: keyboard switch 
 The status row does show "ctrl-c again to quit", so this is minor.
 The real problem is that the same switch behaves differently by keyboard and by mouse.
 
-### T3. Steering typed for a turn that errors or is cancelled lands in the next turn, after the new prompt
+### #662: Steering typed for a turn that errors or is cancelled lands in the next turn, after the new prompt
 
 Counterexample (`steeringReachesItsTurn`): `type → submitMain → type → queueSteer → type → error → submitMain`.
 Enter while the main turn is busy queues the line as steering (and shows it as a `:user` row right away).
@@ -83,7 +83,7 @@ cancel path:  PROBE turn1 -> [cancelled]    PROBE queued after cancel: 1
 This sits on the TUI and agent-loop boundary.
 If the agent-loop domain reports it too, treat this as the same bug.
 
-### T4. Reopening `/btw` while a closed tab's turn is still being reaped mixes the two conversations
+### #663: Reopening `/btw` while a closed tab's turn is still being reaped mixes the two conversations
 
 Counterexamples: `sideEntryOwned` (`openSide → type → submitSide → closeSideSlow → openSide`) and `eventsInOwnTab` (… `closeSideSlow → openSide → sideFinish`).
 `side-chat.cancel!` gets 8 resumes to unwind the turn (`CANCEL-RESUME-LIMIT`).
@@ -119,23 +119,23 @@ The bug needs a turn that takes longer to unwind, which is exactly the case the 
 
 ## Open questions
 
-- Which real turns take more than 8 resumes to unwind after a cancel request (T4's precondition)? Candidates are tools that `pcall` around the yield function, and parallel tool tasks in nested coroutines. None has been shown yet.
+- Which real turns take more than 8 resumes to unwind after a cancel request (#663's precondition)? Candidates are tools that `pcall` around the yield function, and parallel tool tasks in nested coroutines. None has been shown yet.
 - While a closed side turn is being reaped, `side-chat.busy?` is false, so `peek-timeout-ms` uses the long idle poll and the reap advances slowly. This is a latency concern only and was not probed.
 - `guard-tick!` errors from `side-chat.tick!` go out on the bus, so they land in the main transcript, not the `btw` tab. That is arguably right for a presenter fault. Not modelled.
 
 ## Candidate fix (modelled as `fixed`)
 
-- T1: the main cancel/force-quit ladder applies only when the main tab is focused. Other tabs either cancel their own turn through the kind's `cancel!` or fall through to clear-draft and the two-press quit. The hint then matches the action.
-- T2: `workspaces.activate!` clears `pending-quit?`, so every focus path disarms it.
-- T3: when a turn ends by error or cancel, its queued steering lines are handed back (for example restored to the main draft or shown as an info row), not left for the next turn.
-- T4: `cancel!`'s slow path removes the entry from `volatile.live` into the reap list. Each turn routes events to the tab generation that started it (capture the workspace record or a turn token, not `WORKSPACE-ID`), and events for a closed tab are dropped.
+- #660: the main cancel/force-quit ladder applies only when the main tab is focused. Other tabs either cancel their own turn through the kind's `cancel!` or fall through to clear-draft and the two-press quit. The hint then matches the action.
+- #661: `workspaces.activate!` clears `pending-quit?`, so every focus path disarms it.
+- #662: when a turn ends by error or cancel, its queued steering lines are handed back (for example restored to the main draft or shown as an info row), not left for the next turn.
+- #663: `cancel!`'s slow path removes the entry from `volatile.live` into the reap list. Each turn routes events to the tab generation that started it (capture the workspace record or a turn token, not `WORKSPACE-ID`), and events for a closed tab are dropped.
 
 All invariants hold under `fixed`.
 
 ## Core
 
 All four bugs have one cause: the code resolves "the current turn" through a global at the time of use, not through the owner recorded when the turn started.
-In T1 that global is `is-busy?` and `cancel-pressed?`, in T2 `pending-quit?`, in T3 the steering queue, and in T4 the `:btw` id.
+In #660 that global is `is-busy?` and `cancel-pressed?`, in #661 `pending-quit?`, in #662 the steering queue, and in #663 the `:btw` id.
 A pure TUI core `(state, event) -> (state', effects)` needs very little:
 
 - a tab table where each tab holds `{kind, view, turn: {id, status, cancel-armed?}}`, plus `focus`;

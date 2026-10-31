@@ -20,7 +20,7 @@ Random simulation picks one disruption kind per trace (`scenario`), so its steps
 
 ## Bugs
 
-### W1. A steer sent once the child is committed to exit is never answered nor reported (`everyReadControlAcked`, `userSteersAccounted`, `noDoomedSteer`)
+### #664: A steer sent once the child is committed to exit is never answered nor reported (`everyReadControlAcked`, `userSteersAccounted`, `noDoomedSteer`)
 
 Counterexample (in-tree parent, no disruption): `childStart → childPoll(prompt) → childAnswer → parentPoll → parentDrive(close) → userSteer → parentDrive(steer) → childPoll`.
 The parent's mirror is `ready` with nothing unacked, so it sends `close`.
@@ -53,7 +53,7 @@ W1p events: subagent-start agent-started assistant-text llm-end steering subagen
 The run has no `steering-rejected` event.
 A second case, where the steer is requested after `exit` was emitted, gives `W1b controls: prompt close`: the steer is never sent and has no event either.
 
-### W2. A budget `finalize` sent on a stale mirror replaces a finished answer (`naturalAnswerKept`)
+### #665: A budget `finalize` sent on a stale mirror replaces a finished answer (`naturalAnswerKept`)
 
 Counterexample: `childStart → childPoll(prompt) → childToolCall → parentPoll → parentPoll → childAnswer → parentDrive(finalize) → childPoll`.
 `maybe-finalize!` fires when the parent has read the tool call that hit `max-tool-calls` (or the artifact checkpoint timer fires) but not yet the final answer.
@@ -78,7 +78,7 @@ W2p controls: prompt finalize
 W2p answer: forced answer  budget-limited? true
 ```
 
-### W3. An empty steer is accepted but never injected, and it blinds ref matching for every later steer (`queuedSteersAccounted`)
+### #666: An empty steer is accepted but never injected, and it blinds ref matching for every later steer (`queuedSteersAccounted`)
 
 Counterexample (`scenario = empty`): two steers, the first with text `""`, both queued in `running`, then the turn ends and the run closes.
 The schema allows `text: ""`, and `decide(running, steer)` queues it.
@@ -97,7 +97,7 @@ W3 steering-injected text= real steer  ref= nil  refs= nil
 (no info event)
 ```
 
-### W4. The spilled final-text file leaks when the child dies between spilling and the result line (`finalTextFileRemovedOnce`)
+### #667: The spilled final-text file leaks when the child dies between spilling and the result line (`finalTextFileRemovedOnce`)
 
 Counterexample (`scenario = longCrash`): `… childAnswer → envCrashAtResult → parentDrive(close) → childPoll(close: spill, then die) → parentSettle`.
 `result-line` writes the whole answer to `os.tmpname()` *before* the `result` line is appended.
@@ -117,15 +117,15 @@ Severity is low because the window is narrow, but the ownership rule ("the paren
 
 ## Candidate fix (modelled as `fixed`)
 
-- Child: defer the exit a control causes to the end of its poll batch, so every line read gets an ack (`decide` in a terminal state rejects the rest), with `result`/`exit` still last (W1, `everyReadControlAcked`).
+- Child: defer the exit a control causes to the end of its poll batch, so every line read gets an ack (`decide` in a terminal state rejects the rest), with `result`/`exit` still last (#664, `everyReadControlAcked`).
 - Parent: keep a steer ledger, so every steer the user was told about ends `injected`, `rejected`, `dropped`, or unanswered.
-  At settle, report every unsent or unresolved steer as dropped, and hold steers once `close` is sent or the mirror leaves `starting`/`ready`/`running` (W1).
-- `decide(ready, finalize)` is `finish`: a finalize that finds the turn already over keeps its answer and emits `result` (W2).
+  At settle, report every unsent or unresolved steer as dropped, and hold steers once `close` is sent or the mirror leaves `starting`/`ready`/`running` (#664).
+- `decide(ready, finalize)` is `finish`: a finalize that finds the turn already over keeps its answer and emits `result` (#665).
   This changes the documented meaning of finalize from `ready`.
   A narrower alternative is a conditional control, `finalize {turn: N}`, that applies only while turn N is running and otherwise acts as `close`.
-- Reject empty `steer`/`follow-up` text, either in `decide` or with `minLength: 1` in the schema (W3).
+- Reject empty `steer`/`follow-up` text, either in `decide` or with `minLength: 1` in the schema (#666).
   More robustly, carry the control `ref` on the queue item instead of matching by text, and count drops from `pending`, not from the service queue.
-- The parent names the spill file (as it names the control and event files, e.g. `FEN_WIRE_RESULT_PATH`) and always removes it in `finish!` (W4).
+- The parent names the spill file (as it names the control and event files, e.g. `FEN_WIRE_RESULT_PATH`) and always removes it in `finish!` (#667).
 
 Every invariant holds under `fixed`.
 
@@ -156,7 +156,7 @@ Every invariant holds under `fixed`.
   This needs a short write (disk full) and was not probed.
 - `final-text-path` is trusted: the parent `os.remove`s whatever path the child names.
   The child is fen itself, but the field is wire input.
-  Parent-named spill files (W4's fix) would also remove that trust.
+  Parent-named spill files (#667's fix) would also remove that trust.
 
 ## Core
 
@@ -166,7 +166,7 @@ Each control is answered once, then either takes effect or is reported dropped.
 `result` comes at most once, immediately before `exit`.
 Today "answered once" fails at exactly the moment the run ends: the last batch, after `exit`, and after the parent stops reading.
 "Reported dropped" also relies on matching queued text, which is fragile.
-Making the ledger explicit on both sides fixes W1 and W3 together.
+Making the ledger explicit on both sides fixes #664 and #666 together.
 Queue items carry their `ref`, and the parent settles every control it sent as `injected`, `rejected`, `dropped`, or "unanswered at exit".
-W2 shows that state-relative controls (`finalize`, and `close`) race the child's own transitions.
+#665 shows that state-relative controls (`finalize`, and `close`) race the child's own transitions.
 Having a control name the turn it targets would make every control idempotent against the mirror's lag, and would let the parent drop its "only when the mirror says X" guards.

@@ -156,7 +156,7 @@ module serve {
     val ownPending = pendingIds(base).filter(i => base.reqs.get(i).turn == t)
     val resolved = if (END_RESOLVES) base.resolveWhere(ownPending, "ended") else base
     // TARGETED: queued lines for this turn are handed back (rejected, acked);
-    // today they stay queued for the next turn (spec/tui-turns T3).
+    // today they stay queued for the next turn (spec/tui-turns #662).
     if (TARGETED) { ...resolved, queue: [] } else resolved
 
   pure def startTurn(st: S): S =

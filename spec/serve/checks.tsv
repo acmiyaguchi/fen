@@ -1,29 +1,29 @@
-# main	invariant	expect (holds|violated)
-# issue designs as written (#394/#396/#397/#398)
+# main	invariant	expect (holds|violated)	issues (violated rows)
+# main	invariant	expect (holds|violated)	issues (violated rows)
 issue	singleTurn	holds
 issue	resolvedAtMostOnce	holds
-issue	answersAcked	violated
-issue	resolutionInScope	violated
-issue	noStaleContinuation	violated
-issue	answerMatchesShownChoices	violated
-issue	noPendingForEndedTurn	violated
-issue	cancelHitsSeenTurn	violated
-issue	steeringReachesSeenTurn	violated
-issue	noSilentGap	violated
-issue	caughtUpSeesPending	violated
-issue	caughtUpSeesTurn	violated
+issue	answersAcked	violated	#398
+issue	resolutionInScope	violated	#638
+issue	noStaleContinuation	violated	#398
+issue	answerMatchesShownChoices	violated	#398
+issue	noPendingForEndedTurn	violated	#398
+issue	cancelHitsSeenTurn	violated	#397
+issue	steeringReachesSeenTurn	violated	#397
+issue	noSilentGap	violated	#396
+issue	caughtUpSeesPending	violated	#396
+issue	caughtUpSeesTurn	violated	#396
 issue	pendingHasAnswerer	holds
 issue	remoteNoCommands	holds
 issue	answerHitsItsRequest	holds
 issue	noDuplicateDelivery	holds
-# replay option: subscribe before the yielding JSONL replay
-issueDup	noDuplicateDelivery	violated
-issueDup	inOrderDelivery	violated
-# serve alongside a headless presenter
-headless	pendingHasAnswerer	violated
-# web presenter code #396 says to reuse
-webReuse	answerHitsItsRequest	violated
-webReuse	remoteNoCommands	violated
-# proposed protocol
+# main	invariant	expect (holds|violated)	issues (violated rows)
+issueDup	noDuplicateDelivery	violated	#396
+issueDup	inOrderDelivery	violated	#396
+# main	invariant	expect (holds|violated)	issues (violated rows)
+headless	pendingHasAnswerer	violated	#398
+# main	invariant	expect (holds|violated)	issues (violated rows)
+webReuse	answerHitsItsRequest	violated	#396
+webReuse	remoteNoCommands	violated	#396
+# main	invariant	expect (holds|violated)	issues (violated rows)
 proposed	allInvariants	holds
 proposedTui	allInvariants	holds

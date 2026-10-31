@@ -9,7 +9,7 @@ Code: `packages/core/src/fen/core/extensions/loader/init.fnl` (`load-module-spec
 
 ## Bugs
 
-### X1. A module error during `/reload` aborts the pass after the extension was already unregistered
+### #624: A module error during `/reload` aborts the pass after the extension was already unregistered
 
 Counterexample (`reloadVisitsEveryOwner`, `attemptedOwnerListed`, `reloadCommandAvailable`): `init → edit(A, badModule) → reloadAll`.
 `load-module-spec!` calls `unregister-by-owner` first, then `clear-reload-modules!`, which `error`s on a failed module outside any pcall.
@@ -31,11 +31,11 @@ reload-extension! alpha: pcall ok?	false	.../loader/reload.fnl:175: reload probe
 alpha lost its command, its bus handler, and its status record, and beta was never reloaded.
 `reload-extension!` raises instead of returning `(false err)` as documented.
 
-### X2. A failed module's fingerprint is committed, so the next `/reload` silently brings back the old code as `:loaded`
+### #625: A failed module's fingerprint is committed, so the next `/reload` silently brings back the old code as `:loaded`
 
 Counterexample (`loadedStatusTruthful`): `init → edit(B, badModule) → reloadAll → reloadAll`.
 `clear-reload-modules!` calls `change-summary`, which commits every fingerprint before any module runs.
-After the failure in X1, the next reload sees no change, skips the broken module, `require` returns the old table that was put back in `package.loaded`, and registration succeeds.
+After the failure in #624, the next reload sees no change, skips the broken module, `require` returns the old table that was put back in `package.loaded`, and registration succeeds.
 The extension reports `:loaded` with 0 changed while the source on disk is still broken.
 Core reload already does this correctly: `reload-core!` commits a fingerprint only after the module reloads and keeps `reload-core-failures` so it retries next time.
 
@@ -49,7 +49,7 @@ reload #2:	true	nil
 after #2: alpha-v1	alpha	status	loaded	(source on disk is still the broken v2)
 ```
 
-### X3. Reloading or failing one extension makes the registry differ from a fresh start
+### #626: Reloading or failing one extension makes the registry differ from a fresh start
 
 Counterexample (`registryMatchesFreshStart`): `init → reloadOne(A)`.
 Singleton kinds (commands, providers, auth/session backends) use `set-tagged!`, so the last writer wins, and `unregister-by-owner` drops only the winner's record.
@@ -62,7 +62,7 @@ Array kinds append, so a reloaded owner moves to the end of the bucket. That cha
 - the order of prompt fragments that share the default `:order 90` (by `seq`), which also changes the system-prompt bytes and therefore the prompt-cache prefix,
 - before-tool hook order and bus handler order.
 
-A full `/reload` replays discovery order, so it restores fresh-start order unless X1 cuts the pass short. The TUI is the exception: it is reloaded last on purpose (see Open questions).
+A full `/reload` replays discovery order, so it restores fresh-start order unless #624 cuts the pass short. The TUI is the exception: it is reloaded last on purpose (see Open questions).
 
 Confirmed (probe `zz_probe_extensions_reload_test.fnl`): alpha and beta both register command `:dup`, tool `:dup_tool`, and a default-order prompt fragment:
 
@@ -74,7 +74,7 @@ reload-extension beta:	false	...: beta register boom
 after beta failure: /dup owner	nil	(fresh start with beta failing would give alpha)
 ```
 
-### X4. The model-facing `extension` tool reloads synchronously mid-turn
+### #627: The model-facing `extension` tool reloads synchronously mid-turn
 
 Counterexamples:
 - `noRegistrySwapDuringTurn`: `init → startTurn → midTurnReload`
@@ -83,7 +83,7 @@ Counterexamples:
 
 The documented contract is that the `reload` tool only queues and runs at the idle boundary ("so modules never swap during a stream or tool call", `interactive.fnl`).
 The `extension` tool's `action=reload` skips that contract: `execute-tool` calls `perform-extension-reload!`, which runs `reload-extension!` and replaces `state.agent` while the turn is still running.
-The turn keeps stepping the agent `turn_submit` captured, using its `agent.tools` snapshot from `make-agent`. That snapshot can still hold tools whose owner was just unregistered (X1 makes this likely), and it cannot see the new tools.
+The turn keeps stepping the agent `turn_submit` captured, using its `agent.tools` snapshot from `make-agent`. That snapshot can still hold tools whose owner was just unregistered (#624 makes this likely), and it cannot see the new tools.
 `session_lifecycle`'s `:message-appended` bridge flushes only when `ev.agent == state.agent`, so the rest of that turn's tool results and reply are not persisted.
 They are written only when the replacement agent appends its first message. Nothing flushes at shutdown, so quitting right after the turn loses them from the session JSONL.
 
@@ -97,7 +97,7 @@ flushes after old-agent message-appended	0
 
 The turn path (`turn_submit.start!` passes `state.agent` once to `agent-step`; `append-message!` emits `{:agent agent}`; `M.close!` does not flush) was traced line by line.
 
-### X5. Tool registration does not validate `:execute`
+### #628: Tool registration does not validate `:execute`
 
 Counterexample (`registeredCallablesPresent`): `init → registerMalformed(tool)`.
 `:command` requires `{:handler fn}`, `:hook` requires `{:before-tool fn}`, and `:provider` requires `:complete`, but `:tool` checks only `:name` and `:exposure`.
@@ -139,7 +139,7 @@ All invariants hold under `fixed` (60k samples × 30 steps).
 - `/reload` reloads the TUI last (`skip-names {:tui true}`, then `only-names {:tui true}`), so its controls, handlers, and commands move to the end of their buckets, while a fresh start places them in discovery order. This matters only if another extension shares a TUI control key or command name. Not checked.
 - `emit {:type :*}` dispatches the `:*` bucket twice, because the type bucket and the wildcard bucket are the same table. Wildcard subscribers then get the event twice. Found by reading the code; it needs a caller to emit `:*`, which none does.
 - `util.deep-copy` has no cycle guard, so a self-referential spec overflows the stack inside the register pcall. It is reported as an extension error, not a crash.
-- The `state.fnl` doc says `tools-extra` is "appended to the agent's base tool set each step", but `agent.tools` is a snapshot taken at `make-agent`. This doc drift hides X4.
+- The `state.fnl` doc says `tools-extra` is "appended to the agent's base tool set each step", but `agent.tools` is a snapshot taken at `make-agent`. This doc drift hides #627.
 
 ## Core
 

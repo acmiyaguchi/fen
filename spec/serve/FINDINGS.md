@@ -54,7 +54,7 @@ Counterexamples:
 
 - `cancelHitsSeenTurn`: `connect(1) → finishReplay → send(0) [turn 1] → turnEnd → send(0) [turn 2] → deliver(1) [remote now sees turn 1] → cancel(1)`. The remote cancel kills turn 2, which the local user started and the remote never saw.
 - `steeringReachesSeenTurn`: `connect(1) → finishReplay → send(0) [turn 1] → send(1) → inject`. Remote 1 still sees idle and sends a new prompt. It arrives while turn 1 is busy, so `on-submit` queues it as steering, and it is injected into the local user's turn 1 as a mid-turn correction.
-- The same invariant also catches a stale steer that arrives after its turn ended. That steer either starts a fresh turn (`busy?` is false) or waits in the queue for the next turn (the inherited [tui-turns T3](../tui-turns/FINDINGS.md)).
+- The same invariant also catches a stale steer that arrives after its turn ended. That steer either starts a fresh turn (`busy?` is false) or waits in the queue for the next turn (the inherited [tui-turns #662](../tui-turns/FINDINGS.md)).
 
 What the design reuses: `interactive.fnl` `request-cancel` is `(when state.busy? (set state.cancel-requested? true))`, which names no turn.
 `steering.service` queues bare strings (`(table.insert q text)`), and `submit` decides prompt or steering from `ctx.busy?` at processing time.
@@ -62,7 +62,7 @@ What the design reuses: `interactive.fnl` `request-cancel` is `(when state.busy?
 That is safe for the TUI, which sees the turn change synchronously.
 It is unsafe for any client whose view lags, and a remote view always lags by at least one network round trip.
 `turn_submit.start!` already numbers turns (`state.turn-id`), so the id a targeted control needs already exists.
-The [wire](../wire/FINDINGS.md) domain's W1 and W2 are the same mistake on the parent/child channel: a control decided on a stale mirror.
+The [wire](../wire/FINDINGS.md) domain's #664 and #665 are the same mistake on the parent/child channel: a control decided on a stale mirror.
 
 ### V2. A pending request outlives the turn it was issued from (#398 leaves it open)
 
@@ -72,7 +72,7 @@ Answering it afterwards (`resolutionInScope`) gets the answer accepted, with fir
 Clients keep showing the picker, and the "winning resolution" broadcast announces a choice that had no effect.
 If the implementation resumes "the parked turn" and not "the turn that issued this id", the answer drives the next turn's question.
 
-### V3. An idle-only command acts after a turn starts under its open picker (existing code; #397 and #398 widen it)
+### #638: An idle-only command acts after a turn starts under its open picker (existing code; #397 and #398 widen it)
 
 Counterexample (`resolutionInScope`): `cmdRequest(0) [/resume picker] → send [a turn starts] → answer`.
 `command.dispatch` checks `:idle-only?` once, before the handler runs.
@@ -165,11 +165,11 @@ In words:
 
 1. **One event sequence, owned by the process.** Every bus event serve forwards gets a seq that increases across the whole process, inside an envelope that carries the run (process) id, using the existing `fen.util.wire` envelope. A client attaches with `resume {run, after-seq}`. If the run matches and the seq is still in a bounded in-memory ring, serve replays from `after-seq + 1` and continues live from a per-client cursor. Otherwise it sends an explicit `reset` followed by a snapshot (V8).
 2. **The snapshot is complete, and it is taken at a recorded seq.** A snapshot carries the messages (from `agent.messages`, not by re-reading the JSONL), the running turn id or idle, the queue contents, and every pending request with its current choices and version. It is taken at seq S, and live delivery starts at cursor S, so yielding while it is sent cannot drop or repeat events (V8). A client that falls behind the ring is disconnected and gets a reset when it reconnects.
-3. **Every control names the turn its sender saw.** `prompt {expect: idle}`, `steer {turn}`, and `cancel {turn}` are applied only if that is still the state. Otherwise they get a rejection ack that carries the current turn id. Steering lines are stored with their turn, and when a turn ends its unconsumed lines are handed back (acked as rejected), never left for the next turn (V1, tui-turns T3).
+3. **Every control names the turn its sender saw.** `prompt {expect: idle}`, `steer {turn}`, and `cancel {turn}` are applied only if that is still the state. Otherwise they get a rejection ack that carries the current turn id. Steering lines are stored with their turn, and when a turn ends its unconsumed lines are handed back (acked as rejected), never left for the next turn (V1, tui-turns #662).
 4. **Every control gets exactly one ack**: accepted, rejected with a reason, or applied. This covers select answers, late and duplicate ones included, as `docs/wire.md` already requires (V7).
 5. **A request id is unique within its run, and its scope is recorded when it is issued**: a turn id, or "idle" for a command picker. An answer names the id and the choice version it was made against, and picks a choice by a stable key, not a list index. A refreshed choice list is broadcast as `select-updated` with a new version (V6, V9).
 6. **Every request resolves exactly once**, as answered, cancelled, timed out, turn-ended, or reloaded, and the resolution, with its reason and winner, is broadcast. Ending or cancelling a turn resolves that turn's requests. `/reload` resolves the pending idle-scoped requests (V2, V5).
-7. **A resolution is applied only in its scope.** A turn-scoped answer resumes only the turn that issued it. An idle-scoped continuation re-checks its precondition (still idle, same session) before it acts, and aborts with a visible error otherwise. Pending continuations are stored as data (request id, command name, arguments) and resolved through module lookup at resume time, not as captured closures (V3, V5).
+7. **A resolution is applied only in its scope.** A turn-scoped answer resumes only the turn that issued it. An idle-scoped continuation re-checks its precondition (still idle, same session) before it acts, and aborts with a visible error otherwise. Pending continuations are stored as data (request id, command name, arguments) and resolved through module lookup at resume time, not as captured closures (#638, V5).
 8. **No request waits forever.** Every request has a deadline and a defined default (nil, the same as Esc in the TUI picker). When no client that can answer is attached, the request resolves at once to that default. That is the same behaviour as today's no-presenter fallback (V4).
 9. **Remote authority stays within the session's policy.** Remote lines reach only the steering and follow-up queues and are never dispatched as slash commands. Answers are limited to the choices of a pending request. Anything more (remote slash commands, per-client roles) is a separate decision (V9).
 

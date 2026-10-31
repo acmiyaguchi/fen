@@ -6,11 +6,11 @@
 //     natural stop: assistant-stream-end            (step returns the text)
 //     provider error: :error                        (assistant :error appended)
 //     tool use: stream-end {:final? false}, tool rows, next provider call;
-//       at the safety cap the step ends silently with "[error] ..." (L5);
+//       at the safety cap the step ends silently with "[error] ..." (#610);
 //       under :tool-choice :none a second refusal ends it with :error
 //     cancel at a yield: aborted assistant, :cancelled
 // After the step, turn_lifecycle emits :agent-turn-complete with a status
-// guessed from the LAST message (L4).
+// guessed from the LAST message (#609).
 //
 // The reference fold (refStatus / refFinal / refUsage / refDetails / refExit)
 // is the outcome every presenter is supposed to report. Each presenter's
@@ -249,7 +249,7 @@ module presenters {
   val refDetails: bool = stepEnd == "error" and lastAssistant(stepMsgs).details
   val refExit: int = if (refStatus == "ok") 0 else 1
 
-  // turn_lifecycle.complete-event: status from the last message (L4).
+  // turn_lifecycle.complete-event: status from the last message (#609).
   val lifecycleStatus: str =
     if (FIXED) refStatus
     else

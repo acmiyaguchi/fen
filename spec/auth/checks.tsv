@@ -1,10 +1,10 @@
-# main	invariant	expect (holds|violated)
-current	storeRefreshable	violated
-current	noResurrection	violated
-current	noSpuriousAuthFailure	violated
-current	singleRefreshInFlight	violated
-current	secretsPrivate	violated
-current	quotaFreshNotContradicted	violated
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	storeRefreshable	violated	#613
+current	noResurrection	violated	#612
+current	noSpuriousAuthFailure	violated	#611,#614
+current	singleRefreshInFlight	violated	#611
+current	secretsPrivate	violated	#615
+current	quotaFreshNotContradicted	violated	#616
 current	storeWholeRecord	holds
 current	cacheLockExclusive	holds
 current	quotaNoStaleExhausted	holds

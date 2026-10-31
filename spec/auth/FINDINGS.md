@@ -12,9 +12,9 @@ They made no network calls and touched no real credentials.
 
 ## Bugs
 
-### A1. Two processes refresh concurrently; the loser fails even though valid credentials are on disk
+### #611: Two processes refresh concurrently; the loser fails even though valid credentials are on disk
 
-Counterexample (`noSpuriousAuthFailure`, `singleRefreshInFlight`): `tick → begin(1) → begin(2) → respond(1) → writeTmp(1) → rename(1) → respond(2)` (the shortest trace the simulator finds for `noSpuriousAuthFailure` is A4's; `singleRefreshInFlight` is violated as soon as both processes are posting).
+Counterexample (`noSpuriousAuthFailure`, `singleRefreshInFlight`): `tick → begin(1) → begin(2) → respond(1) → writeTmp(1) → rename(1) → respond(2)` (the shortest trace the simulator finds for `noSpuriousAuthFailure` is #614's; `singleRefreshInFlight` is violated as soon as both processes are posting).
 `get-fresh-creds!` reads `auth.json`, sees the access token expiring, and POSTs the refresh token.
 It takes no lock and does not re-read after a failed POST.
 A second process that read the store before the first one wrote back POSTs the same refresh token.
@@ -31,7 +31,7 @@ A1 B:	false	...openai_codex_oauth.fnl:86: auth.openai_codex: refresh HTTP 400: {
 A1 store refresh:	R1	server valid R1:	true
 ```
 
-### A2. A refresh in flight writes credentials back after logout (and clobbers a concurrent login)
+### #612: A refresh in flight writes credentials back after logout (and clobbers a concurrent login)
 
 Counterexample (`noResurrection`): `tick → begin → logout → refreshOk → writeTmp → rename`.
 `storage.set` is load → modify → save with no lock and no check that the record is still the one that was refreshed.
@@ -47,7 +47,7 @@ A2 after logout record:	nil
 A2 after refresh completes record:	R1
 ```
 
-### A3. Cancelling during the refresh POST loses the rotation and forces a re-login
+### #613: Cancelling during the refresh POST loses the rotation and forces a re-login
 
 Counterexample (`storeRefreshable`): `tick → beginPin → cancelAfterCommit`.
 `refresh!` passes the caller's cooperative yield into `http.request`, and the usage refresh deliberately re-raises cancellation.
@@ -64,7 +64,7 @@ A3 store refresh:	R0	server valid R0:	nil	R1:	true
 A3 next refresh:	false	...openai_codex_oauth.fnl:86: auth.openai_codex: refresh HTTP 400: {"error":"invalid_grant","error_description":"refresh_token_reused"}
 ```
 
-### A4. Provider requests use credentials pinned at agent construction; expiry mid-session is a terminal 401
+### #614: Provider requests use credentials pinned at agent construction; expiry mid-session is a terminal 401
 
 Counterexample (`noSpuriousAuthFailure`): `beginPin → tick → request401`.
 `main.fnl` resolves auth-backend credentials when the provider config is built and returns them as `:creds`.
@@ -83,7 +83,7 @@ A4 sent:	Bearer OLD	fresh-calls:	0	ok:	false	reason:	authentication-failed
 
 Line trace for the wiring: `main.fnl:236-251` (`:creds creds`) → `interactive.fnl:74` → `openai_codex_responses.fnl:191,278`.
 
-### A5. Token-bearing tmp files are created world-readable until the chmod; a crash leaves one behind
+### #615: Token-bearing tmp files are created world-readable until the chmod; a crash leaves one behind
 
 Counterexample (`secretsPrivate`): `tick → beginPin → refreshOk → writeTmp` (and `crash` in that state leaks the file).
 `keychain.save` opens `auth.json.<rand>` with `io.open` (umask perms), writes the tokens, and only then runs `chmod 600` and renames.
@@ -98,7 +98,7 @@ A5 tmp perms before chmod:	/tmp/tmp.CxkZwmnimS/auth.json.lua_d5xvSg rw-r--r--
 A5 final perms:	rw-------
 ```
 
-### Q1. A usage GET in flight overwrites a `usage_limit_reached` recorded meanwhile and reports it as fresh
+### #616: A usage GET in flight overwrites a `usage_limit_reached` recorded meanwhile and reports it as fresh
 
 Counterexample (`quotaFreshNotContradicted`): `qSendGet → qExhaust → q429 → qReturn`.
 `M.refresh` claims the attempt under the cache lock, but runs the GET and applies its result outside the lock.
@@ -118,27 +118,27 @@ Q1 disk:	3.0
 ## Holds
 
 - `storeWholeRecord`: the store changes only at `rename`, so a crash at any step leaves the previous whole record (the #604 tmp+rename fix).
-  The model can't show a torn `auth.json`; the remaining crash residue is the A5 tmp file.
+  The model can't show a torn `auth.json`; the remaining crash residue is the #615 tmp file.
 - `cacheLockExclusive`: `with-cache-lock` combines the process-local FIFO mutex (coroutines in one process) with an `lfs.lock` fcntl write lock on a stable, never-renamed inode (across processes).
   The kernel drops the fcntl lock when the holder dies, so a dead holder never strands the cross-process lock.
 - `quotaNoStaleExhausted`: `M.remaining` shows 100% once `now >= reset-at` and `M.snapshot` marks such a snapshot stale, so quota is never shown exhausted after its reset.
   This holds even when a GET sampled before the reset returns after it.
-- No lost rotation from concurrent refreshes alone: under single-use rotation the loser's POST fails and writes nothing, so `storeRefreshable` is broken only by A3 (and by inherent post-commit loss).
-  A1 is a spurious failure, not a lost token, unless the server revokes the whole family on reuse.
+- No lost rotation from concurrent refreshes alone: under single-use rotation the loser's POST fails and writes nothing, so `storeRefreshable` is broken only by #613 (and by inherent post-commit loss).
+  #611 is a spurious failure, not a lost token, unless the server revokes the whole family on reuse.
 
 ## Candidate fix (modelled as `fixed`)
 
 - Refresh under a cross-process auth lock: fcntl on a stable `auth.json.lock` inode plus the existing `file_mutex` for coroutines, i.e. the usage cache's `with-cache-lock` pattern.
   Re-read the record inside the lock and return it untouched if it is no longer expiring.
-  This fixes A1 and makes `singleRefreshInFlight` hold.
+  This fixes #611 and makes `singleRefreshInFlight` hold.
   pi-mono's `auth-storage.ts` `refreshOAuthTokenWithLock` does exactly this, and on failure also re-reads the file in case another instance succeeded.
-- `logout!` and `login!` take the same lock, so a stale refresh can't write back afterwards (A2).
+- `logout!` and `login!` take the same lock, so a stale refresh can't write back afterwards (#612).
   Without a lock, compare-and-swap on the refresh token (write only if the stored record still carries the token that was used) would also do.
-- Shield the refresh POST from cooperative cancellation: let it complete and persist, then honour the cancel (A3).
+- Shield the refresh POST from cooperative cancellation: let it complete and persist, then honour the cancel (#613).
   Timeouts and connection loss after commit stay inherent.
-- Resolve credentials per request instead of pinning them, or on a 401 call `get-fresh-creds!` once and retry (A4).
-- Create the tmp file 0600 (e.g. `umask 077` around the open, or open via a helper that sets the mode) and create the auth dir 0700 (A5).
-- In `M.refresh`, apply the GET result under the cache lock and keep windows whose `usage_limit_reached` observation is newer than the GET's send time (Q1).
+- Resolve credentials per request instead of pinning them, or on a 401 call `get-fresh-creds!` once and retry (#614).
+- Create the tmp file 0600 (e.g. `umask 077` around the open, or open via a helper that sets the mode) and create the auth dir 0700 (#615).
+- In `M.refresh`, apply the GET result under the cache lock and keep windows whose `usage_limit_reached` observation is newer than the GET's send time (#616).
 
 `fixed.allInvariants` holds (20 000 samples × 20 steps).
 Witness runs confirm the fixed variant still reaches renames, rotations, and 429s that land during a GET, so the result is not vacuous.
@@ -146,10 +146,10 @@ Witness runs confirm the fixed variant still reaches renames, rotations, and 429
 ## Open questions
 
 - **Server reuse policy.** Whether `auth.openai.com` revokes the whole token family when it sees a reused refresh token, or allows a reuse grace window, was not checked (no network).
-  With family revocation, A1 escalates from a spurious failure to a forced re-login for every process.
-  With a grace window, A1 and A3 mostly disappear.
+  With family revocation, #611 escalates from a spurious failure to a forced re-login for every process.
+  With a grace window, #611 and #613 mostly disappear.
 - **Logout is local only.** `logout!` deletes the file record but does not revoke anything server-side.
-  Running processes keep using their pinned access token (A4) until it expires.
+  Running processes keep using their pinned access token (#614) until it expires.
   That may be the intended meaning of "logout", but it isn't documented.
 - **`file_mutex` with a main-thread owner.** `current-owner` returns nil outside a coroutine, so a synchronous `with-file` records `owner = nil` and the lock looks free.
   This is harmless only because a synchronous body cannot yield.
@@ -164,4 +164,4 @@ Witness runs confirm the fixed variant still reaches renames, rotations, and 429
 The essential contract is small: *one credential record, one writer at a time; a refresh is read-check-POST-write inside that critical section, and the write is conditional on the record still being the one refreshed*.
 Rotation makes the refresh token a linear resource: it can be spent once, so "who may spend it" has to be serialized across processes, and the result has to be persisted before anyone can interrupt.
 Today fen has the pieces (atomic rename, an fcntl lock helper, a coroutine mutex) but uses the lock only for the quota cache, and pins access tokens so refresh rarely runs where it matters.
-A single `with-auth-lock` around refresh, login, and logout, plus per-request resolution, would remove A1–A4 and make most of the remaining behaviour straight-line code.
+A single `with-auth-lock` around refresh, login, and logout, plus per-request resolution, would remove #611, #612, #613, #614 and make most of the remaining behaviour straight-line code.

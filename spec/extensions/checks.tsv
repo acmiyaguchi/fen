@@ -1,12 +1,12 @@
-# main	invariant	expect (holds|violated)
-current	registryMatchesFreshStart	violated
-current	reloadVisitsEveryOwner	violated
-current	attemptedOwnerListed	violated
-current	reloadCommandAvailable	violated
-current	loadedStatusTruthful	violated
-current	noRegistrySwapDuringTurn	violated
-current	turnToolsLive	violated
-current	turnMessagesPersisted	violated
-current	registeredCallablesPresent	violated
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	registryMatchesFreshStart	violated	#626
+current	reloadVisitsEveryOwner	violated	#624
+current	attemptedOwnerListed	violated	#624
+current	reloadCommandAvailable	violated	#624
+current	loadedStatusTruthful	violated	#625
+current	noRegistrySwapDuringTurn	violated	#627
+current	turnToolsLive	violated	#627
+current	turnMessagesPersisted	violated	#627
+current	registeredCallablesPresent	violated	#628
 current	busDeliversOncePerLiveSubscriber	holds
 fixed	allInvariants	holds

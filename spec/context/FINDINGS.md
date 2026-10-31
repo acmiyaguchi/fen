@@ -17,7 +17,7 @@ Every probe reported `0 failures / 0 errors`; the lines quoted below are their o
 
 ## Bugs
 
-### C1. Compaction rewrites the usage history: session totals drop, and the summary call is never in them
+### #617: Compaction rewrites the usage history: session totals drop, and the summary call is never in them
 
 Counterexample (`sessionUsageComplete`): `init(replayed) → userTurn → requestTool → compactTool`.
 Every message-derived total (`tokens.usage-totals`, `turn-result.sum-usage`) sums `usage` over `agent.messages`.
@@ -31,9 +31,9 @@ PROBE usage-totals.input before=22100 after=100
 PROBE llm-end usage.input on bus during compaction=30000
 ```
 
-### C2. Wire turn and run usage are index slices of a history that compaction rewrites
+### #618: Wire turn and run usage are index slices of a history that compaction rewrites
 
-Counterexample (`runUsageExact`): same trace as C1.
+Counterexample (`runUsageExact`): same trace as #617.
 The rpc presenter records `run-start-index` and each turn's `start-index` as positions in `agent.messages` and sums `sum-usage` over the suffix for `turn-complete` and `result`.
 After an in-run compaction (the `compact` tool, or auto-compaction on a tick) the positions point into a shorter, different list, so assistant turns before the old index are skipped; if the list shrinks below the index the usage is absent.
 The subagent parent then makes it worse: `apply-usage-telemetry!` replaces its event-derived total (which saw every `:llm-end`, including compaction) with the child's smaller `result` usage and marks it `usage-complete? true`.
@@ -46,7 +46,7 @@ PROBE result usage.input=10.0
 PROBE sum of forwarded llm-end usage.input=31010.0
 ```
 
-### C3. Headless JSON usage includes the whole `--continue` history
+### #619: Headless JSON usage includes the whole `--continue` history
 
 Counterexample (`headlessUsageExact`): `init(replayed)`, no steps needed.
 `session-lifecycle.start!` appends replayed messages to `agent.messages`, and the JSON presenter reports `(turn-result.sum-usage messages)` over all of them (and dumps all of them as `messages`).
@@ -57,7 +57,7 @@ Confirmed: JSON presenter over one replayed exchange (`total-tokens 50900`) plus
 PROBE json usage.total-tokens=50910.0 input=50007.0 messages=4
 ```
 
-### C4. After compaction the old context size is shown as exact
+### #620: After compaction the old context size is shown as exact
 
 Counterexample (`exactContextIsCurrent`): `init(replayed) → userTurn → requestTool → compactTool`.
 `tokens.context-token-info` takes the latest assistant message with non-zero usage as the provider-reported baseline and calls it exact when it is the last message.
@@ -65,14 +65,14 @@ Compaction keeps the recent assistant messages with their usage, which describes
 So `/status` and every `update-queue-status!` refresh (run on each `:message-appended`) report the old size as `provider-reported` until the next request, while compaction's own hint (`tokens-after`, messages only) says otherwise.
 The same mechanism applies after an agent rebuild that changes the system prompt or tokenizer (`/model`, `/reload`), by trace only.
 
-Confirmed (same probe as C1):
+Confirmed (same probe as #617):
 ```
 PROBE context before=44650 provider-reported after=44650 provider-reported estimated?=false
 PROBE set-status-info approx-context hint=46
 PROBE full estimate after=46
 ```
 
-### C5. `total-tokens` means different things per provider
+### #621: `total-tokens` means different things per provider
 
 Counterexample (`totalTokensConvention`): `init(openai) → userTurn → requestText → userTurn → requestTool` (the second request reads the first from cache).
 `fen.util.usage` documents `total-tokens` as excluding cache tokens (input + output), and Anthropic follows it.
@@ -87,9 +87,9 @@ PROBE gateway without total_tokens: total-tokens=0
 PROBE usage-totals over both: total-tokens=130 (input+output=50)
 ```
 
-### C6. Reloading one extension reorders the always-visible tools and silently breaks the whole cached prefix
+### #622: Reloading one extension reorders the always-visible tools and silently breaks the whole cached prefix
 
-Same root cause as [extensions X3](../extensions/FINDINGS.md) (list registrations move to the end on reload); this is its prompt-cache cost.
+Same root cause as [extensions #626](../extensions/FINDINGS.md) (list registrations move to the end on reload); this is its prompt-cache cost.
 
 Counterexample (`prefixStableUnlessNamed`): `userTurn → requestText → reloadExtension → userTurn → requestText`.
 `#603` sorts activated search tools, but always-visible tools keep registry order, and `reload-extension!` runs `unregister-by-owner` and re-registers, which appends that owner's tools at the end of `tools-extra`.
@@ -103,7 +103,7 @@ PROBE request tools before reload: read,bash,grep
 PROBE request tools after  reload: bash,grep,read
 ```
 
-### C7. One moving message breakpoint: a large tool round loses the cached history
+### #623: One moving message breakpoint: a large tool round loses the cached history
 
 Counterexample (`cacheReuseOnExtension`): `userTurn → requestParallelTools → toolResults → requestTool` (anthropic, `W = 4` scaled).
 `build-body` marks the system prompt, the last tool and the last block of the last message, three of the four allowed breakpoints.
@@ -137,7 +137,7 @@ The ~20-block lookback is Anthropic's documented behavior and was not exercised 
 | `/reload`, `/thinking`, `/handoff`, extension toggle | agent rebuilt, system prompt re-rendered (date, context files, skills) | full rewrite whenever any fragment changed, e.g. after midnight |
 | `/model`, provider switch | new model or provider cache | cold cache |
 | `/new`, `/resume` | `prompt-cache-key` (OpenAI) | new key |
-| single-extension reload | tool order (C6) | full rewrite, unintended |
+| single-extension reload | tool order (#622) | full rewrite, unintended |
 
 ## Candidate fix (modelled as `fixed`)
 

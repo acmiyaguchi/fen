@@ -1,8 +1,8 @@
-# main	invariant	expect (holds|violated)
-current	loopSurvivesFaults	violated
-current	forceQuitOnlyOnArmedTurn	violated
-current	cancelArmMatchesTurn	violated
-current	pendingWorkPolledActively	violated
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	loopSurvivesFaults	violated	#635
+current	forceQuitOnlyOnArmedTurn	violated	#636
+current	cancelArmMatchesTurn	violated	#636
+current	pendingWorkPolledActively	violated	#637
 current	terminalRestoredWhenStopped	holds
 current	noStarvation	holds
 current	cancelObservedWithinOneTick	holds

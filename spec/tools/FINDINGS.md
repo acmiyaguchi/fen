@@ -40,7 +40,7 @@ These stay as regression properties.
 
 ## Bugs
 
-### K1. A timed-out bash call leaves a live process in its own process group
+### #651: A timed-out bash call leaves a live process in its own process group
 
 Counterexample (`noLiveProcessAfterAbnormalEnd`): `bStart(memberIgnoresTerm) → bDeadline → bFinish`.
 At the deadline, `tick!` sends SIGTERM to the group.
@@ -58,7 +58,7 @@ bash {:cmd "sh -c 'trap \"\" TERM; echo $$ > PID; exec sleep 30' & wait" :timeou
 K1 timed-out?= true signal= 15 ms= 1174 member pid= 245166 alive after return= true
 ```
 
-### K2. The provider-side cap drops bash's exit/timeout tag
+### #652: The provider-side cap drops bash's exit/timeout tag
 
 Counterexample (`exitStatusVisible`): `oRun` with raw `[L C x a]`.
 After trimming and appending the tag, the sanitized size is over the cap.
@@ -75,7 +75,7 @@ K2 details.exit-code= 7 is-error?= true content bytes= 65661 has [exit 7]= false
          [fen: tool output truncated: kept 65536 of 120009 sanitized bytes]
 ```
 
-### K3. Bash's tail cap starts the output inside a UTF-8 character
+### #653: Bash's tail cap starts the output inside a UTF-8 character
 
 Counterexample (`noSplitChar`): raw `[L C L C]` trims to `[C L C]`.
 `trim-tail` does `(string.sub out (- max-bytes))`, which counts bytes, not characters.
@@ -86,7 +86,7 @@ bash {:cmd "yes é | head -n 30000 | tr -d '\\n'; echo"}
 K3 head of body= \xA9éééé sanitized note= true
 ```
 
-### K4. Cancelling `write` mid-file leaves a torn file, and the original is lost
+### #654: Cancelling `write` mid-file leaves a torn file, and the original is lost
 
 Counterexample (`noTornFile`): `wStart → wChunk1 → wCancel`.
 `write` truncates the target with `io.open path :w`, then writes 16 KiB chunks with a yield after each one.
@@ -97,7 +97,7 @@ original "ORIGINAL CONTENT\n"; write 40000 bytes; yield-fn raises on its 4th cal
 K4 ok?= false err= …file_mutex… file bytes= 32768 original kept= false
 ```
 
-### K5. `write` (and `edit`) report success when the write fails
+### #655: `write` (and `edit`) report success when the write fails
 
 Counterexample (`okMeansWritten`): `wStart(ioErr) → wChunk1 → wChunk2 → wClose → wReturn`.
 `write-content` ignores what `f:write` returns, and both tools ignore what `f:close` returns.
@@ -109,7 +109,7 @@ write {:path "/dev/full" :content (100 bytes)}
 K5 is-error?= false text= wrote 100 bytes to /dev/full
 ```
 
-### K6. A cancelled multi-file `edit` applies some files and reports "cancelled"
+### #656: A cancelled multi-file `edit` applies some files and reports "cancelled"
 
 Counterexamples: `batchAllOrNothing` is `bfStart → bfWriteA → bfCancel`, and `cancelledMeansUnchanged` is also violated, for example by `eStart → eWrite → eCancel` or by a `wCancel` after `wClose`.
 The batch is validated all-or-nothing, but files are then written one per lock, with yields between them.
@@ -124,7 +124,7 @@ files [{a foo→bar} {b foo→bar}]; yield-fn raises once a == "bar\n"
 K6 ok?= false err= CANCEL a= bar  b= foo
 ```
 
-### K7. `edit` overwrites changes made while it yielded (lost update)
+### #657: `edit` overwrites changes made while it yielded (lost update)
 
 Counterexample (`noLostUpdate`): `eStart → eExternalWrite → eWrite`.
 `edit` reads a snapshot and then yields several times: after the read, during validation, and before it opens the file for writing.
@@ -138,7 +138,7 @@ file "x = 1\ny = 2\n"; edit x = 1 → x = 10; first yield appends "z = 3\n"
 K7 is-error?= false text= applied 1 edit(s) to …/f final= "x = 10\ny = 2\n"
 ```
 
-### K8. `edit` accepts an `old_string` that occurs twice when the occurrences overlap
+### #658: `edit` accepts an `old_string` that occurs twice when the occurrences overlap
 
 Counterexample (`uniqueMatchIsUnique`): content `aaab`, `old_string` `aa`. `find-all` finds 1 hit, but there are 2.
 `find-all` resumes the search at `pos + #old`, so overlapping occurrences are not counted.
@@ -151,7 +151,7 @@ file "}\n}\n}\n"; edit "}\n}" → "X"
 K8 is-error?= false text= applied 1 edit(s) to …/f final= "X\n}\n"
 ```
 
-### K9. A cancelled `grep`/`find`/`ls` freezes the whole process until the child exits
+### #659: A cancelled `grep`/`find`/`ls` freezes the whole process until the child exits
 
 Counterexample (`noUnboundedBlockingWait`): `pStart → pCancel`.
 These tools use `io.popen` and `read-pipe-close`.
@@ -167,19 +167,19 @@ K9 ok?= false yields= 1 ms blocked in cancel= 2003
 
 ## Candidate fix (modelled as `fixed`)
 
-- K1: on timeout or cancel, SIGKILL the group whether or not the leader has been reaped, before closing the pipe.
+- #651: on timeout or cancel, SIGKILL the group whether or not the leader has been reaped, before closing the pipe.
   `kill(-pgid)` is safe while any member lives, because the pgid cannot be reused until the group is empty.
   Do this as well as, or instead of, making the post-exit window longer than the grace.
-- K2: the provider cap reserves the result's trailer (the exit/timeout tag).
+- #652: the provider cap reserves the result's trailer (the exit/timeout tag).
   Alternatively, bash budgets its tail in *sanitized* bytes, or puts the status first.
-- K3: after the byte cut, skip leading continuation bytes (`[\x80-\xBF]`).
-- K4/K5: write to a temp file in the same directory and check each `write` and `close` result, then `os.rename` it over the target.
+- #653: after the byte cut, skip leading continuation bytes (`[\x80-\xBF]`).
+- #654/#655: write to a temp file in the same directory and check each `write` and `close` result, then `os.rename` it over the target.
   Report an error, not ok, on failure.
-- K6: stage every file of a batch to a temp file, then commit them all (renames) in one non-yielding step.
+- #656: stage every file of a batch to a temp file, then commit them all (renames) in one non-yielding step.
   More generally, never yield between a tool's commit point and its return.
-- K7: in the same non-yielding step as the write, re-read the file (or compare size+mtime/hash) and fail with "file changed since read" if it differs.
-- K8: resume `find-all` at `pos + 1`.
-- K9: run grep/find/ls through `process.start-captured` with `:argv`.
+- #657: in the same non-yielding step as the write, re-read the file (or compare size+mtime/hash) and fail with "file changed since read" if it differs.
+- #658: resume `find-all` at `pos + 1`.
+- #659: run grep/find/ls through `process.start-captured` with `:argv`.
   Its abort SIGKILLs the group and its cleanup is bounded.
   This also gets them a timeout and lets the `io.popen` drain helpers be deleted.
 

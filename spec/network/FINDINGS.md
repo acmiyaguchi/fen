@@ -8,7 +8,7 @@ Code: `extensions/adapters/providers/shared/{retry,streaming}.fnl`, `packages/co
 
 ## Bugs
 
-### N1. A mid-stream retry leaves the failed attempt's text on screen
+### #629: A mid-stream retry leaves the failed attempt's text on screen
 
 Counterexample (`noSupersededText`, `okReplyDisplayed`): `startTurn → streamToken → transient → backoffDone → …`.
 Each attempt gets a fresh parser and state, and the persisted assistant message is built from the last attempt only, but deltas from every attempt reach the bus.
@@ -16,7 +16,7 @@ Each attempt gets a fresh parser and state, and the persisted assistant message 
 
 Confirmed against real ingest: deltas `"Hello wor"`, `:provider-retry`, `"Hello world."`, `:llm-end`, `:assistant-stream-end` render one row `"Hello worHello world."` while history holds `"Hello world."`.
 
-### N2. After an error or cancel, the next turn's text joins the dead turn's row
+### #630: After an error or cancel, the next turn's text joins the dead turn's row
 
 Counterexample (`rowsSingleTurn`, `noOpenRowWhenIdle`): `startTurn → streamToken → cancel → startTurn → streamToken`.
 The agent emits no `assistant-stream-end` on the error or cancel paths, and neither the `:error` nor the `:cancelled` handler closes `streaming-assistant-rows`; only `/new` resets them.

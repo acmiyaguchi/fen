@@ -1,16 +1,16 @@
-# main	invariant	expect (holds|violated)
+# main	invariant	expect (holds|violated)	issues (violated rows)
 current	headlessExitMatchesStatus	holds
 current	headlessFinalTextMatches	holds
 current	headlessErrorDetailsMatch	holds
-current	headlessUsageIsTurnUsage	violated
+current	headlessUsageIsTurnUsage	violated	#619
 current	sendStatusMatchesOutcome	holds
-current	lifecycleStatusMatchesOutcome	violated
-current	rpcExitMatchesStatus	violated
-current	rpcFinalTextMatches	violated
-current	goalFinalTextMatches	violated
-current	goalExitMatches	violated
-current	webRowsSingleAttempt	violated
-current	webOkReplyShown	violated
+current	lifecycleStatusMatchesOutcome	violated	#634
+current	rpcExitMatchesStatus	violated	#632
+current	rpcFinalTextMatches	violated	#632
+current	goalFinalTextMatches	violated	#633
+current	goalExitMatches	violated	#634
+current	webRowsSingleAttempt	violated	#631
+current	webOkReplyShown	violated	#631
 current	webRowsSingleStep	holds
 current	stdioLinesSingleAttempt	holds
 current	stdioOkReplyShown	holds

@@ -1,12 +1,12 @@
-# main	invariant	expect (holds|violated)
-current	inheritedRoutingAccepted	violated
-current	noOrphanAfterQuit	violated
-current	completionBeforeNextAnswer	violated
-current	toldAtMostOnce	violated
-current	toldOrPending	violated
-current	budgetEnforced	violated
-current	backgroundReadOnly	violated
-current	noWiderNetwork	violated
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	inheritedRoutingAccepted	violated	#645
+current	noOrphanAfterQuit	violated	#646
+current	completionBeforeNextAnswer	violated	#647
+current	toldAtMostOnce	violated	#648
+current	toldOrPending	violated	#648
+current	budgetEnforced	violated	#649
+current	backgroundReadOnly	violated	#650
+current	noWiderNetwork	violated	#650
 current	terminalOnce	holds
 current	statusMatchesProcess	holds
 fixed	allInvariants	holds

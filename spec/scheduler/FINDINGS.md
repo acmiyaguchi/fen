@@ -12,7 +12,7 @@ Streaming rows, turn ownership across tabs, and the tool-side yield contract bel
 
 ## Bugs
 
-### D1. A transcript row that fails to render ends the session
+### #635: A transcript row that fails to render ends the session
 
 Counterexample (`loopSurvivesFaults`): `emitBadRow → iteration`.
 #416/#432 fixed this class of bug for the side-chat and subagent ticks.
@@ -36,7 +36,7 @@ PROBE D1 run returned ok?  false  ticks  0
 No first-party emitter of a malformed row was found, so the trigger today is any extension's `api.emit` or a future core event.
 The bug is the missing isolation: one bad row is fatal, while a bad status item or panel only prints `panel-error:`.
 
-### D2. The Ctrl-C arm outlives its turn, so the next turn's first Ctrl-C force-quits fen
+### #636: The Ctrl-C arm outlives its turn, so the next turn's first Ctrl-C force-quits fen
 
 Counterexamples: `cancelArmMatchesTurn` (`submit → agentQueuesReload → ctrlC`) and `forceQuitOnlyOnArmedTurn` (`… → ctrlC → ctrlC`).
 The first busy Ctrl-C sets `state.cancel-pressed?`.
@@ -60,7 +60,7 @@ PROBE D2 reload-queued   peeks consumed 4 (QUIT early)  turn-id 2 busy? true  ca
 Without a queued reload, the second Ctrl-C (now idle) only arms the two-press quit.
 With one queued, the second Ctrl-C lands on the fresh `/reload` turn (turn-id 2) and quits.
 
-### D3. Pending cooperative work outside the main and side turns is polled at the idle cadence
+### #637: Pending cooperative work outside the main and side turns is polled at the idle cadence
 
 Counterexample (`pendingWorkPolledActively`): `startBgTask → iteration`.
 `peek-timeout-ms` treats only the main turn, the side chat, dirty/spinner state, and a pending Esc as active work.
@@ -99,9 +99,9 @@ This costs latency, not correctness.
 
 ## Candidate fix (modelled as `fixed`)
 
-- D1: run the paint phase under the same guard as the ticks. Better, give `paint-transcript` per-row isolation, as `paint-panels` already has, so a bad row renders as `render-error:` and the frame continues.
-- D2: disarm the ladder where the turn is finalized (`on-tick`'s death path, or the TUI's `:agent-turn-complete` handler), not at the loop bottom. Equivalently, key the arm by turn id (`pressGen == state.turn-id`). Then the modal pump and same-tick turn starts are covered too, and the bottom check can be deleted.
-- D3: let runtime-tick sources report pending work. One way is a `busy?` query on the scheduler's task registry (decide tasks, `refresh-co`, live subagent jobs, the side-chat reap list) that `peek-timeout-ms` ORs in.
+- #635: run the paint phase under the same guard as the ticks. Better, give `paint-transcript` per-row isolation, as `paint-panels` already has, so a bad row renders as `render-error:` and the frame continues.
+- #636: disarm the ladder where the turn is finalized (`on-tick`'s death path, or the TUI's `:agent-turn-complete` handler), not at the loop bottom. Equivalently, key the arm by turn id (`pressGen == state.turn-id`). Then the modal pump and same-tick turn starts are covered too, and the bottom check can be deleted.
+- #637: let runtime-tick sources report pending work. One way is a `busy?` query on the scheduler's task registry (decide tasks, `refresh-co`, live subagent jobs, the side-chat reap list) that `peek-timeout-ms` ORs in.
 
 All invariants hold under `fixed` (`fixed.allInvariants`).
 
@@ -111,7 +111,7 @@ Underneath, the loop is a round-robin scheduler with no task table.
 Today it has five ad hoc task registries: `state.turn` (interactive run-state), side chat's `volatile.live` and `volatile.reap`, decide's `store.tasks`, codex usage's `refresh-co`, and the subagent job list.
 Three different drivers resume them (`on-tick`, `tick-background!`, `:runtime-tick` handlers), and the select modal re-implements the driver.
 Each registry has its own resume/finish/error code, and the loop learns "is anything runnable?" and "did this turn end?" by asking a few of them for a boolean.
-All three bugs come from that: paint is the one phase not routed through the common guard (D1), turn end is inferred from a level rather than an identity (D2), and runnable work that isn't in the two known registries is invisible to the poll timeout (D3).
+All three bugs come from that: paint is the one phase not routed through the common guard (#635), turn end is inferred from a level rather than an identity (#636), and runnable work that isn't in the two known registries is invisible to the poll timeout (#637).
 
 The minimal core is a single cooperative task table, `{id, owner, co, cancel?, on-done}`, with one driver step: resume each live task once under xpcall, retire dead ones exactly once by calling `on-done(ok, value)`, and report `any-runnable?`.
 The presenter loop then becomes `paint (guarded) → poll(any-runnable? ? 30 : 300) → input (guarded) → scheduler.step → idle hooks`, and the modal calls the same `scheduler.step`.
