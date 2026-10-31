@@ -1,0 +1,12 @@
+# main	invariant	expect (holds|violated)
+current	inheritedRoutingAccepted	violated
+current	noOrphanAfterQuit	violated
+current	completionBeforeNextAnswer	violated
+current	toldAtMostOnce	violated
+current	toldOrPending	violated
+current	budgetEnforced	violated
+current	backgroundReadOnly	violated
+current	noWiderNetwork	violated
+current	terminalOnce	holds
+current	statusMatchesProcess	holds
+fixed	allInvariants	holds
