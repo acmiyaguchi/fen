@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+fixed	inductiveInv	inductive	1	300	Induction: with #659 the cancel path never waits on a child it has not killed, at any depth.

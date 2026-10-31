@@ -1,0 +1,3 @@
+# main	invariants	mode	steps	seconds	why
+fixed	inductiveInv	inductive	1	300	Induction: with #651 the group is never left alive after a timeout or cancel, and SIGKILL is only sent for one, at any depth.
+current	killInductiveInv	inductive	1	300	Induction: today's gated SIGKILL is still only sent for a timeout or cancel, at any depth (so the #651 fix only widens who is killed, not when).

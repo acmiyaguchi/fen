@@ -1,0 +1,7 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	uniqueMatchIsUnique	violated	#658
+current	countIsExact	violated	#658
+current	countNeverOver	holds
+fixed	uniqueMatchIsUnique	holds
+fixed	countIsExact	holds
+fixed	countNeverOver	holds

@@ -1,0 +1,11 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	batchAllOrNothing	violated	#656
+current	cancelledMeansUnchanged	violated	#656
+current	okMeansAll	holds
+current	batchCrashAtomic	violated	#656
+fixed	batchAllOrNothing	holds
+fixed	cancelledMeansUnchanged	holds
+fixed	okMeansAll	holds
+fixed	inductiveInv	holds
+# Cancel-atomic, not crash-atomic: a crash between the two renames.
+fixed	batchCrashAtomic	violated	#656

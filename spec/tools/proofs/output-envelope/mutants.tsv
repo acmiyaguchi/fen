@@ -1,0 +1,2 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    if (fix) headKeep(b, LIMIT - TRAILER).append("T")|    if (fix) headKeep(b, LIMIT).append("T")|	fixed	withinLimit	#652 fix appends the trailer without reserving room (breaks the cap)

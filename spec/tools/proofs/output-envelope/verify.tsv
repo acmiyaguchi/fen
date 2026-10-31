@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+fixed	exitStatusVisible withinLimit trailerLast fitsSentWhole	bounded	2	300	Exhaustive: emit fires once (every body of up to TAIL units, safe or escaped), then only stutter is enabled.

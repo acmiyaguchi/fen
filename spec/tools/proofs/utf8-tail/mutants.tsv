@@ -1,0 +1,2 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    range(0, 3).foldl|    range(0, 1).foldl|	fixed	noSplitChar	#653 fix skips only one continuation byte (enough for 2-byte characters only)

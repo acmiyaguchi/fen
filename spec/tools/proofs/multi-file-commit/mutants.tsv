@@ -1,0 +1,2 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    if (fix656) Set("pre", "staged").contains(phase)|    if (fix656) Set("pre", "staged", "aDone").contains(phase)|	fixed	batchAllOrNothing	#656 fix yields between the renames

@@ -1,0 +1,3 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    val reap = fix651 and (timedOut or cancelled)|    val reap = false|	fixed	noLiveProcessAfterAbnormalEnd	#651 fix keeps the reaped-leader gate at finish
+model.qnt	s|    started, not(done), termSent, not(killSent),|    started, not(done), not(killSent),|	fixed	killOnlyOnAbnormalEnd	the grace SIGKILL fires without a deadline SIGTERM

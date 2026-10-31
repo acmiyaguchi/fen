@@ -1,0 +1,3 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    if (k == "none") (if (cfgSet) cfg else TOOLS)|    if (k == "none" or k == "deny") (if (cfgSet) cfg else TOOLS)|	current	deniedUnreachable	the child policy ignores --denied-tools when the subagent has a tool list
+model.qnt	s|      executed' = (reach.contains(n) and h == "allow" and v),|      executed' = (reach.contains(n) and h != "block" and v),|	current	hookVetoFinal	a throwing hook fails open

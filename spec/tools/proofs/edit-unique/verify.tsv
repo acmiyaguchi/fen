@@ -1,0 +1,3 @@
+# main	invariants	mode	steps	seconds	why
+fixed	uniqueMatchIsUnique countIsExact	bounded	2	300	Exhaustive: run fires once (every 6-byte content and pattern), then only stutter is enabled, so depth 2 covers every reachable state.
+current	countNeverOver	bounded	2	300	Exhaustive, as above: today's count can miss overlapping matches but never invents one.

@@ -1,0 +1,6 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	noUnboundedBlockingWait	violated	#659
+current	resultMatchesPath	holds
+fixed	noUnboundedBlockingWait	holds
+fixed	resultMatchesPath	holds
+fixed	inductiveInv	holds

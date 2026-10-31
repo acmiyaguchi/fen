@@ -1,0 +1,3 @@
+# main	invariants	mode	steps	seconds	why
+fixed	inductiveInv	inductive	1	300	Induction: G1-G4 hold for the target design at any depth, with any number of interleaved fen and outside writes up to MAX_WRITES.
+fixed	guarantees	bounded	10	300	Exhaustive: a call takes at most 6 steps of its own (start, two chunks, close, check, rename) and at most MAX_WRITES = 2 concurrent writes interleave, so every run reaches done within 8 steps; 10 covers it with stutter.

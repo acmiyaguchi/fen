@@ -1,0 +1,4 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    if (pendFen or pendOut)|    if (pendFen)|	fixed	outsideLossOnlyInWindow	#657 check compares only with fen writers (e.g. a version counter in the lock file)
+model.qnt	s|  pure def locks: bool = FIXES.contains("657")|  pure def locks: bool = false|	fixed	noLostFenUpdate	#657 checks but takes no cross-process lock: a sibling fen write lands in the window
+model.qnt	s|  def committedPhase: str = if (FIXES.contains("656")) "done" else "closed"|  def committedPhase: str = "closed"|	fixed	cancelledMeansUnchanged	#656: a yield remains between the commit and the return

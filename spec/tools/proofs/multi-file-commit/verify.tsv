@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+fixed	inductiveInv	inductive	1	300	Induction: with #656 a batch that returns (ok or cancelled) applied all files or none, at any depth.

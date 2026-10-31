@@ -1,0 +1,2 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    val kill = FIXES.contains("659")|    val kill = false|	fixed	noUnboundedBlockingWait	#659 fix cancels without killing the child

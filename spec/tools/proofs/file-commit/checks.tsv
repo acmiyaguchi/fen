@@ -1,0 +1,12 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	noTornTarget	violated	#654
+current	okMeansWritten	violated	#655
+current	cancelledMeansUnchanged	violated	#656
+current	noLostFenUpdate	violated	#657
+current	outsideLossOnlyInWindow	violated	#657
+current	noLostUpdate	violated	#657
+# The target design provides G1-G4; an outside write in the check/rename
+# window is still lost (best-effort detection, not compare-and-swap).
+fixed	guarantees	holds
+fixed	inductiveInv	holds
+fixed	noLostUpdate	violated	#657

@@ -1,0 +1,5 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	deniedUnreachable	holds
+current	hookVetoFinal	holds
+current	validatedBeforeEffect	holds
+current	sideChatReadOnly	holds

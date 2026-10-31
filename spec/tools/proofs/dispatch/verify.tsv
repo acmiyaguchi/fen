@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+current	deniedUnreachable hookVetoFinal validatedBeforeEffect sideChatReadOnly	bounded	2	300	Exhaustive: the initial states are every policy, path, name, hook outcome, validity, and child configuration; only stutter follows.

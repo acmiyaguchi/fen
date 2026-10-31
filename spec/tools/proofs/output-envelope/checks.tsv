@@ -1,0 +1,9 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	exitStatusVisible	violated	#652
+current	withinLimit	holds
+current	trailerLast	holds
+current	fitsSentWhole	holds
+fixed	exitStatusVisible	holds
+fixed	withinLimit	holds
+fixed	trailerLast	holds
+fixed	fitsSentWhole	holds

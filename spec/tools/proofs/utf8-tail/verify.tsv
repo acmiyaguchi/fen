@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+fixed	noSplitChar withinCap dropsLessThanAChar	bounded	2	300	Exhaustive: cut fires once (every output of three tokens, up to 9 bytes, cut anywhere in a 1-, 2- or 3-byte character), then only stutter is enabled.

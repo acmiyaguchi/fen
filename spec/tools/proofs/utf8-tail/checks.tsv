@@ -1,0 +1,6 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	noSplitChar	violated	#653
+current	withinCap	holds
+fixed	noSplitChar	holds
+fixed	withinCap	holds
+fixed	dropsLessThanAChar	holds

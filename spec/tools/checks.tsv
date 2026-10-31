@@ -2,9 +2,12 @@
 current	noLiveProcessAfterAbnormalEnd	violated	#651
 current	noUnboundedBlockingWait	violated	#659
 current	noTornFile	violated	#654
+current	noTornTarget	violated	#654
 current	okMeansWritten	violated	#655
 current	cancelledMeansUnchanged	violated	#656
 current	noLostUpdate	violated	#657
+current	noLostFenUpdate	violated	#657
+current	outsideLossOnlyInWindow	violated	#657
 current	batchAllOrNothing	violated	#656
 current	exitStatusVisible	violated	#652
 current	noSplitChar	violated	#653
@@ -13,4 +16,22 @@ current	killOnlyOnAbnormalEnd	holds
 current	deniedUnreachable	holds
 current	hookVetoFinal	holds
 current	validatedBeforeEffect	holds
+# The fixes provide G1-G4 (allInvariants). Two properties stay violated under
+# every fix: an outside writer can land between the check and the rename
+# (#657, best-effort detection only), and a crash between two renames leaves
+# a batch half-applied (#656 is cancel-atomic, not crash-atomic).
 fixed	allInvariants	holds
+fixed	noLostUpdate	violated	#657
+fixed	batchCrashAtomic	violated	#656
+# Each fix on its own makes its own issue's invariant hold.
+fix651	noLiveProcessAfterAbnormalEnd	holds
+fix652	exitStatusVisible	holds
+fix653	noSplitChar	holds
+fix654	noTornFile	holds
+fix654	noTornTarget	holds
+fix655	okMeansWritten	holds
+fix656	batchAllOrNothing	holds
+fix657	noLostFenUpdate	holds
+fix657	outsideLossOnlyInWindow	holds
+fix658	uniqueMatchIsUnique	holds
+fix659	noUnboundedBlockingWait	holds

@@ -1,0 +1,2 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|        { n: acc.n + 1, next: if (fix) i + 1 else i + p.length() }|        { n: acc.n + 1, next: i + p.length() }|	fixed	uniqueMatchIsUnique	#658 fix still skips past each hit

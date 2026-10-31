@@ -1,0 +1,7 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	noLiveProcessAfterAbnormalEnd	violated	#651
+current	killOnlyOnAbnormalEnd	holds
+current	killInductiveInv	holds
+fixed	noLiveProcessAfterAbnormalEnd	holds
+fixed	killOnlyOnAbnormalEnd	holds
+fixed	inductiveInv	holds
