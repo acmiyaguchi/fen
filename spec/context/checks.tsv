@@ -1,0 +1,11 @@
+# main	invariant	expect (holds|violated)
+current	prefixStableUnlessNamed	violated
+current	cacheReuseOnExtension	violated
+current	breakpointsWithinLimit	holds
+current	sessionUsageComplete	violated
+current	runUsageExact	violated
+current	headlessUsageExact	violated
+current	exactContextIsCurrent	violated
+current	totalTokensConvention	violated
+current	toolPairing	holds
+fixed	allInvariants	holds
