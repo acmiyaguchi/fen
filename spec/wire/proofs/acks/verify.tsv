@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+fixed	fixedInductive	inductive	1	300	scalar child loop with three control slots: with the exit deferred to the end of the batch, acks-once, no-ack-unread, and result-right-before-exit-done are inductive (any depth, any interleaving of appends, polls, and turn ends)

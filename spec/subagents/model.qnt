@@ -33,10 +33,13 @@
 // hosted web search (lives in ctx.agent.provider-options, never forwarded),
 // and the background "read-only" promise (prompt text only).
 //
-// FIXED selects the candidate fixes so the same invariants can be checked
-// against both.
+// FIXES names the candidate fixes by issue number, so each invariant can be
+// checked against today's code, one fix, or all of them: "645" (inherit the
+// thinking level), "646" (quit reaps every run), "647" (drain completions at
+// the top of a turn), "648" (wait consumes, /cancel-all keeps completions),
+// "649" (a steer reopens the budget), "650" (derived child policy).
 module subagents {
-  const FIXED: bool
+  const FIXES: Set[str]
 
   pure val RUNS = Set(1, 2)
   pure val MAX_TOOLS = 2        // max-tool-calls budget for every run
@@ -89,17 +92,22 @@ module subagents {
 
   pure def removeAll(q: List[int], r: int): List[int] = q.select(x => x != r)
 
-  action init = all {
+  // initWith takes the environment as arguments so witnesses can pin it.
+  action initWith(t: bool, w: bool, s: bool): bool = all {
     phase' = "busy",
     runs' = RUNS.mapBy(_ => EMPTY),
     queue' = [],
     pendingAtPrompt' = Set(),
+    parentThinking' = t, parentWebOff' = w, settingsWeb' = s,
+    staleAnswer' = false, budgetMissed' = false, startupRejected' = false,
+    lastAction' = "init",
+  }
+
+  action init = {
     nondet t = Set(true, false).oneOf()
     nondet w = Set(true, false).oneOf()
     nondet s = Set(true, false).oneOf()
-    all { parentThinking' = t, parentWebOff' = w, settingsWeb' = s },
-    staleAnswer' = false, budgetMissed' = false, startupRejected' = false,
-    lastAction' = "init",
+    initWith(t, w, s)
   }
 
   // Frame helpers --------------------------------------------------------
@@ -116,11 +124,11 @@ module subagents {
   action launch(r: int, mode: str): bool = all {
     phase == "busy",
     runs.get(r).st == "none",
-    val rejected = parentThinking and not(FIXED)
+    val rejected = parentThinking and not(FIXES.contains("645"))
     // child-argv never forwards --web-search; the child reads settings.json.
-    val childWeb = if (FIXED) settingsWeb and not(parentWebOff) else settingsWeb
+    val childWeb = if (FIXES.contains("650")) settingsWeb and not(parentWebOff) else settingsWeb
     // a background child is "read-only" only in its prompt text.
-    val childEdit = mode == "blocking" or not(FIXED)
+    val childEdit = mode == "blocking" or not(FIXES.contains("650"))
     if (rejected)
       all {
         // the child exits 2 at startup: finish! settles it as failed
@@ -171,7 +179,7 @@ module subagents {
   }
 
   // A steer (/subagents steer, action=steer, a subagent tab) reaches the
-  // child at that natural stop and the child resumes work. FIXED: a resumed
+  // child at that natural stop and the child resumes work. Fix 649: a resumed
   // run is no longer "answered" for budget purposes.
   action steer(r: int): bool = all {
     val x = runs.get(r)
@@ -179,7 +187,7 @@ module subagents {
       x.alive, x.st == "running", x.finalSeen, not(x.steered),
       phase != "gone",
       runs' = runs.set(r, { ...x, steered: true,
-                            finalSeen: if (FIXED) false else true }),
+                            finalSeen: if (FIXES.contains("649")) false else true }),
     },
     phase' = phase, queue' = queue, pendingAtPrompt' = pendingAtPrompt,
     keepEnv, staleAnswer' = staleAnswer, budgetMissed' = budgetMissed,
@@ -254,14 +262,14 @@ module subagents {
   }
 
   // The parent model answers. Today follow-ups are drained only after the
-  // answer, one per natural stop; FIXED drains completions first.
+  // answer, one per natural stop; fix 647 drains completions first.
   action naturalStop = all {
     phase == "busy", not(blockingLive(runs)),
-    val pre = if (FIXED)
+    val pre = if (FIXES.contains("647"))
                 queue.foldl(runs, (rs, k) =>
                   rs.set(k, { ...rs.get(k), told: rs.get(k).told + 1 }))
               else runs
-    val q1 = if (FIXED) [] else queue
+    val q1 = if (FIXES.contains("647")) [] else queue
     val stale = pendingAtPrompt.exists(k => pre.get(k).told == 0)
     all {
       staleAnswer' = (staleAnswer or stale),
@@ -282,13 +290,13 @@ module subagents {
   }
 
   // action=wait (or show) on a finished background run returns its result.
-  // FIXED: the returned result consumes the queued completion.
+  // Fix 648: the returned result consumes the queued completion.
   action wait(r: int): bool = all {
     val x = runs.get(r)
     all {
       phase == "busy", x.mode == "background", terminal(x.st), x.told == 0,
       runs' = runs.set(r, { ...x, told: 1 }),
-      queue' = if (FIXED) removeAll(queue, r) else queue,
+      queue' = if (FIXES.contains("648")) removeAll(queue, r) else queue,
     },
     phase' = phase, pendingAtPrompt' = pendingAtPrompt, keepEnv,
     staleAnswer' = staleAnswer, budgetMissed' = budgetMissed,
@@ -305,11 +313,11 @@ module subagents {
     startupRejected' = startupRejected, lastAction' = "parentCancel",
   }
 
-  // /cancel-all while idle: steering.clear-queues!. FIXED keeps subagent
+  // /cancel-all while idle: steering.clear-queues!. Fix 648 keeps subagent
   // completions out of the user's follow-up queue.
   action cancelAll = all {
     phase == "idle",
-    queue' = if (FIXED) queue else [],
+    queue' = if (FIXES.contains("648")) queue else [],
     phase' = phase, runs' = runs, pendingAtPrompt' = pendingAtPrompt,
     keepEnv, staleAnswer' = staleAnswer, budgetMissed' = budgetMissed,
     startupRejected' = startupRejected, lastAction' = "cancelAll",
@@ -328,12 +336,12 @@ module subagents {
 
   // Ctrl-D (one press, even while busy) or /quit: the presenter loop ends,
   // :agent-shutdown reaps runs.jobs. Blocking runs are not jobs and their
-  // owning turn coroutine is never resumed. FIXED reaps every active run.
+  // owning turn coroutine is never resumed. Fix 646 reaps every active run.
   action quit = all {
     phase != "gone",
     phase' = "gone",
     val bg = reapAll(runs, "background")
-    runs' = if (FIXED) reapAll(bg, "blocking") else bg,
+    runs' = if (FIXES.contains("646")) reapAll(bg, "blocking") else bg,
     queue' = queue, pendingAtPrompt' = pendingAtPrompt, keepEnv,
     staleAnswer' = staleAnswer, budgetMissed' = budgetMissed,
     startupRejected' = startupRejected, lastAction' = "quit",
@@ -416,5 +424,11 @@ module subagents {
   }
 }
 
-module current { import subagents(FIXED = false).* }
-module fixed { import subagents(FIXED = true).* }
+module current { import subagents(FIXES = Set()).* }
+module fixed { import subagents(FIXES = Set("645", "646", "647", "648", "649", "650")).* }
+module fix645 { import subagents(FIXES = Set("645")).* }
+module fix646 { import subagents(FIXES = Set("646")).* }
+module fix647 { import subagents(FIXES = Set("647")).* }
+module fix648 { import subagents(FIXES = Set("648")).* }
+module fix649 { import subagents(FIXES = Set("649")).* }
+module fix650 { import subagents(FIXES = Set("650")).* }

@@ -17,6 +17,19 @@ Simplifications: `follow-up` is not modelled, because the in-tree parent never s
 It would use a second FIFO with the same text-matching rule as `steer`.
 Each child action is atomic, either a whole poll batch or a whole turn end; the parent may still read part of the event file.
 Random simulation picks one disruption kind per trace (`scenario`), so its steps go to interleavings.
+The child's internal `fatal` event (a control line of another wire version, a control file truncated below the read offset, a turn that throws) is modelled as `childFatal` and `childTurnThrow` (`scenario = fatal`), and `advance` has the code's `fatal` rows.
+
+## Input assumptions
+
+What the environment actions can produce:
+
+- The parent appends controls in seq order (`send`), one at a time; an `external` parent may append `close` or `finalize` in any state.
+- The child reads every unread control line in one batch (`childPoll`) and handles the batch before anything else it does.
+- A turn calls at most `MAX_TOOLCALLS` tools; at most `MAX_STEERS` user steers are requested; steer text is empty only in `scenario = empty`.
+- Exactly one disruption kind per trace: a crash (`childCrash`, or the parent's kill after `cancel`), the deadline (once), a fatal error (once, outside or inside a turn), a user cancel, a provider error ending the turn, an empty steer, a long answer, a long answer plus death between the spill and the result line, or an external parent.
+- The parent reads 1..n new event lines per poll and stops at `exit`; it settles once the child is gone.
+
+What they cannot produce: torn or malformed control lines other than the version-mismatch `fatal`, out-of-order seqs, `follow-up` controls, a child that exits without its event file (the parent's crash handling is the subagents domain's), and a parent that dies (no orphan child is modelled here).
 
 ## Bugs
 
@@ -34,7 +47,9 @@ The parent's `unacked` map is consulted only by `idle?`, so the run settles `com
 docs/wire.md promises "Every control line gets exactly one `control-ack`".
 The in-tree test "records a steer the child rejects and keeps running" uses a fake child that answers such a steer with `rejected "run is closing"`, which the real child never does (`close` in `ready` goes straight to `done`).
 
-Confirmed against the real child (probe in `extensions/adapters/presenters/rpc/tests/`): prompt → wait `turn-complete` → append `close` and `steer` back to back.
+Witnesses: `w664BatchSkipsSteerTest` (`everyReadControlAcked`), `w664DoomedSteerSentTest` (`noDoomedSteer`), `w664SteerUnreportedTest` (`userSteersAccounted`); in the acks proof model, `w664BatchSkipsSteerTest`.
+
+Confirmed against the real child (probe `extensions/adapters/presenters/rpc/tests/issue_664_steer_after_close_unacked_test.fnl`): prompt → wait `turn-complete` → append `close` and `steer` back to back.
 
 ```
 W1 types:  ready control-ack turn-started … turn-complete control-ack result exit
@@ -42,7 +57,7 @@ W1 acks for close(2): 1   steer(3): 0
 W1 info events: 0
 ```
 
-Confirmed against the real parent (probe in `extensions/behaviors/companions/subagent/tests/`, fake child answering as the real one does): the fake child acks `close`, then the user requests a steer and the fake child yields, so the parent pumps, reads the close ack, and sends the steer; then `result`/`exit done`.
+Confirmed against the real parent (probe `extensions/behaviors/companions/subagent/tests/issue_664_steer_after_close_parent_test.fnl`, fake child answering as the real one does, so this half composes two real observations): the fake child acks `close`, then the user requests a steer and the fake child yields, so the parent pumps, reads the close ack, and sends the steer; then `result`/`exit done`.
 
 ```
 W1p controls: prompt close steer
@@ -63,14 +78,16 @@ The table maps it to `start-finalize-turn`, so the child runs an extra tool-free
 The run is also flagged `budget-limited?`.
 The comment in `maybe-finalize!` ("In `ready` the task turn is done and `close` returns it") states the intended rule, but the protocol cannot express it.
 
-Confirmed against the real child: prompt → `turn-complete` → `finalize`.
+Witness: `w665FinalizeReplacesAnswerTest`.
+
+Confirmed against the real child (probe `extensions/adapters/presenters/rpc/tests/issue_665_finalize_after_answer_test.fnl`): prompt → `turn-complete` → `finalize`.
 
 ```
 W2 types: … turn-complete control-ack turn-started … turn-complete result exit
 W2 turn-started count: 2   result: forced answer
 ```
 
-Confirmed against the real parent: the fake child emits a tool call (with `max-tool-calls 1`) and yields; the parent sends `finalize`.
+Confirmed against the real parent (probe `extensions/behaviors/companions/subagent/tests/issue_665_finalize_stale_mirror_parent_test.fnl`): the fake child emits a tool call (with `max-tool-calls 1`) and yields; the parent sends `finalize`.
 The fake child then ends its turn with a final answer before reading the control and answers `finalize` per the real table.
 
 ```
@@ -89,7 +106,9 @@ Two accepted controls end up neither injected-with-ref nor reported dropped.
 `inject-after-natural-stop!` also treats `[""]` as input, so the agent makes one extra provider call with nothing new to say.
 Fen's own parent trims and rejects empty notes, so this affects external parents only, but the wire protocol is a documented contract.
 
-Confirmed against the real child: steer `""` then steer `"real steer"` during a tool, then close.
+Witness: `w666EmptySteerUnaccountedTest`.
+
+Confirmed against the real child (probe `extensions/adapters/presenters/rpc/tests/issue_666_empty_steer_blinds_refs_test.fnl`): steer `""` then steer `"real steer"` during a tool, then close.
 
 ```
 W3 ack 2: accepted  ack 3: accepted
@@ -106,7 +125,9 @@ A child killed in between (the parent's process timeout, OOM, or kill -9), or a 
 The parent's `finish!` removes the control, event, and system-prompt files it named, but it cannot name this one.
 Every other path removes the file exactly once (`result-final-text` runs once per settle).
 
-Confirmed against the real child: `ch.out:write` raises on the result line, standing in for death at that instant.
+Witness: `w667SpillLeaksOnCrashTest`.
+
+Confirmed against the real child (probe `extensions/adapters/presenters/rpc/tests/issue_667_spill_file_leaks_test.fnl`, which removes the leaked file afterwards): `ch.out:write` raises on the result line, standing in for death at that instant.
 
 ```
 W4 run ok? false  …: killed while writing result
@@ -115,21 +136,54 @@ W4 spill file 3 exists? true  bytes 102400
 
 Severity is low because the window is narrow, but the ownership rule ("the parent owns that file") is unenforceable as designed.
 
-## Candidate fix (modelled as `fixed`)
+## Candidate fixes (named: `FIXES`)
 
-- Child: defer the exit a control causes to the end of its poll batch, so every line read gets an ack (`decide` in a terminal state rejects the rest), with `result`/`exit` still last (#664, `everyReadControlAcked`).
+Each fix is guarded by its issue number; `fixed` enables all four, and `fix664`, `fix665`, `fix666`, `fix667` enable one each.
+Every `fix<n>` instance makes its own issue's rows hold (sampled), so the fixes are independent.
+
+- `664` — Child: defer the exit a control causes to the end of its poll batch, so every line read gets an ack (`decide` in a terminal state rejects the rest), with `result`/`exit` still last (#664, `everyReadControlAcked`).
 - Parent: keep a steer ledger, so every steer the user was told about ends `injected`, `rejected`, `dropped`, or unanswered.
   At settle, report every unsent or unresolved steer as dropped, and hold steers once `close` is sent or the mirror leaves `starting`/`ready`/`running` (#664).
-- `decide(ready, finalize)` is `finish`: a finalize that finds the turn already over keeps its answer and emits `result` (#665).
+- `665` — `decide(ready, finalize)` is `finish`: a finalize that finds the turn already over keeps its answer and emits `result` (#665).
   This changes the documented meaning of finalize from `ready`.
   A narrower alternative is a conditional control, `finalize {turn: N}`, that applies only while turn N is running and otherwise acts as `close`.
-- Reject empty `steer`/`follow-up` text, either in `decide` or with `minLength: 1` in the schema (#666).
+- `666` — Reject empty `steer`/`follow-up` text, either in `decide` or with `minLength: 1` in the schema (#666).
   More robustly, carry the control `ref` on the queue item instead of matching by text, and count drops from `pending`, not from the service queue.
-- The parent names the spill file (as it names the control and event files, e.g. `FEN_WIRE_RESULT_PATH`) and always removes it in `finish!` (#667).
+- `667` — The parent names the spill file (as it names the control and event files, e.g. `FEN_WIRE_RESULT_PATH`) and always removes it in `finish!` (#667).
 
-Every invariant holds under `fixed`.
+Every invariant holds under `fixed` (sampled).
+Reachability witnesses (`reach...Test` in `witnesses.qnt`) show the fixed design still completes a run, injects a steer with its ref, holds and reports a steer sent after close, acks a two-control batch that ends the run, keeps the answer on the #665 schedule, runs the tool-free turn on a budget finalize mid-turn, rejects the empty steer, removes the spill file on the #667 schedule, and exits cancelled, timed-out, and failed (fatal idle, fatal mid-turn, a throwing turn).
+Mutants (`mutants.tsv`) undo each named fix and two guards (`result` after `exit`; `fatal` no longer failing the run); each is caught.
+
+## Proof model: acks (`proofs/acks/`)
+
+The child's control loop only: three control slots (the prompt and two appended controls of any kind), the read offset, how many read lines have been handled, one ack counter per slot, the run state, the turn, and the last two lifecycle events, all scalars.
+A poll takes every unread line; the loop handles them one per step (`childApply`) before it ticks the turn or polls again, which is what `poll-controls!` does inside one loop iteration.
+The `decide`/`advance` rows are copied from the integration model (pinned to the code by conformance) for the controls modelled.
+
+| main | obligation | result | time |
+| --- | --- | --- | --- |
+| `fixed` | `fixedInductive` (acks once, every handled line acked, nothing unread acked, `result` once and right before `exit done`) | inductive | 5–7 s |
+
+`current` fails the same obligation (counterexample, 17 s), and `w664BatchSkipsSteerTest` is its 10-step trace.
+The strengthening needed: an exit waits for the end of the batch (`pend != ""` only mid-batch, `exited` only at a batch boundary), a turn runs exactly in `running`/`closing`/`finalizing` (and while a terminal run unwinds), `done` before exit only with `finish` pending, and `result` is never the last event.
+
+## Conformance
+
+`conform.sh` runs two comparisons; `check-spec` runs it and `conform.sh --negative`, which must fail.
+
+- **Table** (`conform.qnt`, `scripts/spec/conform-wire.fnl`): every (state, control) and (state, event) pair of the model's `decide`/`advance`, including `fatal`, equals `fen.util.wire_session`; and every state, control, and event in the code's `STATES`, `CONTROLS`, `TRANSITIONS`, and `EVENTS` is covered by the model's lists, so a code-only row cannot escape (226 checks). Before this change the model had no `fatal` rows and the comparison passed anyway; the completeness check reports 9 mismatches on that model.
+- **Lifecycle** (`lifecycle_test.fnl`): 300 traces of `current` (16 steps, seed `0x5eed`) are replayed through the real rpc child (`fen.extensions.rpc`, the real `wire_session` table, the cooperative agent loop, the mock provider) by a scripted parent. Each model poll batch is written to the control file when the model's child polls; the child's turn is resumed only as far as the model's next child action (a gate tool holds each tool call; the mock provider answers what the model's step says). After every step, the child's lifecycle events must equal the model's `c.out` in order: `ready`, `control-ack` with ref and status (so one ack per control), `turn-started`, `turn-complete`, the drop notice and its refs, `result`, and `exit` with its status. A `result` naming `final-text-path` must have spilled the full answer there and the model must agree it spilled; the replay removes the file. Today 93 of 300 traces are replayable (scenarios none, cancel, deadline, fatal, external, empty, long) and none diverges (0.4 s); `--negative` replays `fixed` traces, of which 14 diverge.
+
+Not covered by the lifecycle replay, and why:
+
+- Steering injection: the real agent drains its queue at its own loop points, which the model abstracts to one nondeterministic `childInject`; traces with a steer queued mid-turn are skipped, so drop notices with refs are not exercised (the #666 probe covers them).
+- Provider errors, throwing turns, child crash, the parent's kill, and death between the spill and the result line: they need fault injection inside one process (the #667 probe covers the last).
+- The parent mirror and settle (`parentPoll`, `parentDrive`, `parentSettle`): the replay's parent is a script, not the subagent extension, so the parent side and spill-file removal by the parent are covered only by the subagent extension's tests and the #664/#665 parent probes.
 
 ## What holds
+
+Evidence: sampled (`holds` rows), plus inductive for the child-side ack and result properties under fix 664 (acks proof model), plus confirmed by the lifecycle replay for the traces it covers.
 
 - `atMostOneAck`: no control is answered twice, including out-of-order and rejected lines.
 - `ackBeforeEffect`: every `steering-injected` ref and every drop-notice ref comes after that control's ack.

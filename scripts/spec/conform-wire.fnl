@@ -1,5 +1,6 @@
 ;; Conformance: the Quint wire model's decide/advance tables (spec/wire/conform.qnt,
-;; exported as an ITF state) must agree with fen.util.wire_session pair by pair.
+;; exported as an ITF state) must agree with fen.util.wire_session pair by pair,
+;; and must cover every state, control, and event the code's tables define.
 ;; Usage: fennel --add-fennel-path 'packages/util/src/?.fnl;packages/util/src/?/init.fnl' \
 ;;          scripts/spec/conform-wire.fnl <itf.json>
 (local json (require :fen.util.json))
@@ -64,6 +65,39 @@
           (when (not= row.next entry.next)
             (fail! (.. where " next: model " row.next ", code "
                        (tostring entry.next))))))))
+
+;; Completeness: every state, control, and internal event the code's tables
+;; know must be covered by the model's lists, so a code-only row (e.g. a new
+;; event) cannot escape the pairwise comparison above.
+(fn covered [rows field]
+  (let [seen {}]
+    (each [_ row (ipairs rows)]
+      (each [_ v (ipairs (or (. CODE-KINDS (. row field)) [(. row field)]))]
+        (tset seen v true)))
+    seen))
+
+(let [model-states (covered state.decideRows :st)
+      model-kinds (covered state.decideRows :kind)
+      model-events (covered state.advanceRows :ev)
+      advance-states (covered state.advanceRows :st)
+      need! (fn [seen what name]
+              (set checked (+ checked 1))
+              (when (not (. seen name))
+                (fail! (.. "code " what " " (tostring name)
+                           " is not covered by the model"))))]
+  (each [_ st (ipairs ws.STATES)]
+    (need! model-states :state st)
+    (need! advance-states "state (advance)" st))
+  (each [st row (pairs ws.TRANSITIONS)]
+    (need! model-states :state st)
+    (each [kind _ (pairs row)]
+      (need! model-kinds :control kind)))
+  (each [_ kind (ipairs ws.CONTROLS)]
+    (need! model-kinds :control kind))
+  (each [st row (pairs ws.EVENTS)]
+    (need! advance-states "state (advance)" st)
+    (each [e _ (pairs row)]
+      (need! model-events :event e))))
 
 (print (string.format "wire conformance: %d pairs, %d mismatches" checked
                       failures))

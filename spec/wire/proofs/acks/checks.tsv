@@ -1,0 +1,7 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	everyReadControlAcked	violated	#664
+current	atMostOneAck	holds
+current	noAckUnread	holds
+current	resultOnlyBeforeExitDone	holds
+fixed	allInvariants	holds
+fixed	fixedInductive	holds

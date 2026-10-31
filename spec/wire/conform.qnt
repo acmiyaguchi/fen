@@ -1,12 +1,12 @@
 // Export the model's wire_session tables as data so scripts/spec/conform-wire.fnl
 // can compare them, pair by pair, with packages/util/src/fen/util/wire_session.fnl.
 module conform {
-  import wire(FIXED = false) as W from "./model"
+  import wire(FIXES = Set()) as W from "./model"
 
   pure val STATES = ["starting", "ready", "running", "closing", "finalizing",
                      "done", "cancelled", "failed", "timed-out"]
   pure val KINDS = ["prompt", "steer", "finalize", "close", "cancel"]
-  pure val EVENTS = ["started", "turn-done", "final-turn-done", "deadline"]
+  pure val EVENTS = ["started", "turn-done", "final-turn-done", "deadline", "fatal"]
 
   type DRow = { st: str, kind: str, status: str, act: str, next: str }
   type ARow = { st: str, ev: str, ok: bool, act: str, next: str }

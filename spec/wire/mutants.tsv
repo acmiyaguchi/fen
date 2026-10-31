@@ -1,0 +1,8 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    if (FIXES.contains("664")) flush(batch.foldl|    if (false) flush(batch.foldl|	fixed	everyReadControlAcked	the child exits mid-batch again (no deferred exit)
+model.qnt	s|    not(FIXES.contains("664")) or (not(p.closeSent)|    true or (not(p.closeSent)|	fixed	noDoomedSteer	the parent sends steers after close again
+model.qnt	s|        (if (FIXES.contains("665")) acc("finish", "done")|        (if (false) acc("finish", "done")|	fixed	naturalAnswerKept	finalize in ready starts the forced turn again
+model.qnt	s|    else if (FIXES.contains("666") and empty and kind == "steer") REJ|    else if (false) REJ|	fixed	queuedSteersAccounted	empty steers are accepted again
+model.qnt	s|    val rm = if (FIXES.contains("667")) (if (c.spilled) 1 else 0)|    val rm = if (false) (if (c.spilled) 1 else 0)|	fixed	finalTextFileRemovedOnce	the spill path is known only from the result line again
+model.qnt	s|    else exitNow(c2.emit(ev("result")), "done")|    else exitNow(c2, "done").emit(ev("result"))|	current	resultOnlyBeforeExitDone	finish! appends result after exit
+model.qnt	s|    else if (e == "fatal") go("abort", "failed")|    else if (e == "fatal") go("none", "running")|	fixed	mirrorAgreesWhenDrained	a fatal error no longer fails the run

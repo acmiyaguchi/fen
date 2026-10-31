@@ -12,3 +12,9 @@ current	mirrorAgreesWhenDrained	holds
 current	controlSeqIncreasing	holds
 current	boundedTurns	holds
 fixed	allInvariants	holds
+fix664	everyReadControlAcked	holds
+fix664	userSteersAccounted	holds
+fix664	noDoomedSteer	holds
+fix665	naturalAnswerKept	holds
+fix666	queuedSteersAccounted	holds
+fix667	finalTextFileRemovedOnce	holds

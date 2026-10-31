@@ -1,0 +1,6 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|                            finalSeen: if (FIXES.contains("649")) false else true }),|                            finalSeen: true }),|	fixed	budgetEnforced	a steer leaves the run marked answered again
+model.qnt	s|    val pre = if (FIXES.contains("647"))|    val pre = if (false)|	fixed	completionBeforeNextAnswer	completions are drained after the answer again
+model.qnt	s|      queue' = if (FIXES.contains("648")) removeAll(queue, r) else queue,|      queue' = queue,|	fixed	toldAtMostOnce	wait leaves the completion queued again
+model.qnt	s|    runs' = if (FIXES.contains("646")) reapAll(bg, "blocking") else bg,|    runs' = bg,|	fixed	noOrphanAfterQuit	quit reaps background jobs only again
+model.qnt	s|      x.alive, live(x.st), phase != "gone",|      phase != "gone",|	current	terminalOnce	finish! no longer checks the run is still live

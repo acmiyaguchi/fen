@@ -1,0 +1,3 @@
+# main	invariants	mode	steps	seconds	why
+fixed	allInductive	inductive	1	300	the state is one constant configuration (step stutters), so induction holds iff every configuration in the finite domain satisfies the function properties at init
+current	holdsTodayInductive	inductive	1	300	same: today the overrides and the parent tool denial already hold for every configuration

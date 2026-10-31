@@ -10,3 +10,11 @@ current	noWiderNetwork	violated	#650
 current	terminalOnce	holds
 current	statusMatchesProcess	holds
 fixed	allInvariants	holds
+fix645	inheritedRoutingAccepted	holds
+fix646	noOrphanAfterQuit	holds
+fix647	completionBeforeNextAnswer	holds
+fix648	toldAtMostOnce	holds
+fix648	toldOrPending	holds
+fix649	budgetEnforced	holds
+fix650	backgroundReadOnly	holds
+fix650	noWiderNetwork	holds

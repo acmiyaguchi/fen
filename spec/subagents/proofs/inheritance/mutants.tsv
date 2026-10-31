@@ -1,0 +1,4 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    else if (FIXES.contains("645")) (if (cfg.level == "off") "" else cfg.level)|    else if (false) (if (cfg.level == "off") "" else cfg.level)|	fixed	inheritedRoutingAccepted	the status label is forwarded again
+model.qnt	s|    if (FIXES.contains("650") and cfg.mode == "background") narrowed.exclude(MUTATING)|    if (FIXES.contains("650") and cfg.mode == "background") narrowed.exclude(Set("edit"))|	fixed	backgroundReadOnly	background runs lose edit but keep bash
+model.qnt	s|    val narrowed = base.intersect(parentTools(cfg))|    val narrowed = base|	current	toolsNarrowed	child-tool-policy ignores the parent denial

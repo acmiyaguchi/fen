@@ -1,0 +1,13 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	inheritedRoutingAccepted	violated	#645
+current	thinkingInherited	violated	#645
+current	backgroundReadOnly	violated	#650
+current	noWiderNetwork	violated	#650
+current	overrideWins	holds
+current	toolsNarrowed	holds
+fix645	inheritedRoutingAccepted	holds
+fix645	thinkingInherited	holds
+fix650	backgroundReadOnly	holds
+fix650	noWiderNetwork	holds
+fixed	allInvariants	holds
+current	holdsToday	holds

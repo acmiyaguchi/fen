@@ -27,7 +27,11 @@
 // overflows one line and is spilled to a temp file; `crashPlan` = the child
 // dies after spilling and before the result line lands.
 module wire {
-  const FIXED: bool
+  // Candidate fixes by issue number: "664" (ack the whole batch, hold
+  // doomed steers, report unresolved steers at settle), "665" (finalize in
+  // ready keeps the answer), "666" (reject empty steers), "667" (the parent
+  // names and removes the spill file).
+  const FIXES: Set[str]
 
   pure val MAX_STEERS = 2
   pure val MAX_TOOLCALLS = 2
@@ -49,7 +53,7 @@ module wire {
     accepted: Set[int],   // refs of queued (accepted) steers, ghost
     exited: bool, crashed: bool, exitPending: str,
     out: List[Ev], ctlRead: int, turns: int, toolCalls: int,
-    lastNatural: bool, replaced: bool, deadlineFired: bool,
+    lastNatural: bool, replaced: bool, deadlineFired: bool, fatalFired: bool,
     long: bool, crashPlan: bool, spilled: bool,
   }
 
@@ -77,12 +81,12 @@ module wire {
     else if (kind == "cancel") acc("abort", "cancelled")
     else if (st == "starting") REJ
     // fix: an empty steer can never be injected or matched to its ref
-    else if (FIXED and empty and kind == "steer") REJ
+    else if (FIXES.contains("666") and empty and kind == "steer") REJ
     else if (st == "ready")
       if (kind == "prompt" or kind == "steer") acc("start-turn", "running")
       // fix: a finalize that finds the turn already over keeps its answer
       else if (kind == "finalize")
-        (if (FIXED) acc("finish", "done") else acc("start-finalize-turn", "finalizing"))
+        (if (FIXES.contains("665")) acc("finish", "done") else acc("start-finalize-turn", "finalizing"))
       else if (kind == "close") acc("finish", "done")
       else REJ
     else if (st == "running")
@@ -102,9 +106,10 @@ module wire {
   pure def advance(st: str, e: str): Adv =
     if (TERMINAL.contains(st))
       if (e == "turn-done" or e == "final-turn-done") go("exit", st)
-      else if (e == "deadline") go("abort", st)
+      else if (e == "deadline" or e == "fatal") go("abort", st)
       else NOADV
     else if (e == "deadline") go("abort", "timed-out")
+    else if (e == "fatal") go("abort", "failed")
     else if (st == "starting" and e == "started") go("none", "ready")
     else if (st == "running" and e == "turn-done") go("none", "ready")
     else if (st == "closing" and e == "turn-done") go("finish", "done")
@@ -174,19 +179,21 @@ module wire {
   // poll-controls!: today an exit mid-batch skips the rest of the batch
   // unanswered; the fix defers the exit until every read line is acked.
   pure def applyBatch(c: Child, batch: List[Ctl]): Child =
-    if (FIXED) flush(batch.foldl(c, (a, x) => applyControl(a, x)))
+    if (FIXES.contains("664")) flush(batch.foldl(c, (a, x) => applyControl(a, x)))
     else batch.foldl(c, (a, x) => flush(applyControl(a, x)))
 
-  // turn-ended!
-  pure def turnEnded(c: Child, natural: bool): Child =
+  // turn-ended!: a turn that threw (`state.turn-error`) is `fatal`.
+  pure def turnEndedWith(c: Child, natural: bool, threw: bool): Child =
     val c0 = if (natural) c.emit(ev("answer")) else c
     val c1 = { ...c0, active: false, interrupt: false, lastNatural: natural }
                .emit(ev("turnComplete"))
-    val a = advance(c1.st, if (c.final) "final-turn-done" else "turn-done")
+    val a = advance(c1.st, if (threw) "fatal" else if (c.final) "final-turn-done" else "turn-done")
     val c2 = if (a.ok) perform({ ...c1, st: a.next }, a.act, NOCTL) else c1
     val c3 = flush(c2)
     if (not(c3.exited) and not(c3.active) and TERMINAL.contains(c3.st)) exitNow(c3, c3.st)
     else c3
+
+  pure def turnEnded(c: Child, natural: bool): Child = turnEndedWith(c, natural, false)
 
   // take-ref!: pop the FIFO head only when its text equals the injected text.
   // Text identity: a non-empty steer's text is its ref, an empty one is "".
@@ -246,7 +253,7 @@ module wire {
 
   // fix: hold a steer the mirror knows can no longer apply; settle reports it.
   pure def canSteer(p: Parent): bool =
-    not(FIXED) or (not(p.closeSent) and Set("starting", "ready", "running").contains(p.st))
+    not(FIXES.contains("664")) or (not(p.closeSent) and Set("starting", "ready", "running").contains(p.st))
 
   // drive!
   pure def drive(p: Parent): Parent =
@@ -276,16 +283,17 @@ module wire {
   // random simulation spends its steps on protocol interleavings.
   var scenario: str
 
-  pure val SCENARIOS = Set("none", "crash", "deadline", "cancel", "error",
+  pure val SCENARIOS = Set("none", "crash", "deadline", "fatal", "cancel", "error",
                            "empty", "long", "longCrash", "external")
 
-  action init = all {
-    nondet sc = SCENARIOS.oneOf()
+  // initWith/parentPollK take the nondeterministic choices as arguments, so
+  // witnesses.qnt can replay a counterexample step by step.
+  action initWith(sc: str): bool = all {
     scenario' = sc,
       c' = { st: "starting", active: false, final: false, interrupt: false,
              q: [], pending: [], accepted: Set(), exited: false, crashed: false,
              exitPending: "", out: [], ctlRead: 0, turns: 0, toolCalls: 0,
-             lastNatural: false, replaced: false, deadlineFired: false,
+             lastNatural: false, replaced: false, deadlineFired: false, fatalFired: false,
              long: false, crashPlan: false, spilled: false },
       // the task prompt is appended before the child is spawned
       p' = { st: "starting", seq: 1, ctlFile: [{ seq: 1, kind: "prompt", empty: false }],
@@ -296,6 +304,8 @@ module wire {
              doomed: false },
       settled' = false, removals' = 0, lastAction' = "init",
   }
+
+  action init = { nondet sc = SCENARIOS.oneOf() initWith(sc) }
 
   pure def alive(x: Child): bool = not(x.exited) and not(x.crashed)
 
@@ -355,6 +365,21 @@ module wire {
             "childDeadline"),
   }
 
+  // fatal!: an unrecoverable error outside a turn (a control line of another
+  // wire version, the control file truncated below the read offset).
+  action childFatal = all {
+    scenario == "fatal", alive(c), not(c.fatalFired), not(TERMINAL.contains(c.st)), c.st != "starting",
+    val a = advance(c.st, "fatal")
+    childDo(flush(perform({ ...c, st: a.next, fatalFired: true }, a.act, NOCTL)),
+            "childFatal"),
+  }
+
+  // A turn that throws: turn-ended! sees `state.turn-error` and calls fatal!.
+  action childTurnThrow = all {
+    scenario == "fatal", alive(c), c.active, not(c.fatalFired),
+    childDo(turnEndedWith({ ...c, fatalFired: true }, false, true), "childTurnThrow"),
+  }
+
   // The answer the child will finish with overflows one line.
   action envLongAnswer = all {
     Set("long", "longCrash").contains(scenario), alive(c), not(c.long),
@@ -373,11 +398,19 @@ module wire {
     childDo({ ...c, crashed: true }, "childCrash"),
   }
 
-  action parentPoll = all {
-    not(settled), p.read < c.out.length(),
-    nondet k = 1.to(c.out.length() - p.read).oneOf()
+  action parentPollK(k: int): bool = all {
+    not(settled), k >= 1, p.read + k <= c.out.length(),
     parentDo(readUpTo(p, c.out, p.read + k), "parentPoll"),
   }
+
+  action parentPoll = all {
+    p.read < c.out.length(),
+    nondet k = 1.to(c.out.length() - p.read).oneOf()
+    parentPollK(k),
+  }
+
+  // Read everything written so far (witnesses).
+  action parentPollAll = parentPollK(c.out.length() - p.read)
 
   action parentDrive = all {
     not(settled),
@@ -419,10 +452,10 @@ module wire {
     // today the path is only known from the result line; the fix has the
     // parent name the spill file (like the control/event files) and always
     // remove it
-    val rm = if (FIXED) (if (c.spilled) 1 else 0)
+    val rm = if (FIXES.contains("667")) (if (c.spilled) 1 else 0)
              else (if (p1.gotResult and c.long and c.spilled) 1 else 0)
     all {
-      p' = if (FIXED) { ...p1, localReported: unresolved } else p1,
+      p' = if (FIXES.contains("664")) { ...p1, localReported: unresolved } else p1,
       c' = c, settled' = true, removals' = removals + rm, lastAction' = "parentSettle",
       scenario' = scenario,
     }
@@ -430,7 +463,7 @@ module wire {
 
   action step = any {
     childStart, childPoll, childInject, childToolCall, childAnswer,
-    childTurnError, childUnwind, childDeadline, childCrash,
+    childTurnError, childUnwind, childDeadline, childFatal, childTurnThrow, childCrash,
     envLongAnswer, envCrashAtResult,
     parentPoll, parentDrive, userSteer(false), userSteer(true), userCancel,
     parentKill, parentSettle,
@@ -525,5 +558,9 @@ module wire {
   }
 }
 
-module current { import wire(FIXED = false).* }
-module fixed { import wire(FIXED = true).* }
+module current { import wire(FIXES = Set()).* }
+module fixed { import wire(FIXES = Set("664", "665", "666", "667")).* }
+module fix664 { import wire(FIXES = Set("664")).* }
+module fix665 { import wire(FIXES = Set("665")).* }
+module fix666 { import wire(FIXES = Set("666")).* }
+module fix667 { import wire(FIXES = Set("667")).* }

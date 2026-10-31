@@ -1,0 +1,4 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    if (FIXES.contains("664") and not(lastOfBatch)) c1 else flush(c1)|    flush(c1)|	fixed	everyReadControlAcked	the exit a control causes runs before the rest of the batch again
+model.qnt	s|    if (c.pend == "finish") exitNow({ ...c, pend: "", results: c.results + 1 }.emit("result"), "done")|    if (c.pend == "finish") exitNow({ ...c, pend: "" }, "done").emit("result")|	fixed	resultOnlyBeforeExitDone	finish appends result after exit
+model.qnt	s|    handled' = handled + 1, read' = read, unchangedCtl, written' = written,|    handled' = handled, read' = read, unchangedCtl, written' = written,|	fixed	atMostOneAck	handle-line! does not advance past the line it answered

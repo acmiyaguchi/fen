@@ -1,0 +1,4 @@
+# main	invariants	mode	steps	seconds	why
+fixed	fixedInductive	inductive	1	300	one run, scalar state: the strengthening (status/process/delivery/queue/steer facts) makes the safety properties of #646-#649 inductive, so they hold at any depth
+current	currentInductive	inductive	1	300	today one terminal status per run, a live status exactly while the child exists (until quit), and at most two deliveries (the #648 duplicate) hold at any depth
+fixed	allInvariants	bounded	10	300	cross-check of the plain invariants: the longest counterexample in current (#649) is 6 steps, the #647 one 5
