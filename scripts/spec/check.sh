@@ -10,8 +10,20 @@
 #              (milestone `modeling`). When the bug is fixed, update the model
 #              and flip the row to `holds`.
 #
-# A domain may also ship conform.sh, which checks the model against the real
-# code (table comparison or trace replay); it runs alongside the rows.
+# A spec dir may also ship:
+#   conform.sh     checks the model against the real code (table comparison or
+#                  trace replay). `conform.sh --negative` runs it against a
+#                  deliberately wrong model and must fail, so a broken harness
+#                  cannot report success.
+#   witnesses.qnt  module `witnesses`: deterministic `run` traces (quint test,
+#                  names ending in Test). Every issue a violated row names
+#                  needs a witness `w<issue>...Test` showing that issue's
+#                  counterexample, and a dir with fixed/proposed instances
+#                  needs `reach...Test` runs showing their interesting cases
+#                  are reachable (no vacuous pass).
+#   mutants.tsv    <file> <TAB> <sed expression> <TAB> <main> <TAB> <invariant>
+#                  <TAB> <description>: the model with that edit applied must
+#                  violate the invariant (the check is not vacuous).
 #
 # Rows run in parallel (SPEC_JOBS, default: online CPUs). The `holds` rows of
 # one main module share a single `quint run --invariants ...` (and are re-run
@@ -95,6 +107,46 @@ if [ "${1-}" = "--job" ]; then
           # re-run each invariant on the failing shard to say which one broke
           for i in $inv; do row "$i" "$bad" "$per"; done
         fi ;;
+      witness)
+        if log=$("$QUINT" test --backend=typescript --main=witnesses --match='Test$' \
+               "$dir/witnesses.qnt" 2>&1); then
+          echo "ok   $dir witnesses: $(printf '%s\n' "$log" | grep -c '^ *ok ') passed"
+        else
+          echo "FAIL $dir witnesses"
+          printf '%s\n' "$log" | grep -v '^\[DEBUG\]' | grep -vE '^ *ok ' | tail -25 | sed 's/^/    /'
+        fi ;;
+      mutant)
+        # $inv is the mutants.tsv line number; run on a copy of spec/.
+        line=$(sed -n "${inv}p" "$dir/mutants.tsv")
+        mfile=$(printf '%s' "$line" | cut -f1)
+        medit=$(printf '%s' "$line" | cut -f2)
+        mmain=$(printf '%s' "$line" | cut -f3)
+        minv=$(printf '%s' "$line" | cut -f4)
+        mdesc=$(printf '%s' "$line" | cut -f5)
+        tmp=$(mktemp -d "${TMPDIR:-/tmp}/fen-spec-mutant.XXXXXX")
+        cp -R spec "$tmp/spec"
+        sed -e "$medit" "$dir/$mfile" > "$tmp/$dir/$mfile"
+        if cmp -s "$dir/$mfile" "$tmp/$dir/$mfile"; then
+          echo "FAIL $dir mutant \"$mdesc\": the edit did not change $mfile"
+        else
+          log=$("$QUINT" run --main="$mmain" --invariant="$minv" \
+            --max-samples="$SAMPLES" --max-steps="$STEPS" --seed="$SEED" \
+            "$tmp/$dir/model.qnt" 2>&1)
+          if printf '%s' "$log" | grep -q '^\[violation\]'; then
+            echo "ok   $dir mutant caught by $mmain.$minv: $mdesc"
+          else
+            echo "FAIL $dir mutant survived ($mmain.$minv): $mdesc"
+            printf '%s\n' "$log" | grep -v '^\[DEBUG\]' | tail -5 | sed 's/^/    /'
+          fi
+        fi
+        rm -rf "$tmp" ;;
+      conform-negative)
+        if log=$(QUINT="$QUINT" sh "$dir/conform.sh" --negative 2>&1); then
+          echo "FAIL $dir conformance --negative passed: the harness cannot detect a wrong model"
+          printf '%s\n' "$log" | tail -5 | sed 's/^/    /'
+        else
+          echo "ok   $dir conformance detects a wrong model"
+        fi ;;
       conform)
         if log=$(QUINT="$QUINT" sh "$dir/conform.sh" 2>&1); then
           echo "ok   $dir conformance: $(printf '%s' "$log" | tail -1)"
@@ -114,7 +166,7 @@ if ! command -v "$QUINT" >/dev/null 2>&1; then
 fi
 
 if [ $# -eq 0 ]; then
-  set -- spec/core/*/ spec/*/
+  set -- spec/core/*/ spec/*/ spec/*/proofs/*/
 fi
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/fen-spec-check.XXXXXX")
@@ -166,9 +218,45 @@ for dir in $dirs; do
       "$main" "$invs" holds - >> "$work/jobs.rows"
   done
   if [ -f "$dir/conform.sh" ]; then
-    total=$((total + 1))
-    printf '%s\t%s\t%s\t%s\t-\t-\t-\t-\n' holds "$work/r$(printf %05d $total)" conform "$dir" >> "$work/jobs.rows"
+    for k in conform conform-negative; do
+      total=$((total + 1))
+      printf '%s\t%s\t%s\t%s\t-\t-\t-\t-\n' holds "$work/r$(printf %05d $total)" $k "$dir" >> "$work/jobs.rows"
+    done
   fi
+  if [ -f "$dir/witnesses.qnt" ]; then
+    total=$((total + 1))
+    printf '%s\t%s\t%s\t%s\t-\t-\t-\t-\n' holds "$work/r$(printf %05d $total)" witness "$dir" >> "$work/jobs.rows"
+  fi
+  if [ -f "$dir/mutants.tsv" ]; then
+    ln=0
+    while IFS= read -r line; do
+      ln=$((ln + 1))
+      case "$line" in ''|'#'*) continue ;; esac
+      total=$((total + 1))
+      printf '%s\t%s\t%s\t%s\t-\t%s\t-\t-\n' holds "$work/r$(printf %05d $total)" mutant "$dir" "$ln" >> "$work/jobs.rows"
+    done < "$dir/mutants.tsv"
+  fi
+  # Coverage (no quint needed): a witness for every issue a violated row
+  # names, and reachability runs wherever fixed/proposed instances exist.
+  total=$((total + 1))
+  cov="$work/r$(printf %05d $total)"
+  {
+    missing=
+    for iss in $(awk -F "$tab" '$3 == "violated" { print $4 }' "$dir/checks.tsv" | tr ',' ' ' | tr -d '#' | tr ' ' '\n' | sort -u); do
+      if ! { [ -f "$dir/witnesses.qnt" ] && grep -Eq "run w${iss}[A-Za-z0-9_]*Test" "$dir/witnesses.qnt"; }; then
+        missing="$missing #$iss"
+      fi
+    done
+    needs_reach=$(awk -F "$tab" '$1 ~ /^(fixed|proposed)/ { print "yes"; exit }' "$dir/checks.tsv")
+    noreach=
+    if [ -n "$needs_reach" ] && ! { [ -f "$dir/witnesses.qnt" ] && grep -Eq 'run reach[A-Za-z0-9_]*Test' "$dir/witnesses.qnt"; }; then
+      noreach=yes
+    fi
+    if [ -n "$missing" ]; then echo "FAIL $dir coverage: no witness for$missing"
+    elif [ -n "$noreach" ]; then echo "FAIL $dir coverage: fixed/proposed instances have no reach...Test runs"
+    else echo "ok   $dir coverage: every issue has a witness"
+    fi
+  } > "$cov"
 done
 sort -s -t "$tab" -k1,1 "$work/jobs.rows" | cut -f2- > "$work/jobs.sorted"
 run_jobs "$work/jobs.sorted"

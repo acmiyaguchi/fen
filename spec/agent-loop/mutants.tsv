@@ -1,0 +1,4 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|        closeOpen(if (s.pc == "tools" and s.sub == "batch") batchResults(s) else s, "cancel")|        (if (s.pc == "tools" and s.sub == "batch") batchResults(s) else s)|	fixed	historyValidWhenIdle	the step boundary does not close open calls on cancel
+model.qnt	s|        s' = finish(if (FIXED) closeOpen({ ...s, stepErr: true }, "fail")|        s' = finish(if (FIXED) { ...s, stepErr: true }|	fixed	historyValidWhenIdle	the step boundary closes calls on cancel but not on a crash
+model.qnt	s|    m.stop == "tool" or (FIXED and m.calls.length() > 0 and m.stop != "error")|    m.stop == "tool"|	fixed	historyValidWhenIdle	dispatch on the stop label instead of the content

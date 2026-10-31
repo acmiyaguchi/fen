@@ -11,6 +11,12 @@
 
 (local state (. itf.states 1))
 
+;; --negative (conform.sh): flip one model row so the comparison must fail.
+(when (= (os.getenv :FEN_SPEC_CONFORM_CORRUPT) :1)
+  (let [row (. state.decideRows 1)]
+    (set row.next (.. row.next "-corrupted"))
+    (set row.status :accepted)))
+
 ;; The model folds follow-up into steer and both queue actions into "queue".
 (local CODE-KINDS {:steer [:steer :follow-up]})
 (local CODE-ACTS {:queue {:queue-steering true :queue-follow-up true}})

@@ -362,6 +362,24 @@
     (assert (not root) (.. "leaked temp root: " (tostring root)))
     (assert (not file) (.. "leaked temp file: " (tostring file)))))
 
+
+;; @doc fen.testing.known-bug
+;; kind: function
+;; signature: (known-bug issue probe) -> nil
+;; summary: Pin a confirmed, still-open bug: `probe` returns true while the buggy behaviour reproduces; once it returns false the test fails, asking for the probe to become a regular regression test.
+;; tags: testing modeling regression
+(fn known-bug [issue probe]
+  "Run `probe`, a function returning true when the bug tracked by GitHub issue
+   `issue` still reproduces against the real code. Errors propagate, so a
+   broken probe cannot pass by accident. When the probe returns false the bug
+   looks fixed: fail and ask for the probe to be turned into an ordinary
+   assertion of the correct behaviour (and the issue's spec rows flipped)."
+  (let [reproduces? (probe)]
+    (when (not= true reproduces?)
+      (error (.. "#" (tostring issue)
+                 " no longer reproduces: if the fix landed, turn this probe into a regular test of the correct behaviour and flip the issue's spec rows to holds")
+             2))))
+
 {: shellquote
  : stub-getenv!
  : restore-getenv!
@@ -395,4 +413,5 @@
  : read-file!
  : make-tmpfile
  : rm-file
- : assert-no-leaks!}
+ : assert-no-leaks!
+ : known-bug}

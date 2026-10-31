@@ -10,33 +10,59 @@ Quint is a dev-only dependency (in `nix develop`); nothing here ships in the bin
 ## Running
 
 ```sh
-nix develop          # provides quint
-make check-spec      # every domain
+nix develop          # provides quint and Apalache
+make check-spec      # every model: simulation, witnesses, mutants, conformance
 make check-spec SPECS=spec/network
 make check-spec SPECS=spec/core/turn
+make verify-spec     # Apalache proof obligations (verify.tsv); minutes
 ```
 
-`check-spec` is not part of `make check`.
+Neither is part of `make check` or CI.
+`check-spec` is the fast gate (under a minute on a many-core machine); `verify-spec` is run before merging changes to a core primitive or a proof model.
+
+## Kinds of evidence
+
+Every claim in a `FINDINGS.md` or README says which kind of evidence backs it:
+
+| Kind | Meaning | Where it comes from |
+| --- | --- | --- |
+| counterexample | a concrete trace breaks the property | a `violated` row, and the issue's witness in `witnesses.qnt` |
+| sampled | no counterexample in the simulated traces | a `holds` row in `check-spec` (20000 traces x 20 steps) |
+| bounded-safe | no execution of up to N steps breaks it | a `bounded` obligation in `verify.tsv` |
+| inductive | holds initially and every step preserves it: any depth | an `inductive` obligation in `verify.tsv` |
+| refinement | every concrete step is a step (or stutter) of the abstract spec | a `refines...` invariant on a monitor (see `core/README.md`) |
+| liveness | something eventually happens | none yet: no model states fairness assumptions, so no invariant may claim it |
+| confirmed | the real code does it | a `known-bug` probe test, a conformance check, or a line trace in `FINDINGS.md` |
+
+Invariant names must not claim more than their kind: a per-iteration bound is not "no starvation".
 
 ## Layout
 
 `spec/core/` models the core primitives the domains converge on; see [`core/README.md`](core/README.md).
-Each other directory is one domain:
+Each other directory is one domain. Its `model.qnt` is the *integration model*: it mirrors today's code, reproduces bugs, and feeds conformance, so it stays as detailed as the bugs need.
+Small *proof models* for individual contracts live beside it in `spec/<domain>/proofs/<name>/`, with the same files, and are what `verify.tsv` obligations target.
 
 | File | Purpose |
 | --- | --- |
 | `model.qnt` | The model. Pure step functions where the code has them; actions for the environment (network, user, clock, other process). |
 | `checks.tsv` | `main<TAB>invariant<TAB>holds\|violated<TAB>issues`, run by `scripts/spec/check.sh`. `issues` names the GitHub issue(s) a `violated` row records. |
-| `FINDINGS.md` | Scope, code it mirrors, bugs (counterexample + how it was confirmed against real code), candidate fixes, and the domain's minimal core. |
+| `FINDINGS.md` | Scope, code it mirrors, input assumptions (what the environment actions can and cannot produce), bugs (counterexample + how it was confirmed against real code), candidate fixes, and the domain's minimal core. |
+| `witnesses.qnt` | Module `witnesses`: deterministic `run` traces checked by `quint test`. `w<issue>...Test` reproduces that issue's counterexample, so a row cannot stay `violated` for a different bug; `reach...Test` shows a `fixed`/`proposed` instance still reaches its interesting cases (completion, cancel, repair, concurrency), so no invariant passes vacuously. `check-spec` fails if an issue has no witness. |
+| `mutants.tsv` | `file<TAB>sed edit<TAB>main<TAB>invariant<TAB>description`: a deliberately broken model that the invariant must catch. |
+| `verify.tsv` | `main<TAB>invariants<TAB>bounded\|inductive<TAB>steps<TAB>seconds<TAB>why`: Apalache obligations for `verify-spec`. `why` justifies the bound, e.g. the length of the known counterexample it must cover. |
 
 A `violated` row records a known bug in the current design: the check passes while the model still finds a counterexample.
 When the code is fixed, update the model, flip the row to `holds`, drop its issue column, and close the issue.
-Where a candidate fix is modelled, a `fixed` instance (`module fixed { import <model>(FIXED = true).* }`) carries it and should satisfy every invariant.
+Candidate fixes are named: a model takes `const FIXES: Set[str]` and guards each fix with `FIXES.contains("<issue>")`.
+The `fixed` instance enables every fix and must satisfy every invariant; a `fix<issue>` instance enables one, so a row can say which fix it needs and fixes can be checked one at a time.
+
+Each confirmed bug also has a probe against the real code: a Busted test in the owning package or extension, `tests/issue_<n>_<slug>_test.fnl`, built on `fen.testing`'s `known-bug`.
+It passes while the bug reproduces and fails once it stops, so the fix PR turns it into a regular test of the correct behaviour in the same change that flips the rows.
 
 ## Conformance
 
 A model that is never compared with the code drifts into a second, stale description.
-A domain may ship `conform.sh`, which `check-spec` runs after the domain's checks:
+A domain may ship `conform.sh`, which `check-spec` runs alongside the domain's checks, together with `conform.sh --negative`, which compares against a deliberately wrong model and must fail:
 
 | Domain | Kind | What it compares |
 | --- | --- | --- |
@@ -53,7 +79,8 @@ A fix therefore changes both sides in one PR: e.g. the network streaming-row fix
   Model-only suspicions go under "Open questions" in `FINDINGS.md`.
 - Invariants are named for the property (`noOpenRowWhenIdle`), not the bug.
 - A domain's `fixed` instance uses a core primitive by importing its pure module (`import turn.* from "../core/turn/turn"`) and projecting its own types onto the primitive's, not by copying the rule.
-- Models must run on the quint in `nix develop` (0.25.x today) as well as current releases: `from` is a keyword there, so don't use it as a field name.
+- Models must run on the quint in `nix develop` (0.32 today). Keep them parseable by 0.25 too: `from` is a keyword there, so don't use it as a field name.
+- Models that have `verify.tsv` obligations must be Apalache-friendly: no `range(a, b)` with non-constant bounds (fold with an index counter instead), bounded lists, and invariants that do not rebuild whole histories at every step.
 - Quint gotchas: parameterised actions need a return type (`action a(x: int): bool = ...`); strings do not concatenate; ITF trace keys are namespaced (`<main>::<module>::<var>`).
 - Shortest counterexample: rerun `quint run --main=M --invariant=I --max-steps=N --out-itf=t.json model.qnt` with increasing `N`.
 
