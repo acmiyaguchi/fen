@@ -1,0 +1,12 @@
+# main	invariant	expect (holds|violated)
+current	loopSurvivesFaults	violated
+current	forceQuitOnlyOnArmedTurn	violated
+current	cancelArmMatchesTurn	violated
+current	pendingWorkPolledActively	violated
+current	terminalRestoredWhenStopped	holds
+current	noStarvation	holds
+current	cancelObservedWithinOneTick	holds
+current	busyMatchesAlive	holds
+current	noStaleSideAdvanced	holds
+current	noDeadResume	holds
+fixed	allInvariants	holds
