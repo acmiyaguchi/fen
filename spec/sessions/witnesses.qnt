@@ -107,4 +107,16 @@ module witnesses {
   run reachDoctorRepairTest =
     F::init.then(F::userPrompt).then(F::assistant(true)).then(F::crash(true))
       .expect(F::doctorIssues(F::disk) > 0 and F::allInvariants)
+
+  // The same bugs through the replay-equals-memory and compaction checks.
+  run w641ReplayDiffersFromMemoryTest =
+    S::init.then(S::failAppend).then(S::userPrompt).then(S::cancel)
+      .expect(not(S::replayMatchesMemory))
+  run w642ReplayDiffersFromMemoryTest =
+    C::init.then(C::userPrompt).then(C::assistant(true)).then(C::otherSend)
+      .expect(not(C::replayMatchesMemory))
+  run w642CompactionCutSplitsPairTest =
+    C::init.then(C::userPrompt).then(C::assistant(true)).then(C::otherSend).then(C::cancel)
+      .then(C::crash(false)).then(C::resume).then(C::compact(2))
+      .expect(not(C::compactionCutKeepsPairs))
 }

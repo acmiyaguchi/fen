@@ -2,57 +2,57 @@
 
 The domain models under `spec/` describe today's code, one subsystem at a time.
 Their findings converge on a small core (see "The small core" in [`../README.md`](../README.md)).
-This directory models that core: one directory per primitive, each with the primitive's own invariants, imported by the domains that need it.
+This directory models that core: one directory per primitive, each with an abstract specification proved on its own, which the domains then refine.
 
 ## How a primitive is used
 
-Each primitive has two files:
-
 | File | Purpose |
 | --- | --- |
-| `<name>.qnt` | Pure definitions only (types and functions, no state), so domain models can import it: `import turn.* from "../core/turn/turn"`. |
-| `model.qnt`, `checks.tsv` | The primitive's own state machine and invariants, run by `make check-spec` like any domain. |
+| `abstract.qnt` | The contract as an abstract state and a step relation (`absNext`), pure definitions only, so concrete models can import it. |
+| `model.qnt` | The abstract machine: every move an owner of the primitive can make. Its invariants are proved inductively (`verify.tsv`), so they hold at any depth. |
+| `<name>.qnt` | Pure helper functions a domain may share (e.g. `turn.qnt`'s replay rule). |
+| `witnesses.qnt`, `mutants.tsv` | Reachability of the interesting cases, and broken variants the invariants must catch, so the proof is not vacuous. |
 
-A domain projects its own message or state type onto the primitive's types and calls it.
-Its `fixed` instance then uses the primitive instead of hand-written `FIXED` branches.
-Domains that share one primitive therefore share one rule.
-If a domain's `fixed` instance still holds with the shared rule, that is evidence the primitive composes.
-When the code change lands, the domain's `current` instance switches to the primitive as well, and the bug rows flip to `holds`.
+A domain refines a primitive with a **refinement mapping** from its own state to the abstract state, and a **monitor**: a ghost copy of the previous abstract state, and the invariant `absNext(prevAbs, absOf(state))`, which says every concrete step is an abstract step or a stutter.
+The mapping reads what the concrete state actually holds (for close-turn, the calls the history leaves open); it must not repair in-flight state first, or it would hide the very bugs the monitor is for.
+When the monitor holds, the abstract invariants hold for the domain too; when it fails, the counterexample is a concrete step that no correct owner could take.
+
+Sharing pure functions between domains (as sessions shares `turn.qnt`'s replay rule) is reuse, not refinement: a wrong shared rule would pass everywhere.
+That is why the replay rule also has its own laws (`replay/`), checked independently of any domain.
 
 ## Primitives
 
-| Primitive | Issue | Status | Used by |
+| Primitive | Issue | Status | Refined or used by |
 | --- | --- | --- | --- |
-| [turn](turn/turn.qnt): close-turn pairing, replay, and the step outcome | #668 | modelled | agent-loop (`fixed`: cancel and crash pairing, outcome), sessions (`fixed`: replay, provider check, doctor) |
-| store: kernel lock plus compare-and-rename | #669 | planned | sessions, auth, tools |
+| [turn](turn/abstract.qnt): close-turn | #668 | abstract spec proved inductively (~10 s) and to 10 steps | agent-loop: `currentRefines`/`fixedRefines` monitors on the integration model (sampled), and `proofs/loop` (bounded-safe to 12 steps) |
+| [replay](replay/model.qnt): replay of a log cut anywhere | #668 | six laws bounded-safe over every log of up to 5 entries (2–13 s each) | sessions (`fixed` replay, provider check, doctor; `proofs/replay` checks the sessions projection against the same laws) |
+| store: kernel lock plus atomic replace | #669 | planned | sessions, auth, tools |
 | job: process group and output capture | #670 | planned | tools, subagents |
 | tasks: one task table with turn-keyed ownership | #671 | planned | scheduler, tui-turns, serve |
-| ledger: usage as a fold over one log | #672 | planned | context, presenters |
-| contrib: per-owner extension contribution map | #673 | planned | extensions, context |
+| ledger: usage as a fold over one log | #672 | planned (domain proof model `context/proofs/ledger`) | context, presenters |
+| contrib: per-owner extension contribution map | #673 | planned (domain proof model `extensions/proofs/contrib`) | extensions, context |
 | runs: subagent run table and mailbox | #674 | planned | subagents, wire |
-| policy: child policy derived from the parent | #675 | planned | subagents, auth, extensions |
+| policy: child policy derived from the parent | #675 | planned (domain proof model `subagents/proofs/inheritance`) | subagents, auth, extensions |
 
 ## turn
 
-Rule: every assistant's tool calls are answered right after it, in call order, exactly once, and no result appears without a pending call.
+Abstract state: the open calls (in order), whether a turn is open, whether the model is owed a reply, the outcome, whether an `:error` was announced, and the parity of the model's replies (so a reply nobody owed is a visible step, not a stutter).
 
-- `openCalls` and `closeTurn`: whatever way a step ends, pair the calls the history still has open.
-  The calls are found from what was appended, not from where the code unwound.
-- `replayPlan` and `replayEntries`: turn any log into a provider-valid history by inserting synthetic results for interrupted calls and dropping results that answer nothing.
-- `replayRepairs`: how far a log is from its replay, which is what `session doctor` should report.
-- `outcomeOf`: the one terminal status a step reports.
-
-`model.qnt` checks the primitive against two histories.
-One is built only from moves the agent makes and is cut at any point.
-The other is an arbitrary log.
-
-| Invariant | Meaning |
+| Abstract step | Allowed when |
 | --- | --- |
-| `closeTurnValid`, `closeTurnIdempotent` | Closing a turn at any point gives a valid history, and closing twice is the same as closing once. |
-| `replayEqualsClose` | A log cut at any point replays to exactly what close-turn gives in memory, so `--continue` and an unwinding step follow one rule. |
-| `replayValid`, `replayKeepsValid`, `replayIdempotent` | Replay makes any log valid, leaves a valid log unchanged, and is idempotent. |
-| `doctorCleanIffValid` | The doctor reports zero repairs exactly when the log is already valid. |
+| user input | nothing is open |
+| reply (with any calls) | the turn is open, the model is owed a reply, nothing is open |
+| answer (the next k calls, in order) | calls are open |
+| signal error | the turn is open |
+| close (pairs everything open, one outcome) | the turn is open; `ok` only if the model's reply is the newest thing in context; `error` only if announced |
 
-To check that the invariants are not passing vacuously, two deliberate mutations were run once by hand.
-Keeping orphan results in replay, which is what the old sessions repair did, breaks `replayValid` and `doctorCleanIffValid`.
-Pairing only the first open call breaks `closeTurnValid` and `replayEqualsClose`.
+Inherited invariants: a closed turn has nothing open, an outcome exists exactly when the turn is closed, an error outcome was announced, and the model is never owed a reply while a call is open.
+
+Today's agent loop fails refinement in five ways, one per bug: a `:length` reply closes the turn with its call open (#606), a crash does too (#607), the model is asked for a reply nobody owed (#608), and a refused (#609) or capped (#610) turn closes `ok` while the model is still owed a reply.
+The fixed loop refines the spec.
+
+## replay
+
+Laws, each checked on one log chosen in `init` (one Apalache step, every log of up to 5 entries over call ids {0, 1}, including orphan, duplicate, and reordered results):
+`replayValid`, `replayKeepsValid`, `doctorCleanIffValid`, `closeTurnValid`, `closeTurnIdempotent`, `replayEqualsClose` (a log cut at any point replays to what close-turn gives in memory).
+`replayIdempotent` follows from `replayValid` and `replayKeepsValid`; it stays a sampled check, because replaying a replay is what makes Apalache time out.

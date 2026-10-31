@@ -86,7 +86,7 @@ module witnesses {
   run w606RefinementTest =
     CR::init.then(CR::mStartStep(false)).then(CR::mLoopTop)
       .then(CR::mProvider("lengthCall")).then(CR::mAfterLlm)
-      .expect(not(CR::refinesTurn))
+      .expect(not(CR::refinesTurn) and not(CR::inheritsTurnInvariants))
 
   // #607: a crash closes the turn with a call still open.
   run w607RefinementTest =
@@ -138,4 +138,19 @@ module witnesses {
     FR::init.then(FR::mStartStep(false)).then(FR::mLoopTop)
       .then(FR::mProvider("badArgs")).then(FR::mAfterLlm)
       .expect(FR::refinesTurn and FR::stepResult == "crash")
+
+  // #606 again: the next request carries the unanswered call.
+  run w606NextRequestInvalidTest =
+    C::init.then(C::startStep(false)).then(C::loopTop)
+      .then(C::provider("lengthCall", false, false)).then(C::afterLlm)
+      .then(C::startStep(false)).then(C::loopTop).then(C::provider("text", false, false))
+      .expect(not(C::providerValidRequests))
+
+  // #608 again: an empty follow-up resets the refusal allowance.
+  run w608EmptyLineResetsRefusalsTest =
+    C::init.then(C::startStep(true)).then(C::loopTop)
+      .then(C::provider("tool1", false, false)).then(C::afterLlm)
+      .then(C::loopTop).then(C::provider("text", false, false))
+      .then(C::enqueue(false, true)).then(C::afterLlm)
+      .expect(not(C::refusalCountsSinceInput))
 }

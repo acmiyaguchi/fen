@@ -7,7 +7,7 @@ module witnesses {
   // edit is applied instead of rejected as not unique.
   run w658OverlapCountedOnceTest =
     C::init.then(C::runWith(["a", "a", "a", "b", "b", "b"], ["a", "a"]))
-      .expect(not(C::uniqueMatchIsUnique) and C::found == 1 and C::actual == 2)
+      .expect(not(C::uniqueMatchIsUnique) and not(C::countIsExact) and C::found == 1 and C::actual == 2)
 
   // #658 with a longer pattern, the `}\n}` shape: "ababab" with "aba"
   // (matches at 0 and 2).

@@ -1,4 +1,4 @@
-.PHONY: help fmt fmt-check test-fmt install-hooks dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-fast test-all test-list test-shuffle test-compile-cache-clear test-pty profile-tui-scroll check-tui-scroll-perf stall-check smoke smoke-mock check check-static check-fennel bench-tui bench-tui-latency docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-spec verify-spec check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean release-prepare release-tag
+.PHONY: help fmt fmt-check test-fmt install-hooks dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-fast test-all test-list test-shuffle test-compile-cache-clear test-pty profile-tui-scroll check-tui-scroll-perf stall-check smoke smoke-mock check check-static check-fennel bench-tui bench-tui-latency docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-spec check-spec-full verify-spec check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean release-prepare release-tag
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -194,10 +194,14 @@ doc-coverage:
 	@fennel scripts/docs/doc-coverage.fnl
 
 # Quint design models (spec/); needs quint from nix develop. Not part of `check`.
-# check-spec: simulation, witnesses, mutants, conformance (fast gate).
+# check-spec: simulation, witnesses, coverage, conformance (fast gate).
+# check-spec-full: also mutants, simulated violated rows, 20000 samples.
 # verify-spec: Apalache proof obligations declared in spec/**/verify.tsv.
 check-spec:
 	sh scripts/spec/check.sh $(SPECS)
+
+check-spec-full:
+	SPEC_MUTANTS=1 SPEC_SIMULATE_VIOLATED=1 SPEC_SAMPLES=20000 sh scripts/spec/check.sh $(SPECS)
 
 verify-spec:
 	sh scripts/spec/verify.sh $(SPECS)

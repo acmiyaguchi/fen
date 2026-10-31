@@ -29,20 +29,44 @@
 # one main module share a single `quint run --invariants ...` (and are re-run
 # one by one only if that fails); each `violated` row needs its own run, since
 # simulation stops at the first counterexample. A `holds` run is split into
-# SPEC_SHARDS runs (default 2) of SAMPLES/SHARDS samples with seeds SEED,
-# SEED+1, ...: the same sample budget, finished in about half the time.
+# SPEC_SHARDS runs (default 1) of SAMPLES/SHARDS samples with seeds SEED,
+# SEED+1, ...: the same sample budget, split across processes (useful only
+# when there are idle cores; on a saturated machine it only adds startup).
 # Output is in checks.tsv order.
 #
 # Usage: sh scripts/spec/check.sh [spec/<domain> | spec/core/<primitive> ...]
+# Simulation uses quint's Rust backend (SPEC_BACKEND, default rust; the
+# nixpkgs quint ships the evaluator, so nothing is downloaded). A dir with a
+# verify.tsv is a proof model whose holds rows verify-spec proves, so
+# check-spec only smoke-tests them with SPEC_PROOF_SAMPLES (default 2000).
+# A fix<issue> instance only shows that one fix flips its own rows, so its
+# holds rows also get SPEC_FIX_SAMPLES (default 2000); `fixed`, `current`,
+# and the design instances keep the full SPEC_SAMPLES.
+#
 # Env: QUINT (default quint), SPEC_SAMPLES, SPEC_STEPS, SPEC_SEED, SPEC_JOBS,
-#      SPEC_SHARDS.
+#      SPEC_SHARDS, SPEC_FIXED_SHARDS, SPEC_BACKEND, SPEC_PROOF_SAMPLES, SPEC_FIX_SAMPLES,
+#      SPEC_MUTANTS (1 runs mutants.tsv), SPEC_SIMULATE_VIOLATED (1 simulates
+#      witnessed violated rows too); `make check-spec-full` sets both and
+#      SPEC_SAMPLES=20000.
 set -u
 QUINT=${QUINT:-quint}
-SAMPLES=${SPEC_SAMPLES:-20000}
+SAMPLES=${SPEC_SAMPLES:-10000}
 STEPS=${SPEC_STEPS:-20}
 SEED=${SPEC_SEED:-0x5eed}
 JOBS=${SPEC_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}
-SHARDS=${SPEC_SHARDS:-2}
+SHARDS=${SPEC_SHARDS:-1}
+MUTANTS=${SPEC_MUTANTS:-0}
+# A violated row whose invariant a witness in the same dir refutes
+# (`not(X::<invariant>)`) is already a deterministic counterexample, so the
+# fast gate does not search for it again. SPEC_SIMULATE_VIOLATED=1 (set by
+# `make check-spec-full`) simulates every violated row as well.
+SIM_VIOLATED=${SPEC_SIMULATE_VIOLATED:-0}
+# The full-budget design instances (fixed, proposed*) are the long poles, so
+# they are split across more seeds.
+FIXED_SHARDS=${SPEC_FIXED_SHARDS:-2}
+BACKEND=${SPEC_BACKEND:-rust}
+PROOF_SAMPLES=${SPEC_PROOF_SAMPLES:-2000}
+FIX_SAMPLES=${SPEC_FIX_SAMPLES:-2000}
 tab=$(printf '\t')
 
 # ---- worker: one job, result written to $out ---------------------------
@@ -57,7 +81,7 @@ if [ "${1-}" = "--job" ]; then
   # One row: run it, compare with the expectation, print one result line.
   # Optional $2/$3: seed and sample count (a holds shard being re-run).
   row() {
-    log=$("$QUINT" run --main="$main" --invariant="$1" \
+    log=$("$QUINT" run --backend="$BACKEND" --main="$main" --invariant="$1" \
       --max-samples="${3:-$SAMPLES}" --max-steps="$STEPS" --seed="${2:-$SEED}" \
       "$dir/model.qnt" 2>&1)
     status=$?
@@ -86,11 +110,18 @@ if [ "${1-}" = "--job" ]; then
         # $inv is a space-separated list of invariants for this main; check
         # them together, in SHARDS parallel runs with consecutive seeds.
         IFS=' '
-        per=$(( (SAMPLES + SHARDS - 1) / SHARDS ))
+        budget=$SAMPLES
+        [ -f "$dir/verify.tsv" ] && budget=$PROOF_SAMPLES
+        shards=$SHARDS
+        case $main in
+          fix[0-9]*) budget=$FIX_SAMPLES ;;
+          fixed|proposed*) [ -f "$dir/verify.tsv" ] || shards=$FIXED_SHARDS ;;
+        esac
+        per=$(( (budget + shards - 1) / shards ))
         k=0 pids=
-        while [ $k -lt "$SHARDS" ]; do
+        while [ $k -lt "$shards" ]; do
           # shellcheck disable=SC2086
-          "$QUINT" run --main="$main" --invariants $inv \
+          "$QUINT" run --backend="$BACKEND" --main="$main" --invariants $inv \
             --max-samples="$per" --max-steps="$STEPS" --seed=$((SEED + k)) \
             "$dir/model.qnt" >/dev/null 2>&1 &
           pids="$pids $!"
@@ -108,7 +139,7 @@ if [ "${1-}" = "--job" ]; then
           for i in $inv; do row "$i" "$bad" "$per"; done
         fi ;;
       witness)
-        if log=$("$QUINT" test --backend=typescript --main=witnesses --match='Test$' \
+        if log=$("$QUINT" test --backend="$BACKEND" --main=witnesses --match='Test$' \
                "$dir/witnesses.qnt" 2>&1); then
           echo "ok   $dir witnesses: $(printf '%s\n' "$log" | grep -c '^ *ok ') passed"
         else
@@ -129,7 +160,7 @@ if [ "${1-}" = "--job" ]; then
         if cmp -s "$dir/$mfile" "$tmp/$dir/$mfile"; then
           echo "FAIL $dir mutant \"$mdesc\": the edit did not change $mfile"
         else
-          log=$("$QUINT" run --main="$mmain" --invariant="$minv" \
+          log=$("$QUINT" run --backend="$BACKEND" --main="$mmain" --invariant="$minv" \
             --max-samples="$SAMPLES" --max-steps="$STEPS" --seed="$SEED" \
             "$tmp/$dir/model.qnt" 2>&1)
           if printf '%s' "$log" | grep -q '^\[violation\]'; then
@@ -178,7 +209,9 @@ run_jobs() {
   xargs -P "$JOBS" -I{} sh "$0" --job "{}" < "$1"
 }
 
-# Phase 1: typecheck every model.
+# Phase 1 (SPEC_TYPECHECK=1 only): typecheck every model first, for a clean
+# error. Off by default: every run typechecks its model anyway, and a type
+# error shows up as an `error` row with quint's message.
 n=0
 : > "$work/jobs.typecheck"
 dirs=
@@ -189,7 +222,7 @@ for dir in "$@"; do
   n=$((n + 1))
   printf '%s\t%s\t%s\t-\t-\t-\t-\n' "$work/t$(printf %05d $n)" typecheck "$dir" >> "$work/jobs.typecheck"
 done
-run_jobs "$work/jobs.typecheck"
+[ "${SPEC_TYPECHECK:-0}" = 1 ] && run_jobs "$work/jobs.typecheck"
 
 # Phase 2: every row and conformance check of the models that typecheck.
 # `holds` rows run the full sample budget, so they are queued first.
@@ -199,7 +232,7 @@ total=0
 n=0
 for dir in $dirs; do
   n=$((n + 1))
-  if grep -q '^FAIL' "$work/t$(printf %05d $n)"; then
+  if [ -f "$work/t$(printf %05d $n)" ] && grep -q '^FAIL' "$work/t$(printf %05d $n)"; then
     fail=$((fail + 1))
     continue
   fi
@@ -208,6 +241,11 @@ for dir in $dirs; do
     case "$main" in ''|'#'*) continue ;; esac
     total=$((total + 1))
     [ "$expect" = holds ] && continue
+    if [ "$SIM_VIOLATED" != 1 ] && [ -f "$dir/witnesses.qnt" ] &&
+       grep -Eq "not\( *[A-Za-z0-9_]+::$inv *\)" "$dir/witnesses.qnt"; then
+      echo "ok   $dir $main.$inv (violated ${issues:-}, by witness)" > "$work/r$(printf %05d $total)"
+      continue
+    fi
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$expect" "$work/r$(printf %05d $total)" row "$dir" \
       "$main" "$inv" "$expect" "${issues:--}" >> "$work/jobs.rows"
   done < "$dir/checks.tsv"
@@ -227,7 +265,7 @@ for dir in $dirs; do
     total=$((total + 1))
     printf '%s\t%s\t%s\t%s\t-\t-\t-\t-\n' holds "$work/r$(printf %05d $total)" witness "$dir" >> "$work/jobs.rows"
   fi
-  if [ -f "$dir/mutants.tsv" ]; then
+  if [ "$MUTANTS" = 1 ] && [ -f "$dir/mutants.tsv" ]; then
     ln=0
     while IFS= read -r line; do
       ln=$((ln + 1))

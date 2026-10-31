@@ -6,7 +6,7 @@ module witnesses {
 
   run w606LengthReplyClosesOpenTest =
     C::init.then(C::startStep(false)).then(C::loopTop).then(C::provider("length"))
-      .then(C::afterLlm).expect(not(C::refinesTurn))
+      .then(C::afterLlm).expect(not(C::refinesTurn) and not(C::inheritsTurnInvariants))
 
   run w607CrashClosesOpenTest =
     C::init.then(C::startStep(false)).then(C::loopTop).then(C::provider("badArgs"))

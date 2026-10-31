@@ -12,6 +12,12 @@ Code: `packages/core/src/fen/core/agent.fnl` (`step`, `step-loop`, `run-tool-cal
 
 Main modules: `current` (every outcome), `wellFormed` (tool calls only ever arrive with `:tool-use` and parseable arguments), `lengthOnly` / `badArgsOnly` (each isolates one malformed-reply bug), and `fixed`.
 
+## Input assumptions
+
+- The provider returns one of: text, one or two tool calls (parallel-safe or not), an error, a `:length` reply carrying one tool call, or one call with malformed `edit` arguments. Thinking blocks and hosted tools are not modelled (network domain).
+- At most `MAX_STEPS = 2` user prompts, `CAP = 3` loop iterations, and `MAX_LINES = 2` queued lines, each a steering or follow-up line, empty or not.
+- A cancel may land at any cooperative yield; a crash only where malformed `edit` arguments raise (`same-turn-edit-conflicts`).
+
 ## What holds
 
 These are worth keeping as regression properties.
@@ -159,3 +165,23 @@ Today that rule is enforced locally at each of about six exit points: the cancel
 Each exit point carries its own `append-cancelled-tool-results!` call, keyed on `stop-reason`, which is why the two holes (#606, #607) are on paths that were not enumerated.
 A smaller core is a single "close the turn" step at the `step` boundary: pair whatever calls the last assistant left open (cancelled, truncated, or crashed), append `:aborted` if cancelled, and emit one terminal status event that `turn_lifecycle` and presenters read directly (#609, #610).
 Once that boundary owns pairing, the per-yield pairing code in the serial and parallel tool paths shrinks to "stop and unwind".
+
+## Named fixes, refinement, and evidence
+
+Fixes are named by issue (`FIXES`): `fix606` dispatches on content, `fix607` closes the turn at the step boundary on any unwind (it replaces the per-exit pairing for cancels too), `fix608` continues only when a line was appended, `fix609` reports the step's own outcome, `fix610` announces the cap. Each `fix<issue>` instance makes its own issue's rows hold (sampled).
+
+The loop is checked against the abstract close-turn spec (`spec/core/turn/abstract.qnt`, proved inductively there):
+
+- `currentRefines` / `fixedRefines` (integration model): a ghost previous abstract state and `refinesTurn`, checked on every concrete step. `fixedRefines` holds (sampled); `currentRefines` fails for each of #606-#610.
+- `proofs/loop` (proof model, no transcript): the same monitor over the loop's control decisions. `fixed` is **bounded-safe to 12 steps** with Apalache (19 s); `current` fails refinement for each bug, each with a witness.
+
+| Issue | Witnesses | Probe (`known-bug`, real code) |
+| --- | --- | --- |
+| #606 | `w606LengthCallUnpairedTest`, `w606NextRequestInvalidTest`, `w606RefinementTest`, proofs/loop `w606LengthReplyClosesOpenTest` | `packages/core/tests/issue_606_length_reply_tool_call_unpaired_test.fnl` |
+| #607 | `w607BadArgsCrashUnpairedTest`, `w607RefinementTest`, proofs/loop `w607CrashClosesOpenTest` | `packages/core/tests/issue_607_malformed_edit_args_crash_unpaired_test.fnl` |
+| #608 | `w608EmptyFollowUpContinuesTest`, `w608EmptyLineResetsRefusalsTest`, `w608RefinementTest`, proofs/loop `w608UnowedReplyTest` | `packages/core/tests/issue_608_empty_follow_up_continues_loop_test.fnl` |
+| #609 | `w609RefusedTwiceReportsOkTest`, `w609RefinementTest`, proofs/loop `w609RefusedTwiceClosesOkTest` | `packages/fen/tests/issue_609_refused_turn_reports_ok_test.fnl` |
+| #610 | `w610SafetyCapSilentTest`, `w610RefinementTest`, proofs/loop `w610CapClosesOkTest` | `packages/fen/tests/issue_610_safety_cap_silent_test.fnl` (runs the real 1000-turn cap) |
+
+Mutants remove the boundary on cancel or on crash, dispatch on the stop label, and drop the cap's error event; each is caught (`mutants.tsv`, `proofs/loop/mutants.tsv`).
+
