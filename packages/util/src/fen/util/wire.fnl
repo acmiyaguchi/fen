@@ -248,6 +248,7 @@
 ;; ----------------------------------------------------------------
 
 (local str {:type :string})
+(local non-empty-str {:type :string :minLength 1})
 (local int {:type :integer})
 (local num {:type :number})
 (local bool {:type :boolean})
@@ -350,8 +351,9 @@
 
 ;; Parent -> child.
 (local CONTROL-SCHEMAS {:prompt (object-schema {:text str} [:text])
-                        :steer (object-schema {:text str} [:text])
-                        :follow-up (object-schema {:text str} [:text])
+                        ;; Empty steer/follow-up text would be accepted but never injected (#666).
+                        :steer (object-schema {:text non-empty-str} [:text])
+                        :follow-up (object-schema {:text non-empty-str} [:text])
                         :finalize (object-schema {:note str})
                         :cancel (object-schema {})
                         :close (object-schema {})})

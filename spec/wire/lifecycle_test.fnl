@@ -126,10 +126,14 @@
                   :steer {:text (if empty? "" (.. "steer " seq))}
                   _ nil)
         (line rej) (wire.next! sender kind payload)]
-    (assert line (tostring (?. rej :reason)))
-    (assert (= sender.seq seq)
-            (.. "model seq " seq " but wire seq " sender.seq))
-    line))
+    (if line
+        (do
+          (assert (= sender.seq seq)
+                  (.. "model seq " seq " but wire seq " sender.seq))
+          line)
+        (let [raw (wire.message kind RUN seq payload)]
+          (set sender.seq seq)
+          (json.encode raw)))))
 
 (fn fatal-line []
   (let [msg (wire.message :close RUN 999 nil)]

@@ -1,19 +1,16 @@
-;; Known-bug probe for #665 (child half): `finalize` that arrives after the
-;; task turn already ended (`ready`) starts a second, tool-free turn whose
-;; forced answer replaces the one the child already produced.
-;; See spec/wire/FINDINGS.md (#665).
+;; Regression for #632 (spec/presenters, `rpcExitMatchesStatus`): after a failed
+;; turn the rpc child reports the step's real outcome: `exit failed`, the error
+;; detail, and exit code 1.
 
 (local test-api (require :fen.core.extensions.test_api))
 (local register-registry (require :fen.core.extensions.register))
 (local events (require :fen.core.extensions.events))
 (local agent-mod (require :fen.core.agent))
-(local types (require :fen.core.types))
 (local turn-lifecycle (require :fen.turn_lifecycle))
 (local wire (require :fen.util.wire))
 (local mock (require :fen.extensions.provider_mock.mock_provider))
 (local steering (require :fen.extensions.steering.service))
 (local rpc (require :fen.extensions.rpc))
-(local {: known-bug} (require :fen.testing))
 
 (local RUN "run-1")
 (local MAX-TICKS 2000)
@@ -24,30 +21,22 @@
     (set p.name :mock)
     (register-registry.register :provider p :test)))
 
-(fn slow-tool [name yields]
-  "Coop-aware tool: yields YIELDS times while running."
-  {:name name
-   :label name
-   :description name
-   :parameters {:type :object :properties {}}
-   :execute (fn [_args _ctx yield-fn]
-              (for [_ 1 yields]
-                (when yield-fn (yield-fn)))
-              {:content [(types.text-block (.. name " done"))]})})
-
-(fn make-state [script tools record]
-  (let [agent (agent-mod.make-agent {:provider-name :mock
+(fn make-state [mock-script]
+  (let [state {:opts {}
+               :session {:id :s}
+               :flush (fn [] nil)
+               :make-flush (fn [] (fn [] nil))}
+        agent (agent-mod.make-agent {:provider-name :mock
                                      :model "mock"
                                      :api-key :test
-                                     :tools tools
                                      :on-event (fn [ev] (events.emit ev))
                                      :get-steering (fn []
                                                      (steering.get-steering))
                                      :get-follow-up (fn []
                                                       (steering.get-follow-up))
-                                     :provider-options {:mock-script script
-                                                        :mock-record record}})]
-    {:agent agent :opts {}}))
+                                     :provider-options {: mock-script}})]
+    (set state.agent agent)
+    state))
 
 (fn make-on-tick [state]
   "Mirror of the interactive runtime tick: one resume per tick."
@@ -103,19 +92,17 @@
 
     parent))
 
-(fn run-child [opts]
-  "Run the real rpc presenter to exit (or error) while OPTS.script plays the
-   parent between ticks. OPTS.before-run (fn [ctx]) runs after rpc.init.
-   Returns {:ok? :err :parent :record}; temp files are always removed."
+(fn run-child [mock-script script-fn]
+  "Run the real rpc presenter to exit while SCRIPT-FN plays the parent
+   between ticks. Returns {:ok? :code :parent}; temp files are removed."
   (let [control-path (os.tmpname)
         event-path (os.tmpname)
         _ (do
             (os.remove event-path)
             (io.close (io.open control-path :w)))
-        record []
-        state (make-state opts.mock opts.tools record)
+        state (make-state mock-script)
         parent (make-parent control-path event-path)
-        script (coroutine.create (fn [] (opts.script parent)))
+        script (coroutine.create (fn [] (script-fn parent)))
         ticks {:n 0}
         clock {:now 1000}
         ctx {: state
@@ -131,42 +118,51 @@
                              (when (not= (coroutine.status script) :dead)
                                (let [(ok? err) (coroutine.resume script)]
                                  (assert ok? err))))}}
-        (ok? err) (pcall (fn []
-                           (rpc.init ctx)
-                           (when opts.before-run (opts.before-run ctx))
-                           (rpc.run ctx)))]
+        (ok? code) (pcall (fn []
+                            (rpc.init ctx)
+                            (rpc.run ctx)))]
     (when (not ok?) (pcall rpc.shutdown ctx))
     (parent.pump!)
     (wire.close-reader! parent.reader)
     (os.remove control-path)
     (os.remove event-path)
-    {: ok? : err : parent : record}))
+    {: ok? : code : parent}))
 
-(fn reset! []
-  (test-api.reset!)
-  (register-mock!)
-  (steering.clear-queues!))
-
-(describe "#665 rpc child: finalize from ready"
+(describe "#632 rpc child outcome after a failed turn"
           (fn []
-            (before_each reset!)
-            (it "replaces the finished answer with a forced one"
+            (before_each (fn []
+                           (test-api.reset!)
+                           (register-mock!)
+                           (steering.clear-queues!)))
+            (after_each (fn [] (test-api.reset!)))
+            (it "exits failed with code 1 and the error detail after a quota error"
                 (fn []
-                  (known-bug 665
-                             (fn []
-                               (let [r (run-child {:mock ["natural answer"
-                                                          "forced answer"]
-                                                   :tools []
-                                                   :script (fn [p]
-                                                             (p.wait-type :ready)
-                                                             (p.send! :prompt
-                                                                      {:text "work"})
-                                                             (p.wait-type :turn-complete)
-                                                             (p.send! :finalize
-                                                                      {}))})
-                                     p r.parent
-                                     result (p.find #(= $1.type :result))]
-                                 (assert r.ok? r.err)
-                                 (and (= 2 (p.count #(= $1.type :turn-started)))
-                                      (= "forced answer"
-                                         (?. result :final-text))))))))))
+                  (let [r (run-child (fn [_req]
+                                       {:error "usage_limit_reached: quota"})
+                                     (fn [p]
+                                       (p.wait-type :ready)
+                                       (p.send! :prompt {:text "go"})
+                                       (p.wait-type :turn-complete)
+                                       (p.send! :close {})))
+                        p r.parent
+                        tc (p.find #(= $1.type :turn-complete))
+                        result (p.find #(= $1.type :result))
+                        exit (p.find #(= $1.type :exit))]
+                    (assert r.ok? (tostring r.code))
+                    (assert (= "error" (tostring (?. tc :stop-reason))))
+                    (assert (= "error" (tostring (?. result :stop-reason))))
+                    (assert (= "failed" (tostring (?. exit :status))))
+                    (assert (string.find (tostring (?. exit :error))
+                                         "usage_limit_reached" 1 true))
+                    (assert (= 1 r.code)))))
+            (it "still exits done with code 0 after a good turn"
+                (fn []
+                  (let [r (run-child (fn [_req] "all good")
+                                     (fn [p]
+                                       (p.wait-type :ready)
+                                       (p.send! :prompt {:text "go"})
+                                       (p.wait-type :turn-complete)
+                                       (p.send! :close {})))
+                        exit (r.parent.find #(= $1.type :exit))]
+                    (assert (= "done" (tostring (?. exit :status))))
+                    (assert (= 0 r.code)))))))

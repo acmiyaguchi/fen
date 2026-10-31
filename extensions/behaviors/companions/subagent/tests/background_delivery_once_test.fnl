@@ -1,14 +1,11 @@
-;; Known bug #645 (spec/subagents, `inheritedRoutingAccepted`): a parent
-;; with thinking enabled forwards its status-bar label (`think:8192`,
-;; `reason:high`) as the child's `--thinking`, which the child's CLI rejects
-;; before it speaks the wire. The parent agents are built the way production
-;; builds them (interactive.make-agent-from-opts) and launched through the
-;; real tool with the production tool context `{:agent agent :state state}`.
+;; Regression for #648 (spec/subagents, `toldAtMostOnce`, `toldOrPending`): a
+;; background outcome is delivered once (`wait`/`show` mark it delivered) and
+;; `/cancel-all` no longer drops it.
 
-(local {: known-bug} (require :fen.testing))
 (local test-api (require :fen.core.extensions.test_api))
 (local tool-registry (require :fen.core.extensions.register.tool))
-(local thinking (require :fen.core.thinking))
+(local command-registry (require :fen.core.extensions.register.command))
+(local events (require :fen.core.extensions.events))
 (local wire (require :fen.util.wire))
 
 ;; ---- fake child (copied from init_test.fnl's conformance kit) ----
@@ -200,45 +197,56 @@
     ((. (require :fen.extensions.steering.service) :clear-queues!))
     (when (not ok?) (error err 0))))
 
-(fn parent-agent [api]
-  (let [interactive (require :fen.interactive)]
-    (interactive.make-agent-from-opts (fn [_]
-                                        {:provider-name (if (= api
-                                                               :anthropic-messages)
-                                                            :anthropic
-                                                            :openai)
-                                         :model "model-x"
-                                         : api})
-                                      {:thinking :high :pinned-tools []}
-                                      (fn [_] nil) {})))
-
-(fn launched-thinking [agent]
-  "Launch a plain agent (no frontmatter thinking) and return the child's
-   --thinking value."
-  (install-mocks (simple "ok") (fn [_] {:name "a" :body "b"}))
-  (fresh)
+(fn finish-background-run! []
   (let [tool (registered-tool :subagent)
-        r (tool.execute {:agent :a :task "t"} {:agent agent :state {}})]
-    (assert (not r.is-error?) (tostring (?. r :content 1 :text)))
-    (argv-value (. children 1 :argv) "--thinking")))
+        r (tool.execute {:agent :a :task "scout" :background true} {})]
+    (assert (not r.is-error?))
+    (for [_ 1 50
+          &until (not= :running (. ((. (runs) :find) r.details.run-id) :status))]
+      (events.emit {:type :runtime-tick}))
+    r.details.run-id))
 
-(describe "subagent known bug #645"
+(fn queued-follow-ups []
+  (let [steering (require :fen.extensions.steering.service)]
+    (length (. (steering.queue-snapshot) :follow-up))))
+
+(fn setup! []
+  (install-mocks (simple "background finding") (fn [_] {:name "a" :body "b"}))
+  (fresh))
+
+(fn pending-frame? []
+  (let [r (runs)
+        run (r.record "subagent-1")]
+    (and run run.completion-pending?)))
+
+(describe "subagent background delivery (#648)"
           (fn []
-            (it "forwards the parent's thinking-status label as --thinking"
+            (it "marks the completion delivered when wait returns the result"
                 (fn []
-                  (known-bug 645 (fn []
-                                   (var bad 0)
-                                   (with-stubs (fn []
-                                                 (each [_ api (ipairs [:anthropic-messages
-                                                                       :openai-responses])]
-                                                   (let [agent (parent-agent api)
-                                                         v (launched-thinking agent)]
-                                                     ;; production agents carry no :thinking field
-                                                     (assert (= nil
-                                                                agent.thinking))
-                                                     (when (and v
-                                                                (= v
-                                                                   agent.thinking-status)
-                                                                (not (thinking.valid-level? v)))
-                                                       (set bad (+ bad 1)))))))
-                                   (= bad 2)))))))
+                  (with-stubs (fn []
+                                (setup!)
+                                (let [id (finish-background-run!)
+                                      tool (registered-tool :subagent)]
+                                  (assert (pending-frame?))
+                                  (let [waited (tool.execute {:action "wait"
+                                                              :run-id id}
+                                                             {})]
+                                    (assert (not waited.is-error?))
+                                    (assert (= :completed
+                                               waited.details.run.status))
+                                    (assert (not (pending-frame?)))
+                                    (assert (= nil
+                                               ((. (runs) :take-completion-frame!))))))))))
+            (it "keeps the completion across /cancel-all"
+                (fn []
+                  (with-stubs (fn []
+                                (setup!)
+                                ((. (require :fen.extensions.queue) :register) (test-api.make-runtime-api :queue))
+                                (let [id (finish-background-run!)]
+                                  (assert (pending-frame?))
+                                  (command-registry.dispatch "/cancel-all"
+                                                             {:busy? false})
+                                  (assert (= 0 (queued-follow-ups)))
+                                  (assert (pending-frame?))
+                                  (assert (= :completed
+                                             (. ((. (runs) :find) id) :status))))))))))

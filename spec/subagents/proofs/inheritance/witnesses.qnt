@@ -9,26 +9,26 @@ module witnesses {
     parentDenyBash: false,
   }
 
-  // #645: a thinking parent forwards its status label as --thinking.
-  run w645StatusLabelForwardedTest =
-    C::initWith({ ...PLAIN, level: "high" })
-      .expect(not(C::inheritedRoutingAccepted) and not(C::thinkingInherited)
-              and C::childThinking(C::cfg) == "think:8192")
+  // #645: a thinking parent forwards its level as --thinking.
+  run reach645StatusLabelForwardedTest =
+    F::initWith({ ...PLAIN, level: "high" })
+      .expect(F::inheritedRoutingAccepted and F::thinkingInherited
+              and F::childThinking(F::cfg) == "high")
 
-  // #645 on OpenAI: the effort label is rejected too.
-  run w645EffortLabelForwardedTest =
-    C::initWith({ ...PLAIN, provider: "openai", level: "high" })
-      .expect(not(C::inheritedRoutingAccepted) and C::childThinking(C::cfg) == "reason:high")
+  // #645 on OpenAI: the level is accepted.
+  run reach645EffortLabelForwardedTest =
+    F::initWith({ ...PLAIN, provider: "openai", level: "high" })
+      .expect(F::inheritedRoutingAccepted and F::childThinking(F::cfg) == "high")
 
-  // #650: a background child keeps edit and bash.
-  run w650BackgroundMutatesTest =
-    C::initWith({ ...PLAIN, mode: "background" })
-      .expect(not(C::backgroundReadOnly) and C::childTools(C::cfg) == Set("read", "edit", "bash"))
+  // #650: a background child is read-only.
+  run reach650BackgroundMutatesTest =
+    F::initWith({ ...PLAIN, mode: "background" })
+      .expect(F::backgroundReadOnly and F::childTools(F::cfg) == Set("read"))
 
-  // #650: --web-search off on the parent, live in settings: the child is live.
-  run w650WebSearchOffDroppedTest =
-    C::initWith({ ...PLAIN, parentWeb: "off", settingsWeb: "live" })
-      .expect(not(C::noWiderNetwork) and C::childWeb(C::cfg) == "live")
+  // #650: --web-search off on the parent is inherited by the child.
+  run reach650WebSearchOffDroppedTest =
+    F::initWith({ ...PLAIN, parentWeb: "off", settingsWeb: "live" })
+      .expect(F::noWiderNetwork and F::childWeb(F::cfg) == "off")
 
   // ---- the fixed function on the interesting configurations ----
 

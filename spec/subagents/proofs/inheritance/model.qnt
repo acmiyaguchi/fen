@@ -132,7 +132,7 @@ module inheritance {
   val allInductive = and { cfg.in(CONFIGS), allInvariants }
 }
 
-module current { import inheritance(FIXES = Set()).* }
+module current { import inheritance(FIXES = Set("645", "650")).* }
 module fixed { import inheritance(FIXES = Set("645", "650")).* }
 module fix645 { import inheritance(FIXES = Set("645")).* }
 module fix650 { import inheritance(FIXES = Set("650")).* }

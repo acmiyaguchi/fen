@@ -363,7 +363,7 @@
                         (assert.is_false (and (= m.role :assistant)
                                               (= m.stop-reason :aborted)))))
                     (assert-closed-run! r))))
-            (it "finalizes from ready with one tool-free turn"
+            (it "finalizes from ready by finishing with the answer already produced (#665)"
                 (fn []
                   (let [r (run-child {:mock ["answer" "final"]
                                       :tools []
@@ -374,9 +374,9 @@
                                                 (p.send! :finalize {})
                                                 (p.send! :steer {:text "late"}))})
                         p r.parent]
-                    (assert.are.equal :none (. r.record 2 :tool-choice))
+                    (assert.are.equal 1 (length r.record))
                     (assert.are.equal :rejected (. (p.ack 3) :status))
-                    (assert.are.equal "final"
+                    (assert.are.equal "answer"
                                       (. (p.find #(= $1.type :result))
                                          :final-text))
                     (assert-closed-run! r))))
@@ -392,11 +392,12 @@
                                                 (p.wait-type :ready)
                                                 (p.send! :prompt
                                                          {:text "find the fact"})
-                                                (p.wait-type :turn-complete)
+                                                ;; mid-turn: from `ready` finalize now just finishes (#665)
+                                                (p.wait-type :tool-result)
                                                 (p.send! :finalize
                                                          {:note "report the fact"}))})
-                        final-call (. r.record 3)]
-                    (assert.are.equal 3 (length r.record))
+                        final-call (. r.record 2)]
+                    (assert.are.equal 2 (length r.record))
                     (assert.are.equal :none final-call.tool-choice)
                     (assert.is_truthy (string.find (context-text final-call)
                                                    "UNIQUE-FACT-7731" 1 true))

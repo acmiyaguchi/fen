@@ -59,7 +59,8 @@
                     :ready {:prompt (accept :start-turn :running)
                             :steer (accept :start-turn :running)
                             :follow-up (accept :start-turn :running)
-                            :finalize (accept :start-finalize-turn :finalizing)
+                            ;; The turn is already over: keep its answer (#665).
+                            :finalize (accept :finish :done)
                             :close (accept :finish :done)
                             :cancel CANCEL}
                     :running {:prompt (reject "a turn is running; send steer or follow-up")

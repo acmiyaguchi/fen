@@ -43,7 +43,7 @@ lifecycle() {
 
 if [ -n "$negative" ]; then
   if table 1; then echo "table: corrupted model not detected"; exit 0; fi
-  if [ "$MAIN" = current ]; then other=fixed; else other=current; fi
+  if [ "$MAIN" = current ]; then other=unfixed; else other=current; fi
   if lifecycle "$other"; then echo "lifecycle: $other traces not detected"; exit 0; fi
   exit 1
 fi

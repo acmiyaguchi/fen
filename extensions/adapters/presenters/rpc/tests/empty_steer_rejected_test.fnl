@@ -1,7 +1,5 @@
-;; Known-bug probe for #667: the oversized final answer is spilled to a temp
-;; file before the `result` line that names it is written. When that write
-;; fails (the child dying at that instant), the file is left behind and no
-;; one can name it. See spec/wire/FINDINGS.md (#667).
+;; Regression for #666: an empty steer is rejected with an ack, so it never
+;; blinds ref matching for later steers.
 
 (local test-api (require :fen.core.extensions.test_api))
 (local register-registry (require :fen.core.extensions.register))
@@ -13,7 +11,6 @@
 (local mock (require :fen.extensions.provider_mock.mock_provider))
 (local steering (require :fen.extensions.steering.service))
 (local rpc (require :fen.extensions.rpc))
-(local {: known-bug} (require :fen.testing))
 
 (local RUN "run-1")
 (local MAX-TICKS 2000)
@@ -74,12 +71,21 @@
             (assert (= nil rej) (.. "invalid wire event: " line))
             (table.insert parent.seen msg)))))
 
-    (fn parent.send! [typ ?payload]
-      (let [(line rej) (wire.next! parent.sender typ ?payload)
-            f (assert (io.open control-path :a))]
-        (assert line (tostring (?. rej :reason)))
+    (fn parent.raw! [line]
+      (let [f (assert (io.open control-path :a))]
         (f:write line "\n")
-        (f:close)
+        (f:close)))
+
+    (fn parent.send! [typ ?payload]
+      (let [(line _rej) (wire.next! parent.sender typ ?payload)
+            line (or line
+                     (let [json (require :fen.util.json)]
+                       (set parent.sender.seq (+ parent.sender.seq 1))
+                       (json.encode {:type typ
+                                     :run RUN
+                                     :seq parent.sender.seq
+                                     :payload ?payload})))]
+        (parent.raw! line)
         parent.sender.seq))
 
     (fn parent.find [pred]
@@ -121,6 +127,7 @@
         ctx {: state
              :on-tick (make-on-tick state)
              :wire {: control-path
+                    :result-path opts.result-path
                     : event-path
                     :run RUN
                     :now (fn [] clock.now)
@@ -147,63 +154,33 @@
   (register-mock!)
   (steering.clear-queues!))
 
-(describe "#667 rpc child: spill file when the result line is lost"
+(describe "#666 rpc child: an empty steer"
           (fn []
             (before_each reset!)
-            (it "leaves the spilled answer on disk"
+            (it "is rejected and the next steer keeps its ref"
                 (fn []
-                  (known-bug 667
-                             (fn []
-                               (let [big (string.rep "0123456789abcdef"
-                                                     (* 100 64))
-                                     names []
-                                     real-tmpname os.tmpname]
-                                 (set os.tmpname
-                                      (fn []
-                                        (let [n (real-tmpname)]
-                                          (table.insert names n)
-                                          n)))
-                                 (let [(ok? r) (pcall run-child
-                                                      {:mock [big]
-                                                       :tools []
-                                                       :before-run (fn [ctx]
-                                                                     ;; The event file handle dies on the result line.
-                                                                     (let [ch ctx.state.wire-channel
-                                                                           real ch.out]
-                                                                       (set ch.out
-                                                                            {:write (fn [_
-                                                                                         line
-                                                                                         ...]
-                                                                                      (when (string.find line
-                                                                                                         "\"type\":\"result\""
-                                                                                                         1
-                                                                                                         true)
-                                                                                        (error "killed while writing result"))
-                                                                                      (real:write line
-                                                                                                  ...))
-                                                                             :flush (fn []
-                                                                                      (real:flush))
-                                                                             :close (fn []
-                                                                                      (real:close))})))
-                                                       :script (fn [p]
-                                                                 (p.wait-type :ready)
-                                                                 (p.send! :prompt
-                                                                          {:text "write a lot"})
-                                                                 (p.wait-type :turn-complete)
-                                                                 (p.send! :close
-                                                                          {}))})]
-                                   (set os.tmpname real-tmpname)
-                                   (assert ok? r)
-                                   ;; names: control, event, then the spill file
-                                   (let [spill (. names 3)
-                                         f (and spill (io.open spill :rb))
-                                         body (when f (f:read :a))]
-                                     (when f (f:close))
-                                     (each [_ n (ipairs names)]
-                                       (os.remove n))
-                                     (and (not r.ok?)
-                                          (not= nil
-                                                (string.find (tostring r.err)
-                                                             "killed while writing result"
-                                                             1 true))
-                                          (= (length big) (length (or body "")))))))))))))
+                  (let [r (run-child {:mock [{:tool-call {:id "c1" :name :slow}}
+                                             "steered answer"]
+                                      :tools [(slow-tool :slow 3)]
+                                      :script (fn [p]
+                                                (p.wait-type :ready)
+                                                (p.send! :prompt {:text "work"})
+                                                (p.wait-type :tool-call)
+                                                (p.send! :steer {:text ""})
+                                                (p.send! :steer
+                                                         {:text "real steer"})
+                                                (p.wait-type :turn-complete)
+                                                (p.send! :close {}))})
+                        p r.parent
+                        ack (fn [ref]
+                              (?. (p.find #(and (= $1.type :control-ack)
+                                                (= $1.ref ref)))
+                                  :status))
+                        injected (p.find #(and (= $1.type :steering-injected)
+                                               (= $1.text "real steer")))]
+                    (assert r.ok? r.err)
+                    (assert (= :rejected (ack 2)))
+                    (assert (= :accepted (ack 3)))
+                    (assert (not= nil injected))
+                    (assert (= 3 injected.ref))
+                    (assert (= 0 (p.count #(= $1.type :info)))))))))

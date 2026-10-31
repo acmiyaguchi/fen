@@ -3,14 +3,12 @@ module witnesses {
   import acks(FIXES = Set()) as C from "./model"
   import acks(FIXES = Set("664")) as F from "./model"
 
-  // #664: close and steer in one batch after the first turn: close in ready
-  // exits at once and the steer (slot 2) is consumed but never acked.
-  run w664BatchSkipsSteerTest =
-    C::initWith("close", "steer").then(C::childStart).then(C::childPoll).then(C::childApply)
-      .then(C::childTurnEnd).then(C::parentAppend).then(C::parentAppend)
-      .then(C::childPoll).then(C::childApply).then(C::childApply)
-      .expect(not(C::everyReadControlAcked) and C::exited and C::handled == 3
-              and C::a1 == 1 and C::a2 == 0 and C::exitStatus == "done")
+  // #664: every read control is acked under batching.
+  run reach664BatchSkipsSteerTest =
+    F::initWith("close", "steer").then(F::childStart).then(F::childPoll).then(F::childApply)
+      .then(F::childTurnEnd).then(F::parentAppend).then(F::parentAppend)
+      .then(F::childPoll).then(F::childApply).then(F::childApply)
+      .expect(F::everyReadControlAcked and F::exited and F::a2 == 1)
 
   // The fixed loop acks both, then sends result and exit done.
   run reachBatchFullyAckedTest =

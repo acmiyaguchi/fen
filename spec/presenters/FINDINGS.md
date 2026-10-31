@@ -96,8 +96,10 @@ mock ["working" {:error "boom"}]; prompt; finalize
 RPC-FINALIZE-ERR result.stop-reason= error  final-text= [error] boom  exit.status= done  code= 0
 ```
 
-Witnesses: `w632RpcErrorExitsDoneTest`, `w632RpcCapExitsDoneTest` (`witnesses.qnt`), `w632RpcQuotaExitsDoneTest`, `w632RpcCapToolTextTest` (`proofs/outcome`).
-Probe (reproduces): `extensions/adapters/presenters/rpc/tests/issue_632_failed_turn_exits_done_test.fnl`, the real rpc presenter, cooperative agent, and mock provider through a fake parent: after a quota error, `turn-complete` and `result` say `stop-reason error`, `final-text` starts with `[error] `, `result` has no `error-details`, `exit` is `done`, and `run` returns 0.
+Witnesses: `reach632RpcErrorExitsFailedTest`, `reach632RpcCapExitsFailedTest` (`witnesses.qnt`), `reach632RpcQuotaExitsFailedTest`, `reach632RpcCapExitsFailedTest` (`proofs/outcome`).
+Probe (confirmed): `extensions/adapters/presenters/rpc/tests/failed_turn_exit_status_test.fnl`, the real rpc presenter, cooperative agent, and mock provider through a fake parent: after a quota error, `turn-complete` and `result` say `stop-reason error`, `final-text` starts with `[error] `, `result` has no `error-details`, `exit` is `done`, and `run` returns 0.
+
+Fixed in #605: rpc presenter's `outcome-status` derives failure from the turn result, error, and child exit, emitting exit status failed and code 1 on error/cap.
 
 ### #633: A goal that fails or is cancelled reports the previous iteration's text as its final text
 
@@ -139,8 +141,10 @@ JSON-CONTINUE replayed= 2  code= 0  usage.total= 1515.0  this-turn=15  messages=
 JSON-ERR      code= 1  stop-reason= error  final-text= nil  error= [error] boom  usage.total= 1500.0
 ```
 
-Witnesses: `w619ContinueUsageIncludesReplayTest` (`witnesses.qnt`), `w619ReplayedUsageTest` (`proofs/outcome`).
-Probe (reproduces): `extensions/adapters/presenters/json/tests/issue_619_json_real_agent_counts_replay_test.fnl`, the real JSON presenter, agent, and mock provider, ok and error turns (the context domain's probe, `issue_619_json_usage_includes_replay_test.fnl`, stubs the agent).
+Witnesses: `reach619ContinueUsageExcludesReplayTest` (`witnesses.qnt`), `reach619ReplayedUsageTest` (`proofs/outcome`).
+Probe (confirmed): `extensions/adapters/presenters/json/tests/json_usage_excludes_replay_test.fnl`, the real JSON presenter, agent, and mock provider, ok and error turns.
+
+Fixed in #605: json presenter uses `usage_ledger.delta` with a marker taken at turn start, excluding replayed messages from turn usage.
 
 An end-to-end CLI run was not possible here: `--provider mock` is rejected because the out-of-tree extension cannot register a provider (the mock is "off by default").
 So the CLI half (`--continue` together with `--presenter json`) is confirmed by reading `main.fnl` and `session_lifecycle.fnl`.
@@ -169,7 +173,7 @@ Fixed in #605: `turn_lifecycle` reads the step's own `Outcome`, so a cap or refu
 
 ## Candidate fixes (named, `FIXES`)
 
-Today's code carries #631, #633 and #634 (`current` has them; #619 and #632 are still open). Each fix is guarded by its issue number; instances `fix619`, `fix631`, `fix632`, `fix634` enable one fix each, and their rows show that fix makes its own issue's invariants hold.
+Today's code carries #619, #631, #632, #633 and #634 (`current` has them all). Each fix is guarded by its issue number; instances `fix619`, `fix631`, `fix632`, `fix634` enable one fix each, and their rows show that fix makes its own issue's invariants hold.
 #633's fix is not independent: on the cap path the wrong lifecycle status (#634) also puts the error text in `last-result`, so `goalFinalTextMatches` needs both; `fix634.goalFinalTextMatches` stays violated, which shows #633 is a separate bug.
 `"631"` also closes web's open row on `:error` and `:cancelled` (the web twin of network #630, latent here).
 

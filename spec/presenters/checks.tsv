@@ -2,11 +2,11 @@
 current	headlessExitMatchesStatus	holds
 current	headlessFinalTextMatches	holds
 current	headlessErrorDetailsMatch	holds
-current	headlessUsageIsTurnUsage	violated	#619
+current	headlessUsageIsTurnUsage	holds
 current	sendStatusMatchesOutcome	holds
 current	lifecycleStatusMatchesOutcome	holds
-current	rpcExitMatchesStatus	violated	#632
-current	rpcFinalTextMatches	violated	#632
+current	rpcExitMatchesStatus	holds
+current	rpcFinalTextMatches	holds
 current	goalFinalTextMatches	holds
 current	goalExitMatches	holds
 current	webRowsSingleAttempt	holds

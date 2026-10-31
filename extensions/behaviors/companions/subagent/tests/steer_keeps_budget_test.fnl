@@ -1,13 +1,8 @@
-;; Known bug #648 (spec/subagents, `toldAtMostOnce`, `toldOrPending`): a
-;; background outcome is delivered twice after `wait`, because the
-;; completion `finish!` queued as a follow-up stays queued, and dropped by
-;; `/cancel-all`, which clears the follow-up queue it was written to.
+;; Regression for #649 (spec/subagents, `budgetEnforced`): a steer that resumes an
+;; answered run re-arms the investigation budgets.
 
-(local {: known-bug} (require :fen.testing))
 (local test-api (require :fen.core.extensions.test_api))
 (local tool-registry (require :fen.core.extensions.register.tool))
-(local command-registry (require :fen.core.extensions.register.command))
-(local events (require :fen.core.extensions.events))
 (local wire (require :fen.util.wire))
 
 ;; ---- fake child (copied from init_test.fnl's conformance kit) ----
@@ -199,62 +194,57 @@
     ((. (require :fen.extensions.steering.service) :clear-queues!))
     (when (not ok?) (error err 0))))
 
-(fn finish-background-run! []
+(fn tool-calls! [child n]
+  "N tool calls, yielding after each so the parent pumps in between."
+  (for [i 1 n]
+    (child.emit! :tool-call {:name "read" :arguments {:path (.. "f" i)}})
+    (coroutine.yield)
+    (coroutine.yield)))
+
+(fn control-run [child]
+  (start! child)
+  (prompt! child)
+  (tool-calls! child 2)
+  (child.expect! :finalize)
+  (child.emit! :turn-complete {:turn 1 :stop-reason "aborted"})
+  (child.emit! :turn-started {:turn 2})
+  (answer! child "findings")
+  (result! child "findings"))
+
+(fn steered-run [child]
+  (start! child)
+  (prompt! child)
+  ;; A final answer at a natural stop, then a steer injected there resumes work.
+  (child.emit! :assistant-text {:text "first answer" :final? true})
+  ((. (runs) :request-steer!) "subagent-1" "dig deeper" :agent)
+  (let [steer (child.expect! :steer)]
+    (child.emit! :steering-injected {:text steer.text :ref steer.seq}))
+  (tool-calls! child 6)
+  (child.expect! :finalize)
+  (child.emit! :turn-complete {:turn 1 :stop-reason "aborted"})
+  (child.emit! :turn-started {:turn 3})
+  (answer! child "deeper findings")
+  (result! child "deeper findings"))
+
+(fn launch [script]
+  (install-mocks script (fn [_] {:name "a" :body "b"}))
+  (fresh)
   (let [tool (registered-tool :subagent)
-        r (tool.execute {:agent :a :task "scout" :background true} {})]
-    (assert (not r.is-error?))
-    (for [_ 1 50
-          &until (not= :running (. ((. (runs) :find) r.details.run-id) :status))]
-      (events.emit {:type :runtime-tick}))
-    r.details.run-id))
+        r (tool.execute {:agent :a :task "review" :max-tool-calls 2} {})]
+    {:types ((. children 1 :types))
+     :count r.details.tool-call-count
+     :requested? r.details.budget-finalization-requested?}))
 
-(fn queued-follow-ups []
-  (let [steering (require :fen.extensions.steering.service)]
-    (length (. (steering.queue-snapshot) :follow-up))))
-
-(fn setup! []
-  (install-mocks (simple "background finding") (fn [_] {:name "a" :body "b"}))
-  (fresh))
-
-(describe "subagent known bug #648"
+(describe "subagent budgets after a steer (#649)"
           (fn []
-            (it "keeps the queued completion after wait returned the result"
+            (it "still sends finalize for a spent budget once a steer resumed an answered run"
                 (fn []
-                  (known-bug 648
-                             (fn []
-                               (var duplicated? false)
-                               (with-stubs (fn []
-                                             (setup!)
-                                             (let [id (finish-background-run!)
-                                                   tool (registered-tool :subagent)
-                                                   waited (tool.execute {:action "wait"
-                                                                         :run-id id}
-                                                                        {})]
-                                               (set duplicated?
-                                                    (and (not waited.is-error?)
-                                                         (= :completed
-                                                            waited.details.run.status)
-                                                         (= 1
-                                                            (queued-follow-ups)))))))
-                               duplicated?))))
-            (it "drops the queued completion on /cancel-all"
-                (fn []
-                  (known-bug 648 (fn []
-                                   (var dropped? false)
-                                   (with-stubs (fn []
-                                                 (setup!)
-                                                 ((. (require :fen.extensions.queue)
-                                                     :register) (test-api.make-runtime-api :queue))
-                                                 (let [id (finish-background-run!)]
-                                                   (assert (= 1
-                                                              (queued-follow-ups)))
-                                                   (command-registry.dispatch "/cancel-all"
-                                                                              {:busy? false})
-                                                   (set dropped?
-                                                        (and (= 0
-                                                                (queued-follow-ups))
-                                                             (= :completed
-                                                                (. ((. (runs)
-                                                                       :find) id)
-                                                                   :status)))))))
-                                   dropped?))))))
+                  (with-stubs (fn []
+                                (let [ctl (launch control-run)]
+                                  (assert (= :finalize (. ctl.types 2)))
+                                  (assert ctl.requested?))
+                                (remove-child-files!)
+                                (let [st (launch steered-run)]
+                                  (assert (> st.count 2))
+                                  (assert st.requested?)
+                                  (assert (= "prompt,steer,finalize" (table.concat st.types ","))))))))))

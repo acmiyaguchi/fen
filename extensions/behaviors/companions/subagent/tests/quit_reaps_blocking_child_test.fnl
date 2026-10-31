@@ -1,13 +1,10 @@
-;; Known bug #649 (spec/subagents, `budgetEnforced`): `maybe-finalize!`
-;; sends `finalize` only while `final-answer-produced?` is unset, and that
-;; flag is set at the child's first final answer and never cleared. A steer
-;; injected at that natural stop resumes the run, and no budget applies any
-;; more. The same scripted work runs twice with `max-tool-calls 2`: once
-;; plainly (the control: finalize is sent), once steered after an answer.
+;; Regression for #646 (spec/subagents, `noOrphanAfterQuit`): quitting while a
+;; blocking subagent runs cancels and reaps the child through `:agent-shutdown`,
+;; even though the owning turn coroutine is never resumed.
 
-(local {: known-bug} (require :fen.testing))
 (local test-api (require :fen.core.extensions.test_api))
 (local tool-registry (require :fen.core.extensions.register.tool))
+(local events (require :fen.core.extensions.events))
 (local wire (require :fen.util.wire))
 
 ;; ---- fake child (copied from init_test.fnl's conformance kit) ----
@@ -199,63 +196,45 @@
     ((. (require :fen.extensions.steering.service) :clear-queues!))
     (when (not ok?) (error err 0))))
 
-(fn tool-calls! [child n]
-  "N tool calls, yielding after each so the parent pumps in between."
-  (for [i 1 n]
-    (child.emit! :tool-call {:name "read" :arguments {:path (.. "f" i)}})
-    (coroutine.yield)
-    (coroutine.yield)))
+(local CANCEL-MARKER {:type :cancel-marker})
 
-(fn control-run [child]
-  (start! child)
-  (prompt! child)
-  (tool-calls! child 2)
-  (child.expect! :finalize)
-  (child.emit! :turn-complete {:turn 1 :stop-reason "aborted"})
-  (child.emit! :turn-started {:turn 2})
-  (answer! child "findings")
-  (result! child "findings"))
+(fn exists? [p]
+  (let [f (and p (io.open p :r))]
+    (when f (f:close))
+    (not= nil f)))
 
-(fn steered-run [child]
-  (start! child)
-  (prompt! child)
-  ;; A final answer at a natural stop, then a steer injected there resumes work.
-  (child.emit! :assistant-text {:text "first answer" :final? true})
-  ((. (runs) :request-steer!) "subagent-1" "dig deeper" :agent)
-  (let [steer (child.expect! :steer)]
-    (child.emit! :steering-injected {:text steer.text :ref steer.seq}))
-  (tool-calls! child 6)
-  (answer! child "deeper findings")
-  (close! child "deeper findings"))
-
-(fn launch [script]
-  (install-mocks script (fn [_] {:name "a" :body "b"}))
-  (fresh)
-  (let [tool (registered-tool :subagent)
-        r (tool.execute {:agent :a :task "review" :max-tool-calls 2} {})]
-    {:types ((. children 1 :types))
-     :count r.details.tool-call-count
-     :requested? r.details.budget-finalization-requested?}))
-
-(describe "subagent known bug #649"
+(describe "subagent quit with a blocking run (#646)"
           (fn []
-            (it "sends no finalize for a spent budget once a steer resumed an answered run"
+            (it "cancels the child and removes its files on :agent-shutdown"
                 (fn []
-                  (known-bug 649
-                             (fn []
-                               (var unenforced? false)
-                               (with-stubs (fn []
-                                             (let [ctl (launch control-run)]
-                                               ;; the budget works without the steer
-                                               (assert (= :finalize
-                                                          (. ctl.types 2)))
-                                               (assert ctl.requested?))
-                                             (remove-child-files!)
-                                             (let [st (launch steered-run)]
-                                               (set unenforced?
-                                                    (and (> st.count 2)
-                                                         (not st.requested?)
-                                                         (= (table.concat st.types
-                                                                          ",")
-                                                            "prompt,steer,close"))))))
-                               unenforced?))))))
+                  (with-stubs (fn []
+                                (install-mocks (fn [child]
+                                                 (start! child)
+                                                 (prompt! child)
+                                                 (child.expect! :cancel)
+                                                 (child.exit! :cancelled))
+                                               (fn [_]
+                                                 {:name "a" :body "b"}))
+                                (fresh)
+                                (let [tool (registered-tool :subagent)
+                                      co (coroutine.create (fn []
+                                                             (pcall tool.execute
+                                                                    {:agent :a
+                                                                     :task "work"}
+                                                                    {}
+                                                                    (fn []
+                                                                      (coroutine.yield)))))]
+                                  (for [_ 1 5]
+                                    (assert (coroutine.resume co)))
+                                  (assert (= :running
+                                             (. (snapshot) :runs 1 :status)))
+                                  ;; Quit: the turn coroutine is never resumed.
+                                  (events.emit {:type :agent-shutdown})
+                                  (let [child (. children 1)
+                                        snap (snapshot)]
+                                    (assert (= 0 snap.active-count))
+                                    (assert (= :cancelled
+                                               (. snap.runs 1 :status)))
+                                    (assert (= "prompt,cancel"
+                                               (table.concat (child.types) ",")))
+                                    (assert (not (exists? child.env.FEN_WIRE_CONTROL_PATH)))))))))))

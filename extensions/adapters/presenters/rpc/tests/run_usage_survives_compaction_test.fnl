@@ -1,10 +1,11 @@
-;; Known-bug probe for #664 (child half): a steer that lands in the same poll
-;; batch as the `close` that ends the run is never answered: `poll-controls!`
-;; stops at exit, so the steer gets no control-ack and no drop notice.
-;; See spec/wire/FINDINGS.md (#664).
+;; Regression test for #618: the rpc presenter's `turn-complete` and `result`
+;; usage survive in-run compaction because they are read from the usage ledger,
+;; not sliced from agent.messages.
+;; See spec/context/FINDINGS.md (#618).
 
 (local test-api (require :fen.core.extensions.test_api))
 (local register-registry (require :fen.core.extensions.register))
+(local tool-registry (require :fen.core.extensions.register.tool))
 (local events (require :fen.core.extensions.events))
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
@@ -13,7 +14,6 @@
 (local mock (require :fen.extensions.provider_mock.mock_provider))
 (local steering (require :fen.extensions.steering.service))
 (local rpc (require :fen.extensions.rpc))
-(local {: known-bug} (require :fen.testing))
 
 (local RUN "run-1")
 (local MAX-TICKS 2000)
@@ -24,30 +24,66 @@
     (set p.name :mock)
     (register-registry.register :provider p :test)))
 
-(fn slow-tool [name yields]
-  "Coop-aware tool: yields YIELDS times while running."
-  {:name name
-   :label name
-   :description name
-   :parameters {:type :object :properties {}}
-   :execute (fn [_args _ctx yield-fn]
-              (for [_ 1 yields]
-                (when yield-fn (yield-fn)))
-              {:content [(types.text-block (.. name " done"))]})})
+(fn usage [input]
+  {: input :output 0 :cache-read 0 :cache-write 0 :total-tokens input})
 
-(fn make-state [script tools record]
-  (let [agent (agent-mod.make-agent {:provider-name :mock
+(fn script [req]
+  "Summary request -> input 30000; else call `compact` once, then answer."
+  (let [first (?. req.messages 1 :content)
+        summary? (and (= 1 (length req.messages)) (= (type first) :string)
+                      (string.find first "Messages to summarize" 1 true))
+        called? (accumulate [found false _ m (ipairs req.messages)]
+                  (or found (= m.role :tool-result)))]
+    (if summary? {:text "summary" :usage (usage 30000)} called?
+        {:text "answer" :usage (usage 10)}
+        {:tool-call {:id "c1" :name :compact :args {}} :usage (usage 1000)})))
+
+(fn with-id [msg id]
+  (tset msg :__session-entry-id id)
+  msg)
+
+(fn seeded []
+  (let [big (string.rep "x" 90000)]
+    [(with-id (types.user-message big) "m1")
+     (with-id (types.assistant-message {:content [(types.text-block big)]})
+       "m2")
+     (with-id (types.user-message big) "m3")
+     (with-id (types.assistant-message {:content [(types.text-block "a4")]})
+       "m4")
+     (with-id (types.user-message "u5") "m5")
+     (with-id (types.assistant-message {:content [(types.text-block "a6")]})
+       "m6")]))
+
+(fn compact-tool []
+  (accumulate [found nil _ t (ipairs (tool-registry.merged []))]
+    (or found (when (= t.name :compact) t))))
+
+(fn make-state [mock-script record]
+  (let [state {:opts {}
+               :session {:id :s}
+               :session-backend {:append-entry (fn [_ entry]
+                                                 (let [out {:id "comp-1"}]
+                                                   (each [k v (pairs entry)]
+                                                     (tset out k v))
+                                                   out))}
+               :flush (fn [] nil)
+               :make-flush (fn [] (fn [] nil))}
+        agent (agent-mod.make-agent {:provider-name :mock
                                      :model "mock"
                                      :api-key :test
-                                     :tools tools
+                                     :tools [(compact-tool)]
+                                     :tool-context (fn [] {: state})
                                      :on-event (fn [ev] (events.emit ev))
                                      :get-steering (fn []
                                                      (steering.get-steering))
                                      :get-follow-up (fn []
                                                       (steering.get-follow-up))
-                                     :provider-options {:mock-script script
+                                     :provider-options {: mock-script
                                                         :mock-record record}})]
-    {:agent agent :opts {}}))
+    (each [_ m (ipairs (seeded))]
+      (table.insert agent.messages m))
+    (set state.agent agent)
+    state))
 
 (fn make-on-tick [state]
   "Mirror of the interactive runtime tick: one resume per tick."
@@ -113,7 +149,7 @@
             (os.remove event-path)
             (io.close (io.open control-path :w)))
         record []
-        state (make-state opts.mock opts.tools record)
+        state (make-state opts.mock record)
         parent (make-parent control-path event-path)
         script (coroutine.create (fn [] (opts.script parent)))
         ticks {:n 0}
@@ -145,30 +181,37 @@
 (fn reset! []
   (test-api.reset!)
   (register-mock!)
-  (steering.clear-queues!))
+  (steering.clear-queues!)
+  (tset package.loaded :fen.extensions.compact nil)
+  (let [api (test-api.make-runtime-api :compact {:name :compact})
+        compact (require :fen.extensions.compact)]
+    (set api.settings {:extension (fn [] {})})
+    (compact.register api)))
 
-(describe "#664 rpc child: a steer batched after close"
+(describe "#618 rpc usage after in-run compaction"
           (fn []
             (before_each reset!)
-            (it "is skipped unanswered once close exits the run"
+            (after_each (fn []
+                          (test-api.reset!)
+                          (tset package.loaded :fen.extensions.compact nil)))
+            (it "survives in-run compaction"
                 (fn []
-                  (known-bug 664
-                             (fn []
-                               (let [r (run-child {:mock ["answer"]
-                                                   :tools []
-                                                   :script (fn [p]
-                                                             (p.wait-type :ready)
-                                                             (p.send! :prompt
-                                                                      {:text "work"})
-                                                             (p.wait-type :turn-complete)
-                                                             ;; one batch: close, then steer
-                                                             (p.send! :close {})
-                                                             (p.send! :steer
-                                                                      {:text "late steer"}))})
-                                     p r.parent]
-                                 (assert r.ok? r.err)
-                                 (and (= :done
-                                         (?. (p.find #(= $1.type :exit))
-                                             :status))
-                                      (= 1 (p.acks 2)) (= 0 (p.acks 3))
-                                      (= 0 (p.count #(= $1.type :info)))))))))))
+                  (let [r (run-child {:mock script
+                                      :script (fn [p]
+                                                (p.wait-type :ready)
+                                                (p.send! :prompt
+                                                         {:text "go"})
+                                                (p.wait-type :turn-complete)
+                                                (p.send! :close {}))})
+                        p r.parent
+                        tc (p.find #(= $1.type :turn-complete))
+                        result (p.find #(= $1.type :result))
+                        bus (accumulate [n 0 _ ev (ipairs p.seen)]
+                              (if (and (= ev.type :llm-end)
+                                       ev.usage)
+                                  (+ n (or ev.usage.input 0))
+                                  n))]
+                    (assert r.ok? r.err)
+                    (assert.are.equal 31010 bus)
+                    (assert.are.equal 31010 (?. tc :usage :input))
+                    (assert.are.equal 31010 (?. result :usage :input)))))))

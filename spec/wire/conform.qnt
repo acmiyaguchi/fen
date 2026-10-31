@@ -1,7 +1,7 @@
 // Export the model's wire_session tables as data so scripts/spec/conform-wire.fnl
 // can compare them, pair by pair, with packages/util/src/fen/util/wire_session.fnl.
 module conform {
-  import wire(FIXES = Set()) as W from "./model"
+  import wire(FIXES = Set("664", "665", "666", "667")) as W from "./model"
 
   pure val STATES = ["starting", "ready", "running", "closing", "finalizing",
                      "done", "cancelled", "failed", "timed-out"]

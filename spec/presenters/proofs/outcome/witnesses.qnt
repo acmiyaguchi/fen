@@ -5,18 +5,18 @@ module witnesses {
   import outcome(FIXES = Set("634")) as F634 from "./model"
   import outcome(FIXES = Set("619", "632", "633", "634")) as F from "./model"
 
-  run w619ReplayedUsageTest =
-    C::initWith("ok", true, 1, "done")
-      .expect(not(C::headlessUsageIsTurnUsage) and C::headlessExitMatchesStatus)
+  run reach619ReplayedUsageTest =
+    F::initWith("ok", true, 1, "done")
+      .expect(F::headlessUsageIsTurnUsage and F::headlessExitMatchesStatus)
 
-  run w632RpcQuotaExitsDoneTest =
-    C::initWith("quota", false, 1, "none")
-      .expect(not(C::rpcExitMatchesStatus) and C::rpcFinal == "blob"
-              and C::headlessErrorDetailsMatch)
+  run reach632RpcQuotaExitsFailedTest =
+    F::initWith("quota", false, 1, "none")
+      .expect(F::rpcExitMatchesStatus and F::rpcFinal == "none"
+              and F::headlessErrorDetailsMatch)
 
-  run w632RpcCapToolTextTest =
-    C::initWith("cap", false, 1, "none")
-      .expect(not(C::rpcFinalTextMatches) and C::rpcFinal == "toolText")
+  run reach632RpcCapExitsFailedTest =
+    F::initWith("cap", false, 1, "none")
+      .expect(F::rpcFinalTextMatches and F::rpcFinal == "none")
 
   run reach633CancelClearsTextTest =
     C::initWith("cancelled", false, 2, "none")

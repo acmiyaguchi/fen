@@ -30,6 +30,7 @@
 (local presenter-registry (require :fen.core.extensions.register.presenter))
 (local provider-registry (require :fen.core.extensions.register.provider))
 (local models (require :fen.core.llm.models))
+(local thinking-mod (require :fen.core.thinking))
 
 (local M {})
 
@@ -283,6 +284,16 @@
         (. matches 1)
         nil)))
 
+(fn inherited-thinking [ctx]
+  "The parent's materialized thinking level (a valid `--thinking` value), or
+   nil when it has none: the agent's provider option, else the run options."
+  (let [level (or (?. ctx :agent :provider-options :thinking-level)
+                  (?. ctx :agent :thinking)
+                  (?. ctx :opts :thinking)
+                  (?. ctx :state :opts :thinking))]
+    (when (and (present? level) (thinking-mod.valid-level? level))
+      (tostring level))))
+
 (fn effective-routing [cfg ctx]
   "Resolve the child process provider/model policy.
 
@@ -355,20 +366,15 @@
               (set resolved-model inherited-model)
               (set provider-source (if inherited-provider :inherited :unset))
               (set model-source (if inherited-model :inherited :unset)))))
-    ;; Resolve thinking and base-url
+    ;; Thinking is a level: the frontmatter/call value, else the parent's
+    ;; materialized level (never the status-bar label), #645.
     (let [thinking (or (and (present? cfg.thinking) cfg.thinking)
-                       (and ctx ctx.opts (present? ctx.opts.thinking)
-                            ctx.opts.thinking)
-                       (and ctx ctx.agent
-                            (or (and (present? ctx.agent.thinking)
-                                     ctx.agent.thinking)
-                                (and (present? ctx.agent.thinking-status)
-                                     ctx.agent.thinking-status))))
-          parent-base-url (and ctx ctx.opts
-                               (or (and (present? ctx.opts.base-url)
-                                        ctx.opts.base-url)
-                                   (and (present? ctx.opts.baseUrl)
-                                        ctx.opts.baseUrl)))
+                       (inherited-thinking ctx))
+          parent-base-url (and ctx
+                               (or (?. ctx :opts :base-url)
+                                   (?. ctx :opts :baseUrl)
+                                   (?. ctx :state :opts :base-url)
+                                   (?. ctx :state :opts :baseUrl)))
           base-url (when (and parent-base-url inherited-provider
                               (= (tostring resolved-provider)
                                  (tostring inherited-provider)))
@@ -416,10 +422,8 @@
        :child-tools child-tools
        :message "cannot launch subagent: parent --denied-tools removes every tool from the child's --tools allowlist"}))
 
-(fn child-tool-policy [cfg restriction]
-  "Resolve the child argv policy without allowing it to widen the parent.
-
-   A parent's allowlist intersects a child allowlist. A parent's denylist is
+(fn base-tool-policy [cfg restriction]
+  "A parent's allowlist intersects a child allowlist. A parent's denylist is
    forwarded when the child has no allowlist, otherwise denied names are
    removed from the child's allowlist because the CLI flags conflict."
   (if (not restriction)
@@ -449,6 +453,35 @@
                    :parent-flag restriction.flag
                    :message (.. "cannot launch subagent: unsupported parent tool restriction "
                                 (tostring restriction.flag))})))
+
+(local BACKGROUND-DENIED ["bash" "edit" "write"])
+
+(fn child-tool-policy [cfg restriction ?background?]
+  "Resolve the child argv policy without allowing it to widen the parent.
+   A background run is read-only by policy, not by prompt text (#650): the
+   mutating tools are removed on top of the parent's own restriction."
+  (let [(policy err) (base-tool-policy cfg restriction)]
+    (if (or err (not ?background?) (= policy.flag "--no-tools"))
+        (values policy err)
+        (= policy.flag "--tools")
+        (let [effective (filter-tool-names policy.tools
+                                           (icollect [_ name (ipairs policy.tools)]
+                                             (when (not (tool-name-in-list? BACKGROUND-DENIED
+                                                                            name))
+                                               name)))]
+          (if (= (length effective) 0)
+              (values nil
+                      {:kind :subagent-tool-restriction
+                       :reason :empty-intersection
+                       :child-tools policy.tools
+                       :message "cannot launch background subagent: read-only policy removes every tool from the child's --tools allowlist"})
+              (values {:flag "--tools" :tools effective} nil)))
+        (let [denied (icollect [_ name (ipairs (or policy.tools []))] name)]
+          (each [_ name (ipairs BACKGROUND-DENIED)]
+            (when (not (tool-name-in-list? denied name))
+              (table.insert denied name)))
+          (table.sort denied)
+          (values {:flag "--denied-tools" :tools denied} nil)))))
 
 (fn normalized-task [task]
   ;; Deliberately preserve case and punctuation: under-warning is safer than
@@ -488,15 +521,17 @@
                 (.. prov "/" m))))
       routing.model))
 
-(fn child-argv [bin sys-path routing child-policy]
+(fn child-argv [bin sys-path routing child-policy ?web-search]
   "argv for one live child: the task arrives as the first wire `prompt`.
    Children stay --no-session: fen has no session-location override, and a
    child session in the user's store would clutter /resume and race
    --continue."
-  (let [argv [bin "--presenter" "rpc" "--system-file" sys-path "--no-session"]]
+  (let [web-search (when (not= child-policy.flag "--no-tools") ?web-search)
+        argv [bin "--presenter" "rpc" "--system-file" sys-path "--no-session"]]
     (each [_ [flag val] (ipairs [["--model" (child-model-arg routing)]
                                  ["--provider" routing.provider]
                                  ["--thinking" routing.thinking]
+                                 ["--web-search" web-search]
                                  ["--base-url" routing.base-url]])]
       (when val
         (table.insert argv flag)
@@ -703,6 +738,9 @@
   (when (and run.max-turns (or (= ev.type :tool-call) (= ev.type :llm-start))
              (>= (or run.turn-count 0) run.max-turns))
     (set run.job.past-max-turns? true))
+  (when (= ev.type :steering-injected)
+    ;; The child resumed after its answer: budgets apply again (#649).
+    (set run.final-answer-produced? false))
   (if (= ev.type :tool-call)
       (do
         (set run.tool-call-count (+ (or run.tool-call-count 0) 1))
@@ -736,15 +774,20 @@
 (fn handle-message! [run msg]
   (let [typ msg.type]
     (if (= typ :control-ack)
-        (when (= msg.status :rejected)
-          (let [control (or msg.control {})
-                steer? (= control.type :steer)]
-            (append-local-event! run
-                                 {:type (if steer? :steering-rejected :warning)
-                                  :summary (.. (tostring (or control.type
-                                                             "control"))
-                                               " rejected: "
-                                               (tostring (or msg.reason "")))})))
+        (do
+          (when (and (not= msg.status :rejected) msg.control
+                     (= msg.control.type :steer))
+            ;; An accepted steer reopens a finished task turn (#649).
+            (set run.final-answer-produced? false))
+          (when (= msg.status :rejected)
+            (let [control (or msg.control {})
+                  steer? (= control.type :steer)]
+              (append-local-event! run
+                                   {:type (if steer? :steering-rejected :warning)
+                                    :summary (.. (tostring (or control.type
+                                                               "control"))
+                                                 " rejected: "
+                                                 (tostring (or msg.reason "")))}))))
         (not (wire-session.lifecycle-event? typ))
         (let [ev {}]
           ;; Keep the canonical display event; drop the wire envelope.
@@ -803,6 +846,11 @@
                      {:note (.. FINALIZATION-NOTE "\nReason: " reason)})
       (set run.job.finalize-by-ms (+ (clock.monotonic-ms) FINALIZE-GRACE-MS)))))
 
+(local STEERABLE {:starting true :ready true :running true})
+
+(fn steerable-status? [status]
+  (. STEERABLE status))
+
 (fn drive! [run]
   "Map the run's requests onto controls for the child's mirrored state."
   (let [job run.job
@@ -812,10 +860,13 @@
             (arm-kill! job CANCEL-GRACE-MS)
             (send-cancel! run))
         (do
-          (var note (runs.take-steering! run.id))
-          (while note
-            (send-control! run :steer {:text note.note})
-            (set note (runs.take-steering! run.id)))
+          ;; Steers wait (and are reported dropped at settle) once `close` is
+          ;; sent or the child is past ready/running (#664).
+          (when (and (not job.close-sent?) (steerable-status? ch.status))
+            (var note (runs.take-steering! run.id))
+            (while note
+              (send-control! run :steer {:text note.note})
+              (set note (runs.take-steering! run.id))))
           (maybe-finalize! run)
           (if (and job.finalize-by-ms
                    (>= (clock.monotonic-ms) job.finalize-by-ms))
@@ -839,14 +890,14 @@
                                  []
                                  [{:role :assistant :stop-reason reason}])))))
 
-(fn result-final-text [res]
+(fn result-final-text [res ?result-path]
   "The result's final text and whether it is still cut short. A spilled
-   answer is read back whole and its file removed; a cut one is marked."
-  (let [path res.final-text-path
+   answer is read back whole from the file the parent named (never a path
+   the child supplies); a cut one is marked."
+  (let [path (when res.final-text-path (or ?result-path res.final-text-path))
         f (when path (io.open path :rb))
         spilled (when f
-                  (let [s (f:read :a)] (f:close) s))]
-    (when path (os.remove path))
+                  (let [s (f:read :a)] (f:close) (pcall os.remove path) s))]
     (if spilled (values spilled false) res.truncated?
         (values (.. (or res.final-text "")
                     "\n\n[subagent answer truncated to fit one wire line; full text unavailable]")
@@ -870,12 +921,30 @@
         " Inspect with /subagents show " run.id ".")))
 
 (fn queue-background-completion! [run status child-text diagnostic]
-  (let [steering (require :fen.extensions.steering.service)
-        body (if (= run.collect :full)
+  (let [body (if (= run.collect :full)
                  (if (blank? child-text) diagnostic child-text)
                  (completion-summary run status child-text))]
-    ;; Queue only: the ordinary turn lifecycle decides when follow-ups start.
-    (steering.queue! :follow-up body)))
+    ;; Its own channel (#647/#648): drained at the top of the next turn, never
+    ;; the user's follow-up queue.
+    (runs.queue-completion! run.id body)))
+
+(fn report-dropped-steering! [run]
+  "Every steer the user was told about ends injected, rejected, or reported
+   dropped here: those still held, or sent but never acknowledged (#664)."
+  (let [ch run.job.channel
+        dropped []]
+    (each [_ note (ipairs (or run.pending-steering []))]
+      (table.insert dropped note.summary))
+    (set run.pending-steering [])
+    (each [_ sent (pairs (or (?. ch :unacked) {}))]
+      (when (= sent.type :steer)
+        (table.insert dropped (text.truncate-line (or sent.text "") 96))))
+    (each [_ summary (ipairs dropped)]
+      (append-local-event! run
+                           {:type :steering-dropped
+                            :summary (.. "steer not delivered: " summary)}))
+    (when (> (length dropped) 0)
+      (set run.dropped-steering (+ (or run.dropped-steering 0) (length dropped))))))
 
 (fn finish! [run process-result ?err]
   "Settle a run once its child process is gone (or never started)."
@@ -885,9 +954,10 @@
     (when ch
       (drain-channel! run)
       (channel.close! ch))
+    (report-dropped-steering! run)
     (let [status (outcome-status ch r ?err)
           res (or (?. ch :result) {})
-          (final-text cut?) (result-final-text res)
+          (final-text cut?) (result-final-text res (?. ch :result-path))
           failure? (not= status :completed)
           ;; Without `result`, answer with the latest (possibly in-flight) reply.
           child-text (if failure?
@@ -922,6 +992,7 @@
                    :output-truncated? r.truncated?
                    :full-output-path (when (not run.background?)
                                        r.full-output-path)
+                   :dropped-steering run.dropped-steering
                    :result child-text}]
       (when (not failure?)
         (maybe-record-final-text-artifact! run final-text r.duration-ms))
@@ -944,7 +1015,8 @@
         (runs.finish! run.id status details)
         (each [_ p (pairs [job.sys-path
                            (?. ch :control-path)
-                           (?. ch :event-path)])]
+                           (?. ch :event-path)
+                           (?. ch :result-path)])]
           (os.remove p))
         ;; Background inspection uses the result and bounded output tail; the
         ;; raw process spill has no consumer there.
@@ -994,6 +1066,16 @@
       (set run.job.quiet? ?quiet))
     (reap! jobs)))
 
+(fn shutdown-all-runs! []
+  "Quit path (#646): cancel and reap every active run, blocking ones
+   included; their owning tool call will never be resumed."
+  (let [live []]
+    (each [_ run (ipairs (runs.active-records))]
+      (when run.job
+        (set run.job.quiet? true)
+        (table.insert live run)))
+    (reap! live)))
+
 (fn active-record [id]
   (let [run (runs.record id)]
     (when (and run (= run.status :running) run.job (not run.job.finished?))
@@ -1004,21 +1086,23 @@
   (when run.job
     (set run.job.cancel-requested? true)))
 
-(fn start-child! [run bin sys-path routing child-policy]
+(fn start-child! [run bin sys-path routing child-policy ?web-search]
   "Create the private control and event files, queue the task as the first
    `prompt`, and spawn the child once."
   (set run.job {:sys-path sys-path :routing routing})
   (let [control-path (os.tmpname)
         event-path (os.tmpname)
-        ch (channel.open run.id control-path event-path)]
+        result-path (os.tmpname)
+        ch (channel.open run.id control-path event-path result-path)]
     (set run.job.channel ch)
     (send-control! run :prompt {:text (task-with-cwd-context run)})
     (set run.job.handle
          (process.start-captured {:argv (child-argv bin sys-path routing
-                                                    child-policy)
+                                                    child-policy ?web-search)
                                   :cwd run.cwd
                                   :env {:FEN_WIRE_CONTROL_PATH control-path
                                         :FEN_WIRE_EVENT_PATH event-path
+                                        :FEN_WIRE_RESULT_PATH result-path
                                         :FEN_WIRE_RUN_ID run.id
                                         :FEN_WIRE_DEADLINE (tostring (+ (os.time)
                                                                         (math.ceil run.timeout-seconds)))
@@ -1033,17 +1117,26 @@
   (let [opts (or ?opts {})
         (child-policy policy-error) (child-tool-policy cfg
                                                        (?. ctx :agent
-                                                           :tool-restriction))
+                                                           :tool-restriction)
+                                                       opts.background?)
         bin (runtime.binary-path)
-        sys-path (and (not policy-error) bin (write-temp cfg.body))]
+        sys-path (and (not policy-error) bin (write-temp cfg.body))
+        routing (effective-routing cfg ctx)]
     (if policy-error
         (values nil (result policy-error.message true policy-error))
         (not bin)
         (values nil (result "cannot resolve fen binary to spawn subagent" true))
         (not sys-path)
         (values nil (result "cannot stage subagent system prompt" true))
-        (let [routing (effective-routing cfg ctx)
-              fingerprint (task-fingerprint agent task cwd routing)
+        (and routing.thinking (not (thinking-mod.valid-level? routing.thinking)))
+        (do
+          (os.remove sys-path)
+          (values nil
+                  (result (.. "cannot launch subagent: invalid thinking level "
+                              (tostring routing.thinking)
+                              " (use " (thinking-mod.level-list) ")")
+                          true)))
+        (let [fingerprint (task-fingerprint agent task cwd routing)
               run (runs.start! {:agent agent
                                 :task task
                                 :cfg cfg
@@ -1069,7 +1162,8 @@
                                  {:type :warning
                                   :summary (repeated-timeout-warning-text run.repeated-timeout-warning)}))
           (let [(ok? err) (pcall start-child! run bin sys-path routing
-                                 child-policy)]
+                                 child-policy
+                                 (?. ctx :agent :provider-options :web-search))]
             (when (not ok?)
               (set run.job.quiet? true)
               (finish! run nil err)))
@@ -1645,13 +1739,15 @@
           (if (or (not run-id) (= (trim note) ""))
               (api.emit {:type :assistant-text
                          :text "Usage: /subagents steer RUN_ID NOTE"})
-              (let [run (runs.request-steer! run-id note :user)]
+              (let [(run why) (runs.request-steer! run-id note :user)]
                 (if run
                     (api.emit {:type :assistant-text
                                :text (.. "Queued steering for " run-id ": "
                                          (fit note 120))})
                     (api.emit {:type :assistant-text
-                               :text (.. "No active subagent run named " run-id)})))))
+                               :text (if (= why :closing)
+                                         (.. run-id " is finishing; steering not accepted.")
+                                         (.. "No active subagent run named " run-id))})))))
         (api.emit {:type :assistant-text :text (render-subagent-runs)}))))
 
 (fn subagent-status-render [_ctx]
@@ -1805,8 +1901,10 @@
         (= run.status :running)
         (result (.. "Wait timed out; " run-id " is still running.") false
                 {:run (sanitize-run! run) :timed-out? true})
-        (result (or (render-run-details run) "") false
-                {:run (sanitize-run! run) :timed-out? false}))))
+        (do
+          (runs.mark-delivered! run-id)
+          (result (or (render-run-details run) "") false
+                  {:run (sanitize-run! run) :timed-out? false})))))
 
 (fn authenticated-models-result [api ?yield-fn]
   "Refresh configured provider catalogs and return exact launch routing pairs."
@@ -1910,8 +2008,11 @@
             (result "action 'show' requires 'run-id'" true)
             (let [run (runs.find run-id)]
               (if run
-                  (result (render-run-details run) false
-                          {:run (sanitize-run! run)})
+                  (do
+                    (when (not= run.status :running)
+                      (runs.mark-delivered! run-id))
+                    (result (render-run-details run) false
+                            {:run (sanitize-run! run)}))
                   (result (.. "No subagent run named " run-id) true
                           {:run-id run-id :found? false}))))
         (= action "usage")
@@ -1948,10 +2049,13 @@
         (= action "steer")
         (if (or (not (present? run-id)) (not (present? args.note)))
             (result "action 'steer' requires 'run-id' and 'note'" true)
-            (let [run (runs.request-steer! run-id args.note :agent)]
+            (let [(run why) (runs.request-steer! run-id args.note :agent)]
               (if run
                   (result (.. "Queued steering for " run-id ".") false
                           {:run (sanitize-run! (runs.find run.id))})
+                  (= why :closing)
+                  (result (.. run-id " is finishing; steering not accepted.")
+                          true {:run-id run-id :reason :closing})
                   (result (.. "No active subagent run named " run-id) true))))
         (= action "cancel")
         (if (not (present? run-id))
@@ -2094,7 +2198,7 @@
   (api.on :runtime-tick (fn [_ev]
                           (pump-background-jobs!)
                           (runs.reconcile-background!)))
-  (api.on :agent-shutdown (fn [_ev] (shutdown-background-jobs!)))
+  (api.on :agent-shutdown (fn [_ev] (shutdown-all-runs!)))
   (api.on :reset-conversation (fn [ev]
                                 ;; Only /new is a hard process boundary. Resume and handoff also
                                 ;; reset presenter content but must not silently destroy jobs.

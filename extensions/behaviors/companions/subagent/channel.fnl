@@ -14,13 +14,15 @@
 
 ;; @doc fen.extensions.subagent.channel.open
 ;; kind: function
-;; signature: (open run control-path event-path) -> channel
+;; signature: (open run control-path event-path ?result-path) -> channel
 ;; summary: Return parent channel state for RUN over the control and event files. The control file must already exist with private permissions.
 ;; tags: subagent wire
-(fn M.open [run control-path event-path]
+(fn M.open [run control-path event-path ?result-path]
   {: run
    : control-path
    : event-path
+   ;; The parent names (and always removes) the file a long answer spills to.
+   :result-path ?result-path
    :sender (wire.sender :control run)
    :receiver (wire.receiver :event)
    :reader (wire.line-reader event-path)

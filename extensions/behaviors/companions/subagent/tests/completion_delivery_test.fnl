@@ -1,16 +1,13 @@
-;; Known bug #647 (spec/subagents, `completionBeforeNextAnswer`): a
-;; background completion is queued as a user follow-up, which the agent
-;; drains only at a natural stop. The next prompt is answered without it,
-;; then the completion is injected as an unframed user message and costs a
-;; second provider call. Real background run, real steering service, real
-;; `agent.step` on the mock provider.
+;; Regression for #647 (spec/subagents, `completionBeforeNextAnswer`): a finished
+;; background run's outcome reaches the model at the top of the next turn, framed
+;; as subagent output, so the very first provider call already carries it.
 
-(local {: known-bug} (require :fen.testing))
 (local test-api (require :fen.core.extensions.test_api))
 (local tool-registry (require :fen.core.extensions.register.tool))
 (local register-registry (require :fen.core.extensions.register))
 (local events (require :fen.core.extensions.events))
 (local agent-mod (require :fen.core.agent))
+(local turn-submit (require :fen.turn_submit))
 (local types (require :fen.core.types))
 (local mock (require :fen.extensions.provider_mock.mock_provider))
 (local wire (require :fen.util.wire))
@@ -229,59 +226,47 @@
     (when (= m.role :user)
       (if (= (type m.content) :string) m.content (types.assistant-text m)))))
 
-(describe "subagent known bug #647"
+(describe "subagent completion delivery (#647)"
           (fn []
-            (it "answers the next prompt before the queued completion reaches the model"
+            (it "reaches the first call of the next turn, framed, in one call"
                 (fn []
-                  (known-bug 647 (fn []
-                                   (var late? false)
-                                   (with-stubs (fn []
-                                                 (install-mocks (simple CHILD-TEXT)
-                                                                (fn [_]
-                                                                  {:name "a"
-                                                                   :body "b"}))
-                                                 (fresh)
-                                                 (register-mock!)
-                                                 (finish-background-run!)
-                                                 (let [steering (require :fen.extensions.steering.service)
-                                                       queued (. (steering.queue-snapshot)
-                                                                 :follow-up)
-                                                       record []
-                                                       agent (agent-mod.make-agent {:provider-name :mock
-                                                                                    :model "mock"
-                                                                                    :api-key :test
-                                                                                    :tools []
-                                                                                    :get-steering (fn []
-                                                                                                    (steering.get-steering))
-                                                                                    :get-follow-up (fn []
-                                                                                                     (steering.get-follow-up))
-                                                                                    :provider-options {:mock-script ["answer to user"
-                                                                                                                     "reaction"]
-                                                                                                       :mock-record record}})]
-                                                   ;; The completion is already queued when the user prompts.
-                                                   (assert (= 1 (length queued)))
-                                                   (agent-mod.step agent
-                                                                   "what is 2+2?")
-                                                   (let [first-call (user-texts (. record
-                                                                                   1
-                                                                                   :context
-                                                                                   :messages))
-                                                         users (user-texts agent.messages)]
-                                                     (set late?
-                                                          (and (= 2
-                                                                  (length record))
-                                                               ;; first provider call: only the user's prompt
-                                                               (= 1
-                                                                  (length first-call))
-                                                               (= "what is 2+2?"
-                                                                  (. first-call
-                                                                     1))
-                                                               ;; then the raw child text as a user message
-                                                               (= 2
-                                                                  (length users))
-                                                               (= CHILD-TEXT
-                                                                  (. users 2))
-                                                               (= :assistant
-                                                                  (. agent.messages
-                                                                     2 :role))))))))
-                                   late?))))))
+                  (with-stubs (fn []
+                                (install-mocks (simple CHILD-TEXT)
+                                               (fn [_]
+                                                 {:name "a" :body "b"}))
+                                (fresh)
+                                (register-mock!)
+                                (finish-background-run!)
+                                (let [steering (require :fen.extensions.steering.service)
+                                      record []
+                                      agent (agent-mod.make-agent {:provider-name :mock
+                                                                   :model "mock"
+                                                                   :api-key :test
+                                                                   :tools []
+                                                                   :get-steering (fn []
+                                                                                   (steering.get-steering))
+                                                                   :get-follow-up (fn []
+                                                                                    (steering.get-follow-up))
+                                                                   :provider-options {:mock-script ["answer"]
+                                                                                      :mock-record record}})
+                                      state {: agent}]
+                                  ;; Not in the user's follow-up queue.
+                                  (assert (= 0
+                                             (length (. (steering.queue-snapshot)
+                                                        :follow-up))))
+                                  (turn-submit.start! state "what is 2+2?"
+                                                      agent-mod.step)
+                                  (while (not= :dead (coroutine.status state.turn))
+                                    (assert (coroutine.resume state.turn)))
+                                  (assert (= 1 (length record)))
+                                  (let [first-call (user-texts (. record 1
+                                                                  :context
+                                                                  :messages))
+                                        msg (. first-call 1)]
+                                    (assert (= 1 (length first-call)))
+                                    (assert (msg:find "subagent output" 1 true))
+                                    (assert (msg:find CHILD-TEXT 1 true))
+                                    (assert (msg:find "what is 2+2?" 1 true)))
+                                  ;; Delivered once: the next turn carries nothing.
+                                  (assert (= nil
+                                             ((. (runs) :take-completion-frame!)))))))))))

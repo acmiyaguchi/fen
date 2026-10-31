@@ -1,10 +1,7 @@
-;; Known bug #650 (spec/subagents, `backgroundReadOnly`, `noWiderNetwork`):
-;; children get authority the parent was denied. A background job is
-;; "read-only" only in its prompt text (no tool restriction in its argv),
-;; and a parent's `--web-search off` is never forwarded, so the child falls
-;; back to settings.json's default.
+;; Regression for #650 (spec/subagents, `backgroundReadOnly`, `noWiderNetwork`):
+;; background runs get a real read-only tool restriction intersected with the
+;; parent's policy, and the parent's effective web-search mode is forwarded.
 
-(local {: known-bug} (require :fen.testing))
 (local test-api (require :fen.core.extensions.test_api))
 (local tool-registry (require :fen.core.extensions.register.tool))
 (local events (require :fen.core.extensions.events))
@@ -206,73 +203,75 @@
 (fn find? [s needle]
   (not= nil (string.find (tostring s) needle 1 true)))
 
-(describe "subagent known bug #650"
+(fn background-argv [ctx]
+  (install-mocks (simple "ok") (fn [_] {:name "a" :body "b"}))
+  (fresh)
+  (let [tool (registered-tool :subagent)
+        r (tool.execute {:agent :a :task "look" :background true} ctx)]
+    (assert (not r.is-error?) (tostring (?. r :content 1 :text)))
+    (for [_ 1 50 &until (= 0 (. (snapshot) :active-count))]
+      (events.emit {:type :runtime-tick}))
+    (. children 1 :argv)))
+
+(describe "subagent child authority (#650)"
           (fn []
-            (it "launches a background job with edit, write, and bash available"
+            (it "denies edit, write, and bash for a background job"
                 (fn []
-                  (known-bug 650
-                             (fn []
-                               (var unrestricted? false)
-                               (with-stubs (fn []
-                                             (install-mocks (simple "ok")
-                                                            (fn [_]
-                                                              {:name "a"
-                                                               :body "b"}))
-                                             (fresh)
-                                             (let [tool (registered-tool :subagent)
-                                                   r (tool.execute {:agent :a
-                                                                    :task "look"
-                                                                    :background true}
-                                                                   {})]
-                                               (assert (not r.is-error?))
-                                               (for [_ 1 50
-                                                     &until (= 0
-                                                               (. (snapshot)
-                                                                  :active-count))]
-                                                 (events.emit {:type :runtime-tick}))
-                                               (let [child (. children 1)
-                                                     argv child.argv]
-                                                 (set unrestricted?
-                                                      (and (not (has-flag? argv
-                                                                           "--tools"))
-                                                           (not (has-flag? argv
-                                                                           "--denied-tools"))
-                                                           (not (has-flag? argv
-                                                                           "--no-tools"))
-                                                           ;; the only enforcement is prose in the task
-                                                           (find? child.prompt
-                                                                  "This detached job is read-only")))))))
-                               unrestricted?))))
-            (it "does not forward the parent's --web-search off"
+                  (with-stubs (fn []
+                                (let [argv (background-argv {})]
+                                  (assert (= "bash,edit,write"
+                                             (argv-value argv "--denied-tools")))
+                                  (assert (not (has-flag? argv "--tools"))))))))
+            (it "intersects with a parent allowlist"
                 (fn []
-                  (known-bug 650 (fn []
-                                   (var widened? false)
-                                   (with-stubs (fn []
-                                                 (install-mocks (simple "ok")
-                                                                (fn [_]
-                                                                  {:name "a"
-                                                                   :body "b"}))
-                                                 (fresh)
-                                                 (let [interactive (require :fen.interactive)
-                                                       agent (interactive.make-agent-from-opts (fn [_]
-                                                                                                 {:provider-name :openai-codex
-                                                                                                  :model "gpt-x"
-                                                                                                  :api :openai-codex-responses})
-                                                                                               {:web-search "off"
-                                                                                                :pinned-tools []}
-                                                                                               (fn [_]
-                                                                                                 nil)
-                                                                                               {})
-                                                       tool (registered-tool :subagent)
-                                                       r (tool.execute {:agent :a
-                                                                        :task "look"}
-                                                                       {: agent
-                                                                        :state {}})
-                                                       argv (. children 1 :argv)]
-                                                   (assert (not r.is-error?))
-                                                   (set widened?
-                                                        (and (= "off"
-                                                                agent.provider-options.web-search)
-                                                             (not (has-flag? argv
-                                                                             "--web-search")))))))
-                                   widened?))))))
+                  (with-stubs (fn []
+                                (let [argv (background-argv {:agent {:tool-restriction {:flag "--tools"
+                                                                                       :active-names ["read"
+                                                                                                      "edit"
+                                                                                                      "grep"]}}})]
+                                  (assert (= "read,grep"
+                                             (argv-value argv "--tools")))
+                                  (assert (not (has-flag? argv
+                                                          "--denied-tools"))))))))
+            (it "unions with a parent denylist"
+                (fn []
+                  (with-stubs (fn []
+                                (let [argv (background-argv {:agent {:tool-restriction {:flag "--denied-tools"
+                                                                                       :restricted-names {:find true}}}})]
+                                  (assert (= "bash,edit,find,write"
+                                             (argv-value argv "--denied-tools"))))))))
+            (it "leaves a blocking run unrestricted by the background policy"
+                (fn []
+                  (with-stubs (fn []
+                                (install-mocks (simple "ok")
+                                               (fn [_] {:name "a" :body "b"}))
+                                (fresh)
+                                (let [tool (registered-tool :subagent)
+                                      r (tool.execute {:agent :a :task "look"}
+                                                      {})]
+                                  (assert (not r.is-error?))
+                                  (assert (not (has-flag? (. children 1 :argv)
+                                                          "--denied-tools"))))))))
+            (it "forwards the parent's --web-search off"
+                (fn []
+                  (with-stubs (fn []
+                                (install-mocks (simple "ok")
+                                               (fn [_] {:name "a" :body "b"}))
+                                (fresh)
+                                (let [interactive (require :fen.interactive)
+                                      agent (interactive.make-agent-from-opts (fn [_]
+                                                                                {:provider-name :openai-codex
+                                                                                 :model "gpt-x"
+                                                                                 :api :openai-codex-responses})
+                                                                              {:web-search "off"
+                                                                               :pinned-tools []}
+                                                                              (fn [_]
+                                                                                nil)
+                                                                              {})
+                                      tool (registered-tool :subagent)
+                                      r (tool.execute {:agent :a :task "look"}
+                                                      {: agent :state {}})]
+                                  (assert (not r.is-error?))
+                                  (assert (= "off"
+                                             (argv-value (. children 1 :argv)
+                                                         "--web-search"))))))))))

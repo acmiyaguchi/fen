@@ -91,7 +91,10 @@
                 (fn []
                   (ext-api.reset!)
                   (let [api (ext-api.make-runtime-api :profile-extension)]
-                    (api.register :tool {:name :profile :exposure :search})
+                    (api.register :tool
+                                  {:name :profile
+                                   :exposure :search
+                                   :execute (fn [] nil)})
                     (let [(filtered err) (policy.apply {:tools "profile"}
                                                        (tool-registry.merged [{:name :read}]))
                           agent (interactive.make-agent-from-opts (fn [_]

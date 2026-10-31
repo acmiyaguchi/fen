@@ -1,9 +1,9 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-current	noOrphanAfterQuit	violated	#646
-current	completionBeforeNextAnswer	violated	#647
-current	toldAtMostOnce	violated	#648
-current	toldOrPending	violated	#648
-current	budgetEnforced	violated	#649
+current	noOrphanAfterQuit	holds
+current	completionBeforeNextAnswer	holds
+current	toldAtMostOnce	holds
+current	toldOrPending	holds
+current	budgetEnforced	holds
 current	terminalOnce	holds
 current	statusMatchesProcess	holds
 current	currentInductive	holds

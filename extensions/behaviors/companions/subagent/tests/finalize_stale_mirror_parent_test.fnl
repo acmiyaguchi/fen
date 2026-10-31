@@ -1,13 +1,11 @@
-;; Known-bug probe for #665 (parent half): the budget `finalize` is sent on
-;; a mirror that still says `running` after the child already finished its
-;; answer; the real table turns it into a second, tool-free turn whose forced
-;; answer replaces the natural one. See spec/wire/FINDINGS.md (#665).
+;; Regression for #665 (parent half): a budget `finalize` that reaches the child
+;; after its turn already ended (stale mirror) finds `ready`, where the table
+;; now finishes: the natural answer is the result, no forced turn runs.
 
 (local test-api (require :fen.core.extensions.test_api))
 (local tool-registry (require :fen.core.extensions.register.tool))
 (local tools (require :fen.core.tools))
 (local wire (require :fen.util.wire))
-(local {: known-bug} (require :fen.testing))
 
 ;; ---- fake child (as in init_test.fnl) ----
 
@@ -193,44 +191,29 @@
       (assert ok? v)
       v)))
 
-(describe "#665 subagent parent: a budget finalize on a stale mirror"
+(describe "subagent parent: a budget finalize on a stale mirror (#665)"
           (fn []
-            (it "replaces the finished answer with a forced one"
+            (it "keeps the finished answer"
                 (fn []
-                  (known-bug 665
-                             (fn []
-                               (with-mocks (fn []
-                                             (install-mocks (fn [child]
-                                                              (start! child)
-                                                              (prompt! child)
-                                                              (child.emit! :tool-call
-                                                                           {:name "read"
-                                                                            :arguments {:path "a"}})
-                                                              ;; the parent reads the tool call and sends finalize
-                                                              (coroutine.yield)
-                                                              ;; the child finishes its turn before reading the control
-                                                              (answer! child
-                                                                       "natural answer")
-                                                              ;; finalize in ready: start-finalize-turn (the real table)
-                                                              (child.expect! :finalize)
-                                                              (child.emit! :turn-started
-                                                                           {:turn 2})
-                                                              (answer! child
-                                                                       "forced answer"
-                                                                       2)
-                                                              (result! child
-                                                                       "forced answer")))
-                                             (fresh)
-                                             (let [r (execute-tool {:agent :scout
-                                                                    :task "review"
-                                                                    :max-tool-calls 1})
-                                                   child (. children 1)]
-                                               (and (not r.is-error?)
-                                                    (= "prompt,finalize"
-                                                       (table.concat (child.types)
-                                                                     ","))
-                                                    (= "forced answer"
-                                                       (first-text r.content))
-                                                    (= true
-                                                       (. r.details
-                                                          :budget-limited?))))))))))))
+                  (with-mocks (fn []
+                                (install-mocks (fn [child]
+                                                 (start! child)
+                                                 (prompt! child)
+                                                 (child.emit! :tool-call
+                                                              {:name "read"
+                                                               :arguments {:path "a"}})
+                                                 (coroutine.yield)
+                                                 (answer! child "natural answer")
+                                                 ;; finalize in ready: finish (the table)
+                                                 (child.expect! :finalize)
+                                                 (result! child "natural answer")))
+                                (fresh)
+                                (let [r (execute-tool {:agent :scout
+                                                       :task "review"
+                                                       :max-tool-calls 1})
+                                      child (. children 1)]
+                                  (assert (not r.is-error?))
+                                  (assert (= "prompt,finalize"
+                                             (table.concat (child.types) ",")))
+                                  (assert (= "natural answer"
+                                             (first-text r.content))))))))))

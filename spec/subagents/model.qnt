@@ -424,7 +424,7 @@ module subagents {
   }
 }
 
-module current { import subagents(FIXES = Set()).* }
+module current { import subagents(FIXES = Set("645", "646", "647", "648", "649", "650")).* }
 module fixed { import subagents(FIXES = Set("645", "646", "647", "648", "649", "650")).* }
 module fix645 { import subagents(FIXES = Set("645")).* }
 module fix646 { import subagents(FIXES = Set("646")).* }

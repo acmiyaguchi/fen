@@ -15,7 +15,7 @@
                  :ready {:prompt [:accepted :running :start-turn]
                          :steer [:accepted :running :start-turn]
                          :follow-up [:accepted :running :start-turn]
-                         :finalize [:accepted :finalizing :start-finalize-turn]
+                         :finalize [:accepted :done :finish]
                          :close [:accepted :done :finish]
                          :cancel CANCEL}
                  :running {:prompt R

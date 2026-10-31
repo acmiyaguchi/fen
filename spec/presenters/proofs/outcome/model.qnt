@@ -156,6 +156,6 @@ module outcome {
 }
 
 // Today's code carries #633 and #634; #619 and #632 are still open.
-module current { import outcome(FIXES = Set("633", "634")).* }
+module current { import outcome(FIXES = Set("619", "632", "633", "634")).* }
 module fixed { import outcome(FIXES = Set("619", "632", "633", "634")).* }
 module fix634 { import outcome(FIXES = Set("634")).* }

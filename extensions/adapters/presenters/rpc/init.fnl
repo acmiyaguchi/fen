@@ -9,6 +9,7 @@
 (local agent-mod (require :fen.core.agent))
 (local events (require :fen.core.extensions.events))
 (local types (require :fen.core.types))
+(local usage-ledger (require :fen.core.extensions.usage_ledger))
 (local turn-submit (require :fen.turn_submit))
 (local clock (require :fen.util.clock))
 (local text (require :fen.util.text))
@@ -108,9 +109,10 @@
     (set ch.exited? true)
     (set ch.exit-status status)))
 
-(fn spill-final-text [s]
-  "Write S to a new private temp file; return its path, or nil on failure."
-  (let [(ok? path) (pcall os.tmpname)
+(fn spill-final-text [s ?path]
+  "Write S to the parent-named file ?PATH (FEN_WIRE_RESULT_PATH, #667) or a new
+   private temp file; return its path, or nil on failure."
+  (let [(ok? path) (if ?path (values true ?path) (pcall os.tmpname))
         f (when ok? (io.open path :wb))]
     (if (and f (f:write s) (f:close))
         path
@@ -130,7 +132,7 @@
                              :event)]
     (var line (encode))
     (when (and (not line) full)
-      (set payload.final-text-path (spill-final-text full)))
+      (set payload.final-text-path (spill-final-text full ch.result-path)))
     (var limit (- wire.MAX-LINE-BYTES RESULT-OVERHEAD-BYTES))
     (while (and (not line) full (> limit 0))
       (set payload.final-text (text.utf8-prefix full limit))
@@ -143,35 +145,58 @@
       (set line (encode)))
     line))
 
+(fn run-failed? [ch asst]
+  "The run's last turn failed: the step's Outcome is :error, or the last
+   assistant ended in error, tool use, or an abort (#632)."
+  (let [outcome ch.last-outcome]
+    (if (= (?. outcome :status) :error)
+        (values true (or outcome.error "turn failed"))
+        (and asst (turn-result.failed? true [asst]))
+        (values true (.. "turn ended with stop-reason "
+                         (tostring asst.stop-reason)))
+        false)))
+
 (fn finish! [ch]
-  "Emit the run's one `result`, then `exit done`."
+  "Emit the run's one `result`, then `exit done` (`exit failed` when the last
+   turn failed)."
   ;; Any drop notice goes first so `result` stays right before `exit`.
   (drop-queued! ch)
   (let [messages (run-messages ch)
-        asst (turn-result.last-assistant messages)
+        asst (or (turn-result.last-assistant messages)
+                 (turn-result.last-assistant (?. ch.state :agent :messages)))
         final-text (when asst (text.blank->nil (types.assistant-text asst)))
         line (result-line ch
                           {:final-text final-text
                            :stop-reason (tostring (or (?. asst :stop-reason)
                                                       :none))
-                           :usage (turn-result.sum-usage messages)})]
+                           :usage (or (usage-ledger.delta ch.run-marker)
+                                      (turn-result.sum-usage messages))})]
     (if line
         (do
           (set ch.sender.seq (+ ch.sender.seq 1))
           (ch.out:write line "\n")
           (ch.out:flush))
         (report! "cannot encode result"))
-    (exit! ch :done)))
+    (let [(failed? reason) (run-failed? ch asst)]
+      (if failed?
+          (do
+            (set ch.status :failed)
+            (exit! ch :failed reason))
+          (exit! ch :done)))))
 
 (fn start-turn! [ch prompt ?final?]
   (let [state ch.state
         step-opts (when ?final? {:tool-choice :none})
         agent-step (fn [agent line cancel-fn]
-                     (agent-mod.step agent line cancel-fn step-opts))]
+                     (let [(text outcome) (agent-mod.step agent line
+                                                          cancel-fn step-opts)]
+                       (set ch.last-outcome outcome)
+                       (values text outcome)))]
     (set ch.turn (+ ch.turn 1))
     (set ch.active
          {:turn ch.turn
           :final? ?final?
+          :marker (usage-ledger.mark!)
           :start-index (+ (length (or state.agent.messages [])) 1)})
     (turn-submit.start! state prompt agent-step)
     (set ch.active.co state.turn)
@@ -187,8 +212,16 @@
                 {:ref (math.tointeger msg.seq) :text msg.text})
   ((. (steering) :queue!) kind msg.text))
 
+(fn defer-exit! [ch f]
+  "Run F now, or at the end of the current poll batch so every control line
+   read in that batch is acknowledged before `result`/`exit` (#664)."
+  (if ch.batch?
+      (set ch.deferred f)
+      (f)))
+
 (fn perform! [ch action ?msg]
-  (if (= action :start-turn) (start-turn! ch ?msg.text)
+  (if (= action :finish) (defer-exit! ch #(finish! ch))
+      (= action :start-turn) (start-turn! ch ?msg.text)
       (= action :queue-steering) (queue! ch :steering ?msg)
       (= action :queue-follow-up) (queue! ch :follow-up ?msg)
       (= action :start-finalize-turn)
@@ -197,8 +230,8 @@
       (= action :interrupt-turn) (interrupt-turn! ch) (= action :abort)
       (if ch.active
           (interrupt-turn! ch)
-          (exit! ch ch.status ch.error)) (= action :exit)
-      (exit! ch ch.status ch.error) (= action :finish) (finish! ch) nil))
+          (defer-exit! ch #(exit! ch ch.status ch.error))) (= action :exit)
+      (defer-exit! ch #(exit! ch ch.status ch.error)) nil))
 
 (fn advance! [ch event]
   (let [entry (wire-session.advance ch.status event)]
@@ -238,22 +271,30 @@
         (when (not (wire-session.terminal? ch.status))
           (fatal! ch (.. "control file truncated below offset "
                          ch.reader.offset)))
-        (each [_ line (ipairs lines)]
-          (when (and (not ch.exited?) (not= line ""))
-            (handle-line! ch line))))))
+        (do
+          (set ch.batch? true)
+          (each [_ line (ipairs lines)]
+            (when (and (not ch.exited?) (not= line ""))
+              (handle-line! ch line)))
+          (set ch.batch? false)
+          (let [f ch.deferred]
+            (set ch.deferred nil)
+            (when (and f (not ch.exited?)) (f)))))))
 
 (fn turn-ended! [ch]
   (let [active ch.active
         state ch.state
         err state.turn-error
         messages (messages-from ch active.start-index)
-        asst (turn-result.last-assistant messages)]
+        asst (or (turn-result.last-assistant messages)
+                 (turn-result.last-assistant (?. state :agent :messages)))]
     (set ch.active nil)
     (send! ch :turn-complete
            {:turn active.turn
             :stop-reason (if err "error"
                              (tostring (or (?. asst :stop-reason) :none)))
-            :usage (turn-result.sum-usage messages)})
+            :usage (or (usage-ledger.delta active.marker)
+                       (turn-result.sum-usage messages))})
     (if err
         (fatal! ch (tostring err))
         (advance! ch (if active.final? :final-turn-done :turn-done)))
@@ -271,6 +312,7 @@
         (set ch.turn (+ ch.turn 1))
         (set ch.active {:turn ch.turn
                         :co ch.state.turn
+                        :marker (usage-ledger.mark!)
                         :start-index (+ (length (or ch.state.agent.messages []))
                                         1)})
         (send! ch :turn-started {:turn ch.turn}))
@@ -309,12 +351,14 @@
                : out
                : run
                : deadline
+               :result-path (or o.result-path (env :FEN_WIRE_RESULT_PATH))
                :now (or o.now os.time)
                :sleep (or o.sleep clock.sleep-ms)
                :sender (wire.sender :event run)
                :receiver (wire.receiver :control)
                :status :starting
                :turn 0
+               :run-marker (usage-ledger.mark!)
                :run-start-index (+ (length (or (?. ctx :state :agent :messages)
                                                []))
                                    1)})))))

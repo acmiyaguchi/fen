@@ -259,5 +259,5 @@ module acks {
   val fixedInductive = and { typeOk, strengthening, allInvariants }
 }
 
-module current { import acks(FIXES = Set()).* }
+module current { import acks(FIXES = Set("664")).* }
 module fixed { import acks(FIXES = Set("664")).* }

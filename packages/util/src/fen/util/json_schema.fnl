@@ -8,6 +8,7 @@
                     :enum true
                     :minimum true
                     :maximum true
+                    :minLength true
                     :description true})
 
 (fn key-name [key] (tostring key))
@@ -88,6 +89,8 @@
     (add-error! errors path (.. "must be at least " (tostring schema.minimum))))
   (when (and schema.maximum (= (type value) :number) (> value schema.maximum))
     (add-error! errors path (.. "must be at most " (tostring schema.maximum))))
+  (when (and schema.minLength (= (type value) :string) (< (length value) schema.minLength))
+    (add-error! errors path (.. "must have length at least " (tostring schema.minLength))))
   ;; cjson.empty_array is userdata, not iterable; treat non-table required as none.
   (when (and (= (type schema.required) :table) (object-table? value))
     (each [_ key (ipairs schema.required)]

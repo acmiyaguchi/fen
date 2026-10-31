@@ -3,33 +3,33 @@ module witnesses {
   import lifecycle(FIXES = Set()) as C from "./model"
   import lifecycle(FIXES = Set("646", "647", "648", "649")) as F from "./model"
 
-  // #646: quit leaves a live blocking child.
-  run w646QuitOrphansBlockingTest =
-    C::init.then(C::launch("blocking")).then(C::quit)
-      .expect(not(C::noOrphanAfterQuit) and C::alive and C::mode == "blocking")
+  // #646: quit reaps live blocking child.
+  run reach646QuitOrphansBlockingTest =
+    F::init.then(F::launch("blocking")).then(F::quit)
+      .expect(F::noOrphanAfterQuit and not(F::alive))
 
-  // #647: the completion queued while idle is injected after the answer.
-  run w647CompletionAfterAnswerTest =
-    C::init.then(C::launch("background")).then(C::naturalStop).then(C::exit)
-      .then(C::userPrompt).then(C::naturalStop)
-      .expect(not(C::completionBeforeNextAnswer) and C::told == 1 and C::phase == "busy")
+  // #647: the completion queued while idle is injected before the answer.
+  run reach647CompletionAfterAnswerTest =
+    F::init.then(F::launch("background")).then(F::naturalStop).then(F::exit)
+      .then(F::userPrompt).then(F::naturalStop)
+      .expect(F::completionBeforeNextAnswer and F::told == 1)
 
-  // #648: wait, then the queued follow-up: two deliveries.
-  run w648WaitThenFollowUpTwiceTest =
-    C::init.then(C::launch("background")).then(C::exit).then(C::wait).then(C::naturalStop)
-      .expect(not(C::toldAtMostOnce) and C::told == 2)
+  // #648: wait, then follow-up: delivered at most once.
+  run reach648WaitThenFollowUpTwiceTest =
+    F::init.then(F::launch("background")).then(F::exit).then(F::wait).then(F::naturalStop)
+      .expect(F::toldAtMostOnce and F::told == 1)
 
-  // #648: /cancel-all drops the undelivered completion.
-  run w648CancelAllDropsCompletionTest =
-    C::init.then(C::launch("background")).then(C::naturalStop).then(C::exit)
-      .then(C::cancelAll)
-      .expect(not(C::toldOrPending) and C::told == 0 and not(C::queued))
+  // #648: /cancel-all keeps the undelivered completion.
+  run reach648CancelAllDropsCompletionTest =
+    F::init.then(F::launch("background")).then(F::naturalStop).then(F::exit)
+      .then(F::cancelAll)
+      .expect(F::toldOrPending and F::allInvariants)
 
-  // #649: steer after the answer, two tool calls, no finalize.
-  run w649SteerDisablesBudgetTest =
-    C::init.then(C::launch("blocking")).then(C::childAnswer).then(C::steer)
-      .then(C::childTool).then(C::childTool).then(C::pump)
-      .expect(not(C::budgetEnforced) and C::tools == 2 and not(C::finSent))
+  // #649: steer after the answer keeps the budget enforced.
+  run reach649SteerDisablesBudgetTest =
+    F::init.then(F::launch("blocking")).then(F::childAnswer).then(F::steer)
+      .then(F::childTool).then(F::childTool).then(F::pump)
+      .expect(F::budgetEnforced and F::tools == 2 and F::finSent)
 
   // ---- reachability of the fixed design ----
 

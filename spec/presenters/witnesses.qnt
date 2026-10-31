@@ -8,11 +8,11 @@ module witnesses {
   import presenters(FIXES = Set("634")) as F634 from "./model"
   import presenters(FIXES = Set("619", "631", "632", "633", "634")) as F from "./model"
 
-  // #619: after a --continue replay, the JSON usage counts the replayed turn.
-  run w619ContinueUsageIncludesReplayTest =
-    C::initWith(true).then(C::startStep).then(C::cancel)
-      .expect(not(C::headlessUsageIsTurnUsage) and C::jsonUsage == 5
-              and C::refUsage == 0 and C::headlessExitMatchesStatus)
+  // #619: after a --continue replay, the JSON usage counts only the new turn.
+  run reach619ContinueUsageExcludesReplayTest =
+    F::initWith(true).then(F::startStep).then(F::cancel)
+      .expect(F::headlessUsageIsTurnUsage and F::jsonUsage == 0
+              and F::refUsage == 0 and F::headlessExitMatchesStatus)
 
   // #631: web drops attempt 1's text on a retry instead of joining attempt 2
   // onto it.
@@ -22,20 +22,19 @@ module witnesses {
       .expect(C::webRowsSingleAttempt and C::webOkReplyShown
               and C::stdioLinesSingleAttempt and C::webRowsSingleStep)
 
-  // #632: a provider error ends the rpc run with exit 0 and an "[error]"
-  // final-text, while json/print exit 1.
-  run w632RpcErrorExitsDoneTest =
-    C::initWith(false).then(C::startStep).then(C::endError(true))
-      .expect(not(C::rpcExitMatchesStatus) and not(C::rpcFinalTextMatches)
-              and C::rpcFinal.blob and C::headlessExitMatchesStatus)
+  // #632: a provider error ends the rpc run with failed exit and status.
+  run reach632RpcErrorExitsFailedTest =
+    F::initWith(false).then(F::startStep).then(F::endError(true))
+      .expect(F::rpcExitMatchesStatus and F::rpcFinalTextMatches
+              and F::headlessExitMatchesStatus)
 
-  // #632, cap path: the final-text is the tool-use assistant's text.
-  run w632RpcCapExitsDoneTest =
-    C::initWith(false).then(C::startStep).then(C::streamToken).then(C::streamToken)
-      .then(C::endToolUse(false)).then(C::streamToken).then(C::streamToken)
-      .then(C::endToolUse(false))
-      .expect(C::stepEnd == "cap" and not(C::rpcExitMatchesStatus)
-              and not(C::rpcFinalTextMatches))
+  // #632, cap path: step ends on cap with matching exit status and final text.
+  run reach632RpcCapExitsFailedTest =
+    F::initWith(false).then(F::startStep).then(F::streamToken).then(F::streamToken)
+      .then(F::endToolUse(false)).then(F::streamToken).then(F::streamToken)
+      .then(F::endToolUse(false))
+      .expect(F::stepEnd == "cap" and F::rpcExitMatchesStatus
+              and F::rpcFinalTextMatches)
 
   // #633: iteration 1 succeeds and continues; iteration 2 is cancelled; the
   // goal has no final text rather than iteration 1's.

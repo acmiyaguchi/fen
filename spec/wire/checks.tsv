@@ -1,10 +1,10 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-current	everyReadControlAcked	violated	#664
-current	userSteersAccounted	violated	#664
-current	noDoomedSteer	violated	#664
-current	naturalAnswerKept	violated	#665
-current	queuedSteersAccounted	violated	#666
-current	finalTextFileRemovedOnce	violated	#667
+current	everyReadControlAcked	holds
+current	userSteersAccounted	holds
+current	noDoomedSteer	holds
+current	naturalAnswerKept	holds
+current	queuedSteersAccounted	holds
+current	finalTextFileRemovedOnce	holds
 current	atMostOneAck	holds
 current	ackBeforeEffect	holds
 current	resultOnlyBeforeExitDone	holds

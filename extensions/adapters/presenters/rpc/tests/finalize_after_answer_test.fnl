@@ -1,7 +1,5 @@
-;; Known-bug probe for #666: an empty steer is accepted but never injected;
-;; it stays at the head of the ref FIFO, so a later steer is injected without
-;; its ref, and the drop notice (counted from the empty service queue) is
-;; never sent. See spec/wire/FINDINGS.md (#666).
+;; Regression for #665 (child half): `finalize` in `ready` finishes the run with
+;; the answer already produced; no forced turn replaces it.
 
 (local test-api (require :fen.core.extensions.test_api))
 (local register-registry (require :fen.core.extensions.register))
@@ -13,7 +11,6 @@
 (local mock (require :fen.extensions.provider_mock.mock_provider))
 (local steering (require :fen.extensions.steering.service))
 (local rpc (require :fen.extensions.rpc))
-(local {: known-bug} (require :fen.testing))
 
 (local RUN "run-1")
 (local MAX-TICKS 2000)
@@ -147,40 +144,20 @@
   (register-mock!)
   (steering.clear-queues!))
 
-(describe "#666 rpc child: an empty steer"
+(describe "#665 rpc child: finalize from ready"
           (fn []
             (before_each reset!)
-            (it "blinds ref matching for the next steer and is never reported"
+            (it "keeps the finished answer"
                 (fn []
-                  (known-bug 666
-                             (fn []
-                               (let [r (run-child {:mock [{:tool-call {:id "c1"
-                                                                       :name :slow}}
-                                                          "steered answer"]
-                                                   :tools [(slow-tool :slow 3)]
-                                                   :script (fn [p]
-                                                             (p.wait-type :ready)
-                                                             (p.send! :prompt
-                                                                      {:text "work"})
-                                                             (p.wait-type :tool-call)
-                                                             (p.send! :steer
-                                                                      {:text ""})
-                                                             (p.send! :steer
-                                                                      {:text "real steer"})
-                                                             (p.wait-type :turn-complete)
-                                                             (p.send! :close {}))})
-                                     p r.parent
-                                     ack (fn [ref]
-                                           (?. (p.find #(and (= $1.type
-                                                                :control-ack)
-                                                             (= $1.ref ref)))
-                                               :status))
-                                     injected (p.find #(and (= $1.type
-                                                               :steering-injected)
-                                                            (= $1.text
-                                                               "real steer")))]
-                                 (assert r.ok? r.err)
-                                 (and (= :accepted (ack 2))
-                                      (= :accepted (ack 3)) (not= nil injected)
-                                      (= nil injected.ref)
-                                      (= 0 (p.count #(= $1.type :info)))))))))))
+                  (let [r (run-child {:mock ["natural answer" "forced answer"]
+                                      :tools []
+                                      :script (fn [p]
+                                                (p.wait-type :ready)
+                                                (p.send! :prompt {:text "work"})
+                                                (p.wait-type :turn-complete)
+                                                (p.send! :finalize {}))})
+                        p r.parent
+                        result (p.find #(= $1.type :result))]
+                    (assert r.ok? r.err)
+                    (assert (= 1 (p.count #(= $1.type :turn-started))))
+                    (assert (= "natural answer" (?. result :final-text))))))))

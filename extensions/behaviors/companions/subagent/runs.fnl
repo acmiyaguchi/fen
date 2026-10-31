@@ -331,6 +331,10 @@
   (let [run (. (S) :active id)]
     (if (not run)
         (values nil :not-active)
+        ;; Once `close` is sent or the child has exited, a steer can only be
+        ;; dropped; say so now instead of acknowledging it (#664).
+        (or (and run.job run.job.close-sent?) (?. run :job :channel :exit))
+        (values nil :closing)
         (let [full-note (text.trim (tostring (or note "")))
               rec {:note full-note
                    :summary (task-summary full-note)
@@ -349,6 +353,38 @@
   (let [run (. (S) :active id)]
     (when (and run (> (length (or run.pending-steering [])) 0))
       (table.remove run.pending-steering 1))))
+
+(fn M.queue-completion! [id body]
+  "Hold a background run's outcome for the model until the next turn starts
+   (#647/#648). Separate from the user's follow-up queue."
+  (let [run (find-run id)]
+    (when run
+      (set run.completion-body body)
+      (set run.completion-pending? true))
+    run))
+
+(fn M.mark-delivered! [id]
+  "The model has seen this run's terminal result (wait/show): drop its pending
+   completion."
+  (let [run (find-run id)]
+    (when run (set run.completion-pending? false))
+    run))
+
+(fn M.take-completion-frame! []
+  "Drain pending completions in launch order as one block framed as subagent
+   output, not user text; nil when there are none."
+  (let [pending []]
+    (each [_ run (ipairs (. (S) :runs))]
+      (when run.completion-pending?
+        (table.insert pending run)))
+    (when (> (length pending) 0)
+      (table.sort pending (fn [a b] (< (or a.seq 0) (or b.seq 0))))
+      (let [parts []]
+        (each [_ run (ipairs pending)]
+          (set run.completion-pending? false)
+          (table.insert parts (or run.completion-body "")))
+        (.. "[subagent output: background run results, not written by the user]\n"
+            (table.concat parts "\n\n") "\n[end subagent output]")))))
 
 (fn M.active-runs []
   (let [out []]

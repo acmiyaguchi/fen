@@ -1,14 +1,11 @@
-;; Known-bug probe for #664 (parent half): once the parent has sent `close`,
-;; a user steer is still sent (the real child exits on the close and never
-;; answers it), or never sent at all once `exit` was read; either way the run
-;; settles completed with no event telling the user the steer was lost.
-;; See spec/wire/FINDINGS.md (#664).
+;; Regression for #664 (parent half): a steer that arrives once `close` is sent
+;; or the child has exited is rejected up front or reported dropped at settle,
+;; never sent after close and silently lost.
 
 (local test-api (require :fen.core.extensions.test_api))
 (local tool-registry (require :fen.core.extensions.register.tool))
 (local tools (require :fen.core.tools))
 (local wire (require :fen.util.wire))
-(local {: known-bug} (require :fen.testing))
 
 ;; ---- fake child (as in init_test.fnl) ----
 
@@ -194,68 +191,46 @@
       (assert ok? v)
       v)))
 
-(fn lost-steer? [run]
-  (not (or (has-event? run :steering-rejected)
-           (has-event? run :steering-dropped))))
-
-(describe "#664 subagent parent: a steer after close"
+(describe "subagent parent: a steer after close (#664)"
           (fn []
-            (it "is sent after close and lost without a report"
+            (it "is held after close is sent and reported dropped"
                 (fn []
-                  (known-bug 664
-                             (fn []
-                               (with-mocks (fn []
-                                             (install-mocks (fn [child]
-                                                              (start! child)
-                                                              (prompt! child)
-                                                              (answer! child
-                                                                       "answer")
-                                                              (child.expect! :close)
-                                                              ((. (runs)
-                                                                  :request-steer!) "subagent-1"
-                                                                                   "too late"
-                                                                                   :agent)
-                                                              ;; let the parent pump: it reads the close ack and sends the steer
-                                                              (coroutine.yield)
-                                                              ;; the real child already exited on close (#664 child probe)
-                                                              (result! child
-                                                                       "answer")))
-                                             (fresh)
-                                             (let [r (execute-tool {:agent :scout
-                                                                    :task "look"})
-                                                   run (. (snapshot) :runs 1)
-                                                   child (. children 1)]
-                                               (and (not r.is-error?)
-                                                    (= :completed run.status)
-                                                    (= "prompt,close,steer"
-                                                       (table.concat (child.types)
-                                                                     ","))
-                                                    (lost-steer? run)))))))))
-            (it "is never sent once exit was read, and never reported"
+                  (with-mocks (fn []
+                                (install-mocks (fn [child]
+                                                 (start! child)
+                                                 (prompt! child)
+                                                 (answer! child "answer")
+                                                 (child.expect! :close)
+                                                 (let [(run why) ((. (runs) :request-steer!) "subagent-1"
+                                                                                             "too late"
+                                                                                             :agent)]
+                                                   (set child.steer-why why))
+                                                 (coroutine.yield)
+                                                 (result! child "answer")))
+                                (fresh)
+                                (let [r (execute-tool {:agent :scout
+                                                       :task "look"})
+                                      child (. children 1)]
+                                  (assert (not r.is-error?))
+                                  (assert (= "prompt,close"
+                                             (table.concat (child.types) ",")))
+                                  (assert (= :closing child.steer-why)))))))
+            (it "is reported dropped when it is queued but never sent"
                 (fn []
-                  (known-bug 664
-                             (fn []
-                               (with-mocks (fn []
-                                             (install-mocks (fn [child]
-                                                              (start! child)
-                                                              (prompt! child)
-                                                              (answer! child
-                                                                       "answer")
-                                                              (child.expect! :close)
-                                                              (result! child
-                                                                       "answer")
-                                                              ((. (runs)
-                                                                  :request-steer!) "subagent-1"
-                                                                                   "after exit"
-                                                                                   :agent)))
-                                             (fresh)
-                                             (let [r (execute-tool {:agent :scout
-                                                                    :task "look"})
-                                                   run (. (snapshot) :runs 1)
-                                                   child (. children 1)]
-                                               (and (not r.is-error?)
-                                                    (= :completed run.status)
-                                                    (= "prompt,close"
-                                                       (table.concat (child.types)
-                                                                     ","))
-                                                    (lost-steer? run)))))))))))
+                  (with-mocks (fn []
+                                (install-mocks (fn [child]
+                                                 (start! child)
+                                                 (prompt! child)
+                                                 (answer! child "answer")
+                                                 ;; the user's request lands before close was sent
+                                                 (assert ((. (runs) :request-steer!) "subagent-1"
+                                                                                     "before close"
+                                                                                     :agent))
+                                                 (result! child "answer")))
+                                (fresh)
+                                (let [r (execute-tool {:agent :scout
+                                                       :task "look"})
+                                      run (. (snapshot) :runs 1)]
+                                  (assert (not r.is-error?))
+                                  (assert (= :completed run.status))
+                                  (assert (has-event? run :steering-dropped)))))))))

@@ -3,11 +3,11 @@ current	headlessExitMatchesStatus	holds
 current	headlessFinalTextMatches	holds
 current	headlessErrorDetailsMatch	holds
 current	sendStatusMatchesOutcome	holds
-current	headlessUsageIsTurnUsage	violated	#619
+current	headlessUsageIsTurnUsage	holds
 current	lifecycleStatusMatchesOutcome	holds
 current	goalExitMatches	holds
-current	rpcExitMatchesStatus	violated	#632
-current	rpcFinalTextMatches	violated	#632
+current	rpcExitMatchesStatus	holds
+current	rpcFinalTextMatches	holds
 current	goalFinalTextMatches	holds
 fix634	lifecycleStatusMatchesOutcome	holds
 fix634	goalExitMatches	holds

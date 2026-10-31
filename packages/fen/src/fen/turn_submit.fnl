@@ -7,7 +7,15 @@
   (when (and emit opts.emit-user?)
     (emit {:type :user :text text})))
 
-(fn start! [state text agent-step]
+(fn subagent-output-frame []
+  "Pending background-subagent completions, framed as subagent output (#647).
+   The subagent extension is optional and reloadable: resolved at call time."
+  (let [(ok? runs) (pcall require :fen.extensions.subagent.runs)]
+    (when ok?
+      (let [(ok2? frame) (pcall runs.take-completion-frame!)]
+        (when (and ok2? frame) frame)))))
+
+(fn start-turn! [state text agent-step]
   (set state.turn-id (+ (or state.turn-id 0) 1))
   (set state.cancel-requested? false)
   (set state.turn-result nil)
@@ -18,6 +26,11 @@
                                         (fn [] state.cancel-requested?)))))
   (set state.busy? true)
   {:ok true :started true :turn-id state.turn-id})
+
+(fn start! [state line agent-step]
+  (let [frame (subagent-output-frame)
+        text (if frame (.. frame "\n\n" line) line)]
+    (start-turn! state text agent-step)))
 
 (fn queue! [text queue]
   ;; Required at call time: queueing only happens on the interactive path, after extensions are loadable.

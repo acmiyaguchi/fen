@@ -47,9 +47,9 @@ The parent's `unacked` map is consulted only by `idle?`, so the run settles `com
 docs/wire.md promises "Every control line gets exactly one `control-ack`".
 The in-tree test "records a steer the child rejects and keeps running" uses a fake child that answers such a steer with `rejected "run is closing"`, which the real child never does (`close` in `ready` goes straight to `done`).
 
-Witnesses: `w664BatchSkipsSteerTest` (`everyReadControlAcked`), `w664DoomedSteerSentTest` (`noDoomedSteer`), `w664SteerUnreportedTest` (`userSteersAccounted`); in the acks proof model, `w664BatchSkipsSteerTest`.
+Witnesses: `reach664BatchSkipsSteerTest` (`everyReadControlAcked`), `reach664DoomedSteerSentTest` (`noDoomedSteer`), `reach664SteerUnreportedTest` (`userSteersAccounted`); in the acks proof model, `reach664BatchSkipsSteerTest`.
 
-Confirmed against the real child (probe `extensions/adapters/presenters/rpc/tests/issue_664_steer_after_close_unacked_test.fnl`): prompt → wait `turn-complete` → append `close` and `steer` back to back.
+Confirmed against the real child (probe `extensions/adapters/presenters/rpc/tests/steer_after_close_acked_test.fnl`): prompt → wait `turn-complete` → append `close` and `steer` back to back.
 
 ```
 W1 types:  ready control-ack turn-started … turn-complete control-ack result exit
@@ -57,7 +57,7 @@ W1 acks for close(2): 1   steer(3): 0
 W1 info events: 0
 ```
 
-Confirmed against the real parent (probe `extensions/behaviors/companions/subagent/tests/issue_664_steer_after_close_parent_test.fnl`, fake child answering as the real one does, so this half composes two real observations): the fake child acks `close`, then the user requests a steer and the fake child yields, so the parent pumps, reads the close ack, and sends the steer; then `result`/`exit done`.
+Confirmed against the real parent (probe `extensions/behaviors/companions/subagent/tests/steer_after_close_parent_test.fnl`, fake child answering as the real one does, so this half composes two real observations): the fake child acks `close`, then the user requests a steer and the fake child yields, so the parent pumps, reads the close ack, and sends the steer; then `result`/`exit done`.
 
 ```
 W1p controls: prompt close steer
@@ -67,6 +67,8 @@ W1p events: subagent-start agent-started assistant-text llm-end steering subagen
 
 The run has no `steering-rejected` event.
 A second case, where the steer is requested after `exit` was emitted, gives `W1b controls: prompt close`: the steer is never sent and has no event either.
+
+Fixed in #605: child defers exit to the end of poll batch so every control line is acknowledged; parent records unacknowledged or dropped steers at settle.
 
 ### #665: A budget `finalize` sent on a stale mirror replaces a finished answer (`naturalAnswerKept`)
 
@@ -78,22 +80,24 @@ The table maps it to `start-finalize-turn`, so the child runs an extra tool-free
 The run is also flagged `budget-limited?`.
 The comment in `maybe-finalize!` ("In `ready` the task turn is done and `close` returns it") states the intended rule, but the protocol cannot express it.
 
-Witness: `w665FinalizeReplacesAnswerTest`.
+Witness: `reach665FinalizeReplacesAnswerTest`.
 
-Confirmed against the real child (probe `extensions/adapters/presenters/rpc/tests/issue_665_finalize_after_answer_test.fnl`): prompt → `turn-complete` → `finalize`.
+Confirmed against the real child (probe `extensions/adapters/presenters/rpc/tests/finalize_after_answer_test.fnl`): prompt → `turn-complete` → `finalize`.
 
 ```
 W2 types: … turn-complete control-ack turn-started … turn-complete result exit
 W2 turn-started count: 2   result: forced answer
 ```
 
-Confirmed against the real parent (probe `extensions/behaviors/companions/subagent/tests/issue_665_finalize_stale_mirror_parent_test.fnl`): the fake child emits a tool call (with `max-tool-calls 1`) and yields; the parent sends `finalize`.
+Confirmed against the real parent (probe `extensions/behaviors/companions/subagent/tests/finalize_stale_mirror_parent_test.fnl`): the fake child emits a tool call (with `max-tool-calls 1`) and yields; the parent sends `finalize`.
 The fake child then ends its turn with a final answer before reading the control and answers `finalize` per the real table.
 
 ```
 W2p controls: prompt finalize
 W2p answer: forced answer  budget-limited? true
 ```
+
+Fixed in #605: `decide(ready, finalize)` maps to finish/done, retaining the existing answer.
 
 ### #666: An empty steer is accepted but never injected, and it blinds ref matching for every later steer (`queuedSteersAccounted`)
 
@@ -106,15 +110,17 @@ Two accepted controls end up neither injected-with-ref nor reported dropped.
 `inject-after-natural-stop!` also treats `[""]` as input, so the agent makes one extra provider call with nothing new to say.
 Fen's own parent trims and rejects empty notes, so this affects external parents only, but the wire protocol is a documented contract.
 
-Witness: `w666EmptySteerUnaccountedTest`.
+Witness: `reach666EmptySteerUnaccountedTest`.
 
-Confirmed against the real child (probe `extensions/adapters/presenters/rpc/tests/issue_666_empty_steer_blinds_refs_test.fnl`): steer `""` then steer `"real steer"` during a tool, then close.
+Confirmed against the real child (probe `extensions/adapters/presenters/rpc/tests/empty_steer_rejected_test.fnl`): steer `""` then steer `"real steer"` during a tool, then close.
 
 ```
 W3 ack 2: accepted  ack 3: accepted
 W3 steering-injected text= real steer  ref= nil  refs= nil
 (no info event)
 ```
+
+Fixed in #605: json schema validates `minLength: 1` on steer and follow-up text, rejecting empty controls.
 
 ### #667: The spilled final-text file leaks when the child dies between spilling and the result line (`finalTextFileRemovedOnce`)
 
@@ -125,9 +131,9 @@ A child killed in between (the parent's process timeout, OOM, or kill -9), or a 
 The parent's `finish!` removes the control, event, and system-prompt files it named, but it cannot name this one.
 Every other path removes the file exactly once (`result-final-text` runs once per settle).
 
-Witness: `w667SpillLeaksOnCrashTest`.
+Witness: `reach667SpillLeaksOnCrashTest`.
 
-Confirmed against the real child (probe `extensions/adapters/presenters/rpc/tests/issue_667_spill_file_leaks_test.fnl`, which removes the leaked file afterwards): `ch.out:write` raises on the result line, standing in for death at that instant.
+Confirmed against the real child (probe `extensions/adapters/presenters/rpc/tests/spill_file_parent_named_test.fnl`, which removes the leaked file afterwards): `ch.out:write` raises on the result line, standing in for death at that instant.
 
 ```
 W4 run ok? false  …: killed while writing result
@@ -135,6 +141,8 @@ W4 spill file 3 exists? true  bytes 102400
 ```
 
 Severity is low because the window is narrow, but the ownership rule ("the parent owns that file") is unenforceable as designed.
+
+Fixed in #605: the parent specifies `FEN_WIRE_RESULT_PATH` so it always removes the spill file on finish.
 
 ## Candidate fixes (named: `FIXES`)
 

@@ -251,7 +251,7 @@ module lifecycle {
   }
 }
 
-module current { import lifecycle(FIXES = Set()).* }
+module current { import lifecycle(FIXES = Set("646", "647", "648", "649")).* }
 module fixed { import lifecycle(FIXES = Set("646", "647", "648", "649")).* }
 module fix646 { import lifecycle(FIXES = Set("646")).* }
 module fix647 { import lifecycle(FIXES = Set("647")).* }

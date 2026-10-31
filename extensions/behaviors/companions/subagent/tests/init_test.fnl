@@ -953,19 +953,20 @@
                                                  "Subagent completed with empty final text.")))))
             (it "reads a spilled final answer back whole and removes its file"
                 (fn []
-                  (let [big (string.rep "0123456789abcdef" 8192)
-                        path (os.tmpname)]
-                    (with-open [f (io.open path :wb)] (f:write big))
+                  (let [big (string.rep "0123456789abcdef" 8192)]
+                    (var spilled-path nil)
                     (install-mocks (fn [child]
                                      (start! child)
                                      (prompt! child)
                                      (answer! child "cut")
                                      (child.expect! :close)
+                                     (set spilled-path child.env.FEN_WIRE_RESULT_PATH)
+                                     (with-open [f (io.open spilled-path :wb)] (f:write big))
                                      (child.emit! :result
                                                   {:final-text "cut"
                                                    :stop-reason "stop"
                                                    :truncated? true
-                                                   :final-text-path path})
+                                                   :final-text-path spilled-path})
                                      (child.exit! :done))
                                    scout)
                     (fresh)
@@ -973,7 +974,8 @@
                       (assert.is_false r.is-error?)
                       (assert.are.equal big (. r.details :result))
                       (assert.is_false (. r.details :result-truncated?))
-                      (assert.is_nil (io.open path :rb))))))
+                      (assert.is_truthy spilled-path)
+                      (assert.is_nil (io.open spilled-path :rb))))))
             (it "marks a cut final answer whose full text is unavailable"
                 (fn []
                   (install-mocks (fn [child]
@@ -1026,13 +1028,13 @@
                   (install-mocks (fn [child]
                                    (start! child)
                                    (prompt! child)
-                                   (answer! child "answer")
-                                   ;; The parent closes; a steer arriving after close is rejected.
-                                   (child.expect! :close)
+                                   ;; A steer arriving while running is rejected by the child.
                                    ((. (runs) :request-steer!) "subagent-1"
-                                                               "too late" :agent)
+                                                               "steer" :agent)
                                    (child.expect! :steer :rejected
-                                                  "run is closing")
+                                                  "queue full")
+                                   (answer! child "answer")
+                                   (child.expect! :close)
                                    (result! child "answer"))
                                  scout)
                   (fresh)
@@ -1375,8 +1377,8 @@
                       (assert.are.equal :completed run.status)
                       (assert.are.equal "background finding" run.result)
                       (assert.is_nil run.job)
-                      (assert.are.equal 1 (length queued.follow-up))
-                      (assert.is_truthy (contains? (. queued.follow-up 1)
+                      (assert.is_true run.completion-pending?)
+                      (assert.is_truthy (contains? run.completion-body
                                                    "background finding"))))))
             (it "steers, cancels by id, waits for, and retries detached runs"
                 (fn []

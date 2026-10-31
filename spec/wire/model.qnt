@@ -558,7 +558,8 @@ module wire {
   }
 }
 
-module current { import wire(FIXES = Set()).* }
+module current { import wire(FIXES = Set("664", "665", "666", "667")).* }
+module unfixed { import wire(FIXES = Set()).* }
 module fixed { import wire(FIXES = Set("664", "665", "666", "667")).* }
 module fix664 { import wire(FIXES = Set("664")).* }
 module fix665 { import wire(FIXES = Set("665")).* }

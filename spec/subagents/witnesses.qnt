@@ -5,56 +5,51 @@ module witnesses {
   import subagents(FIXES = Set()) as C from "./model"
   import subagents(FIXES = Set("645", "646", "647", "648", "649", "650")) as F from "./model"
 
-  // #645: a parent with thinking on forwards its status label; the child
-  // rejects --thinking at startup and the run fails before it starts.
-  run w645ThinkingLabelRejectedTest =
-    C::initWith(true, false, false).then(C::launch(1, "blocking"))
-      .expect(not(C::inheritedRoutingAccepted) and C::runs.get(1).st == "failed"
-              and not(C::runs.get(1).alive))
+  // #645: a parent with thinking on forwards its level; child accepts it.
+  run reach645ThinkingLabelRejectedTest =
+    F::initWith(true, false, false).then(F::launch(1, "blocking"))
+      .expect(F::inheritedRoutingAccepted and F::runs.get(1).st == "running"
+              and F::runs.get(1).alive)
 
-  // #646: quit while a blocking run is live leaves its child running.
-  run w646QuitOrphansBlockingTest =
-    C::initWith(false, false, false).then(C::launch(1, "blocking")).then(C::quit)
-      .expect(not(C::noOrphanAfterQuit) and C::runs.get(1).alive
-              and C::runs.get(1).mode == "blocking" and C::runs.get(1).st == "running")
+  // #646: quit while a blocking run is live reaps its child.
+  run reach646QuitOrphansBlockingTest =
+    F::initWith(false, false, false).then(F::launch(1, "blocking")).then(F::quit)
+      .expect(F::noOrphanAfterQuit and not(F::runs.get(1).alive))
 
-  // #647: a background completion queued while idle reaches the model only
-  // after it has answered the next prompt.
-  run w647CompletionAfterAnswerTest =
-    C::initWith(false, false, false).then(C::launch(1, "background")).then(C::naturalStop)
-      .then(C::exit(1, "done")).then(C::userPrompt).then(C::naturalStop)
-      .expect(not(C::completionBeforeNextAnswer) and C::runs.get(1).told == 1
-              and C::phase == "busy")
+  // #647: a background completion queued while idle is delivered before next answer.
+  run reach647CompletionAfterAnswerTest =
+    F::initWith(false, false, false).then(F::launch(1, "background")).then(F::naturalStop)
+      .then(F::exit(1, "done")).then(F::userPrompt).then(F::naturalStop)
+      .expect(F::completionBeforeNextAnswer and F::runs.get(1).told == 1)
 
-  // #648: wait returns the result, and the queued follow-up delivers it again.
-  run w648WaitThenFollowUpTwiceTest =
-    C::initWith(false, false, false).then(C::launch(1, "background"))
-      .then(C::exit(1, "done")).then(C::wait(1)).then(C::naturalStop)
-      .expect(not(C::toldAtMostOnce) and C::runs.get(1).told == 2)
+  // #648: wait returns the result, and completion is delivered at most once.
+  run reach648WaitThenFollowUpTwiceTest =
+    F::initWith(false, false, false).then(F::launch(1, "background"))
+      .then(F::exit(1, "done")).then(F::wait(1)).then(F::naturalStop)
+      .expect(F::toldAtMostOnce and F::runs.get(1).told == 1)
 
-  // #648: /cancel-all drops the queued completion; nobody is told.
-  run w648CancelAllDropsCompletionTest =
-    C::initWith(false, false, false).then(C::launch(1, "background")).then(C::naturalStop)
-      .then(C::exit(1, "done")).then(C::cancelAll)
-      .expect(not(C::toldOrPending) and C::runs.get(1).told == 0 and C::queue == [])
+  // #648: /cancel-all does not drop background completions.
+  run reach648CancelAllDropsCompletionTest =
+    F::initWith(false, false, false).then(F::launch(1, "background")).then(F::naturalStop)
+      .then(F::exit(1, "done")).then(F::cancelAll)
+      .expect(F::toldOrPending and F::runs.get(1).told == 0)
 
-  // #649: a steer after the first answer switches the tool budget off.
-  run w649SteerDisablesBudgetTest =
-    C::initWith(false, false, false).then(C::launch(1, "blocking")).then(C::childAnswer(1))
-      .then(C::steer(1)).then(C::childTool(1)).then(C::childTool(1)).then(C::pump(1))
-      .expect(not(C::budgetEnforced) and C::runs.get(1).tools == 2
-              and not(C::runs.get(1).finSent) and C::runs.get(1).st == "running")
+  // #649: a steer after the first answer keeps the tool budget enforced.
+  run reach649SteerDisablesBudgetTest =
+    F::initWith(false, false, false).then(F::launch(1, "blocking")).then(F::childAnswer(1))
+      .then(F::steer(1)).then(F::childTool(1)).then(F::childTool(1)).then(F::pump(1))
+      .expect(F::budgetEnforced and F::runs.get(1).tools == 2
+              and F::runs.get(1).finSent)
 
-  // #650: a background child keeps edit authority.
-  run w650BackgroundCanEditTest =
-    C::initWith(false, false, false).then(C::launch(1, "background"))
-      .expect(not(C::backgroundReadOnly) and C::runs.get(1).canEdit)
+  // #650: a background child cannot edit.
+  run reach650BackgroundCanEditTest =
+    F::initWith(false, false, false).then(F::launch(1, "background"))
+      .expect(F::backgroundReadOnly and not(F::runs.get(1).canEdit))
 
-  // #650: a parent with --web-search off spawns a child with the settings
-  // default (live).
-  run w650WebSearchNotInheritedTest =
-    C::initWith(false, true, true).then(C::launch(1, "blocking"))
-      .expect(not(C::noWiderNetwork) and C::runs.get(1).web)
+  // #650: a parent with --web-search off disables it for the child.
+  run reach650WebSearchNotInheritedTest =
+    F::initWith(false, true, true).then(F::launch(1, "blocking"))
+      .expect(F::noWiderNetwork and not(F::runs.get(1).web))
 
   // ---- reachability of the fixed design ----
 

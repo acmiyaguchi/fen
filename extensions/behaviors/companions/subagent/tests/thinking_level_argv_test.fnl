@@ -1,13 +1,11 @@
-;; Known bug #646 (spec/subagents, `noOrphanAfterQuit`): quitting while a
-;; blocking subagent runs leaves the child, its temp files, and its record
-;; behind. The real `:agent-shutdown` handler reaps `runs.jobs` only, and a
-;; blocking run is driven by its tool call inside the (now abandoned) turn
-;; coroutine. The fake child would exit as soon as it saw `cancel`.
+;; Regression for #645 (spec/subagents, `inheritedRoutingAccepted`): the child
+;; inherits the parent's thinking LEVEL, never the status-bar label. Parent agents
+;; are built the way production builds them (interactive.make-agent-from-opts)
+;; and launched through the real tool with `{:agent agent :state state}`.
 
-(local {: known-bug} (require :fen.testing))
 (local test-api (require :fen.core.extensions.test_api))
 (local tool-registry (require :fen.core.extensions.register.tool))
-(local events (require :fen.core.extensions.events))
+(local thinking (require :fen.core.thinking))
 (local wire (require :fen.util.wire))
 
 ;; ---- fake child (copied from init_test.fnl's conformance kit) ----
@@ -199,68 +197,60 @@
     ((. (require :fen.extensions.steering.service) :clear-queues!))
     (when (not ok?) (error err 0))))
 
-(local CANCEL-MARKER {:type :cancel-marker})
+(fn parent-agent [api]
+  (let [interactive (require :fen.interactive)]
+    (interactive.make-agent-from-opts (fn [_]
+                                        {:provider-name (if (= api
+                                                               :anthropic-messages)
+                                                            :anthropic
+                                                            :openai)
+                                         :model "model-x"
+                                         : api})
+                                      {:thinking :high :pinned-tools []}
+                                      (fn [_] nil) {})))
 
-(fn exists? [p]
-  (let [f (and p (io.open p :r))]
-    (when f (f:close))
-    (not= nil f)))
+(fn launched-thinking [agent]
+  "Launch a plain agent (no frontmatter thinking) and return the child's
+   --thinking value."
+  (install-mocks (simple "ok") (fn [_] {:name "a" :body "b"}))
+  (fresh)
+  (let [tool (registered-tool :subagent)
+        r (tool.execute {:agent :a :task "t"} {:agent agent :state {}})]
+    (assert (not r.is-error?) (tostring (?. r :content 1 :text)))
+    (argv-value (. children 1 :argv) "--thinking")))
 
-(describe "subagent known bug #646"
+(describe "subagent thinking inheritance (#645)"
           (fn []
-            (it "leaves a blocking child running after :agent-shutdown"
+            (it "forwards the parent's thinking level, not its status label"
                 (fn []
-                  (known-bug 646 (fn []
-                                   (var orphaned? false)
-                                   (with-stubs (fn []
-                                                 (install-mocks (fn [child]
-                                                                  (start! child)
-                                                                  (prompt! child)
-                                                                  (child.expect! :cancel)
-                                                                  (child.exit! :cancelled))
-                                                                (fn [_]
-                                                                  {:name "a"
-                                                                   :body "b"}))
-                                                 (fresh)
-                                                 (let [tool (registered-tool :subagent)
-                                                       turn {:abandoned? false}
-                                                       co (coroutine.create (fn []
-                                                                              (pcall tool.execute
-                                                                                     {:agent :a
-                                                                                      :task "work"}
-                                                                                     {}
-                                                                                     (fn []
-                                                                                       (when turn.abandoned?
-                                                                                         (error CANCEL-MARKER))
-                                                                                       (coroutine.yield)))))]
-                                                   ;; The turn coroutine runs the tool until the child is working.
-                                                   (for [_ 1 5]
-                                                     (assert (coroutine.resume co)))
-                                                   (assert (= :running
-                                                              (. (snapshot)
-                                                                 :runs 1 :status)))
-                                                   ;; Quit: the presenter loop ends and emits :agent-shutdown;
-                                                   ;; the turn coroutine is never resumed again.
-                                                   (events.emit {:type :agent-shutdown})
-                                                   (for [_ 1 200]
-                                                     (events.emit {:type :runtime-tick}))
-                                                   (let [child (. children 1)
-                                                         snap (snapshot)]
-                                                     (set orphaned?
-                                                          (and (= 1
-                                                                  snap.active-count)
-                                                               (= :running
-                                                                  (. snap.runs
-                                                                     1 :status))
-                                                               (not child.aborted?)
-                                                               (= 1
-                                                                  (length (child.types)))
-                                                               (exists? child.env.FEN_WIRE_CONTROL_PATH))))
-                                                   ;; Clean up through the real cancel path: the abandoned
-                                                   ;; turn unwinds, reap! sends cancel, the child exits.
-                                                   (set turn.abandoned? true)
-                                                   (coroutine.resume co)
-                                                   (assert (= 0
-                                                              (. (snapshot)
-                                                                 :active-count))))))
-                                   orphaned?))))))
+                  (with-stubs (fn []
+                                (each [_ api (ipairs [:anthropic-messages
+                                                      :openai-responses])]
+                                  (let [agent (parent-agent api)
+                                        v (launched-thinking agent)]
+                                    (assert (= nil agent.thinking))
+                                    (assert (not= v agent.thinking-status))
+                                    (assert (= "high" v))
+                                    (assert (thinking.valid-level? v))))))))
+            (it "forwards nothing when the parent has no thinking level"
+                (fn []
+                  (with-stubs (fn []
+                                (let [agent (parent-agent :openai-responses)]
+                                  (set agent.provider-options.thinking-level
+                                       nil)
+                                  (assert (= nil (launched-thinking agent))))))))
+            (it "rejects an invalid thinking level before spawning"
+                (fn []
+                  (with-stubs (fn []
+                                (install-mocks (simple "ok")
+                                               (fn [_]
+                                                 {:name "a" :body "b"}))
+                                (fresh)
+                                (let [tool (registered-tool :subagent)
+                                      r (tool.execute {:agent :a
+                                                       :task "t"
+                                                       :thinking "think:8192"}
+                                                      {:agent (parent-agent :openai-responses)
+                                                       :state {}})]
+                                  (assert r.is-error?)
+                                  (assert (= 0 (length children))))))))))
