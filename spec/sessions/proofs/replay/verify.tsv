@@ -1,0 +1,5 @@
+# main	invariants	mode	steps	seconds	why
+sessionsReplay	sessionsReplayValid	bounded	0	600	One message log chosen in init: zero steps covers every log of up to 5 messages over the input alphabet.
+sessionsReplay	sessionsReplayKeepsValid	bounded	0	600	One message log chosen in init: zero steps covers every log of up to 5 messages over the input alphabet.
+sessionsReplay	sessionsDoctorCleanIffValid	bounded	0	600	One message log chosen in init: zero steps covers every log of up to 5 messages over the input alphabet.
+sessionsReplay	sessionsDoctorRepairIsReplay	bounded	0	600	One message log chosen in init: zero steps covers every log of up to 5 messages over the input alphabet.

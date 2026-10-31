@@ -1,0 +1,6 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+sessionsReplay	sessionsReplayValid	holds
+sessionsReplay	sessionsReplayKeepsValid	holds
+sessionsReplay	sessionsDoctorCleanIffValid	holds
+sessionsReplay	sessionsDoctorRepairValid	holds
+sessionsReplay	sessionsDoctorRepairIsReplay	holds

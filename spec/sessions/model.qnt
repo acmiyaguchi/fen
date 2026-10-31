@@ -67,7 +67,8 @@ module sessions {
     msgsOf(disk).foldl(NOINTS, (s, m) => s.union(Set(m.mid)))
 
   pure def indexOfMid(ms: List[Msg], mid: int): int =
-    range(0, ms.length()).foldl(-1, (acc, i) => if (acc < 0 and ms[i].mid == mid) i else acc)
+    ms.foldl({ i: 0, at: -1 }, (st, m) =>
+      { i: st.i + 1, at: if (st.at < 0 and m.mid == mid) st.i else st.at }).at
 
   // latest-valid-compaction: index of the first kept message, or -1.
   pure def compactionIndex(disk: List[Line]): int =
@@ -139,8 +140,11 @@ module sessions {
   // Candidate fix: the doctor reports and repairs exactly what replay would
   // change (core `replayRepairs` / `replayPlan` over the message entries);
   // compaction entries are kept in order, malformed lines dropped.
+  // Folds with an index counter instead of range(0, n), so the doctor can
+  // be checked by Apalache (spec/sessions/proofs/replay).
   pure def msgLineIdx(disk: List[Line]): List[int] =
-    range(0, disk.length()).select(i => disk[i].kind == "msg")
+    disk.foldl({ i: 0, out: List(-1).tail() }, (st, l) =>
+      { i: st.i + 1, out: if (l.kind == "msg") st.out.append(st.i) else st.out }).out
 
   pure def lineEntries(disk: List[Line], mi: List[int]): List[Entry] =
     mi.foldl(NOENTRIES, (acc, i) => acc.append(planEntry(disk[i].msg)))
@@ -150,7 +154,9 @@ module sessions {
       + replayRepairs(lineEntries(disk, msgLineIdx(disk)))
 
   pure def keepCompactions(out: List[Line], disk: List[Line], lo: int, hi: int): List[Line] =
-    range(lo, hi).foldl(out, (o, j) => if (disk[j].kind == "compaction") o.append(disk[j]) else o)
+    disk.foldl({ i: 0, out: out }, (st, l) =>
+      { i: st.i + 1,
+        out: if (lo <= st.i and st.i < hi and l.kind == "compaction") st.out.append(l) else st.out }).out
 
   pure def doctorRepairCore(disk: List[Line]): List[Line] =
     val mi = msgLineIdx(disk)

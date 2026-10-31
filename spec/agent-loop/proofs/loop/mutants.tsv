@@ -1,0 +1,4 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|      if (fix("607")) pairAll(l)|      if (false) pairAll(l)|	fixed	refinesTurn	cancel after a :length reply leaves its call open (no boundary)
+model.qnt	s|        go(finish(if (fix("607")) pairAll({ ...l, stepErr: true }) else { ...l, stepErr: true }, "crash"))|        go(finish({ ...l, stepErr: true }, "crash"))|	fixed	refinesTurn	a crash is not closed by the boundary
+model.qnt	s|    if (fix("609")) (if (res == "crash") "error" else res)|    if (false) res|	fixed	refinesTurn	status inferred from the last message again

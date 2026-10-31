@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+fixed	refinesTurn inheritsTurnInvariants	bounded	12	600	One user step ends within 12 loop steps (CAP = 2 iterations, two calls each, a follow-up line, a cancel); the longest current counterexample (#610, the cap) takes 10.
