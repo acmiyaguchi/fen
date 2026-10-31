@@ -74,6 +74,19 @@
   (when last
     (set last.final? final?)))
 
+(fn drop-superseded-attempt! []
+  "A provider retry discards the failed attempt (#629): history never holds its
+   text, so the open streaming rows are cleared and the next attempt's deltas
+   start them over instead of joining onto them."
+  (each [_ ev (pairs (or state.streaming-assistant-rows {}))]
+    (when ev.streaming?
+      (set ev.text "")
+      (set ev.text-chunks [])
+      (set ev.text-dirty? false)
+      (set ev.text-version (+ (or ev.text-version 0) 1))
+      (set ev.stream-pending-bytes 0)
+      (clear-render-cache! ev))))
+
 (fn running-tool-label []
   (var n 0)
   (var only-label nil)
@@ -192,6 +205,7 @@
                 (set s.context-estimated? false)))))
         (= ev.type :provider-retry)
         (let [s state.status-info]
+          (drop-superseded-attempt!)
           (clear-hosted-tools!)
           (set s.retrying? true)
           (set s.retry-attempt (or ev.attempt 0))
@@ -233,6 +247,7 @@
           (table.insert state.transcript ev))
         (= ev.type :cancelled)
         (do
+          (finish-streaming-assistant! false)
           (set state.status-info.thinking? false)
           (set state.status-info.retrying? false)
           (clear-running-tools!)
@@ -272,6 +287,7 @@
             (set state.status-info.turn-start 0)))
         (= ev.type :error)
         (do
+          (finish-streaming-assistant! false)
           (set state.status-info.thinking? false)
           (set state.status-info.retrying? false)
           (clear-running-tools!)

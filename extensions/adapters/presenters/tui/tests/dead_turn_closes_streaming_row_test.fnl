@@ -1,8 +1,6 @@
-;; Known-bug probe for #630: after a provider error or a cancel the agent
-;; emits no assistant-stream-end, and neither the :error nor the :cancelled
-;; handler closes the open streaming row, so the next turn's first delta
-;; appends to the dead turn's row.
-;; See spec/network/FINDINGS.md (#630).
+;; Regression test for #630 (spec/network/FINDINGS.md): after a provider error
+;; or a cancel, the open streaming row is closed so the next turn's first delta
+;; starts a fresh row rather than appending to the dead turn's row.
 
 (local tui-test (require :fen.testing.tui))
 (local tb (tui-test.install-termbox-stub! {:capture? true :cols 80 :rows 10}))
@@ -13,7 +11,6 @@
 (local tui (require :fen.extensions.tui))
 (local paint (require :fen.extensions.tui.paint))
 (local events (require :fen.core.extensions.events))
-(local {: known-bug} (require :fen.testing))
 
 (fn reset! []
   (test-api.reset!)
@@ -51,28 +48,30 @@
     (delta! "Fresh answer.")
     (values open-after-end (rows))))
 
-(fn joined? [open-after-end transcript end-type]
-  (and (= 1 open-after-end)
-       (= (table.concat ["user="
-                         "assistant-text=Partial ansFresh answer."
-                         (.. end-type "=")
-                         "user="] " | ")
-          (table.concat transcript " | "))))
-
-(describe "#630 TUI ingest after a dead turn"
+(describe "TUI ingest after a dead turn (#630)"
           (fn []
             (before_each reset!)
             (after_each (fn [] (test-api.reset!)))
-            (it "reuses the open row after a provider error"
+            (it "closes the open row on a provider error so the next turn starts fresh"
                 (fn []
-                  (known-bug 630
-                             (fn []
-                               (let [(open transcript) (dead-turn-then-next! {:type :error
-                                                                              :error "boom"})]
-                                 (joined? open transcript :error))))))
-            (it "reuses the open row after a cancel"
+                  (let [(open transcript) (dead-turn-then-next! {:type :error
+                                                                 :error "boom"})]
+                    (assert.are.equal 0 open)
+                    (assert.are.equal (table.concat ["user="
+                                                     "assistant-text=Partial ans"
+                                                     "error="
+                                                     "user="
+                                                     "assistant-text=Fresh answer."]
+                                                    " | ")
+                                      (table.concat transcript " | ")))))
+            (it "closes the open row on cancel so the next turn starts fresh"
                 (fn []
-                  (known-bug 630
-                             (fn []
-                               (let [(open transcript) (dead-turn-then-next! {:type :cancelled})]
-                                 (joined? open transcript :cancelled))))))))
+                  (let [(open transcript) (dead-turn-then-next! {:type :cancelled})]
+                    (assert.are.equal 0 open)
+                    (assert.are.equal (table.concat ["user="
+                                                     "assistant-text=Partial ans"
+                                                     "cancelled="
+                                                     "user="
+                                                     "assistant-text=Fresh answer."]
+                                                    " | ")
+                                      (table.concat transcript " | ")))))))

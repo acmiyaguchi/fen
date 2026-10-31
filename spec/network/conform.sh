@@ -5,16 +5,16 @@
 #                      the real turn_submit/agent/provider/retry chain: the
 #                      events it emits must equal the model's, and the TUI
 #                      state must match after every model step.
-# MAIN selects which model instance must match today's code (`current` until
-# the streaming-row fix lands, then `fixed`).
+# MAIN selects which model instance must match today's code (`current` and
+# `fixed` now carry the streaming-row fixes #629 and #630).
 #
-# --negative replays the other instance, which differs from today's code, so
-# the replay must fail: proof that a divergence is reported, not swallowed.
+# --negative replays `unfixed`, which lacks the fixes and differs from today's
+# code, so the replay must fail: proof that a divergence is reported, not swallowed.
 set -eu
 QUINT=${QUINT:-quint}
 MAIN=${SPEC_NETWORK_MAIN:-current}
 if [ "${1-}" = "--negative" ]; then
-  if [ "$MAIN" = current ]; then MAIN=fixed; else MAIN=current; fi
+  if [ "$MAIN" = unfixed ]; then MAIN=current; else MAIN=unfixed; fi
 fi
 TRACES=${SPEC_REPLAY_TRACES:-200}
 # Extra traces from `stepNoCancel`, which reach completed turns far more often.

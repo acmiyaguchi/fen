@@ -182,5 +182,5 @@ module streamrows {
   }
 }
 
-module current { import streamrows(FIXES = Set()).* }
+module current { import streamrows(FIXES = Set("629", "630")).* }
 module fixed { import streamrows(FIXES = Set("629", "630")).* }

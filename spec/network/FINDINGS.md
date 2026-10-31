@@ -28,14 +28,20 @@ They cannot produce:
 
 | Claim | Kind | Where |
 | --- | --- | --- |
-| #629, #630 in the model | counterexample | `current` rows in `checks.tsv`; witnesses in `witnesses.qnt` |
-| #629, #630 in the code | confirmed | probes (below), and the producer conformance: the real chain matches `current` step by step, bugs included |
+| #629, #630 in the model | counterexample | former `violated` rows in `checks.tsv`; now `reach...Test` in `witnesses.qnt` |
+| #629, #630 in the code | confirmed | regression tests (below), and the producer conformance |
 | `fixed` satisfies every invariant | sampled | `fixed.allInvariants` |
 | the stream-display contract holds under both fixes | inductive | `proofs/stream-rows`: `fixed.inductiveInv` |
 | each fix is independent | sampled + counterexample | `fix629`/`fix630` rows; `fix630.okReplyDisplayed` is still violated (#629): `okReplyDisplayed` needs both fixes |
 | the checks are not vacuous | mutants | `mutants.tsv` here and in `proofs/stream-rows` |
 
 ## Bugs
+
+**Both bugs are fixed**:
+- #629: `:provider-retry` in TUI ingest (`extensions/adapters/presenters/tui/ingest.fnl`) clears superseded text in open streaming rows (`drop-superseded-attempt!`).
+- #630: `:error` and `:cancelled` in TUI ingest close open streaming rows (`finish-streaming-assistant! false`).
+`current` in `model.qnt` enables both fixes (`FIXES = Set("629", "630")`), so all its `checks.tsv` rows hold.
+The probes became regular regression tests, and witnesses became `reach...Test` traces.
 
 ### #629: A mid-stream retry leaves the failed attempt's text on screen
 
@@ -45,22 +51,22 @@ Each attempt gets a fresh parser and state, and the persisted assistant message 
 
 Confirmed against real ingest: deltas `"Hello wor"`, `:provider-retry`, `"Hello world."`, `:llm-end`, `:assistant-stream-end` render one row `"Hello worHello world."` while history holds `"Hello world."`.
 
-Witnesses: `w629RetryKeepsSupersededTextTest`, `w629NotFixedBy630Test` (`witnesses.qnt`), and `w629RetryKeepsSupersededTextTest` in `proofs/stream-rows`.
-Probes (both reproduce):
+Witnesses: `reach629RetryDropsAttemptTest` (`witnesses.qnt`), and `reach629RetryDropsAttemptTest` in `proofs/stream-rows`.
+Regression tests:
 
-- `extensions/adapters/presenters/tui/tests/issue_629_retry_keeps_superseded_text_test.fnl`: the event sequence above through the real TUI ingest.
-- `extensions/adapters/providers/shared/tests/issue_629_attempt_deltas_reach_bus_test.fnl`: the real `streaming.complete-streaming` and `retry.with-retry` over a stubbed HTTP backend. Attempt 1's delta and attempt 2's delta reach `on-event` on content index 1 with only `:provider-retry` between them, while the returned message holds only attempt 2's text. This probe flips if the producer gains an attempt-boundary event (the alternative fix), not if only the TUI fix lands.
+- `extensions/adapters/presenters/tui/tests/retry_drops_superseded_text_test.fnl`: drops attempt 1's text on retry so only attempt 2 is shown.
+- `extensions/adapters/providers/shared/tests/attempt_deltas_reach_bus_test.fnl`: the real `streaming.complete-streaming` and `retry.with-retry` over a stubbed HTTP backend. Delivers `:provider-retry` between attempts while the returned message holds only attempt 2's text.
 
 ### #630: After an error or cancel, the next turn's text joins the dead turn's row
 
 Counterexample (`rowsSingleTurn`, `noOpenRowWhenIdle`): `startTurn → streamToken → cancel → startTurn → streamToken`.
-The agent emits no `assistant-stream-end` on the error or cancel paths, and neither the `:error` nor the `:cancelled` handler closes `streaming-assistant-rows`; only `/new` resets them.
-The next turn's first delta for the same content index appends to the stale open row.
+The agent emits no `assistant-stream-end` on the error or cancel paths, and before the fix neither the `:error` nor the `:cancelled` handler closed `streaming-assistant-rows`; only `/new` reset them.
+The next turn's first delta for the same content index appended to the stale open row.
 
-Confirmed against real ingest for both paths: the transcript renders `"Partial ansFresh answer."` above the error/cancelled row and the new user row.
+Confirmed against real ingest for both paths: before the fix, the transcript rendered `"Partial ansFresh answer."` above the error/cancelled row and the new user row. Since the fix, `finish-streaming-assistant!` closes the row on `:error` and `:cancelled`.
 
-Witnesses: `w630CancelLeavesRowOpenTest`, `w630NextTurnJoinsDeadRowTest` (`witnesses.qnt`), and `w630NextTurnJoinsDeadRowTest`, `w630ErrorLeavesRowOpenTest` in `proofs/stream-rows`.
-Probe (reproduces, both paths): `extensions/adapters/presenters/tui/tests/issue_630_dead_turn_row_reused_test.fnl`.
+Witnesses: `reach630CancelClosesRowTest`, `reach630NextTurnStartsFreshTest` (`witnesses.qnt`), and `reach630CancelNextTurnFreshTest`, `reach630ErrorClosesRowTest` in `proofs/stream-rows`.
+Regression test: `extensions/adapters/presenters/tui/tests/dead_turn_closes_streaming_row_test.fnl`.
 
 ## Candidate fixes (named, `FIXES`)
 
@@ -83,14 +89,14 @@ An alternative that keeps the rule in one place: the agent always emits `assista
   Per trace it checks that the events the code emits, projected onto the model's alphabet, equal the model's `emitted`; that after every model step the real TUI state (rows, open streaming rows, hosted-tool flag, retrying flag) equals the model's `tui`; and that the assistant history equals the model's `history`.
   The step-by-step comparison catches what the final one cannot: ignoring the real retrying flag fails 9 of 20 traces, while every final state has it cleared.
 
-`conform.sh --negative` replays the `fixed` instance, whose transcripts differ from today's code, and must fail (about 170 of 300 producer traces diverge).
+`conform.sh --negative` replays the `unfixed` instance, whose transcripts differ from today's code, and must fail (about 170 of 300 producer traces diverge).
 The runner's exit status is kept (no pipeline); the whole check takes about 6 s.
 The two harness changes it needed in the model: hosted items only before an attempt's text (see Input assumptions), and the `stepNoCancel` action.
 
 ## Proof model: `proofs/stream-rows`
 
 The contract alone, in scalars: the open row, the turn of its first text, the lowest attempt of the current turn's text in it, the attempt's token count, the hosted and retrying flags, and three sticky ghost flags (`mixed`, `stale`, `badOk`) set when a violation happens, so no invariant rebuilds a transcript.
-`current` reproduces both bugs (violated rows, witnesses); `fixed` has an inductive strengthening `inductiveInv` (type bounds, "a row with text is open, from this turn and this attempt", "this attempt's tokens are what the open row shows", hosted and retry bookkeeping).
+Both `current` and `fixed` satisfy all invariants and have the inductive strengthening `inductiveInv` (type bounds, "a row with text is open, from this turn and this attempt", "this attempt's tokens are what the open row shows", hosted and retry bookkeeping).
 
 | Obligation | Result | Time |
 | --- | --- | --- |

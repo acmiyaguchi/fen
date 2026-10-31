@@ -1,26 +1,27 @@
-// Deterministic witnesses for the stream-rows proof model: the same two
-// counterexamples as the integration model, and the fixed design's cases.
+// Deterministic witnesses for the stream-rows proof model: today's design
+// carries the #629 and #630 fixes, so all reach...Tests show interesting
+// states and former bug traces satisfy inductiveInv and allInvariants.
 module witnesses {
-  import streamrows(FIXES = Set()) as C from "./model"
+  import streamrows(FIXES = Set("629", "630")) as C from "./model"
   import streamrows(FIXES = Set("629", "630")) as F from "./model"
 
-  // #629: a retried turn completes from attempt 2, but the row still starts
-  // with attempt 1's text.
-  run w629RetryKeepsSupersededTextTest =
+  // #629: a retried turn completes from attempt 2, showing only attempt 2's text.
+  run reach629RetryDropsAttemptTest =
     C::init.then(C::startTurn).then(C::streamToken).then(C::retry)
       .then(C::backoffDone).then(C::streamToken).then(C::streamToken)
       .then(C::complete)
-      .expect(not(C::noSupersededText) and not(C::okReplyDisplayed) and C::rowsSingleTurn)
+      .expect(C::noSupersededText and C::okReplyDisplayed and C::rowsSingleTurn and C::allInvariants)
 
-  // #630: a cancelled turn's row stays open and the next turn joins it.
-  run w630NextTurnJoinsDeadRowTest =
+  // #630: a cancelled turn's row is closed so the next turn starts fresh.
+  run reach630CancelNextTurnFreshTest =
     C::init.then(C::startTurn).then(C::streamToken).then(C::endFailed(true))
       .then(C::startTurn).then(C::streamToken)
-      .expect(not(C::rowsSingleTurn) and C::noSupersededText)
+      .expect(C::rowsSingleTurn and C::noSupersededText and C::allInvariants)
 
-  run w630ErrorLeavesRowOpenTest =
+  // #630: an error closes the open row when idle.
+  run reach630ErrorClosesRowTest =
     C::init.then(C::startTurn).then(C::streamToken).then(C::endFailed(false))
-      .expect(not(C::noOpenRowWhenIdle))
+      .expect(C::noOpenRowWhenIdle and C::allInvariants)
 
   run reachRetryThenCompleteTest =
     F::init.then(F::startTurn).then(F::streamToken).then(F::retry)

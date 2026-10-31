@@ -1,14 +1,10 @@
-;; Known-bug probe for #629 at the provider boundary: the streaming skeleton
+;; Regression test for #629 (spec/network/FINDINGS.md): the streaming skeleton
 ;; gives every retry attempt a fresh parser and builds the assistant message
-;; from the last attempt only, but each attempt's deltas reach on-event as they
-;; arrive, on the same content index, and nothing tells a consumer that the
-;; first attempt's text was discarded (`:provider-retry` carries no
-;; attempt-boundary meaning that any presenter honours; the TUI half of the
-;; bug is extensions/adapters/presenters/tui/tests/issue_629_*).
-;; See spec/network/FINDINGS.md (#629).
+;; from the last attempt only. Each attempt's deltas reach on-event as they
+;; arrive, separated by :provider-retry, while the returned message holds only
+;; the successful attempt's text.
 
 (local testing (require :fen.testing))
-(local {: known-bug} testing)
 (local types (require :fen.core.types))
 (local json (require :fen.util.json))
 
@@ -58,9 +54,9 @@
                                               :make-stream-pipeline (fn [model
                                                                          emit]
                                                                       (streaming.make-stream-pipeline {: model
-                                                                                                       : new-state
-                                                                                                       : process-event
-                                                                                                       :on-event emit}))
+                                                                                                        : new-state
+                                                                                                        : process-event
+                                                                                                        :on-event emit}))
                                               :build-request-opts (fn [_model
                                                                        _context
                                                                        _options
@@ -93,29 +89,26 @@
       (tset package.loaded :fen.extensions.provider_shared.streaming nil)
       (values asst seen calls.n))))
 
-(describe "#629 streaming skeleton across a retry"
+(describe "streaming skeleton across a retry (#629)"
           (fn []
             (after_each (fn []
                           (testing.restore-http!)
                           (tset package.loaded
                                 :fen.extensions.provider_shared.streaming nil)))
-            (it "streams the discarded attempt's deltas with no boundary but :provider-retry"
+            (it "streams deltas with :provider-retry boundary while message holds last attempt only"
                 (fn []
-                  (known-bug 629
-                             (fn []
-                               (let [(asst seen attempts) (run-two-attempts)
-                                     kinds (icollect [_ ev (ipairs seen)]
-                                             (if (= ev.type :text-delta)
-                                                 (.. "delta:" ev.content-index
-                                                     ":" ev.delta)
-                                                 (when (not= ev.type :start)
-                                                   (tostring ev.type))))]
-                                 (and (= 2 attempts)
-                                      (= "Hello world."
-                                         (types.assistant-text asst))
-                                      (= (table.concat ["delta:1:Hello wor"
-                                                        :provider-retry
-                                                        "delta:1:Hello world."
-                                                        :done]
-                                                       " ")
-                                         (table.concat kinds " "))))))))))
+                  (let [(asst seen attempts) (run-two-attempts)
+                        kinds (icollect [_ ev (ipairs seen)]
+                                (if (= ev.type :text-delta)
+                                    (.. "delta:" ev.content-index
+                                        ":" ev.delta)
+                                    (when (not= ev.type :start)
+                                      (tostring ev.type))))]
+                    (assert.are.equal 2 attempts)
+                    (assert.are.equal "Hello world." (types.assistant-text asst))
+                    (assert.are.equal (table.concat ["delta:1:Hello wor"
+                                                     :provider-retry
+                                                     "delta:1:Hello world."
+                                                     :done]
+                                                    " ")
+                                      (table.concat kinds " ")))))))

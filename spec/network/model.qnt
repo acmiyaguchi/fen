@@ -21,6 +21,9 @@
 //   "629"  :provider-retry drops the open row's superseded text
 //   "630"  :error and :cancelled close the open streaming row
 //
+// The code carries both fixes (#629, #630), so current == fixed; unfixed
+// preserves the unfixed behaviour for negative conformance.
+//
 // Input assumption (see FINDINGS): one text block per provider attempt, and
 // hosted-tool items come before it (a hosted item ends the current block in
 // the Responses reducer, so text after it would open a second content index,
@@ -257,7 +260,8 @@ module network {
   }
 }
 
-module current { import network(FIXES = Set()).* }
+module current { import network(FIXES = Set("629", "630")).* }
 module fixed { import network(FIXES = Set("629", "630")).* }
+module unfixed { import network(FIXES = Set()).* }
 module fix629 { import network(FIXES = Set("629")).* }
 module fix630 { import network(FIXES = Set("630")).* }
