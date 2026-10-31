@@ -1,0 +1,20 @@
+# main	invariant	expect (holds|violated)
+current	providerValidRequests	violated
+current	historyValidWhenIdle	violated
+current	requestsEndOnUserSide	violated
+current	refusalCountsSinceInput	violated
+current	errorSignalled	violated
+current	statusMatchesResult	violated
+current	abortedOncePerCancel	holds
+current	eventsMatchHistory	holds
+current	noneNeverExecutes	holds
+current	queuedLinesDeliveredOnce	holds
+current	boundedIterations	holds
+wellFormed	providerValidRequests	holds
+wellFormed	historyValidWhenIdle	holds
+wellFormed	requestsEndOnUserSide	violated
+wellFormed	errorSignalled	violated
+wellFormed	statusMatchesResult	violated
+lengthOnly	historyValidWhenIdle	violated
+badArgsOnly	historyValidWhenIdle	violated
+fixed	allInvariants	holds
