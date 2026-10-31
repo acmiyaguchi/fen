@@ -1,8 +1,8 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-current	singleRefreshInFlight	violated	#611
-current	noRefreshRejectedWhileUsable	violated	#611
-current	noResurrection	violated	#612
-current	storeRefreshable	violated	#613
+current	singleRefreshInFlight	holds
+current	noRefreshRejectedWhileUsable	holds
+current	noResurrection	holds
+current	storeRefreshable	holds
 fixed	allInvariants	holds
 fixed	rotationInductive	holds
 fix611	singleRefreshInFlight	holds

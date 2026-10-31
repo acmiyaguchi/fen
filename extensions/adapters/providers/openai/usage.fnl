@@ -107,13 +107,17 @@
                                (number? w.remaining-percent)
                                (= w.remaining-percent (- 100 w.used-percent))
                                (number? w.length-seconds) (> w.length-seconds 0)
-                               (number? w.reset-at) (> w.reset-at 0))
+                               (number? w.reset-at) (> w.reset-at 0)
+                               (or (not (present? w.limited-at))
+                                   (number? w.limited-at)))
                           (table.insert windows
                                         {:name w.name
                                          :used-percent w.used-percent
                                          :remaining-percent w.remaining-percent
                                          :length-seconds w.length-seconds
-                                         :reset-at (math.floor w.reset-at)})
+                                         :reset-at (math.floor w.reset-at)
+                                         :limited-at (when (number? w.limited-at)
+                                                       (math.floor w.limited-at))})
                           (set valid? false))))
                   (when (and valid?
                              (or (= (length windows) 0)
@@ -226,6 +230,37 @@
               true
               (M.save-cache)))))))
 
+(fn apply-limit! [windows details limited-at]
+  "Mark the rate_limit windows of DETAILS' length exhausted until its reset,
+   stamping LIMITED-AT (when the 429 was observed); add a synthetic window
+   when none matches."
+  (var matched? false)
+  (each [_ w (ipairs windows)]
+    (when (and (string.match w.name "^rate_limit/")
+               (= w.length-seconds details.length-seconds))
+      (set w.used-percent 100)
+      (set w.remaining-percent 0)
+      (set w.reset-at details.reset-at)
+      (set w.limited-at limited-at)
+      (set matched? true)))
+  (when (not matched?)
+    (table.insert windows {:name "rate_limit/usage_limit_reached"
+                           :used-percent 100
+                           :remaining-percent 0
+                           :length-seconds details.length-seconds
+                           :reset-at details.reset-at
+                           :limited-at limited-at}))
+  windows)
+
+(fn keep-newer-limits [windows previous sent-at]
+  "Re-apply limits in PREVIOUS observed at or after SENT-AT (the GET's send
+   time) onto the GET's WINDOWS: a 429 recorded while the GET was in flight
+   is newer than the GET's sample and must not be overwritten (#616)."
+  (each [_ w (ipairs previous)]
+    (when (and (number? w.limited-at) (>= w.limited-at sent-at))
+      (apply-limit! windows w w.limited-at)))
+  windows)
+
 ;; A completion's 429 is an observation, not another demand request.
 (fn M.record-limit [details account-id ?yield]
   (when (and details.length-seconds details.reset-at
@@ -233,69 +268,72 @@
     (with-cache-lock ?yield
       (fn []
         (M.load-cache (sha256.hex-digest account-id) true)
-        (var matched? false)
-        (each [_ w (ipairs state.windows)]
-          (when (and (string.match w.name "^rate_limit/")
-                     (= w.length-seconds details.length-seconds))
-            (set w.used-percent 100)
-            (set w.remaining-percent 0)
-            (set w.reset-at details.reset-at)
-            (set matched? true)))
-        (when (not matched?)
-          (table.insert state.windows
-                        {:name "rate_limit/usage_limit_reached"
-                         :used-percent 100
-                         :remaining-percent 0
-                         :length-seconds details.length-seconds
-                         :reset-at details.reset-at}))
+        (apply-limit! state.windows details (os.time))
         ;; Do not freshen unrelated windows from a partial observation.
         (set state.retrieved-at (or state.retrieved-at (os.time)))
         (set state.failure nil)
         (set state.attempted-at (os.time))
         (M.save-cache)))))
 
+(fn apply-outcome! [outcome sent-at]
+  (if outcome.windows
+      (do
+        (set state.windows
+             (keep-newer-limits outcome.windows state.windows sent-at))
+        (set state.retrieved-at (os.time))
+        (set state.failure nil))
+      (set state.failure outcome.failure)))
+
 (fn M.refresh [?yield]
   (when (claim-attempt ?yield)
     ;; Preserve cancellation identity, but never surface auth/HTTP exception text.
     (var cancelled nil)
+    (local key state.account-key)
     (local yield-fn (when ?yield
                       (fn []
                         (let [(ok value) (pcall ?yield)]
                           (when (not ok) (set cancelled value)
                             (error value 0))))))
+    (local sent-at (os.time))
     (let [(ok creds) (pcall auth.get-fresh-creds! nil {:yield yield-fn})]
       (when cancelled (error cancelled 0))
-      (if (not ok)
-          (set state.failure :auth)
-          (let [(ok resp) (pcall http.request
-                                 {:method :GET
-                                  :url "https://chatgpt.com/backend-api/wham/usage"
-                                  :headers {:authorization (.. "Bearer "
-                                                               creds.access)
-                                            :chatgpt-account-id creds.accountId
-                                            :accept "application/json"}
-                                  :timeout-ms 10000
-                                  :connect-timeout-ms 5000
-                                  :yield yield-fn})]
-            (when cancelled (error cancelled 0))
-            (if (or (not ok) resp.error)
-                (set state.failure :network)
-                (or (= resp.status 401) (= resp.status 403))
-                (set state.failure :auth)
-                (or (= resp.status 404) (= resp.status 405))
-                (set state.failure :unsupported)
-                (not= resp.status 200)
-                (set state.failure :api)
-                (let [(decoded body) (pcall json.decode (or resp.body ""))
-                      (windows failure) (if decoded (M.parse body)
-                                            (values [] :api))]
-                  (if failure
-                      (set state.failure failure)
-                      (do
-                        (set state.windows windows)
-                        (set state.retrieved-at (os.time))
-                        (set state.failure nil))))))))
-    (M.save-cache))
+      (let [outcome (if (not ok)
+                        {:failure :auth}
+                        (let [(ok resp) (pcall http.request
+                                               {:method :GET
+                                                :url "https://chatgpt.com/backend-api/wham/usage"
+                                                :headers {:authorization (.. "Bearer "
+                                                                             creds.access)
+                                                          :chatgpt-account-id creds.accountId
+                                                          :accept "application/json"}
+                                                :timeout-ms 10000
+                                                :connect-timeout-ms 5000
+                                                :yield yield-fn})]
+                          (when cancelled (error cancelled 0))
+                          (if (or (not ok) resp.error)
+                              {:failure :network}
+                              (or (= resp.status 401) (= resp.status 403))
+                              {:failure :auth}
+                              (or (= resp.status 404) (= resp.status 405))
+                              {:failure :unsupported}
+                              (not= resp.status 200)
+                              {:failure :api}
+                              (let [(decoded body) (pcall json.decode
+                                                          (or resp.body ""))
+                                    (windows failure) (if decoded
+                                                          (M.parse body)
+                                                          (values [] :api))]
+                                (if failure
+                                    {: failure}
+                                    {: windows})))))]
+        ;; Apply under the cache lock onto the latest record (this process's
+        ;; and other processes' 429s), never onto the pre-GET snapshot (#616).
+        (with-cache-lock yield-fn
+          (fn []
+            (M.load-cache key true)
+            (apply-outcome! outcome sent-at)
+            (M.save-cache)))
+        (when cancelled (error cancelled 0)))))
   (M.snapshot))
 
 (fn M.label [w]

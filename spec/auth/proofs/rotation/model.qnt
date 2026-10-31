@@ -257,7 +257,8 @@ module rotation {
   val resurrectionInductive = typeOk and noResurrection
 }
 
-module current { import rotation(FIXES = Set()).* }
+// Since #605 today's code carries the fixes, so `current` matches `fixed`.
+module current { import rotation(FIXES = Set("611", "612", "613")).* }
 module fixed { import rotation(FIXES = Set("611", "612", "613")).* }
 module fix611 { import rotation(FIXES = Set("611")).* }
 module fix612 { import rotation(FIXES = Set("612")).* }

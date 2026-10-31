@@ -53,6 +53,7 @@ $(CC) $(CFLAGS) -I$(LUA_INCDIR) -shared vendor/fen_random.c -o .lrbuild/fen_rand
          ["fen.util.clock.backends.native"] = ".lrbuild/util/clock/backends/native.lua",
          ["fen.util.coroutines"] = ".lrbuild/util/coroutines.lua",
          ["fen.util.dev_overlay"] = ".lrbuild/util/dev_overlay.lua",
+         ["fen.util.durable_store"] = ".lrbuild/util/durable_store.lua",
          ["fen.util.flat_extensions"] = ".lrbuild/util/flat_extensions.lua",
          ["fen.util.file_mutex"] = ".lrbuild/util/file_mutex.lua",
          ["fen.util.file_mutex_state"] = ".lrbuild/util/file_mutex_state.lua",

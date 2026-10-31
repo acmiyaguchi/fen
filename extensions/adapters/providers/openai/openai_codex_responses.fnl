@@ -1,14 +1,13 @@
 ;; ChatGPT Plus/Pro Codex subscription provider.
 ;;
 ;; Talks to chatgpt.com/backend-api/codex/responses with an OAuth access
-;; token from fen's writable auth.json, falling back to pi-mono's auth.json
-;; read-only. The wire shape is OpenAI Responses with two Codex aliases
+;; token read from fen's auth.json for each request. The wire shape is OpenAI Responses with two Codex aliases
 ;; the reducer doesn't natively understand (`response.done`,
 ;; `response.incomplete` → `response.completed`), handled by
 ;; `map-codex-event`.
 ;;
-;; Auth: fen has its own PKCE login flow and can also read credentials
-;; pi-mono persisted. Refreshes write only to fen's writable auth path.
+;; Auth: fen has its own PKCE login flow (openai_codex_login.fnl); refresh
+;; and the auth lock live in openai_codex_oauth.fnl.
 
 (local streaming (require :fen.extensions.provider_shared.streaming))
 (local compat (require :fen.extensions.provider_openai.openai_responses_shared))
@@ -184,11 +183,17 @@
         (tset seen m.id true)))
     models))
 
-(fn resolve-creds [opts]
-  "Use credentials passed in via `provider-options.creds` when present
-   (main.fnl resolves them once at startup), else fall back to a fresh
-   read of auth.json so /reload picks up rotated tokens."
-  (or opts.creds (codex-auth.get-fresh-creds!)))
+(fn resolve-creds [opts ?yield]
+  "Resolve credentials per request (#614). Credentials that can expire
+   (`:expires`, as main.fnl passes the stored OAuth record through
+   `provider-options.creds`) are never pinned: every request reads auth.json
+   through get-fresh-creds!, which refreshes an expiring token under the auth
+   lock, so expiry, rotation by another process, logout, and /reload all take
+   effect on the next request. Static credentials without an expiry (tests,
+   embedders) are used as given."
+  (if (and opts.creds (= nil opts.creds.expires))
+      opts.creds
+      (codex-auth.get-fresh-creds! nil {:yield ?yield})))
 
 ;; Only a recognized quota envelope changes ordinary 429 retry policy.
 (fn limit-response [resp creds yield-fn]
@@ -249,7 +254,7 @@
 ;; tags: codex provider models http
 (fn list-models [opts]
   (let [opts (or opts {})
-        creds (resolve-creds opts)
+        creds (resolve-creds opts opts.yield)
         base-url (or opts.base-url DEFAULT-BASE-URL)
         resp (http.request {:method :GET
                             :url (build-models-url base-url opts.client-version)
@@ -275,7 +280,7 @@
    otherwise. `?on-event` is plumbed through for callers that want stream
    deltas; passing nil yields just the final AssistantMessage."
   (let [opts (merge-options options)
-        creds (resolve-creds opts)
+        creds (resolve-creds opts ?yield-fn)
         base-url (or opts.base-url DEFAULT-BASE-URL)
         url (build-url base-url)
         headers (build-headers creds)]

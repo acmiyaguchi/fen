@@ -8,10 +8,11 @@ Code: `extensions/adapters/providers/openai/{openai_codex_oauth,openai_codex_key
 
 Proof models for the individual contracts live in [`proofs/`](#proof-models): [`rotation`](proofs/rotation/model.qnt), [`pinning`](proofs/pinning/model.qnt), and [`quota`](proofs/quota/model.qnt).
 
-The bugs were first confirmed with throwaway Busted files; those probes are now kept as `known-bug` tests in `extensions/adapters/providers/openai/tests/issue_<n>_*_test.fnl` (listed per bug below).
-They pass while the bug reproduces and fail once it stops.
+**All six bugs are fixed in #605**; today's `current` instances carry the same `FIXES` as `fixed`, and every row on them holds.
+The bugs were first confirmed with throwaway Busted files, then kept as `known-bug` probes; with the fixes those probes became ordinary regression tests asserting the correct behaviour (listed per bug below).
 They use temp dirs, a stubbed `fen.util.http`, and a fake OAuth server that rotates `Rk -> R(k+1)` and answers `400 invalid_grant refresh_token_reused` to a reused token.
 They make no network calls and touch no real credentials.
+The write-ups below describe the code before #605; each ends with what changed.
 
 Evidence kinds follow [`../README.md`](../README.md#kinds-of-evidence).
 
@@ -29,7 +30,7 @@ What the environment actions of the integration model can and cannot produce:
 
 Ghosts: `rejectedUsable`, `staleRequest`, `loggedOut`, `obsNewer`, and `lost`, a set of refresh generations whose rotation was lost to something no client can prevent.
 `lost` excuses `storeRefreshable` only while the store still holds that generation, and login (the recovery) clears it.
-It used to be a single sticky `inherentLoss` flag that excused every later state, so a later #613 after a recovered transport loss went unnoticed; `w613NotExcusedAfterRecoveryTest` is the check that fails with the old flag.
+It used to be a single sticky `inherentLoss` flag that excused every later state, so a later #613 after a recovered transport loss went unnoticed; `ghostLossNotStickyTest` (formerly `w613NotExcusedAfterRecoveryTest`, run on a design without fix 613) is the check that fails with the old flag.
 
 ## Bugs
 
@@ -39,7 +40,7 @@ Counterexample (`noRefreshRejectedWhileUsable`, `singleRefreshInFlight`): `tick 
 The old row checked `noSpuriousAuthFailure`, which merged this rejection with #614's stale request, and the simulator usually found #614's shorter trace for it.
 The two are now separate invariants, and the witness pins the trace to #611: the failure is the refresh rejection itself, the store holds the winner's valid `R1`, and no stale request or inherent loss is involved.
 
-Evidence: counterexample (`w611ConcurrentRefreshLoserFailsTest`, integration and [rotation](proofs/rotation/witnesses.qnt) models), confirmed (`issue_611_concurrent_refresh_loser_fails_test.fnl`).
+Evidence (before #605; the witnesses and probe were retired by the fix): counterexample (`w611ConcurrentRefreshLoserFailsTest`, integration and [rotation](proofs/rotation/witnesses.qnt) models), confirmed (`issue_611_concurrent_refresh_loser_fails_test.fnl`).
 `get-fresh-creds!` reads `auth.json`, sees the access token expiring, and POSTs the refresh token.
 It takes no lock and does not re-read after a failed POST.
 A second process that read the store before the first one wrote back POSTs the same refresh token.
@@ -47,6 +48,10 @@ The server has already rotated it, so the second process errors out with `refres
 In practice: parallel subagent children spawned while the token is near expiry, or the TUI's usage refresh racing a child's startup.
 The provider at startup (`main.fnl:236`) turns this into "defaultProvider openai-codex is unavailable".
 If the server treats reuse as theft and revokes the whole token family (the OAuth security BCP recommends this), both processes lose their tokens and the user has to log in again (see Open questions).
+
+**Fixed in #605.** `get-fresh-creds!` now refreshes under `openai_codex_keychain.with-auth-lock` (the new `fen.util.durable_store.with-lock`: the process-local FIFO mutex plus an `lfs.lock` on the stable `auth.json.lock` inode, released by the kernel if the holder dies).
+Inside the lock it re-reads `auth.json` and returns the record untouched if another process already refreshed it, and after a rejected POST it re-reads the file and uses a valid record written meanwhile.
+Regression test: `codex_refresh_lock_test.fnl` (the two-coroutine trace now ends with both holding `R1` after one POST; a rejected refresh picks up a login written outside the lock).
 
 Confirmed: two coroutines run `get-fresh-creds!` against one temp `auth.json`, each yielding inside the stubbed POST (original throwaway probe output; the kept probe asserts the same):
 
@@ -60,7 +65,7 @@ A1 store refresh:	R1	server valid R1:	true
 
 Counterexample (`noResurrection`): `tick → begin → logout → refreshOk → writeTmp → rename`.
 
-Evidence: counterexample (`w612RefreshResurrectsAfterLogoutTest`, integration and rotation models), confirmed (`issue_612_refresh_resurrects_after_logout_test.fnl`; the login-clobber variant is a line trace through the same `storage.set`).
+Evidence (before #605; the witnesses and probe were retired by the fix): counterexample (`w612RefreshResurrectsAfterLogoutTest`, integration and rotation models), confirmed (`issue_612_refresh_resurrects_after_logout_test.fnl`; the login-clobber variant is a line trace through the same `storage.set`).
 `storage.set` is load → modify → save with no lock and no check that the record is still the one that was refreshed.
 `logout!` is the same load → delete → save.
 A refresh that started before the logout re-creates the `openai-codex` record when it finishes.
@@ -74,6 +79,10 @@ A2 after logout record:	nil
 A2 after refresh completes record:	R1
 ```
 
+**Fixed in #605.** The refresh write-back is `openai_codex_keychain.compare-and-set!`: it renames only if the stored record still carries the refresh token that was used, otherwise it drops the result and returns the current record (or the friendly "no credentials" error after a logout).
+`logout!` and `login!` take the auth lock around their write, so they wait for an in-flight refresh.
+Regression test: `codex_refresh_lock_test.fnl` (logout waits and its removal sticks; a record removed or replaced outside the lock is neither resurrected nor clobbered).
+
 ### #613: Cancelling during the refresh POST loses the rotation and forces a re-login
 
 Counterexample (`storeRefreshable`): `tick → beginPin → cancelAfterCommit`.
@@ -83,7 +92,7 @@ A cancel that lands after the server has processed the POST, but before the resp
 The model separates this controllable loss from transport loss and crashes after commit, which no client can prevent.
 Those add the lost generation to the `lost` ghost, and `storeRefreshable` excuses them only while the store still holds that generation (see Input assumptions).
 
-Evidence: counterexample (`w613CancelAfterCommitLosesRotationTest`, and `w613NotExcusedAfterRecoveryTest` for the same bug after a recovered transport loss), confirmed (`issue_613_cancel_after_commit_loses_rotation_test.fnl`: the stubbed transport commits on the fake server, then calls the caller's cooperative yield, which raises the cancel).
+Evidence (before #605; the witnesses and probe were retired by the fix): counterexample (`w613CancelAfterCommitLosesRotationTest`, and `w613NotExcusedAfterRecoveryTest` for the same bug after a recovered transport loss), confirmed (`issue_613_cancel_after_commit_loses_rotation_test.fnl`: the stubbed transport commits on the fake server, then calls the caller's cooperative yield, which raises the cancel).
 
 Confirmed: the fake server commits `R0 → R1` and then yields; the probe resumes the coroutine with a cancel:
 
@@ -93,11 +102,15 @@ A3 store refresh:	R0	server valid R0:	nil	R1:	true
 A3 next refresh:	false	...openai_codex_oauth.fnl:86: auth.openai_codex: refresh HTTP 400: {"error":"invalid_grant","error_description":"refresh_token_reused"}
 ```
 
+**Fixed in #605.** The refresh POST gets a shielded yield (`shield-cancel` in `openai_codex_oauth.fnl`): a cancel raised through the caller's yield is recorded, the request keeps cooperating, and the cancel is re-raised (same value) only after the compare-and-rename has persisted the rotated tokens.
+A cancel while waiting for the lock still unwinds immediately; nothing has been spent then.
+Regression test: `codex_refresh_lock_test.fnl` (the cancel propagates, `auth.json` holds `R1`, and the next call uses it without a POST).
+
 ### #614: Provider requests use credentials pinned at agent construction; expiry mid-session is a terminal 401
 
 Counterexample (`noExpiredTokenRequest`): `beginPin → tick → request401`.
 
-Evidence: counterexample (`w614PinnedTokenExpires401Test`, integration and [pinning](proofs/pinning/witnesses.qnt) models), confirmed (`issue_614_pinned_creds_expire_401_test.fnl` for `list-models`; the `main.fnl` → `interactive.fnl` wiring is a line trace).
+Evidence (before #605; the witnesses and probe were retired by the fix): counterexample (`w614PinnedTokenExpires401Test`, integration and [pinning](proofs/pinning/witnesses.qnt) models), confirmed (`issue_614_pinned_creds_expire_401_test.fnl` for `list-models`; the `main.fnl` → `interactive.fnl` wiring is a line trace).
 `main.fnl` resolves auth-backend credentials when the provider config is built and returns them as `:creds`.
 `interactive.make-agent-from-opts` copies them into `provider-options.creds` (`interactive.fnl:74`).
 `openai_codex_responses.resolve-creds` prefers `opts.creds` over `get-fresh-creds!`.
@@ -114,11 +127,17 @@ A4 sent:	Bearer OLD	fresh-calls:	0	ok:	false	reason:	authentication-failed
 
 Line trace for the wiring: `main.fnl:236-251` (`:creds creds`) → `interactive.fnl:74` → `openai_codex_responses.fnl:191,278`.
 
+**Fixed in #605.** `openai_codex_responses.resolve-creds` no longer pins credentials that can expire: a record with `:expires` (what main.fnl passes) is re-resolved through `get-fresh-creds!` on every `complete` and `list-models`, with the request's cooperative yield, so expiry refreshes under the auth lock and logout or another process's rotation take effect on the next request.
+Credentials without an expiry (tests, embedders) are still used as given.
+`main.fnl` and `interactive.fnl` still pass `:creds`; it is now only a hint and could be dropped.
+The 401-retry variant was not added.
+Regression test: `codex_creds_per_request_test.fnl`.
+
 ### #615: Token-bearing tmp files are created world-readable until the chmod; a crash leaves one behind
 
 Counterexample (`secretsPrivate`): `tick → beginPin → refreshOk → writeTmp` (and `crash` in that state leaks the file).
 
-Evidence: counterexample (`w615TmpWorldReadableTest`), confirmed (`issue_615_tmp_auth_file_umask_readable_test.fnl`).
+Evidence (before #605; the witnesses and probe were retired by the fix): counterexample (`w615TmpWorldReadableTest`), confirmed (`issue_615_tmp_auth_file_umask_readable_test.fnl`).
 The kept probe is umask-independent: at the moment `chmod 600 <tmp>` runs, the tmp already holds the refresh token and has the same mode as a control file created by `io.open` (that is, whatever the umask gives; `rw-r--r--` under 022).
 A kill between write and chmod is approximated by making that `chmod` raise; the token-bearing tmp file stays next to `auth.json`.
 `keychain.save` opens `auth.json.<rand>` with `io.open` (umask perms), writes the tokens, and only then runs `chmod 600` and renames.
@@ -133,11 +152,16 @@ A5 tmp perms before chmod:	/tmp/tmp.CxkZwmnimS/auth.json.lua_d5xvSg rw-r--r--
 A5 final perms:	rw-------
 ```
 
+**Fixed in #605.** `keychain.save` writes through `fen.util.durable_store.write-private!`, which creates the sibling temp file exclusively with `umask 077` (mode 0600) before any byte is written, removes it on a failed write or rename, and then renames it over `auth.json`; `ensure-private-dir!` creates a missing auth dir 0700.
+On Windows, where POSIX modes do not apply, the file is opened directly and permissions come from the directory ACL.
+A kill between create and rename can still leave a temp file, but it is private.
+Regression test: `auth_store_private_write_test.fnl`.
+
 ### #616: A usage GET in flight overwrites a `usage_limit_reached` recorded meanwhile and reports it as fresh
 
 Counterexample (`quotaFreshNotContradicted`): `qSendGet → qExhaust → q429 → qReturn`.
 
-Evidence: counterexample (`w616GetOverwrites429Test`, integration and [quota](proofs/quota/witnesses.qnt) models), confirmed (`issue_616_usage_get_overwrites_limit_test.fnl`).
+Evidence (before #605; the witnesses and probe were retired by the fix): counterexample (`w616GetOverwrites429Test`, integration and [quota](proofs/quota/witnesses.qnt) models), confirmed (`issue_616_usage_get_overwrites_limit_test.fnl`).
 `M.refresh` claims the attempt under the cache lock, but runs the GET and applies its result outside the lock.
 When the result arrives it replaces `state.windows` wholesale, sets `retrieved-at = now`, and `save-cache`s without the lock.
 A 429 that `record-limit` recorded while the GET was in flight (same process, or another process via the disk cache) is erased.
@@ -151,6 +175,10 @@ Q1 after 429:	0	fresh
 Q1 after GET returns:	3.0	fresh
 Q1 disk:	3.0
 ```
+
+**Fixed in #605.** `M.refresh` now computes the GET's outcome, then applies it under `with-cache-lock` onto the latest record (re-read from disk), and saves it there.
+`record-limit` stamps the windows it marks with `limited-at`, which the cache persists, and a GET result keeps every limit stamped at or after the GET's send time.
+Regression test: `usage_get_keeps_newer_limit_test.fnl` (the 429 survives in memory and on disk; a limit older than the GET is replaced).
 
 ## Holds
 
@@ -169,6 +197,7 @@ Evidence: sampled (integration model rows), plus the inductive obligations liste
 ## Candidate fixes (named: `FIXES`)
 
 Each fix is guarded by `FIXES.contains("<issue>")`; `fixed` enables all six and `fix<issue>` enables one.
+All six are implemented in #605 (614 as per-request resolution, without the 401 retry), so `current` now enables all six too.
 
 - **611.** Refresh under a cross-process auth lock: fcntl on a stable `auth.json.lock` inode plus the existing `file_mutex` for coroutines, i.e. the usage cache's `with-cache-lock` pattern.
   Re-read the record inside the lock and return it untouched if it is no longer expiring.
@@ -228,16 +257,19 @@ As a check that the inductive obligation is not vacuous, removing the lock guard
 
 Per-bug evidence files:
 
-| Bug | Integration witness | Proof-model witness | Probe |
-| --- | --- | --- | --- |
-| #611 | `w611ConcurrentRefreshLoserFailsTest` | rotation `w611ConcurrentRefreshLoserFailsTest` | `issue_611_concurrent_refresh_loser_fails_test.fnl` |
-| #612 | `w612RefreshResurrectsAfterLogoutTest` | rotation `w612RefreshResurrectsAfterLogoutTest` | `issue_612_refresh_resurrects_after_logout_test.fnl` |
-| #613 | `w613CancelAfterCommitLosesRotationTest`, `w613NotExcusedAfterRecoveryTest` | rotation, same names | `issue_613_cancel_after_commit_loses_rotation_test.fnl` |
-| #614 | `w614PinnedTokenExpires401Test` | pinning `w614PinnedTokenExpires401Test`, `w614PinnedSurvivesRefreshTest` | `issue_614_pinned_creds_expire_401_test.fnl` |
-| #615 | `w615TmpWorldReadableTest` | none (no proof model) | `issue_615_tmp_auth_file_umask_readable_test.fnl` |
-| #616 | `w616GetOverwrites429Test` | quota `w616GetOverwrites429Test` | `issue_616_usage_get_overwrites_limit_test.fnl` |
+The `w<issue>` counterexample witnesses replayed today's bugs against `current`; they were retired in #605 because their traces need actions the fixed design disables.
+What replaced them:
 
-Probes live in `extensions/adapters/providers/openai/tests/`; each runs in well under a second.
+| Bug | Integration witness | Proof-model witness | Regression test |
+| --- | --- | --- | --- |
+| #611 | `reachSecondProcessWaitsTest` | rotation `reachSequentialRefreshesTest` | `codex_refresh_lock_test.fnl` |
+| #612 | `reachLogoutAfterRefreshTest`, `reachStaleRenameDroppedTest` | rotation `reachLogoutDuringRefreshTest`, `reachLoginDuringRefreshTest` | `codex_refresh_lock_test.fnl` |
+| #613 | `reachCancelBeforeCommitTest`, `ghostLossNotStickyTest` (was `w613NotExcusedAfterRecoveryTest`, now on a design without fix 613) | rotation `reachCancelBeforeCommitTest`, `ghostLossNotStickyTest` | `codex_refresh_lock_test.fnl` |
+| #614 | `reachExpiryRefreshThenRequestTest` | pinning `reachExpiryRefreshThenRequestTest`, `reachRefreshByOtherPickedUpTest` (was `w614PinnedSurvivesRefreshTest`) | `codex_creds_per_request_test.fnl` |
+| #615 | `reachTmpPrivateThroughCrashTest` (was `w615TmpWorldReadableTest`) | none (no proof model) | `auth_store_private_write_test.fnl` |
+| #616 | `reach429DuringGetKeptTest` | quota `reach429DuringGetKeptTest` | `usage_get_keeps_newer_limit_test.fnl` |
+
+Regression tests live in `extensions/adapters/providers/openai/tests/`; each runs in well under a second.
 The two-process races (#611, #612) are run as two coroutines in one Lua process sharing one temp `auth.json`, suspended at the same HTTP yield where the real processes would interleave; two real OS processes are not raced.
 
 ## Open questions
@@ -246,8 +278,8 @@ The two-process races (#611, #612) are run as two coroutines in one Lua process 
   With family revocation, #611 escalates from a spurious failure to a forced re-login for every process.
   With a grace window, #611 and #613 mostly disappear.
 - **Logout is local only.** `logout!` deletes the file record but does not revoke anything server-side.
-  Running processes keep using their pinned access token (#614) until it expires.
-  That may be the intended meaning of "logout", but it isn't documented.
+  Before #605, running processes kept using their pinned access token (#614) until it expired; since per-request resolution their next request reads the now-empty `auth.json` and fails with the "run `fen --login`" error.
+  The access token itself stays valid server-side until it expires; that may be the intended meaning of "logout", but it isn't documented.
 - **`file_mutex` with a main-thread owner.** `current-owner` returns nil outside a coroutine, so a synchronous `with-file` records `owner = nil` and the lock looks free.
   This is harmless only because a synchronous body cannot yield.
   A synchronous body that resumes another coroutine taking the same key would let both in.
@@ -260,5 +292,6 @@ The two-process races (#611, #612) are run as two coroutines in one Lua process 
 
 The essential contract is small: *one credential record, one writer at a time; a refresh is read-check-POST-write inside that critical section, and the write is conditional on the record still being the one refreshed*.
 Rotation makes the refresh token a linear resource: it can be spent once, so "who may spend it" has to be serialized across processes, and the result has to be persisted before anyone can interrupt.
-Today fen has the pieces (atomic rename, an fcntl lock helper, a coroutine mutex) but uses the lock only for the quota cache, and pins access tokens so refresh rarely runs where it matters.
-A single `with-auth-lock` around refresh, login, and logout, plus per-request resolution, would remove #611, #612, #613, #614 and make most of the remaining behaviour straight-line code.
+Before #605 fen had the pieces (atomic rename, an fcntl lock helper, a coroutine mutex) but used the lock only for the quota cache, and pinned access tokens so refresh rarely ran where it mattered.
+#605 adds that single `with-auth-lock` around refresh, login, and logout (on `fen.util.durable_store`, the one-writer primitive of #669), plus per-request resolution (#675), which removes #611, #612, #613, #614.
+The quota cache keeps its own `with-cache-lock` (same pattern, a 1 s fail-closed wait); it could move onto `durable_store.with-lock`.

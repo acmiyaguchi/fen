@@ -1,23 +1,16 @@
 // Deterministic witnesses for the pinning proof model (quint test).
+// The w614 counterexamples against `current` were retired in #605, when
+// resolve-creds started resolving credentials per request.
 module witnesses {
-  import pinning(FIXES = Set()) as C from "./model"
   import pinning(FIXES = Set("614")) as F from "./model"
 
-  // #614: the token pinned at construction expires; the next request
-  // carries it (terminal 401) although auth.json can be refreshed.
-  run w614PinnedTokenExpires401Test =
-    C::init.then(C::build).then(C::request)
-      .expect(C::lastAction == "requestOk" and C::noExpiredTokenRequest)
-      .then(C::tick).then(C::request)
-      .expect(not(C::noExpiredTokenRequest) and C::lastAction == "request401" and C::present)
-
-  // #614 persists across a refresh by someone else: the store moves on, the
-  // agent's pinned token does not.
-  run w614PinnedSurvivesRefreshTest =
-    C::init.then(C::build).then(C::tick).then(C::refresh).then(C::request)
+  // #614 regression (formerly w614PinnedSurvivesRefreshTest): after expiry
+  // and a refresh by someone else, the request carries the store's new token.
+  run reachRefreshByOtherPickedUpTest =
+    F::init.then(F::build).then(F::tick).then(F::refresh).then(F::request)
       .expect(and {
-        not(C::noExpiredTokenRequest), not(C::requestReadyWhenStoreLive),
-        C::gen == 1, C::pinned == 0,
+        F::noExpiredTokenRequest, F::requestReadyWhenStoreLive,
+        F::gen == 1, F::lastAction == "requestOk",
       })
 
   // ---- reachability of the fixed design ----

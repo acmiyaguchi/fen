@@ -1,6 +1,6 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-current	noExpiredTokenRequest	violated	#614
-current	requestReadyWhenStoreLive	violated	#614
+current	noExpiredTokenRequest	holds
+current	requestReadyWhenStoreLive	holds
 fixed	noExpiredTokenRequest	holds
 fixed	requestReadyWhenStoreLive	holds
 fixed	pinningInductive	holds

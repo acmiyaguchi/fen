@@ -206,7 +206,10 @@
       (when (and got-state (not= got-state state))
         (user-error "openai-codex login: state mismatch — possible CSRF, aborting"))
       (let [creds (exchange-code! code pkce.verifier)]
-        (storage.set oauth.PROVIDER-ID creds ?path)
+        ;; Wait out an in-flight refresh; its compare-and-rename then drops
+        ;; the old account's tokens instead of clobbering this login (#612).
+        (storage.with-auth-lock ?path nil
+          #(storage.set oauth.PROVIDER-ID creds ?path))
         (io.write "\nSigned in as account ")
         (io.write creds.accountId)
         (io.write ". Credentials written to ")
@@ -214,15 +217,22 @@
         (io.write ".\n")
         creds))))
 
-(fn logout! [?path]
+(fn logout! [?path ?yield]
   "Remove the openai-codex record from auth.json. No-op (with a
-   user-visible message) if no record exists."
-  (let [data (storage.load ?path)
-        existed? (not= nil (. data oauth.PROVIDER-ID))]
+   user-visible message) if no record exists. Runs under the auth lock, so
+   it waits for an in-flight refresh (yielding through ?YIELD, or sleeping)
+   instead of racing its write-back (#612)."
+  (let [existed? (storage.with-auth-lock ?path
+                   ?yield
+                   (fn []
+                     (let [data (storage.load ?path)
+                           existed? (not= nil (. data oauth.PROVIDER-ID))]
+                       (when existed?
+                         (tset data oauth.PROVIDER-ID nil)
+                         (storage.save data ?path))
+                       existed?)))]
     (if existed?
         (do
-          (tset data oauth.PROVIDER-ID nil)
-          (storage.save data ?path)
           (io.write "openai-codex credentials removed from ")
           (io.write (or ?path (storage.default-auth-path)))
           (io.write ".\n")

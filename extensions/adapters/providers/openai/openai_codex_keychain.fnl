@@ -14,6 +14,10 @@
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
 (local path (require :fen.util.path))
+(local durable (require :fen.util.durable_store))
+
+;; A waiter outlasts one refresh POST (30 s total, 10 s connect) plus slack.
+(local AUTH-LOCK-TIMEOUT-MS 45000)
 
 (fn home []
   (or (os.getenv "HOME") "/"))
@@ -42,30 +46,10 @@
         (f:close)
         content))))
 
-(fn parent-dir [path]
-  "Strip the final /name component. Returns the root slash when the path
-   has no separator above the leading one."
-  (let [last-slash (string.find path "/[^/]*$")]
-    (if (or (not last-slash) (<= last-slash 1))
-        "/"
-        (string.sub path 1 (- last-slash 1)))))
-
-(fn shell-quote [s]
-  "Single-quote a path for shell use. We control the input (env vars and
-   constants), but be defensive against embedded apostrophes anyway."
-  (.. "'" (string.gsub s "'" "'\\''") "'"))
-
-(fn ensure-dir! [path]
-  (os.execute (.. "mkdir -p " (shell-quote path) " 2>/dev/null")))
-
-(fn chmod-private! [path]
-  (os.execute (.. "chmod 600 " (shell-quote path) " 2>/dev/null")))
-
 (fn load [?path]
   "Read one auth.json and return the decoded table. Returns {} if missing,
    unreadable, or malformed (with a log warning in the malformed case).
-   Without an explicit path this reads the fen-owned writable file only;
-   use `get` for read-through fallback to pi-mono credentials."
+   Without an explicit path this reads the fen-owned writable file only."
   (let [auth-path (or ?path (default-auth-path))
         content (read-file auth-path)]
     (if (or (not content) (= content ""))
@@ -84,34 +68,23 @@
 
 (fn save [data ?path]
   "Atomic write of the entire auth.json table. Creates the parent directory
-   if missing, chmod 0600 the resulting file. The tmp+rename dance keeps
-   readers from observing a half-written file."
-  (let [auth-path (or ?path (default-auth-path))
-        dir (parent-dir auth-path)
-        seed (os.tmpname)]
-    (os.remove seed)
-    (let [tmp (.. auth-path "." (path.basename seed))]
-      (ensure-dir! dir)
-      (let [f (io.open tmp "w")]
-        (when (not f)
-          (error (.. "auth.storage: cannot open " tmp " for write")))
-        (let [(ok? write-err) (pcall #(do
-                                        (f:write (json.encode (or data {})))
-                                        (f:close)))]
-          (when (not ok?)
-            (os.remove tmp)
-            (error (.. "auth.storage: write to " tmp " failed: "
-                       (tostring write-err))))))
-      (chmod-private! tmp)
-      (let [(ok? err) (os.rename tmp auth-path)]
-        (when (not ok?)
-          (os.remove tmp)
-          (error (.. "auth.storage: rename " tmp " -> " auth-path " failed: "
-                     (tostring err))))
-        ;; Defensive: if the file existed before with looser perms, rename
-        ;; preserves them on most filesystems but tightening explicitly
-        ;; matches pi-mono's behavior.
-        (chmod-private! auth-path)))))
+   owner-only (0700) if missing; the temp file is created 0600 before the
+   tokens are written and renamed over auth.json, so readers never observe a
+   half-written file and no other user can read the tokens (#615). A failed
+   write removes the temp file."
+  (let [auth-path (or ?path (default-auth-path))]
+    (durable.ensure-private-dir! (path.dirname auth-path))
+    (durable.write-private! auth-path (json.encode (or data {})))))
+
+(fn with-auth-lock [?path ?yield body]
+  "Run BODY holding the auth lock for ?PATH. Refresh holds it from the re-read
+   through the POST to the write-back; login and logout hold it around their
+   write. Contention yields through ?YIELD (or sleeps) for up to
+   AUTH-LOCK-TIMEOUT-MS, which covers one refresh POST's HTTP timeouts."
+  (let [auth-path (or ?path (default-auth-path))]
+    (durable.ensure-private-dir! (path.dirname auth-path))
+    (durable.with-lock (.. auth-path ".lock") ?yield body
+      {:timeout-ms AUTH-LOCK-TIMEOUT-MS})))
 
 ;; @doc fen.extensions.provider_openai.openai_codex_keychain.set
 ;; kind: function
@@ -126,10 +99,26 @@
     (save data ?path)
     data))
 
+(fn compare-and-set! [provider-id expected-refresh record ?path]
+  "Commit a refresh result only onto the record it refreshed (#612): if the
+   stored record was removed by logout or replaced by a login meanwhile,
+   drop RECORD and return false plus the current record. The read, check,
+   and rename run without yielding."
+  (let [data (load ?path)
+        current (. data provider-id)]
+    (if (and current (= current.refresh expected-refresh))
+        (do
+          (tset data provider-id record)
+          (save data ?path)
+          true)
+        (values false current))))
+
 {: default-agent-dir
  : default-auth-path
  : candidate-read-auth-paths
  : load
  : get
  : save
- :set set-record}
+ :set set-record
+ : compare-and-set!
+ : with-auth-lock}

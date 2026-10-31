@@ -1,18 +1,9 @@
 // Deterministic witnesses for the quota proof model (quint test).
+// The w616 counterexample against `current` was retired in #605, when the
+// usage GET started keeping limits recorded while it was in flight; it is
+// the same trace as reach429DuringGetKeptTest below.
 module witnesses {
-  import quota(FIXES = Set()) as C from "./model"
   import quota(FIXES = Set("616")) as F from "./model"
-
-  // #616: a 429 recorded while the GET is in flight is overwritten by the
-  // GET's older sample, shown as fresh.
-  run w616GetOverwrites429Test =
-    C::init.then(C::sendGet).then(C::exhaust).then(C::rec429)
-      .expect(C::shown == "exhausted" and C::obsSinceGet)
-      .then(C::getReturn)
-      .expect(and {
-        not(C::quotaFreshNotContradicted),
-        C::shown == "avail", C::fresh, C::server, C::obsNewer,
-      })
 
   // ---- reachability of the fixed design ----
 

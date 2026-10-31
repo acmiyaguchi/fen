@@ -1,5 +1,5 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-current	quotaFreshNotContradicted	violated	#616
+current	quotaFreshNotContradicted	holds
 current	quotaNoStaleExhausted	holds
 current	noStaleExhaustedInductive	holds
 fixed	quotaInductive	holds

@@ -2,6 +2,7 @@
 // processes (e.g. the TUI and a subagent child, or two terminals) that share
 // one auth.json and one codex-usage.json.
 //
+// Before #605 (the bugs #611-#616):
 //   openai_codex_oauth.get-fresh-creds!
 //                   -> read auth.json; if the access token is expiring,
 //                      POST refresh_token (yields while in flight), then
@@ -22,6 +23,15 @@
 //                      runs outside the lock and its result replaces windows
 //                      and is saved without the lock; record-limit (a 429)
 //                      marks windows exhausted under the lock
+//
+// Since #605 the code carries all six fixes below, so `current` (today's
+// code) imports the same FIXES as `fixed`: the refresh runs under
+// keychain.with-auth-lock (fen.util.durable_store: process mutex + lfs.lock
+// on auth.json.lock), re-reads inside the lock and after a failed POST,
+// writes back with keychain.compare-and-set!, shields the POST from cancel;
+// resolve-creds calls get-fresh-creds! per request; save creates the tmp
+// 0600; usage.M.refresh applies the GET under the cache lock and keeps
+// limits stamped `limited-at` >= the GET's send time.
 //
 // The OAuth server rotates refresh tokens: using generation k issues k' and
 // invalidates k. Reusing an invalidated token fails (invalid_grant).
@@ -426,7 +436,7 @@ module auth {
   }
 }
 
-module current { import auth(FIXES = Set()).* }
+module current { import auth(FIXES = Set("611", "612", "613", "614", "615", "616")).* }
 module fixed { import auth(FIXES = Set("611", "612", "613", "614", "615", "616")).* }
 module fix611 { import auth(FIXES = Set("611")).* }
 module fix612 { import auth(FIXES = Set("612")).* }

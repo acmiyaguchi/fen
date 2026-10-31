@@ -86,7 +86,7 @@ Request policy the adapter applies:
   `--thinking-budget N` sends `reasoning.max_tokens`.
 - A model whose live catalog entry does not list `reasoning` among its supported parameters gets no `reasoning` object, since `provider.require_parameters` would leave it no endpoint; support is learned when the catalog is fetched (headless `--model` validation or `/model`), and an unchecked model still gets one.
 - `reasoning_details` from each response are kept on the turn's thinking block and echoed back unchanged on the assistant message, so thinking models keep Gemini thought signatures and Anthropic signed thinking across tool calls.
-- Requests for `anthropic/*` and `google/*` models carry `cache_control: {type: "ephemeral"}` breakpoints on the system prompt and the latest user or tool message; cache reads and writes are reported as `cache-read` and `cache-write` usage.
+- Requests for `anthropic/*` and `google/*` models carry `cache_control: {type: "ephemeral"}` breakpoints on the system prompt and the latest user or tool message (Anthropic also re-marks the previous request's tail, up to four breakpoints, so a large tool round still reads the cache); cache reads and writes are reported as `cache-read` and `cache-write` usage; every adapter's `total-tokens` is `input` + `output`, excluding cache tokens.
 - `provider.require_parameters` is always set so OpenRouter routes only to endpoints that honor tools and reasoning; for that reason the limit goes out as `max_tokens` and the default `parallel_tool_calls` is omitted.
 - The session id goes out as `session_id` for sticky routing, and `HTTP-Referer`/`X-OpenRouter-Title` attribute traffic to fen.
 - An error that arrives mid-stream is reported with OpenRouter's message instead of a bare `finish_reason: error`.
@@ -144,6 +144,18 @@ It also exposes the pinned `gpt-5.6-luna`, `gpt-5.6-sol`, and `gpt-5.6-terra` ID
 It falls back to the shipped default if the catalog is unavailable.
 The `openai-codex` provider defaults to `gpt-6.1-sol` unless a saved or explicit model preference overrides it.
 
+## Codex OAuth credentials
+
+Codex OAuth credentials live in fen's own `auth.json` (`FEN_AUTH_DIR/auth.json`, else `${XDG_CONFIG_HOME:-~/.config}/fen/auth.json`); pi-mono's auth files are not read.
+Every `complete` and `list-models` request resolves credentials through `get-fresh-creds!` instead of pinning the record resolved at startup, so token expiry, a refresh by another fen process, `/reload`, and `fen --logout` take effect on the next request.
+Credentials passed in `provider-options.creds` without an `:expires` field are static and used as given.
+An access token expiring within 60 seconds is refreshed under one auth lock shared by every fen process: the process-local file mutex plus an OS advisory lock on the stable `auth.json.lock` inode, which the kernel releases if the holder dies (`fen.util.durable_store.with-lock`).
+The refresh re-reads `auth.json` inside the lock and uses a record another process already refreshed; after a rejected refresh it re-reads the file and uses a valid record written meanwhile.
+OAuth refresh tokens are single-use, so the lock is held from the re-read through the refresh POST to the write-back, and the write-back renames only if the stored record still carries the refresh token that was spent; a refresh that finishes after a logout or a new login drops its result.
+`fen --login` and `fen --logout` take the same lock around their write, waiting up to 45 seconds for an in-flight refresh.
+A cancel raised through the cooperative yield during the refresh POST is deferred until the rotated tokens are persisted, then propagates unchanged.
+`auth.json` is written through a sibling temp file created owner-only (0600) before any token is written, then renamed over the old file; a failed write removes the temp file, and a missing auth directory is created 0700.
+
 ## Codex account quota
 
 The OpenAI extension owns the discoverable `account_usage` tool, which reads account-wide subscription quota rather than conversation token totals or context-window capacity.
@@ -152,7 +164,7 @@ The authenticated read-only `GET https://chatgpt.com/backend-api/wham/usage` was
 The observed window lengths were 18000 seconds (five hours) and 604800 seconds (seven days); lengths are parsed, not hard-coded.
 No `x-codex-*` response headers or exact remaining-token counts were observed, so neither is assumed or synthesized.
 Only validated primary/secondary windows under `rate_limit` and `code_review_rate_limit` are supported in this phase; other allowances and model-specific quotas are not inferred.
-The sanitized snapshot has `provider`, `scope: account-quota`, `windows` (each with `name`, `used-percent`, `remaining-percent`, `length-seconds`, and `reset-at`), `retrieved-at`, `attempted-at`, `status`, and optional `failure`.
+The sanitized snapshot has `provider`, `scope: account-quota`, `windows` (each with `name`, `used-percent`, `remaining-percent`, `length-seconds`, `reset-at`, and, for a window marked by a `usage_limit_reached` error, `limited-at`), `retrieved-at`, `attempted-at`, `status`, and optional `failure`.
 Timestamps are Unix epoch seconds, and percentages are upstream percentages with remaining calculated as 100 minus used.
 `fresh` means the last successful retrieval is younger than 60 seconds, no known failure occurred, and no reported window has reset; otherwise retained windows are `stale`.
 Without usable windows, the status is `unavailable` for auth/network/API failures or before retrieval, and `unsupported` for HTTP 404/405 or a successful JSON object with supported quota groups/windows absent or null.
@@ -160,6 +172,7 @@ Present but malformed supported windows, groups, or response envelopes are `api`
 Failures expose only `auth`, `network`, `api`, `unsupported`, or the initial `unavailable` marker, never exception text, raw responses, credentials, or account identifiers.
 Attempts are limited to once per 60 seconds, including failed or cancelled attempts, with no background polling or retries.
 A demand refresh allows at most one existing OAuth refresh (30-second HTTP timeout) followed by one usage GET (10-second timeout), passing the cooperative tool yield callback through both and preserving cancellation.
+The GET's result is applied under the cache lock onto the latest cached record, and a limit recorded at or after the GET was sent (`limited-at`) survives it rather than being overwritten by the older sample.
 The sanitized cache survives `/reload` and restart in one versioned JSON file at `${XDG_STATE_HOME:-~/.local/state}/fen/codex-usage.json`.
 Its version-1 envelope contains `version`, `account-key` (a SHA-256 hash of the OAuth account id), and `snapshot` containing only the sanitized fields described above; raw account ids, emails, tokens, and response bodies are never written.
 Writes use a unique sibling temporary file and atomic rename; missing, corrupt, newer-version, or account-mismatched cache files are ignored.

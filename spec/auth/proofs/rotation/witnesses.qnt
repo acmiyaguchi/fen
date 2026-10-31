@@ -1,45 +1,22 @@
 // Deterministic witnesses for the rotation proof model (quint test).
+// The w611-w613 counterexamples against `current` were retired in #605, when
+// the code gained the fixes: their traces need actions the fixed design
+// disables (a second POST under the lock, logout during a refresh, a cancel
+// after commit); the reach...Test runs below cover the fixed behaviour.
 module witnesses {
-  import rotation(FIXES = Set()) as C from "./model"
   import rotation(FIXES = Set("611", "612", "613")) as F from "./model"
   import rotation(FIXES = Set("612")) as F612 from "./model"
+  import rotation(FIXES = Set("611", "612")) as N613 from "./model"
 
-  // #611: both clients POST R0; the first rotates and persists R1, the
-  // second is rejected while auth.json holds the valid R1.
-  run w611ConcurrentRefreshLoserFailsTest =
-    C::init.then(C::begin(1)).then(C::begin(2))
-      .expect(not(C::singleRefreshInFlight))
-      .then(C::serve(1)).then(C::receive(1)).then(C::persist(1))
-      .then(C::serve(2))
-      .expect(and {
-        not(C::noRefreshRejectedWhileUsable),
-        C::lastAction == "rejected",
-        C::present, C::gen == 1, C::valid.get(1),
-      })
-
-  // #612: a refresh that began before logout persists afterwards.
-  run w612RefreshResurrectsAfterLogoutTest =
-    C::init.then(C::begin(1)).then(C::logout)
-      .then(C::serve(1)).then(C::receive(1)).then(C::persist(1))
-      .expect(not(C::noResurrection) and C::loggedOut and C::present)
-
-  // #613: a cancel after the server committed drops R1; auth.json keeps the
-  // revoked R0 and nothing inherent excuses it.
-  run w613CancelAfterCommitLosesRotationTest =
-    C::init.then(C::begin(1)).then(C::serve(1)).then(C::cancel(1))
-      .expect(and {
-        not(C::storeRefreshable),
-        C::lastAction == "cancelAfterCommit",
-        C::gen == 0, not(C::valid.get(0)), not(C::lost.get(0)),
-      })
-
-  // #613 after an earlier inherent loss and a login: the excuse is scoped to
-  // the lost generation and cleared by the login, so the bug is caught.
-  run w613NotExcusedAfterRecoveryTest =
-    C::init.then(C::begin(1)).then(C::serve(1)).then(C::transportLoss(1))
-      .expect(C::storeRefreshable and C::lost.get(0))
-      .then(C::login).then(C::begin(1)).then(C::serve(1)).then(C::cancel(1))
-      .expect(not(C::storeRefreshable) and C::gen == 2 and not(C::lost.get(2)))
+  // Ghost sanity check (formerly w613NotExcusedAfterRecoveryTest), on a
+  // design without fix 613: the excuse for an inherent loss is scoped to the
+  // lost generation and cleared by the login, so a later cancel after commit
+  // is caught.
+  run ghostLossNotStickyTest =
+    N613::init.then(N613::begin(1)).then(N613::serve(1)).then(N613::transportLoss(1))
+      .expect(N613::storeRefreshable and N613::lost.get(0))
+      .then(N613::login).then(N613::begin(1)).then(N613::serve(1)).then(N613::cancel(1))
+      .expect(not(N613::storeRefreshable) and N613::gen == 2 and not(N613::lost.get(2)))
 
   // ---- reachability of the fixed design ----
 

@@ -1,11 +1,11 @@
-;; #616: a usage GET in flight overwrites a usage_limit_reached recorded
-;; meanwhile and reports the older data as fresh.
-;; Spec: spec/auth (w616GetOverwrites429Test) and spec/auth/proofs/quota.
+;; A usage GET in flight must not overwrite a usage_limit_reached recorded
+;; meanwhile (#616, fixed in #605): the GET's result is applied under the
+;; cache lock onto the latest record, keeping limits observed after it was sent.
+;; Spec: spec/auth (reach616...Test) and spec/auth/proofs/quota.
 ;; The real M.refresh runs in a coroutine and suspends inside the stubbed
 ;; GET (server data: 97% used); record-limit records a 429; then the GET
 ;; completes. Cache in a temp dir; auth and storage are stubbed.
 (local h (require :fen.testing))
-(local {: known-bug} h)
 (local json (require :fen.util.json))
 
 (local module :fen.extensions.provider_openai.usage)
@@ -56,22 +56,40 @@
                           (each [_ name (ipairs names)]
                             (tset package.loaded name (. saved name)))
                           (when tmp (h.rmtree tmp))))
-            (it "the 429 is overwritten by the in-flight GET's data, marked fresh"
+            (it "keeps a 429 recorded while the GET was in flight, in memory and on disk"
                 (fn []
-                  (known-bug 616
-                             (fn []
-                               (let [usage (require module)
-                                     co (coroutine.create #(usage.refresh coroutine.yield))]
-                                 (coroutine.resume co)
-                                 (usage.record-limit {:length-seconds 18000
-                                                      :reset-at (+ (os.time)
-                                                                   600)}
-                                                     "acct")
-                                 (let [after-429 (usage.snapshot)
-                                       r429 (least-remaining usage after-429)
-                                       (ok?) (coroutine.resume co)
-                                       after-get (usage.snapshot)
-                                       rget (least-remaining usage after-get)]
-                                   (and ok? (= r429 0)
-                                        (= :dead (coroutine.status co))
-                                        (= rget 3) (= after-get.status :fresh))))))))))
+                  (let [usage (require module)
+                        co (coroutine.create #(usage.refresh coroutine.yield))]
+                    (coroutine.resume co)
+                    (usage.record-limit {:length-seconds 18000
+                                         :reset-at (+ (os.time) 600)}
+                                        "acct")
+                    (assert.equal 0 (least-remaining usage (usage.snapshot)))
+                    (let [(ok? err) (coroutine.resume co)]
+                      (assert.is_true ok? (tostring err)))
+                    (assert.equal :dead (coroutine.status co))
+                    (assert.equal 0 (least-remaining usage (usage.snapshot)))
+                    ;; a fresh process reading the cache sees the limit too
+                    (let [state (require state-name)]
+                      (set state.windows [])
+                      (set state.account-key nil)
+                      (set state.file-sig nil))
+                    (assert.equal 0 (least-remaining usage (usage.snapshot))))))
+            (it "replaces a limit observed before the GET was sent"
+                (fn []
+                  (let [usage (require module)
+                        state (require state-name)
+                        co (coroutine.create #(usage.refresh coroutine.yield))]
+                    (set state.windows
+                         [{:name "rate_limit/primary_window"
+                           :used-percent 100
+                           :remaining-percent 0
+                           :length-seconds 18000
+                           :reset-at (+ (os.time) 600)
+                           :limited-at (- (os.time) 120)}])
+                    (coroutine.resume co)
+                    (let [(ok? err) (coroutine.resume co)]
+                      (assert.is_true ok? (tostring err)))
+                    (let [snapshot (usage.snapshot)]
+                      (assert.equal 3 (least-remaining usage snapshot))
+                      (assert.equal :fresh snapshot.status)))))))

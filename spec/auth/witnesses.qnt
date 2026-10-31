@@ -1,93 +1,38 @@
-// Deterministic witnesses (quint test). Each w<issue>...Test replays that
-// issue's counterexample against `current` and pins it with a state predicate
-// so the row cannot stay violated for a different bug; each reach...Test shows
-// a fixed behaviour the invariants rely on is reachable (no vacuous pass).
+// Deterministic witnesses (quint test). Each reach...Test shows a fixed
+// behaviour the invariants rely on is reachable (no vacuous pass).
+// The w611-w616 counterexamples against `current` were retired in #605, when
+// the code gained all six fixes: their traces now need actions the fixed
+// design disables (a second POST while the lock is held, logout during a
+// refresh, a cancel after commit, a request with an expired token), and the
+// fixed behaviour on each is covered by the reach...Test runs below.
 module witnesses {
-  import auth(FIXES = Set()) as C from "./model"
+  import auth(FIXES = Set("611", "612", "613", "614", "615", "616")) as C from "./model"
   import auth(FIXES = Set("611", "612", "613", "614", "615", "616")) as F from "./model"
   import auth(FIXES = Set("612")) as F612 from "./model"
+  import auth(FIXES = Set("611", "612", "614", "615", "616")) as N613 from "./model"
 
-  // #611: both processes read R0 and POST it; the first rotates and writes
-  // R1, the second is rejected although auth.json now holds the valid R1.
-  // Pinned to #611: no pinned request, no cancel, no logout in the trace, and
-  // the failure is the refresh rejection itself.
-  run w611ConcurrentRefreshLoserFailsTest =
-    C::init.then(C::tick).then(C::begin(1, false)).then(C::begin(2, false))
-      .expect(not(C::singleRefreshInFlight))
-      .then(C::respond(1)).then(C::writeTmp(1)).then(C::rename(1))
-      .then(C::respond(2))
+  // Ghost sanity check (formerly w613NotExcusedAfterRecoveryTest), on a
+  // design without fix 613: a transport loss excuses R0 only while the store
+  // holds R0; after a fresh login a cancel after commit is caught again.
+  // With the old sticky `inherentLoss` ghost this trace would pass.
+  run ghostLossNotStickyTest =
+    N613::init.then(N613::tick).then(N613::begin(1, false)).then(N613::responseLost(1))
+      .expect(N613::storeRefreshable and N613::g.lost == Set(0))
+      .then(N613::login).then(N613::tick).then(N613::begin(1, false)).then(N613::cancel(1, true))
       .expect(and {
-        not(C::noRefreshRejectedWhileUsable),
-        C::lastAction == "refreshRejected",
-        C::store == { present: true, gen: 1 },
-        C::srv.valid.contains(1),
-        C::noExpiredTokenRequest,
-        C::g.lost == Set(),
+        not(N613::storeRefreshable),
+        N613::store == { present: true, gen: 2 },
+        N613::g.lost == Set(),
       })
 
-  // #612: a refresh that began before logout writes the record back.
-  run w612RefreshResurrectsAfterLogoutTest =
-    C::init.then(C::tick).then(C::begin(1, false)).then(C::logout)
-      .then(C::respond(1)).then(C::writeTmp(1)).then(C::rename(1))
-      .expect(and {
-        not(C::noResurrection),
-        C::g.loggedOut, C::store.present, C::lastAction == "rename",
-      })
-
-  // #613: a cancel after the server committed the rotation drops R1, and
-  // auth.json keeps the revoked R0; nothing inherent happened.
-  run w613CancelAfterCommitLosesRotationTest =
-    C::init.then(C::tick).then(C::begin(1, true)).then(C::cancel(1, true))
-      .expect(and {
-        not(C::storeRefreshable),
-        C::g.lost == Set(),
-        C::store == { present: true, gen: 0 },
-        not(C::srv.valid.contains(0)),
-      })
-
-  // #613 is not excused by an earlier, unrelated inherent loss: a transport
-  // loss excuses R0 only while the store holds R0; after a fresh login the
-  // same cancel bug is caught again. (With the old sticky `inherentLoss`
-  // ghost this trace would pass.)
-  run w613NotExcusedAfterRecoveryTest =
-    C::init.then(C::tick).then(C::begin(1, false)).then(C::responseLost(1))
-      .expect(C::storeRefreshable and C::g.lost == Set(0))
-      .then(C::login).then(C::tick).then(C::begin(1, false)).then(C::cancel(1, true))
-      .expect(and {
-        not(C::storeRefreshable),
-        C::store == { present: true, gen: 2 },
-        C::g.lost == Set(),
-      })
-
-  // #614: the access token pinned at startup expires; the next request
-  // carries it and gets a terminal 401 while auth.json is refreshable.
-  run w614PinnedTokenExpires401Test =
-    C::init.then(C::begin(1, true)).then(C::tick).then(C::request(1))
-      .expect(and {
-        not(C::noExpiredTokenRequest),
-        C::lastAction == "request401",
-        C::noRefreshRejectedWhileUsable,
-        C::usable,
-      })
-
-  // #615: the tmp file holds the new tokens before its chmod, and a crash
-  // at that point leaves it behind.
-  run w615TmpWorldReadableTest =
+  // #615 regression (formerly w615TmpWorldReadableTest): in today's code the
+  // tmp file holding the new tokens is private from creation, also when a
+  // crash leaves it behind.
+  run reachTmpPrivateThroughCrashTest =
     C::init.then(C::tick).then(C::begin(1, true)).then(C::respond(1)).then(C::writeTmp(1))
-      .expect(not(C::secretsPrivate) and not(C::leakedTmp))
+      .expect(C::secretsPrivate)
       .then(C::crash(1))
-      .expect(not(C::secretsPrivate) and C::leakedTmp)
-
-  // #616: a 429 recorded while the usage GET is in flight is overwritten
-  // by the GET's older sample, shown as fresh.
-  run w616GetOverwrites429Test =
-    C::init.then(C::qSendGet).then(C::qExhaust).then(C::q429)
-      .expect(C::q.shown == "exhausted")
-      .then(C::qReturn)
-      .expect(and {
-        not(C::quotaFreshNotContradicted),
-        C::q.shown == "avail", C::q.fresh, C::q.server,
-      })
+      .expect(C::secretsPrivate and C::allInvariants)
 
   // ---- reachability of the fixed design ----
 

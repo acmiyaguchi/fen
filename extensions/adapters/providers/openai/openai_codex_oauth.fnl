@@ -10,7 +10,8 @@
 ;;   - JWT base64url decode for the chatgpt_account_id claim
 ;;   - POST https://auth.openai.com/oauth/token (refresh_token grant)
 ;;   - lazy refresh via get-fresh-creds!: read auth.json, refresh if
-;;     expiring within REFRESH-MARGIN-MS, write back atomically
+;;     expiring within REFRESH-MARGIN-MS under the auth lock, write back
+;;     atomically onto the record that was refreshed
 
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
@@ -149,16 +150,64 @@
     (and creds (= creds.type :oauth) creds.access (not= creds.access "")
          creds.refresh (not= creds.refresh ""))))
 
+(fn usable? [creds]
+  (and creds (= creds.type :oauth) creds.access (not= creds.access "")
+       creds.refresh (not= creds.refresh "") (not (expiring-soon? creds))))
+
+(fn shield-cancel [?yield]
+  "Wrap the caller's cooperative yield so a cancel raised through it is
+   recorded instead of unwinding the refresh POST (#613). Returns the
+   wrapped yield and a function returning the recorded cancel, if any. After
+   a cancel the wrapper keeps calling the caller's yield, so the request
+   stays cooperative; its later raises are swallowed too."
+  (var cancel nil)
+  (values (when ?yield
+            (fn []
+              (let [(ok? err) (pcall ?yield)]
+                (when (and (not ok?) (= nil cancel))
+                  (set cancel err))))) (fn [] cancel)))
+
+(fn refresh-locked! [?path ?opts]
+  "The refresh critical section, run under the auth lock: re-read, POST,
+   compare-and-rename. A cancel during the POST is honoured only after the
+   rotated tokens are persisted."
+  (let [creds (validate-stored-creds (storage.get PROVIDER-ID ?path))]
+    (if (not (expiring-soon? creds))
+        ;; Another process (or coroutine) refreshed while we waited (#611).
+        creds
+        (let [(yield cancelled) (shield-cancel (?. ?opts :yield))
+              (ok? fresh) (pcall refresh! creds.refresh {: yield})]
+          (if ok?
+              (let [(stored? current) (storage.compare-and-set! PROVIDER-ID
+                                                                creds.refresh
+                                                                fresh ?path)]
+                (when (cancelled) (error (cancelled) 0))
+                (if stored?
+                    (do
+                      (log.info "auth.openai_codex: refreshed access token")
+                      fresh)
+                    ;; Logout or login replaced the record mid-POST (#612):
+                    ;; never resurrect or clobber it; use what is there now.
+                    (validate-stored-creds current)))
+              (let [current (storage.get PROVIDER-ID ?path)]
+                (when (cancelled) (error (cancelled) 0))
+                ;; A writer outside the lock may have stored a valid record
+                ;; (e.g. a login after our generation was lost).
+                (if (and (usable? current) (not= current.refresh creds.refresh))
+                    current
+                    (error fresh 0))))))))
+
 (fn get-fresh-creds! [?path ?opts]
-  "Read auth.json, refresh the openai-codex record if it's missing, expired,
-   or expiring within REFRESH-MARGIN-MS, and persist any refresh atomically.
-   Errors with a friendly message if no credentials exist."
+  "Read auth.json and return the openai-codex record, refreshing it first if
+   it's missing an expiry, expired, or expiring within REFRESH-MARGIN-MS.
+   A refresh runs under the auth lock (one refresher across processes), re-reads
+   the record inside the lock, writes back only onto the record it refreshed,
+   and persists the rotation before honouring a cancel raised through
+   `(?. ?opts :yield)`. Errors with a friendly message if no credentials exist."
   (let [creds (validate-stored-creds (storage.get PROVIDER-ID ?path))]
     (if (expiring-soon? creds)
-        (let [fresh (refresh! creds.refresh ?opts)]
-          (storage.set PROVIDER-ID fresh ?path)
-          (log.info "auth.openai_codex: refreshed access token")
-          fresh)
+        (storage.with-auth-lock ?path (?. ?opts :yield)
+          #(refresh-locked! ?path ?opts))
         creds)))
 
 ;; @doc fen.extensions.provider_openai.openai_codex_oauth.PROVIDER-ID

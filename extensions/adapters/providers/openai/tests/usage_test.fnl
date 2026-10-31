@@ -252,20 +252,28 @@
             (it "passes the demand callback through an expiring OAuth refresh"
                 (fn []
                   (var witnessed? false)
+                  (var callback-calls 0)
                   (let [storage-name :fen.extensions.provider_openai.openai_codex_keychain
                         old-storage (. package.loaded storage-name)
                         old-http (. package.loaded http-name)
                         old-auth (. package.loaded auth-name)
-                        callback (fn [])]
+                        callback (fn []
+                                   (set callback-calls (+ callback-calls 1)))]
                     (tset package.loaded storage-name
                           {:get (fn [_provider _path]
                                   {:type :oauth
                                    :access "synthetic"
                                    :refresh "synthetic"
-                                   :expires 0})})
+                                   :expires 0})
+                           :with-auth-lock (fn [_path yield body]
+                                             (assert.equal callback yield)
+                                             (body))})
                     (tset package.loaded http-name
                           {:request (fn [opts]
-                                      (assert.equal callback opts.yield)
+                                      ;; the POST gets a cancel-shielding wrapper around the callback (#613)
+                                      (assert.is_function opts.yield)
+                                      (opts.yield)
+                                      (assert.equal 1 callback-calls)
                                       (assert.equal 30000 opts.timeout-ms)
                                       (set witnessed? true)
                                       {:error "synthetic failure"})})

@@ -135,5 +135,6 @@ module pinning {
   val pinningInductive = and { typeOk, noExpiredTokenRequest, requestReadyWhenStoreLive }
 }
 
-module current { import pinning(FIXES = Set()).* }
+// Since #605 today's code carries the fixes, so `current` matches `fixed`.
+module current { import pinning(FIXES = Set("614")).* }
 module fixed { import pinning(FIXES = Set("614")).* }

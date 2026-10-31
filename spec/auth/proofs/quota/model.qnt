@@ -138,5 +138,6 @@ module quota {
   }
 }
 
-module current { import quota(FIXES = Set()).* }
+// Since #605 today's code carries the fixes, so `current` matches `fixed`.
+module current { import quota(FIXES = Set("616")).* }
 module fixed { import quota(FIXES = Set("616")).* }
