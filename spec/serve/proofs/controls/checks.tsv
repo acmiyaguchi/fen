@@ -1,0 +1,5 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+issue	cancelHitsSeenTurn	violated	#397
+issue	steeringReachesSeenTurn	violated	#397
+proposed	allInvariants	holds
+proposed	inductiveInv	holds

@@ -74,7 +74,8 @@ module serve {
   // turn = 0: idle-scoped request (a slash command's picker, e.g. /resume,
   // /model); turn > 0: issued from inside that turn (tool, permission).
   // status: pending | answered | timeout | ended | cancelled | aborted
-  type Req = { turn: int, gen: int, status: str, wins: int, ver: int }
+  // deadline: the request was issued with a deadline (TIMEOUTS).
+  type Req = { turn: int, gen: int, status: str, wins: int, ver: int, deadline: bool }
 
   type Cl = {
     conn: bool, attaching: bool,
@@ -224,7 +225,8 @@ module serve {
     s.running, s.parkedOn < 0, s.nextReq <= MAX_REQS, room(s, 1),
     val i = s.nextReq
     commit({ ...s.emit(ev("req", s.turnNo, i, 0)),
-             reqs: s.reqs.put(i, { turn: s.turnNo, gen: s.gen, status: "pending", wins: 0, ver: 0 }),
+             reqs: s.reqs.put(i, { turn: s.turnNo, gen: s.gen, status: "pending", wins: 0, ver: 0,
+                                   deadline: TIMEOUTS }), // a turn-scoped request
              nextReq: i + 1, parkedOn: i }, "toolRequest")
   }
 
@@ -236,7 +238,8 @@ module serve {
     pendingIds(s).forall(i => s.reqs.get(i).turn != 0),
     val i = s.nextReq
     commit({ ...s.emit(ev("req", 0, i, 0)),
-             reqs: s.reqs.put(i, { turn: 0, gen: s.gen, status: "pending", wins: 0, ver: 0 }),
+             reqs: s.reqs.put(i, { turn: 0, gen: s.gen, status: "pending", wins: 0, ver: 0,
+                                   deadline: TIMEOUTS }),
              nextReq: i + 1, remoteCmds: s.remoteCmds + (if (c == 0) 0 else 1) }, "cmdRequest")
   }
 
@@ -286,7 +289,7 @@ module serve {
   }
 
   action timeout(i: int): bool = all {
-    TIMEOUTS, s.reqs.keys().contains(i), s.reqs.get(i).status == "pending", room(s, 1),
+    s.reqs.keys().contains(i), s.reqs.get(i).deadline, s.reqs.get(i).status == "pending", room(s, 1),
     val st1 = s.setStatus(i, "timeout").emit(ev("res", 0, i, 0))
     commit(if (s.parkedOn == i) { ...st1, parkedOn: -1 } else st1, "timeout")
   }
@@ -472,10 +475,13 @@ module serve {
   val caughtUpSeesTurn = REMOTES.forall(c =>
     not(caughtUp(s, c)) or s.cl.get(c).seenTurn == (if (s.running) s.turnNo else 0))
 
-  // Every pending request has someone who can resolve it: a connected
-  // client, the in-process presenter, or a deadline.
-  val pendingHasAnswerer =
-    pendingIds(s).size() == 0 or LOCAL or TIMEOUTS or REMOTES.exists(c => s.cl.get(c).conn)
+  // Safety, not liveness: in every state each pending request has a party
+  // that could resolve it: the in-process presenter, a connected remote
+  // client, or a deadline armed on the request itself. It does not claim
+  // that anyone answers or that the deadline fires (no fairness is assumed,
+  // see spec/README.md "Kinds of evidence").
+  val pendingHasPossibleResolver = pendingIds(s).forall(i =>
+    LOCAL or s.reqs.get(i).deadline or REMOTES.exists(c => s.cl.get(c).conn))
 
   // A remote client cannot dispatch slash commands (#397: input only
   // reaches the steering/follow-up queues).
@@ -486,7 +492,7 @@ module serve {
     resolutionInScope, noStaleContinuation, answerMatchesShownChoices,
     noPendingForEndedTurn, cancelHitsSeenTurn, steeringReachesSeenTurn,
     noDuplicateDelivery, inOrderDelivery, noSilentGap, caughtUpSeesPending,
-    caughtUpSeesTurn, pendingHasAnswerer, remoteNoCommands,
+    caughtUpSeesTurn, pendingHasPossibleResolver, remoteNoCommands,
   }
 }
 

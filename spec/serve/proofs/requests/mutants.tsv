@@ -1,0 +1,6 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    if (END_RESOLVES) resolve(|    if (false) resolve(|	proposedTui	noPendingForEndedTurn	ending or cancelling a turn leaves its requests pending (V2)
+model.qnt	s|        if (RECHECK)|        if (false)|	proposedTui	resolutionInScope	an idle-scoped continuation does not re-check idle (#638)
+model.qnt	s|    if (RELOAD_RESOLVES) resolve(|    if (false) resolve(|	proposedTui	noStaleContinuation	/reload leaves idle-scoped requests pending (V5)
+model.qnt	s|rDeadline.set(i, TIMEOUTS)),|rDeadline.set(i, false)),|	proposed	pendingHasPossibleResolver	requests are issued without a deadline (V4)
+model.qnt	s|      else if (VERSIONED and target == aim and shown != rVer.get(target))|      else if (false)|	proposedTui	answerMatchesShownChoices	an answer against an old choice list is applied (V6)

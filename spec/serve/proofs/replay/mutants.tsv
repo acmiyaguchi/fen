@@ -1,0 +1,4 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|        clientTo(true, false, len, 0, 0, 0, lastMax, len,|        clientTo(true, false, len + 1, 0, 0, 0, lastMax, len,|	proposed	noSilentGap	live delivery starts one past the seq the snapshot was taken at
+model.qnt	s|                 SEQS.filter(k => k <= len and logP.get(k)), cur,|                 SEQS.filter(k => k <= len and logP.get(k)), 0,|	proposed	caughtUpSeesState	the snapshot carries messages but not the turn and request state
+model.qnt	s|        clientTo(true, false, lastMax, 0, 0, lastMax, lastMax, 0, Set(), view,|        clientTo(true, false, len, 0, 0, lastMax, lastMax, 0, Set(), view,|	proposed	noSilentGap	resume continues live from the newest event, not from the client's after-seq

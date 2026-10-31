@@ -1,0 +1,4 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    queue' = if (TARGETED) Set() else queue,|    queue' = queue,|	proposed	steeringReachesSeenTurn	turn end leaves unconsumed lines queued for the next turn (tui-turns #662)
+model.qnt	s|      if (running and (t == turnNo or not(TARGETED))) endTurn|      if (running) endTurn|	proposed	cancelHitsSeenTurn	cancel is applied to whatever turn runs, as the TUI path does
+model.qnt	s|    else if (t == turnNo or not(TARGETED))|    else if (true)|	proposed	steeringReachesSeenTurn	a line is queued without comparing its turn with the running one

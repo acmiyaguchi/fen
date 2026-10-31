@@ -1,0 +1,9 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+issue	noSilentGap	violated	#396
+issue	caughtUpSeesState	violated	#396
+issue	noDuplicateDelivery	holds
+issueDup	noDuplicateDelivery	violated	#396
+issueDup	inOrderDelivery	violated	#396
+issueDup	caughtUpSeesState	violated	#396
+proposed	allInvariants	holds
+proposed	inductiveInv	holds

@@ -1,0 +1,3 @@
+# main	invariants	mode	steps	seconds	why
+proposed	inductiveInv	inductive	1	300	Induction: the lock-like state (running turn, client views, tagged queue) is finite, so targeted controls hit only the seen turn at any depth.
+proposed	cancelHitsSeenTurn steeringReachesSeenTurn	bounded	8	300	The #397 counterexamples take 5 (cancel) and 3 (steer) steps on the issue instance; 8 covers both with room for an extra turn.

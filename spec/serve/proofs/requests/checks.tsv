@@ -1,0 +1,15 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+issue	resolvedAtMostOnce	holds
+issue	answerHitsItsRequest	holds
+issue	pendingHasPossibleResolver	holds
+issue	answersAcked	violated	#398
+issue	resolutionInScope	violated	#638,#398
+issue	noStaleContinuation	violated	#398
+issue	answerMatchesShownChoices	violated	#398
+issue	noPendingForEndedTurn	violated	#398
+headless	pendingHasPossibleResolver	violated	#398
+webReuse	answerHitsItsRequest	violated	#396
+proposed	allInvariants	holds
+proposed	inductiveInv	holds
+proposedTui	allInvariants	holds
+proposedTui	inductiveInv	holds

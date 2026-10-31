@@ -1,6 +1,7 @@
 # Attachable fen: serve, remote input, async UI (design-first)
 
-Model: [`model.qnt`](model.qnt).
+Integration model: [`model.qnt`](model.qnt), with [`witnesses.qnt`](witnesses.qnt) and [`mutants.tsv`](mutants.tsv).
+Proof models: [`proofs/controls`](proofs/controls/model.qnt), [`proofs/requests`](proofs/requests/model.qnt), [`proofs/replay`](proofs/replay/model.qnt) (see [Proof models](#proof-models)).
 
 ## Scope
 
@@ -17,6 +18,20 @@ The environment can refresh a picker's choices, time a request out, end or cance
 A ghost history records, for every cancel, steer, and applied answer, the turn or request the sender aimed at and the one it actually hit.
 
 Not modelled: transport details (HTTP, SSE framing, bearer-token checks), subagent child streams and the session index's descent into them, and process restart (see Open questions).
+
+## Input assumptions
+
+What the environment actions can and cannot produce:
+
+- **One process, one cooperative thread.** Every action is atomic; nothing interleaves inside an action. Two turns never run at once (`singleTurn` checks the model keeps this, not the code).
+- **Client views only lag; they never lie.** A remote client's `seenTurn`, known requests, and choice versions come only from events delivered to it (or a snapshot), so a view is always some past state of the process. A client never invents a turn id or a request id it has not seen. The TUI (client 0) sees every event synchronously.
+- **Answers name a request the client has seen** (`ever`), possibly one already resolved. An answer's choice is not modelled, only the choice-list version it was made against.
+- **The agent issues requests from two places only:** a running turn that is not parked (a tool or permission check, which parks it) and an idle-only slash command (at most one idle-scoped picker pending). At most `MAX_REQS = 3` requests, `MAX_TURNS = 3` turns, `MAX_LOG = 10` events, one choice-list refresh per request.
+- **The environment can** end or cancel the turn, refresh an idle picker's choices, `/reload` while idle, time out a request that carries a deadline, and connect, disconnect, reconnect (with or without a resume point), replay, deliver, and overflow the ring for remote clients 1 and 2.
+- **It cannot** crash or restart the process, lose or reorder events on a live stream (delivery is in log order by cursor), deliver an event before it is emitted, or have a client answer while it is disconnected or still attaching.
+- **No fairness.** Nothing forces a client to answer, a deadline to fire, or a turn to end, so no invariant claims that anything eventually happens (see `pendingHasPossibleResolver`).
+
+The proof models keep these assumptions and drop state each contract does not need; their headers say what each abstracts (for example, the request model lets an answerer hold any choice-list version up to the current one, and the controls model lets a steering line be injected in any order).
 
 Code the designs reuse, and that the model mirrors:
 `extensions/adapters/presenters/web/server.fnl` (`wait-select`, `finish-select!`, `/input` → `drain-inputs!`), `extensions/adapters/presenters/web/page.fnl` (`postSelect`), `extensions/adapters/presenters/tui/select.fnl` (`run-overlay`, `pump-background-ticks!`), `packages/core/src/fen/core/extensions/register/presenter.fnl` (`FALLBACKS`, `dispatch-ui`), `packages/core/src/fen/core/extensions/register/command.fnl` (`dispatch`, `:idle-only?`), `extensions/behaviors/kernel/steering/service.fnl` (`queue!`, `submit`, `enqueue!`, `start-idle-follow-up!`), `packages/fen/src/fen/interactive.fnl` (`request-cancel`, `on-submit`, `on-tick`), `packages/fen/src/fen/turn_submit.fnl`, `packages/fen/src/fen/reload_request.fnl`, `packages/fen/src/fen/session_lifecycle.fnl` (flush), `extensions/behaviors/actions/sessions/commands/session.fnl` (`pick-session!`, `/reload`), `extensions/behaviors/kernel/essentials/commands/model.fnl` (`pick-model!`), `docs/wire.md`.
@@ -42,6 +57,26 @@ Each `const` selects one choice; the instances are:
 | `proposed`, `proposedTui` | The recommended protocol (Required guarantees), headless and with the TUI. Every invariant holds. |
 
 `checks.tsv` records the results: `violated` rows are counterexamples in the issue designs, and `holds` rows cover the proposed protocol and the properties the issues already get right.
+
+The serve model has no `FIXED` flag, so the named-fixes convention (`FIXES`, `fix<issue>` instances) does not apply: each design choice is already a named `const`, and the instances are designs, not fix bundles.
+`proposed` and `proposedTui` play the part of `fixed`: they must satisfy every invariant, and the `reach...Test` witnesses show they still reach the cases those invariants guard.
+
+## Evidence
+
+| Bug | Kind | Rows | Witness (`witnesses.qnt`) | Proof-model witness | Confirmed against code |
+| --- | --- | --- | --- | --- | --- |
+| #638 | counterexample, confirmed | `issue.resolutionInScope` | `w638IdleCommandActsInTurnTest` | `proofs/requests`: `w638IdleCommandActsInTurnTest` | probe `extensions/behaviors/actions/sessions/tests/issue_638_idle_command_after_turn_start_test.fnl` |
+| V1 (#397) | counterexample | `issue.cancelHitsSeenTurn`, `issue.steeringReachesSeenTurn` | `w397CancelHitsSeenTurnTest`, `w397SteeringIntoOtherTurnTest` | `proofs/controls`: `w397CancelHitsSeenTurnTest`, `w397SteeringIntoOtherTurnTest`, `w397StaleSteerStartsTurnTest` | line trace of the reused code (`request-cancel`, `steering.service`) |
+| V2 (#398) | counterexample | `issue.noPendingForEndedTurn` | `w398TurnRequestOutlivesTurnTest` | `proofs/requests`: `w398TurnRequestOutlivesTurnTest`, `w398AnswerForEndedTurnTest` | design only (no code yet) |
+| V4 (#398) | counterexample | `headless.pendingHasPossibleResolver` | `w398HeadlessRequestNoResolverTest` | `proofs/requests`: `w398HeadlessRequestNoResolverTest` | design only; today's fallback traced in `presenter.fnl` |
+| V5 (#398) | counterexample | `issue.noStaleContinuation` | `w398StaleContinuationAfterReloadTest` | `proofs/requests`: same name | design only |
+| V6 (#398) | counterexample | `issue.answerMatchesShownChoices` | `w398AnswerAgainstStaleChoicesTest` | `proofs/requests`: same name | design only; `replace-choices!` and `postSelect` traced |
+| V7 (#398) | counterexample | `issue.answersAcked` | `w398LateAnswerUnackedTest` | `proofs/requests`: same name | design only, against `docs/wire.md` |
+| V8 (#396) | counterexample | `issue.noSilentGap`, `issue.caughtUpSeesTurn`, `issue.caughtUpSeesPending`, `issueDup.noDuplicateDelivery`, `issueDup.inOrderDelivery` | `w396ReplayGapTest`, `w396CaughtUpMissesTurnTest`, `w396CaughtUpMissesPendingTest`, `w396ReplayDuplicatesTest`, `w396ReplayOutOfOrderTest` | `proofs/replay`: `w396ReplayGapTest`, `w396CaughtUpMissesStateTest`, `w396ReplayDuplicatesTest`, `w396ReplayOutOfOrderTest` | design only; `make-flush` traced (the JSONL holds messages only) |
+| V9 (#396) | counterexample | `webReuse.answerHitsItsRequest`, `webReuse.remoteNoCommands` | `w396BareIndexHitsOtherRequestTest`, `w396RemoteSlashCommandTest` | `proofs/requests`: `w396BareIndexHitsOtherRequestTest` | line trace of `web/server.fnl` (`finish-select!`, `drain-inputs!`) |
+
+Only #638 is a bug in today's code, so it is the only one with a probe; V1–V9 are findings against designs that have no code to probe.
+The `holds` rows of the integration model are sampled evidence; the proposed protocol's guarantees are proved in the proof models.
 
 ## Design bugs
 
@@ -80,7 +115,7 @@ Counterexample (`resolutionInScope`): `cmdRequest(0) [/resume picker] → send [
 `on-tick` runs `steering.start-idle-follow-up!`, which can start a turn.
 When the picker returns, `resume-session!` swaps `state.agent` and `state.session` under the running turn.
 
-Confirmed today with a throwaway Busted probe (deleted after the run).
+Confirmed today with a Busted probe, now kept as [`issue_638_idle_command_after_turn_start_test.fnl`](../../extensions/behaviors/actions/sessions/tests/issue_638_idle_command_after_turn_start_test.fnl) (a `known-bug` test: it passes while the bug reproduces).
 It drove the real `/resume` handler through `command-registry.dispatch`, with a ui slot whose `select` enqueues a follow-up with `start-if-idle?` and runs `start-idle-follow-up!` the way the overlay's tick does:
 
 ```
@@ -94,7 +129,7 @@ Under #398 the window is no longer "while the local user looks at a modal" but "
 
 ### V4. With no in-process presenter, a request can wait forever and wedge the process (#398)
 
-Counterexample (`headless.pendingHasAnswerer`): `connect(1) → finishReplay → send(1) [turn 1] → toolRequest → disconnect(1)`.
+Counterexample (`headless.pendingHasPossibleResolver`): `connect(1) → finishReplay → send(1) [turn 1] → toolRequest → disconnect(1)`.
 Today, with no `ui` slot, `ui.select` returns nil at once (`presenter.fnl` `FALLBACKS`: "returning nil rather than block on stdin"), and the `rpc` presenter registers no `:ui`.
 Under #398 the turn parks until a client answers, and #394 says remote clients are optional observers.
 A parked turn is still busy, so `reload-request.drain!` (which runs only when `(not (or state.busy? state.turn))`) and every `:idle-only?` command are blocked too.
@@ -156,7 +191,7 @@ The problem appears only if serve reuses the web `/input` path as #396 suggests.
 - `singleTurn`: local and remote input never start two concurrent turns. Everything runs on one cooperative thread, and `turn_submit.submit!` and `on-submit` check `state.busy?` before starting a turn.
 - `resolvedAtMostOnce`: with request ids and first-writer-wins (#398), no request is resolved twice.
 - `answerHitsItsRequest`, `remoteNoCommands`: these hold under the issue designs as written, with ids and queue-only input; V9 shows they fail only with the reused web code.
-- `pendingHasAnswerer` holds whenever the TUI is attached, because it can always answer.
+- `pendingHasPossibleResolver` holds whenever the TUI is attached, because it can always answer. This is a safety property of each state (someone who *could* resolve the request exists), not a promise that anyone does: with no fairness assumed, "every request is eventually resolved" is a liveness claim the model cannot make. A deadline counts only when it is armed on that request (`Req.deadline`), not because the design has timeouts somewhere (the old `pendingHasAnswerer` accepted the `TIMEOUTS` flag itself, so a request issued without a deadline passed; the last mutant in `mutants.tsv` is that case).
 
 ## Required guarantees
 
@@ -172,6 +207,25 @@ In words:
 7. **A resolution is applied only in its scope.** A turn-scoped answer resumes only the turn that issued it. An idle-scoped continuation re-checks its precondition (still idle, same session) before it acts, and aborts with a visible error otherwise. Pending continuations are stored as data (request id, command name, arguments) and resolved through module lookup at resume time, not as captured closures (#638, V5).
 8. **No request waits forever.** Every request has a deadline and a defined default (nil, the same as Esc in the TUI picker). When no client that can answer is attached, the request resolves at once to that default. That is the same behaviour as today's no-presenter fallback (V4).
 9. **Remote authority stays within the session's policy.** Remote lines reach only the steering and follow-up queues and are never dispatched as slash commands. Answers are limited to the choices of a pending request. Anything more (remote slash commands, per-client roles) is a separate decision (V9).
+
+## Proof models
+
+The integration model mixes the three protocols in one state machine, which is right for reproducing bugs but too big for Apalache.
+Each protocol has its own proof model under `proofs/`, with only the state its contract needs.
+Each is proved for the proposed protocol and keeps the issue designs as counterexample instances (`violated` rows with their own witnesses).
+
+| Proof model | Contract | State | Instances | Obligation | Result |
+| --- | --- | --- | --- | --- | --- |
+| [`controls`](proofs/controls/model.qnt) | cancel and steer carry the turn the sender saw (guarantee 3; V1) | running turn id, each client's last-seen turn, the steering queue as a set of turn tags | `issue` (#397), `proposed` | `proposed.inductiveInv` inductive; `cancelHitsSeenTurn steeringReachesSeenTurn` bounded, 8 steps | inductive [3 s]; bounded-safe [1 s] |
+| [`requests`](proofs/requests/model.qnt) | request scope, exactly-once resolution, turn-end and reload resolution, deadlines, acks, choice versions (guarantees 4–8; #638, V2, V4–V7, V9) | the turn (running, id, parked request), reload generation, any remote connected, a fixed table of 3 request ids | `issue`, `headless`, `webReuse`, `proposed`, `proposedTui` | `proposed.inductiveInv`, `proposedTui.inductiveInv` inductive | inductive [4–14 s], inductive [4–9 s] |
+| [`replay`](proofs/replay/model.qnt) | seq cursor, snapshot at a recorded seq, reset after ring overrun (guarantees 1–2; V8) | a log of 6 seqs (persisted? and state after), one remote client's cursor, delivered seqs, and view | `issue` (`jsonlGap`), `issueDup`, `proposed` (`ring`) | `proposed.inductiveInv` inductive | inductive [3–7 s] |
+
+Times are wall clock over two runs (ranges where they differed), with one Apalache lane (`SPEC_VERIFY_JOBS=1`, `JVM_ARGS=-Xmx3g`).
+Each `inductiveInv` is the property conjoined with a finite type invariant and the strengthening that makes it one-step preserved; the model headers and the comments above each `inductiveInv` state the strengthening.
+"Inductive" here is for the model's fixed constants (3 turns, 3 requests, 6 seqs): induction removes the depth bound, not the bound on ids.
+A bounded 8-step obligation on the request model (`proposedTui.allInvariants`) timed out at 600 s, which is why that model is proved by induction only.
+
+Each proof directory has its own `mutants.tsv`, removing one guarantee at a time (turn-end hand-back, targeted cancel, the turn check on steering; turn-end resolution, idle re-check, reload resolution, deadlines, version check; snapshot seq, snapshot state, resume cursor). Every mutant is caught.
 
 ## Core
 

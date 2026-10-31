@@ -12,7 +12,7 @@ issue	steeringReachesSeenTurn	violated	#397
 issue	noSilentGap	violated	#396
 issue	caughtUpSeesPending	violated	#396
 issue	caughtUpSeesTurn	violated	#396
-issue	pendingHasAnswerer	holds
+issue	pendingHasPossibleResolver	holds
 issue	remoteNoCommands	holds
 issue	answerHitsItsRequest	holds
 issue	noDuplicateDelivery	holds
@@ -20,7 +20,7 @@ issue	noDuplicateDelivery	holds
 issueDup	noDuplicateDelivery	violated	#396
 issueDup	inOrderDelivery	violated	#396
 # main	invariant	expect (holds|violated)	issues (violated rows)
-headless	pendingHasAnswerer	violated	#398
+headless	pendingHasPossibleResolver	violated	#398
 # main	invariant	expect (holds|violated)	issues (violated rows)
 webReuse	answerHitsItsRequest	violated	#396
 webReuse	remoteNoCommands	violated	#396
