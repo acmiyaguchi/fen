@@ -1,0 +1,9 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+ledgerSpec	movesAreAbsSteps	holds
+ledgerSpec	marksValidInv	holds
+ledgerSpec	zeroMarkPresentInv	holds
+ledgerSpec	epochBoundedInv	holds
+ledgerSpec	epochMonotonicInv	holds
+ledgerSpec	deltasBoundedInv	holds
+ledgerSpec	tipMarkZeroInv	holds
+ledgerSpec	inductiveInv	holds

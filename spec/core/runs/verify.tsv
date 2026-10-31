@@ -1,0 +1,3 @@
+# main	invariants	mode	steps	seconds	why
+runsSpec	inductiveInv	inductive	1	300	Induction: subagent run table and mailbox invariants hold at any depth, so every refining owner inherits them without a bound.
+runsSpec	movesAreAbsSteps statusMatchesProcessInv unlaunchedEmptyInv toldOrPendingInv mailboxDeliveredDisjointInv mailboxOnlyWhenTerminalInv deliveredOnlyWhenTerminalInv controlsAckedBoundedInv controlsSettledAtTerminalInv	bounded	10	300	A run launch, control acks, finalization, exit, and mailbox consumption take at most 10 abstract steps.

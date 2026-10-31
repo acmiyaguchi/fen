@@ -26,13 +26,13 @@ That is why the replay rule also has its own laws (`replay/`), checked independe
 | --- | --- | --- | --- |
 | [turn](turn/abstract.qnt): close-turn | #668 | abstract spec proved inductively (~10 s) and to 10 steps | agent-loop: `currentRefines`/`fixedRefines` monitors on the integration model (sampled), and `proofs/loop` (bounded-safe to 12 steps) |
 | [replay](replay/model.qnt): replay of a log cut anywhere | #668 | six laws bounded-safe over every log of up to 5 entries (2–13 s each) | sessions (`fixed` replay, provider check, doctor; `proofs/replay` checks the sessions projection against the same laws) |
-| store: kernel lock plus atomic replace | #669 | planned | sessions, auth, tools |
-| job: process group and output capture | #670 | planned | tools, subagents |
-| tasks: one task table with turn-keyed ownership | #671 | planned | scheduler, tui-turns, serve |
-| ledger: usage as a fold over one log | #672 | planned (domain proof model `context/proofs/ledger`) | context, presenters |
-| contrib: per-owner extension contribution map | #673 | planned (domain proof model `extensions/proofs/contrib`) | extensions, context |
-| runs: subagent run table and mailbox | #674 | planned | subagents, wire |
-| policy: child policy derived from the parent | #675 | planned (domain proof model `subagents/proofs/inheritance`) | subagents, auth, extensions |
+| [store](store/abstract.qnt): kernel lock plus atomic replace | #669 | abstract spec proved inductively (~5 s) and to 10 steps | sessions (`proofs/lock`, `proofs/persistence`), auth (`proofs/rotation`), tools (`proofs/file-commit`) |
+| [job](job/abstract.qnt): process group and output capture | #670 | abstract spec proved inductively (~8 s) and to 10 steps | tools (`proofs/process-group`, `proofs/popen-cancel`, `proofs/output-envelope`), subagents (`proofs/lifecycle`) |
+| [tasks](tasks/abstract.qnt): one task table with turn-keyed ownership | #671 | abstract spec proved inductively (~12 s) and to 10 steps | scheduler (`proofs/cancel-arm`, `proofs/pump`), tui-turns (`proofs/ctrl-c`, `proofs/side-ownership`), serve |
+| [ledger](ledger/abstract.qnt): usage as a fold over one log | #672 | abstract spec proved inductively (~11 s) and to 10 steps | context (`proofs/ledger`), presenters (`proofs/outcome`) |
+| [contrib](contrib/abstract.qnt): per-owner extension contribution map | #673 | abstract spec proved inductively (~6 s) and to 10 steps | extensions (`proofs/contrib`, `proofs/turn-identity`), context |
+| [runs](runs/abstract.qnt): subagent run table and mailbox | #674 | abstract spec proved inductively (~2 s) and to 10 steps | subagents (`proofs/lifecycle`), wire (`proofs/acks`) |
+| [policy](policy/abstract.qnt): child policy derived from the parent | #675 | abstract spec proved inductively (~9 s) and to 10 steps | subagents (`proofs/inheritance`), auth (`proofs/pinning`), extensions (`proofs/validation`) |
 
 ## turn
 

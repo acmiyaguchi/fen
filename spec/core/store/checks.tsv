@@ -1,0 +1,7 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+storeSpec	movesAreAbsSteps	holds
+storeSpec	stagedRequiresLockInv	holds
+storeSpec	snapPairedWithStagedInv	holds
+storeSpec	unlockedIsIdleInv	holds
+storeSpec	statusConsistentInv	holds
+storeSpec	inductiveInv	holds

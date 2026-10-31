@@ -1,0 +1,4 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|val nextArmed = if (completes) false else a.t1Armed|val nextArmed = a.t1Armed|	tasksSpec	ownershipIsolatedInv	task completes without disarming cancel ladder
+model.qnt	s|pollActive: runnable,|pollActive: false,|	tasksSpec	cadenceMatchesRunnableInv	scheduler drops active poll cadence while work is runnable
+model.qnt	s|t1Owner: 0,|t1Owner: a.t1Owner,|	tasksSpec	ownershipIsolatedInv	retiring task leaves owner recorded on empty slot

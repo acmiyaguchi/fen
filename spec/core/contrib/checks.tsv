@@ -1,0 +1,7 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+contribSpec	movesAreAbsSteps	holds
+contribSpec	registryMatchesFreshStartInv	holds
+contribSpec	noSwapDuringTurnInv	holds
+contribSpec	reloadCommandAvailableInv	holds
+contribSpec	coreOwnerServingInv	holds
+contribSpec	inductiveInv	holds

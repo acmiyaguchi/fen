@@ -1,0 +1,4 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|val ct = if (m == "background") a.parentTools.exclude(MUTATING) else a.parentTools|val ct = a.parentTools|	policySpec	backgroundReadOnlyInv	background mode does not strip mutating tools
+model.qnt	s|    a.storeLive,|    true,|	policySpec	movesAreAbsSteps	request starts without live credential in store
+model.qnt	s|move({ ...a, storeLive: false })|move({ ...a, storePresent: false, storeLive: true })|	policySpec	tokenLiveImpliesPresentInv	token marked live when not present in store

@@ -1,0 +1,3 @@
+# main	invariants	mode	steps	seconds	why
+contribSpec	inductiveInv	inductive	1	300	Induction: extension contribution invariants hold at any depth, so every refining owner inherits them without a bound.
+contribSpec	movesAreAbsSteps registryMatchesFreshStartInv noSwapDuringTurnInv reloadCommandAvailableInv coreOwnerServingInv	bounded	10	300	A sequence of turn starts, mid-turn reloads, idle drains, and disables takes at most 10 abstract steps.

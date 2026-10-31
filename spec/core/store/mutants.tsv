@@ -1,0 +1,4 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|if (a.snap == a.store)|if (true)|	storeSpec	movesAreAbsSteps	commit overwrites store even when snapshot conflicted
+model.qnt	s|move({ ...a, holder: 0, staged: -1, snap: -1, status: "idle" }),|move({ ...a, holder: 0 }),|	storeSpec	stagedRequiresLockInv	crash leaves staged write without lock
+model.qnt	s|move({ ...a, holder: 0, status: "idle" }),|move({ ...a, holder: 0, status: "committed" }),|	storeSpec	unlockedIsIdleInv	release leaves store in non-idle status

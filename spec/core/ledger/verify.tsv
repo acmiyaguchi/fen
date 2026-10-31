@@ -1,0 +1,3 @@
+# main	invariants	mode	steps	seconds	why
+ledgerSpec	inductiveInv	inductive	1	300	Induction: the usage ledger invariants hold at any depth, so every refining owner inherits them without a bound.
+ledgerSpec	movesAreAbsSteps marksValidInv zeroMarkPresentInv epochBoundedInv epochMonotonicInv deltasBoundedInv tipMarkZeroInv	bounded	10	300	Two entries, marks, and a history rewrite watermark take at most 10 abstract steps.

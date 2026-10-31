@@ -1,0 +1,4 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|move({ ...a, pending: true })|move({ ...a, reg: EMPTY_REG, pending: true })|	contribSpec	noSwapDuringTurnInv	swapping registry during a busy turn
+model.qnt	s|move({ ...a, phase: "busy", snap: a.reg })|move({ ...a, phase: "busy", snap: EMPTY_REG })|	contribSpec	noSwapDuringTurnInv	capturing empty snapshot on turn start
+model.qnt	s|val nextReg = view(serves(a.stA), false)|val nextReg = EMPTY_REG|	contribSpec	registryMatchesFreshStartInv	registry does not match fresh start after disable

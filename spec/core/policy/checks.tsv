@@ -1,0 +1,9 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+policySpec	movesAreAbsSteps	holds
+policySpec	toolsNarrowedInv	holds
+policySpec	backgroundReadOnlyInv	holds
+policySpec	noWiderNetworkInv	holds
+policySpec	validThinkingInv	holds
+policySpec	noStaleRequestInv	holds
+policySpec	tokenLiveImpliesPresentInv	holds
+policySpec	inductiveInv	holds

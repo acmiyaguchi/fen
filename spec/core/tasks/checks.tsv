@@ -1,0 +1,7 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+tasksSpec	movesAreAbsSteps	holds
+tasksSpec	ownershipIsolatedInv	holds
+tasksSpec	cadenceMatchesRunnableInv	holds
+tasksSpec	runnableConsistencyInv	holds
+tasksSpec	cancelRequiresRegisteredInv	holds
+tasksSpec	inductiveInv	holds

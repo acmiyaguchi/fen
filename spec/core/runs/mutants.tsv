@@ -1,0 +1,4 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|ackedCtl: a.sentCtl|ackedCtl: a.ackedCtl|	runsSpec	controlsSettledAtTerminalInv	finish leaves unacked controls unsettled
+model.qnt	s|mailbox: true,|mailbox: false,|	runsSpec	toldOrPendingInv	finish does not place completion into mailbox
+model.qnt	s|alive: true|alive: false|	runsSpec	statusMatchesProcessInv	launch leaves process marked not alive

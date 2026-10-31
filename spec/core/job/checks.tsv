@@ -1,0 +1,9 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+jobSpec	movesAreAbsSteps	holds
+jobSpec	noLiveProcessAfterAbnormalInv	holds
+jobSpec	leaderReapedWhenDoneInv	holds
+jobSpec	killOnlyAbnormalInv	holds
+jobSpec	trailerWhenDoneInv	holds
+jobSpec	outcomeConsistentInv	holds
+jobSpec	outputWithinLimitInv	holds
+jobSpec	inductiveInv	holds

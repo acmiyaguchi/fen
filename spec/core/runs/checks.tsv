@@ -1,0 +1,11 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+runsSpec	movesAreAbsSteps	holds
+runsSpec	statusMatchesProcessInv	holds
+runsSpec	unlaunchedEmptyInv	holds
+runsSpec	toldOrPendingInv	holds
+runsSpec	mailboxDeliveredDisjointInv	holds
+runsSpec	mailboxOnlyWhenTerminalInv	holds
+runsSpec	deliveredOnlyWhenTerminalInv	holds
+runsSpec	controlsAckedBoundedInv	holds
+runsSpec	controlsSettledAtTerminalInv	holds
+runsSpec	inductiveInv	holds

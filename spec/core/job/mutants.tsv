@@ -1,0 +1,4 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|val mems = if (a.timedOut or a.cancelled) false else a.membersAlive|val mems = a.membersAlive|	jobSpec	noLiveProcessAfterAbnormalInv	abnormal finish leaves group members alive
+model.qnt	s|hasTrailer: true,|hasTrailer: false,|	jobSpec	trailerWhenDoneInv	job finishes without attaching status trailer
+model.qnt	s|val nextLen = if (a.outLen < BODY_LIMIT) a.outLen + 1 else BODY_LIMIT|val nextLen = a.outLen + 1|	jobSpec	outputWithinLimitInv	output accumulates past limit without truncation

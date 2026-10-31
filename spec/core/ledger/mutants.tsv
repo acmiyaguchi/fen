@@ -1,0 +1,4 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|move({ ...a, marks: a.marks.union(Set(a.log.length())) })|move({ ...a, marks: a.marks.union(Set(a.log.length() + 1)) })|	ledgerSpec	marksValidInv	taking a mark past the end of the log
+model.qnt	s|val e = { tok: tok, epoch: a.watermark }|val e = { tok: tok, epoch: a.watermark + 1 }|	ledgerSpec	epochBoundedInv	appending an entry with epoch beyond the watermark
+model.qnt	s|move({ ...a, watermark: a.watermark + 1 })|move({ ...a, watermark: a.watermark - 1 })|	ledgerSpec	epochBoundedInv	watermark regresses below entry epoch
