@@ -141,7 +141,7 @@ module persistence {
   }
 }
 
-module current { import persistence(FIXES = Set()).* }
+module current { import persistence(FIXES = Set("640", "641")).* }
 module fix640 { import persistence(FIXES = Set("640")).* }
 module fix641 { import persistence(FIXES = Set("641")).* }
 module fixed { import persistence(FIXES = Set("640", "641")).* }

@@ -11,7 +11,7 @@ The JSONL backend's stale-lock reclaim with two `send` processes is the [`lock` 
 Code: `packages/fen/src/fen/session_lifecycle.fnl` (`start!`, `make-flush`, `install!`), `extensions/adapters/session-backends/jsonl/session.fnl` (`append-entry`, `open-existing`, `read-entries`, `load`, `latest-valid-compaction`, `acquire-lock`, `doctor`), `extensions/behaviors/companions/compact/init.fnl` (`find-cut-point`, `finish-compact!`), `packages/fen/src/fen/session_control.fnl` (`run-turn!`), `packages/core/src/fen/core/agent.fnl` (`append-message!`, `build-context`, cancel pairing), `extensions/adapters/providers/anthropic/anthropic_messages.fnl` (`convert-messages`).
 
 The bugs were first confirmed by a throwaway probe (`zz_probe_sessions_jsonl_test.fnl`, `6 successes / 0 failures`, lines quoted below).
-Each now has a permanent `known-bug` probe against the real code (see "Evidence per bug").
+Each had a `known-bug` probe against the real code; the probes are now regression tests (see "Evidence per bug").
 
 ## Input assumptions
 
@@ -97,6 +97,17 @@ The re-read guards against a winner that has already *written* its owner before 
 Confirmed: lock dir with owner `99999999` (dead). `os.remove` is wrapped so that, just as process Q removes the owner file, process P runs a complete `acquire-lock`:
 `S6 P-holds=true Q-holds=true`.
 
+## Fixed in #605
+
+All of #639-#644 are fixed in the code, and `current`, `currentSolo` and `lockCurrent` (and the persistence proof's `current`) now enable the fixes, so their former `violated` rows are `holds`.
+The `fix<issue>` and `fix640641` rows are unchanged, and the single-fix survival witnesses (`w640SurvivesFix641Test`, `w641SurvivesFix640Test`) stay.
+The counterexample witnesses became `reach...Test` traces on the fixed design.
+
+- Replay repair (#639, #643): `replay-plan` / `replay-messages` in `extensions/adapters/session-backends/jsonl/session.fnl` is the one pairing rule: a call whose result does not follow it gets a synthetic interrupted result (in memory only), and a result that answers no open call is dropped. `load`, `transcript` (so `--continue`, `/resume`, `send` and `show`) and `doctor` all use it, so the doctor reports and repairs exactly what replay changes (`missing_tool_result`, `orphan_tool_result`).
+- Torn tail (#640): `open-existing` and the first append terminate a last line that lacks a newline (`terminate-torn-tail!`), under the writer lock.
+- Flush cursor (#641): `session_lifecycle.make-flush` advances `last-saved` only when `backend.append` returns an entry, stops at the first failure and returns whether everything is saved; the JSONL `append` drops its handle after a failed write so the next one re-terminates the line.
+- One writer (#642, #644): every writable handle (`open-existing`, a new session on its first write) holds a kernel record lock (`lfs.lock`) on `<transcript>.writer.lock` until `close`, released by the kernel when the process dies, so there is no stale lock to reclaim. `start!` and `/resume` open (and lock) before they read; `session_control.run-turn!` uses the same handle lock. A second interactive `--continue` exits 2 with a message, `/resume` reports an error. Without `lfs.lock` only writers in one process are excluded (logged).
+
 ## Candidate fix (modelled as `fixed`)
 
 - Replay repair (#639): `load` (or `build-context`, ahead of every provider) adds a synthetic "interrupted" result right after any tool call whose result is not next, the same rule the OpenAI converters already apply privately.
@@ -145,14 +156,14 @@ The #644 race needs 12 steps; the inductive invariant covers any depth, so no 12
 
 | Bug | Counterexample (row) | Witness (`witnesses.qnt`) | Proof model | Probe (confirmed) |
 | --- | --- | --- | --- | --- |
-| #639 | `currentSolo.providerContextValid`, `current.providerContextValid` | `w639CrashLeavesUnpairedCallTest` | (replay obligation) | `extensions/adapters/session-backends/jsonl/tests/issue_639_crash_leaves_unpaired_tool_call_test.fnl` |
-| #640 | `currentSolo.compactionResolves`, `fix641.ackedPersisted`; `proofs/persistence` `current.ackedReadable` | `w640TornTailSwallowsAppendTest`, `w640SurvivesFix641Test` | persistence (inductive for the fix) | `extensions/adapters/session-backends/jsonl/tests/issue_640_torn_tail_swallows_append_test.fnl` |
-| #641 | `currentSolo.ackedPersisted`, `currentSolo.replayMatchesMemory`, `fix640.ackedPersisted`; `proofs/persistence` `current.ackedReadable` | `w641CursorPassesFailedAppendTest`, `w641SurvivesFix640Test` | persistence (inductive for the fix) | `packages/fen/tests/issue_641_flush_cursor_skips_failed_append_test.fnl` |
-| #642 | `current.providerContextValid`, `current.replayMatchesMemory`, `current.compactionCutKeepsPairs` | `w642SendDuringInteractiveTurnTest` | — | `extensions/adapters/session-backends/jsonl/tests/issue_642_interactive_writer_ignores_lock_test.fnl` |
-| #643 | `current.doctorCleanMeansReplayable`, `current.doctorRepairReplayable` | `w643DoctorCleanOnInterleavedTest` | — | `extensions/adapters/session-backends/jsonl/tests/issue_643_doctor_pairs_by_id_not_order_test.fnl` |
-| #644 | `lockCurrent.lockMutex` | `w644DoubleReclaimTest` (here and in `proofs/lock`) | lock (inductive for the fix) | `extensions/adapters/session-backends/jsonl/tests/issue_644_double_stale_lock_reclaim_test.fnl` |
+| #639 | `currentSolo.providerContextValid`, `current.providerContextValid` | `w639CrashLeavesUnpairedCallTest` | (replay obligation) | `extensions/adapters/session-backends/jsonl/tests/replay_closes_interrupted_tool_call_test.fnl` |
+| #640 | `currentSolo.compactionResolves`, `fix641.ackedPersisted`; `proofs/persistence` `current.ackedReadable` | `w640TornTailSwallowsAppendTest`, `w640SurvivesFix641Test` | persistence (inductive for the fix) | `extensions/adapters/session-backends/jsonl/tests/torn_tail_terminated_before_append_test.fnl` |
+| #641 | `currentSolo.ackedPersisted`, `currentSolo.replayMatchesMemory`, `fix640.ackedPersisted`; `proofs/persistence` `current.ackedReadable` | `w641CursorPassesFailedAppendTest`, `w641SurvivesFix640Test` | persistence (inductive for the fix) | `packages/fen/tests/flush_cursor_retries_failed_append_test.fnl` |
+| #642 | `current.providerContextValid`, `current.replayMatchesMemory`, `current.compactionCutKeepsPairs` | `w642SendDuringInteractiveTurnTest` | — | `extensions/adapters/session-backends/jsonl/tests/continue_refuses_locked_session_test.fnl` |
+| #643 | `current.doctorCleanMeansReplayable`, `current.doctorRepairReplayable` | `w643DoctorCleanOnInterleavedTest` | — | `extensions/adapters/session-backends/jsonl/tests/doctor_pairs_by_order_test.fnl` |
+| #644 | `lockCurrent.lockMutex` | `w644DoubleReclaimTest` (here and in `proofs/lock`) | lock (inductive for the fix) | `extensions/adapters/session-backends/jsonl/tests/writer_lock_single_holder_test.fnl` |
 
-Each probe is a `known-bug` test that passes while the bug reproduces against today's code:
+The probes below reproduced the bugs before #605; they are now ordinary tests asserting the fixed behaviour (the `w<issue>` witnesses named in the table were converted to `reach...Test` traces except the survival ones):
 
 - #639: a log ending at a tool call goes through `load`, then a new user message, then the Anthropic `convert-messages`; the wire shape is `user:text assistant:tool_use user:text`.
 - #640: after a torn last line, `open-existing` plus `append "three"` returns an entry id, yet replay has 3 messages (`user,assistant,assistant`) and `load-strict` fails.

@@ -15,10 +15,12 @@
         backend {:name :fake}]
     (set backend.open (fn [_] store))
     (set backend.create (fn [_] store))
-    (set backend.open-existing (fn [_] store))
-    (set backend.append
-         (fn [_ message]
-           (table.insert store.messages message)))
+    (set backend.open-existing
+         (fn [_]
+           (if opts.busy? (values nil :busy) store)))
+    (set backend.append (fn [_ message]
+                          (table.insert store.messages message)
+                          true))
     (set backend.close (fn [_] nil))
     (set backend.load (fn [_]
                         (when opts.malformed? (error "malformed transcript"))
@@ -31,9 +33,6 @@
     (set backend.latest (fn [_] store.path))
     (set backend.get (fn [_ id]
                        (when (= id store.id) store)))
-    (set backend.acquire-lock
-         (fn [_]
-           (when (not opts.busy?) (fn [] nil))))
     (set backend.info (fn [session]
                         {:backend :fake
                          :id session.id

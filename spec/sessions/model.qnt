@@ -412,9 +412,14 @@ module sessions {
 // The lockCurrent and lockFixed rows name that model's instances (loaded by
 // `lockInstances` below), so these rows and the proof check one module.
 
-module current { import sessions(FIXES = Set(), OTHER_WRITER = true).* }
-// Same code with one process per session: attributes violations to bugs.
-module currentSolo { import sessions(FIXES = Set(), OTHER_WRITER = false).* }
+// Today's code: every fix (#639-#644) has landed, so `current` enables them all.
+module current {
+  import sessions(FIXES = Set("639", "640", "641", "642", "643"), OTHER_WRITER = true).*
+}
+// Same code with one process per session.
+module currentSolo {
+  import sessions(FIXES = Set("639", "640", "641", "642", "643"), OTHER_WRITER = false).*
+}
 module fixed {
   import sessions(FIXES = Set("639", "640", "641", "642", "643"), OTHER_WRITER = true).*
 }

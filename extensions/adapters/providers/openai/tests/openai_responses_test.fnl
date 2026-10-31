@@ -918,7 +918,7 @@
                     (assert.are.equal 20 asst.usage.input)
                     (assert.are.equal 100 asst.usage.cache-read)
                     (assert.are.equal 8 asst.usage.output)
-                    (assert.are.equal 128 asst.usage.total-tokens))))
+                    (assert.are.equal 28 asst.usage.total-tokens))))
             (it "preserves usage on failed responses when usage is provided"
                 (fn []
                   (let [events [{:type :response.failed

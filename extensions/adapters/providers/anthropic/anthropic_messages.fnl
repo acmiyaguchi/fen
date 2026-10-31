@@ -38,8 +38,8 @@
 
 ;; Prompt cache marker. Anthropic engages prefix caching only when
 ;; cache_control is set on a block; the same prefix on later turns then
-;; counts as a read against the cached entry. We mark three cut points
-;; (system / last tool / last message) — mirrors pi-mono's anthropic.ts.
+;; counts as a read against the cached entry. We mark up to four cut points
+;; (system / last tool / previous tail / last message) — mirrors pi-mono's anthropic.ts.
 ;; The 1h tier matches pi-mono; fall back to the default 5m if Anthropic
 ;; ever retires it.
 (local CACHE-CONTROL-1H {:type :ephemeral :ttl :1h})
@@ -225,22 +225,32 @@
 ;; HTTP transport
 ;; ----------------------------------------------------------------
 
+(fn mark-message-cache! [message]
+  "Set cache_control on the last content block of MESSAGE, in place. A string
+   content becomes a single-block array first."
+  (if (= (type message.content) :string)
+      (set message.content
+           [{:type :text :text message.content :cache_control CACHE-CONTROL-1H}])
+      (let [blocks message.content
+            bn (length blocks)]
+        (when (> bn 0)
+          (set (. blocks bn :cache_control) CACHE-CONTROL-1H)))))
+
 (fn mark-last-message-cache! [messages]
-  "Set cache_control on the last content block of the last message, in
-   place. If the last message's content is a string, convert it to a
-   single-block array first. No-ops on an empty list."
+  "Mark the request's tail and, when the history is [... user assistant user],
+   the previous request's tail too (#623). Anthropic reads a cached prefix only
+   up to ~20 blocks before a breakpoint, and a round of parallel tool calls
+   moves the tail further than that; the previous tail is the last block the
+   prior request marked, so re-marking it keeps the hit. That is 4 breakpoints
+   with the system prompt and last tool, Anthropic's maximum. No-ops on an
+   empty list."
   (let [n (length messages)]
     (when (> n 0)
-      (let [last (. messages n)]
-        (if (= (type last.content) :string)
-            (set last.content
-                 [{:type :text
-                   :text last.content
-                   :cache_control CACHE-CONTROL-1H}])
-            (let [blocks last.content
-                  bn (length blocks)]
-              (when (> bn 0)
-                (set (. blocks bn :cache_control) CACHE-CONTROL-1H))))))))
+      (when (and (>= n 3) (= (. messages n :role) :user)
+                 (= (. messages (- n 1) :role) :assistant)
+                 (= (. messages (- n 2) :role) :user))
+        (mark-message-cache! (. messages (- n 2))))
+      (mark-message-cache! (. messages n)))))
 
 (fn parallel-tool-calls? [options]
   "Provider option normalized across providers. Defaults on; only explicit

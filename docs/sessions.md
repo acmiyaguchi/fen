@@ -33,6 +33,7 @@ Set `FEN_JSON_OUTPUT_PATH=out.json` for `fen goal` to write the existing JSON-pr
 When `FEN_JSON_OUTPUT_PATH` is set to a non-empty path the plain `GOAL_STATUS` trailer is suppressed, since the JSON blob carries the authoritative outcome.
 A JSON write failure forces exit `1` even when the goal itself succeeded, so a missing or truncated blob is never mistaken for success.
 Its `goal` object has named fields `status` (`done`, `blocked`, `iteration-cap`, or `failure`), `reason`, `iterations-used`, and `wall-clock-ms`.
+The final text (JSON `final-text`, or the plain output before the trailer) is the text of the iteration that ended the run; a run that ends on a failed or cancelled iteration has none.
 
 
 The `fen session` subcommands provide a blocking subprocess interface for durable conversations:
@@ -59,9 +60,10 @@ The machine interface never falls back to the latest session and never uses pref
 `show` is the operation for reading the complete transcript or a bounded suffix.
 Prompts can follow `--`, be supplied as literal text with `--prompt TEXT`, come from stdin with `--prompt -`, or be read from a file with `--prompt-file PATH`.
 
-A per-session backend lock prevents overlapping sends from loading and appending the same history concurrently.
-A busy session fails with `session_busy` and exit status `2`; it is never silently forked or interleaved.
-The JSONL backend records the lock owner's pid and reclaims a lock whose owner process no longer exists, so a crashed send does not leave the session permanently busy.
+One writer owns a transcript at a time: every writable handle (`send`, interactive `--continue`, `/resume`, a new session on its first write) holds the session's writer lock until it closes, and takes it before reading the history.
+A busy session fails `send` with `session_busy` and exit status `2`; an interactive `--continue` prints that the session is in use by another fen process and exits `2`, and `/resume` reports the same error; it is never silently forked or interleaved.
+The JSONL backend's lock is a kernel record lock (`lfs.lock`) on `PATH.writer.lock`, which the kernel drops when the process dies, so a crashed writer needs no stale-lock reclaim; the lock file is kept, never removed.
+Without `lfs.lock` the lock only excludes writers inside one process, and fen logs a warning.
 `--continue` remains the human-oriented shortcut for the latest session and is intentionally distinct from this exact-ID interface.
 
 ## Session doctor
@@ -71,6 +73,8 @@ The dry-run report contains only line numbers, stable issue codes, and short des
 It identifies malformed or truncated JSON lines, missing or misplaced headers, assistant error turns, broken tool-call/result pairing, and oversized tool results.
 Use `fen session doctor PATH --json --repair` only after reviewing the report.
 Repair is non-destructive: it writes `PATH.repaired.jsonl` and an adjacent `PATH.repaired.jsonl.doctor.json` audit record, while leaving the original untouched; repaired siblings and lock artifacts are inert and never considered session transcripts by discovery.
+The doctor uses the same tool-pairing rule as replay: a call whose result does not directly follow it is reported as `missing_tool_result`, and a result that answers no open call as `orphan_tool_result`, so it reports and repairs exactly what loading the session changes (replay also closes those calls in memory, without rewriting the file).
+A transcript whose last line was cut short by a crash has that line terminated before the next append, so the next entry is never lost on it.
 The repair removes malformed entries, replaces oversized tool output with a marker, and adds a marker result when a tool call is missing one.
 Assistant-error turns without tool calls are dropped; error turns carrying tool calls are retained with their `stop-reason` so provider tool-call pairing stays valid.
 A pre-existing `PATH.repaired.jsonl` is renamed to `PATH.repaired.jsonl.bak` before a new repair is written.

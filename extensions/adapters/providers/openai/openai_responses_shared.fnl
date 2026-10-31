@@ -879,13 +879,12 @@
                                           usage.prompt_tokens usage.input))
             input (if (> raw-input cached) (- raw-input cached) 0)
             output (number-or-zero (or usage.output_tokens
-                                       usage.completion_tokens usage.output))
-            total (number-or-zero (or usage.total_tokens usage.total))]
+                                       usage.completion_tokens usage.output))]
         {: input
          : output
          :cache-read cached
          :cache-write 0
-         :total-tokens (if (> total 0) total (+ input output))}))))
+         :total-tokens (+ input output)}))))
 
 (fn handle-completed! [state response ?event]
   (set state.saw-terminal? true)

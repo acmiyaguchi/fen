@@ -245,7 +245,7 @@
                                       :output 5
                                       :cache-read 60
                                       :cache-write 30
-                                      :total-tokens 105}
+                                      :total-tokens 15}
                                      asst.usage)
                     (let [result (types.tool-result-message {:tool-call-id "toolu_1"
                                                              :tool-name "ls"

@@ -270,11 +270,15 @@
         cached (number-or-zero details.cached_tokens)
         written (number-or-zero details.cache_write_tokens)
         raw-input (number-or-zero usage.prompt_tokens)]
-    {:input (math.max (- raw-input cached written) 0)
-     :output (number-or-zero usage.completion_tokens)
-     :cache-read cached
-     :cache-write written
-     :total-tokens (number-or-zero usage.total_tokens)}))
+    ;; total-tokens is input + output (cache excluded) on every adapter
+    ;; (#621); the provider's own total_tokens counts cache and is ignored.
+    (let [input (math.max (- raw-input cached written) 0)
+          output (number-or-zero usage.completion_tokens)]
+      {: input
+       : output
+       :cache-read cached
+       :cache-write written
+       :total-tokens (+ input output)})))
 
 (fn provider-error-message [err]
   "Human-readable text for an OpenAI-compatible `{error: {message, code}}`

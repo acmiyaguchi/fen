@@ -167,7 +167,7 @@
                     (assert.are.equal 20 asst.usage.input)
                     (assert.are.equal 80 asst.usage.cache-read)
                     (assert.are.equal 5 asst.usage.output)
-                    (assert.are.equal 105 asst.usage.total-tokens))))
+                    (assert.are.equal 25 asst.usage.total-tokens))))
             (it "extracts reasoning_content as a signed thinking block before text"
                 (fn []
                   (let [resp {:choices [{:message {:role :assistant
@@ -325,7 +325,7 @@
                                       :output 2
                                       :cache-read 40
                                       :cache-write 50
-                                      :total-tokens 102}
+                                      :total-tokens 12}
                                      (. (oc.finalize-stream-state state nil)
                                         :usage)))))
             (it "ignores reasoning_details unless the flavor opts in"
@@ -489,7 +489,7 @@
                     (assert.are.equal 20 state.usage.input)
                     (assert.are.equal 80 state.usage.cache-read)
                     (assert.are.equal 5 state.usage.output)
-                    (assert.are.equal 105 state.usage.total-tokens))))
+                    (assert.are.equal 25 state.usage.total-tokens))))
             (it "buffers streamed tool-call arguments until finalization"
                 (fn []
                   (let [state {:model "m"

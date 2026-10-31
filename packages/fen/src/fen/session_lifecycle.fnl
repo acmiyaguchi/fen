@@ -68,10 +68,21 @@
       (session-backend-registry.set-info! (M.backend-info backend s) s)
       s)))
 
+;; @doc fen.session_lifecycle.refuse-busy!
+;; kind: function
+;; signature: (refuse-busy! path) -> never
+;; summary: Exit with status 2 and a clear message when --continue targets a session another fen process is writing.
+;; tags: sessions lifecycle cli concurrency
+(fn M.refuse-busy! [p]
+  (io.stderr:write (.. "fen: session " (tostring p)
+                       " is in use by another fen process; not continuing it.\n"
+                       "Wait for that process to exit, read the transcript with `fen session show`, or start a new session without --continue.\n"))
+  (os.exit 2))
+
 ;; @doc fen.session_lifecycle.start!
 ;; kind: function
 ;; signature: (start! opts agent backend) -> session, replayed-count
-;; summary: Open or resume the active transcript and replay --continue messages into the agent.
+;; summary: Open or resume the active transcript and replay --continue messages into the agent; a continued session is opened (and its writer lock taken) before it is read, and a session another process is writing is refused.
 ;; tags: sessions lifecycle persistence replay
 (fn M.start! [opts agent backend]
   (if (not backend)
@@ -82,12 +93,19 @@
             (do
               (log.warn "session: --continue but no prior session found")
               (values (M.open opts backend) 0))
-            (let [msgs (backend.load p)
-                  s (if opts.no-session? nil (backend.open-existing p))]
-              (each [_ m (ipairs msgs)]
-                (table.insert agent.messages m))
-              (session-backend-registry.set-info! (M.backend-info backend s) s)
-              (values s (length msgs)))))
+            ;; One writer per transcript (#642): take the handle (and with it
+            ;; the backend's writer lock) first, then replay what is on disk.
+            (let [(s reason) (if opts.no-session?
+                                 nil
+                                 (backend.open-existing p))]
+              (when (= reason :busy)
+                (M.refuse-busy! p))
+              (let [msgs (backend.load p)]
+                (each [_ m (ipairs msgs)]
+                  (table.insert agent.messages m))
+                (session-backend-registry.set-info! (M.backend-info backend s)
+                                                    s)
+                (values s (length msgs))))))
       (values (M.open opts backend) 0)))
 
 (fn assistant-present? [messages]
@@ -97,17 +115,31 @@
       (set found? true)))
   found?)
 
+;; @doc fen.session_lifecycle.make-flush
+;; kind: function
+;; signature: (make-flush backend agent session initial-last-saved) -> (fn [] -> saved-all?)
+;; summary: Build the flush closure that appends agent messages past the saved cursor, advancing the cursor only on a confirmed append and returning whether everything is saved.
+;; tags: sessions lifecycle persistence
 (fn M.make-flush [backend agent session initial-last-saved]
   "Returns a closure that appends any messages added since the last call.
    Tracks `last-saved` across invocations. Like pi-mono, holds early user-only
    messages in memory until the first assistant (including :aborted) lands, so
-   a crashed idle prompt doesn't leave an orphan one-message session."
+   a crashed idle prompt doesn't leave an orphan one-message session.
+   `backend.append` must return a truthy value (the entry) once the message is
+   written and nil/false on failure. The cursor advances only on success and
+   the flush stops at the first failure, so the next flush retries that
+   message in order (#641). The closure returns true when every message is
+   saved, so callers that need a fully persisted history (compaction) can
+   refuse otherwise."
   (var last-saved (or initial-last-saved 0))
   (fn []
     (when (and backend session (assistant-present? agent.messages))
-      (while (< last-saved (length agent.messages))
-        (set last-saved (+ last-saved 1))
-        (backend.append session (. agent.messages last-saved))))))
+      (var failed? false)
+      (while (and (not failed?) (< last-saved (length agent.messages)))
+        (if (backend.append session (. agent.messages (+ last-saved 1)))
+            (set last-saved (+ last-saved 1))
+            (set failed? true))))
+    (and (not= session nil) (= last-saved (length agent.messages)))))
 
 (fn M.install! [state]
   "Bridge :message-appended into the existing session flush closure.

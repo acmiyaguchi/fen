@@ -1,16 +1,16 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-current	providerContextValid	violated	#639,#642
-current	replayMatchesMemory	violated	#641,#642
-current	ackedPersisted	violated	#641
+current	providerContextValid	holds
+current	replayMatchesMemory	holds
+current	ackedPersisted	holds
 current	noDuplicateEntries	holds
-current	compactionResolves	violated	#640
-current	compactionCutKeepsPairs	violated	#642
-current	doctorCleanMeansReplayable	violated	#643
-current	doctorRepairReplayable	violated	#643
-currentSolo	providerContextValid	violated	#639
-currentSolo	replayMatchesMemory	violated	#641
-currentSolo	ackedPersisted	violated	#641
-currentSolo	compactionResolves	violated	#640
+current	compactionResolves	holds
+current	compactionCutKeepsPairs	holds
+current	doctorCleanMeansReplayable	holds
+current	doctorRepairReplayable	holds
+currentSolo	providerContextValid	holds
+currentSolo	replayMatchesMemory	holds
+currentSolo	ackedPersisted	holds
+currentSolo	compactionResolves	holds
 currentSolo	compactionCutKeepsPairs	holds
 currentSolo	doctorCleanMeansReplayable	holds
 currentSolo	doctorRepairReplayable	holds
@@ -27,5 +27,5 @@ fix642	doctorCleanMeansReplayable	holds
 fix642	doctorRepairReplayable	holds
 fix643	doctorCleanMeansReplayable	holds
 fix643	doctorRepairReplayable	holds
-lockCurrent	lockMutex	violated	#644
+lockCurrent	lockMutex	holds
 lockFixed	lockMutex	holds

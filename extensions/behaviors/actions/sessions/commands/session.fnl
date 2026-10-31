@@ -111,44 +111,62 @@
                             :details msg.details
                             :is-error? msg.is-error?}}))))
 
+(fn resume-opened! [api state new-session msgs]
+  "Swap the conversation onto an opened (or, with --no-session, read-only)
+   session whose replayed messages are MSGS."
+  (when state.close-session (state.close-session state.session))
+  ;; A continued session is a conversation boundary for ephemeral tool
+  ;; activation; tool_search selections are intentionally not persisted.
+  (set state.opts.active-tool-names {})
+  (set state.agent
+       (state.make-agent-from-opts state.opts state.on-event state.agent-extra))
+  (install-agent-messages! state.agent msgs)
+  (reset-queues! state)
+  (set state.session new-session)
+  (api.session.set-info! (and state.session-info
+                              (state.session-info state.session))
+                         state.session)
+  (set state.flush (state.make-flush state.agent state.session (length msgs)))
+  (when state.update-queue-status (state.update-queue-status))
+  (api.emit {:type :reset-conversation})
+  (replay-history! api msgs)
+  (api.emit {:type :set-status-info
+             :info {:provider state.opts.provider
+                    :model state.agent.model
+                    :thinking-status state.agent.thinking-status}})
+  (api.emit {:type :info
+             :text (.. "✓ Resumed session with " (tostring (length msgs))
+                       " messages")}))
+
 (fn resume-session! [api state target]
   (let [cwd (path-util.cwd)
         p (and state.find-session (state.find-session cwd target))]
     (if (not p)
         (api.emit {:type :error
                    :error (.. "session not found: " (or target "latest"))})
-        (let [msgs (or (and state.load-session (state.load-session p)) [])
-              new-session (if state.opts.no-session?
-                              nil
-                              (and state.open-existing-session
-                                   (state.open-existing-session p)))]
-          (when (and (not state.opts.no-session?) (not new-session))
-            (error (.. "could not open session for append: " p)))
-          (when state.close-session (state.close-session state.session))
-          ;; A continued session is a conversation boundary for ephemeral tool
-          ;; activation; tool_search selections are intentionally not persisted.
-          (set state.opts.active-tool-names {})
-          (set state.agent
-               (state.make-agent-from-opts state.opts state.on-event
-                                           state.agent-extra))
-          (install-agent-messages! state.agent msgs)
-          (reset-queues! state)
-          (set state.session new-session)
-          (api.session.set-info! (and state.session-info
-                                      (state.session-info state.session))
-                                 state.session)
-          (set state.flush
-               (state.make-flush state.agent state.session (length msgs)))
-          (when state.update-queue-status (state.update-queue-status))
-          (api.emit {:type :reset-conversation})
-          (replay-history! api msgs)
-          (api.emit {:type :set-status-info
-                     :info {:provider state.opts.provider
-                            :model state.agent.model
-                            :thinking-status state.agent.thinking-status}})
-          (api.emit {:type :info
-                     :text (.. "✓ Resumed session with "
-                               (tostring (length msgs)) " messages")})))))
+        (do
+          ;; Resuming the session this process already writes: release our
+          ;; handle (and its writer lock) first so it can be reopened.
+          (when (and state.session (= state.session.path p) state.close-session)
+            (state.close-session state.session)
+            (set state.session nil))
+          ;; One writer per transcript (#642): take the handle, and with it
+          ;; the backend's writer lock, before reading what is on disk. A
+          ;; session another process is writing is refused, never shared.
+          (let [(new-session reason) (if (or state.opts.no-session?
+                                             (not state.open-existing-session))
+                                         nil
+                                         (state.open-existing-session p))]
+            (if (= reason :busy)
+                (api.emit {:type :error
+                           :error (.. "session is in use by another fen process: "
+                                      p)})
+                (and (not state.opts.no-session?) (not new-session))
+                (error (.. "could not open session for append: " p))
+                (resume-opened! api state new-session
+                                (or (and state.load-session
+                                         (state.load-session p))
+                                    []))))))))
 
 (fn build-session-choices [sessions]
   (let [out []]

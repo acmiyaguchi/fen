@@ -107,5 +107,6 @@ module lock {
   }
 }
 
-module lockCurrent { import lock(FIXES = Set()).* }
+// The kernel record lock (#644) is today's code.
+module lockCurrent { import lock(FIXES = Set("644")).* }
 module lockFixed { import lock(FIXES = Set("644")).* }

@@ -220,76 +220,81 @@
                               (let [release-again (session-mod.acquire-lock s)]
                                 (assert.is_function release-again)
                                 (release-again))))))
-                    (it "reclaims a lock left by a dead pid and records its live owner"
+                    (it "treats a lock file left by a dead writer as free"
                         (fn []
-                          (let [s (session-mod.create "/stale-lock")
-                                lock-path (.. s.path ".lock")
-                                owner-path (.. lock-path "/owner")]
+                          ;; Kernel record locks die with their process, so the
+                          ;; file a crashed writer leaves behind holds nothing.
+                          (let [s (session-mod.create "/stale-lock")]
                             (session-mod.close s)
-                            (assert (os.execute (.. "mkdir "
-                                                    (h.shellquote lock-path))))
-                            (let [owner (assert (io.open owner-path :w))]
-                              (owner:write "99999999")
-                              (owner:close))
+                            (let [f (assert (io.open (.. s.path ".writer.lock")
+                                                     :a))]
+                              (f:write "left by a crashed writer\n")
+                              (f:close))
                             (let [release (session-mod.acquire-lock s)]
                               (assert.is_function release)
-                              (let [owner (assert (io.open owner-path :r))
-                                    pid (owner:read :*l)]
-                                (owner:close)
-                                (assert.is_truthy (string.match pid "^%d+$"))
-                                (assert (os.execute (.. "kill -0 " pid
-                                                        " 2>/dev/null"))))
-                              ;; The recorded owner is live, so the lock stays busy.
+                              (release))
+                            ;; The lock inode is never removed.
+                            (let [f (io.open (.. s.path ".writer.lock") :r)]
+                              (assert.is_truthy f)
+                              (when f (f:close))))))
+                    (it "gives open-existing handles the writer lock until close"
+                        (fn []
+                          (let [s (session-mod.create "/handle-lock")]
+                            (session-mod.close s)
+                            (let [a (session-mod.open-existing s.path)]
+                              (assert.is_table a)
+                              (let [(b reason) (session-mod.open-existing s.path)]
+                                (assert.is_nil b)
+                                (assert.are.equal :busy reason))
                               (assert.is_nil (session-mod.acquire-lock s))
-                              (release)))))
-                    (it "does not tear down a lock another process reclaimed after the liveness check"
+                              (session-mod.close a)
+                              (let [b (session-mod.open-existing s.path)]
+                                (assert.is_table b)
+                                (session-mod.close b))))))
+                    (it "excludes a writer in another process until that process dies"
                         (fn []
-                          (let [s (session-mod.create "/raced-lock")
-                                lock-path (.. s.path ".lock")
-                                owner-path (.. lock-path "/owner")
-                                live-pid (let [p (io.popen "echo \"$PPID\"")
-                                               v (p:read :*l)]
-                                           (p:close)
-                                           v)
-                                original-execute os.execute]
+                          (let [s (session-mod.create "/cross-process-lock")
+                                lock-path (.. s.path ".writer.lock")
+                                stop-path (.. s.path ".stop")
+                                lua-bin (or (os.getenv :LUA) :lua)
+                                script (.. "local lfs = require('lfs')\n"
+                                           "local f = assert(io.open(arg[1], 'a'))\n"
+                                           "assert(lfs.lock(f, 'w', 0, 1))\n"
+                                           "io.write('locked\\n') io.flush()\n"
+                                           "for _ = 1, 200 do\n"
+                                           "  if io.open(arg[2]) then break end\n"
+                                           "  os.execute('sleep 0.05')\n"
+                                           "end\n")
+                                script-path (.. s.path ".holder.lua")]
                             (session-mod.close s)
-                            (assert (os.execute (.. "mkdir "
-                                                    (h.shellquote lock-path))))
-                            (let [owner (assert (io.open owner-path :w))]
-                              (owner:write "99999999")
-                              (owner:close))
-                            ;; Simulate a competing process winning the reclaim right after our
-                            ;; kill -0 probe: it re-creates the lock with its own live pid.
-                            (set os.execute
-                                 (fn [cmd]
-                                   (let [(ok? how code) (original-execute cmd)]
-                                     (when (string.find cmd "kill -0 99999999"
-                                                        1 true)
-                                       (let [owner (assert (io.open owner-path
-                                                                    :w))]
-                                         (owner:write live-pid)
-                                         (owner:close)))
-                                     (values ok? how code))))
-                            (let [(ok? result) (pcall session-mod.acquire-lock
-                                                      s)]
-                              (set os.execute original-execute)
-                              (assert.is_true ok? (tostring result))
-                              (assert.is_nil result))
-                            (let [owner (assert (io.open owner-path :r))
-                                  pid (owner:read :*l)]
-                              (owner:close)
-                              (assert.are.equal live-pid pid))
-                            (os.remove owner-path)
-                            (os.execute (.. "rmdir " (h.shellquote lock-path))))))
-                    (it "keeps a lock without a recorded owner busy"
-                        (fn []
-                          (let [s (session-mod.create "/ownerless-lock")
-                                lock-path (.. s.path ".lock")]
-                            (session-mod.close s)
-                            (assert (os.execute (.. "mkdir "
-                                                    (h.shellquote lock-path))))
-                            (assert.is_nil (session-mod.acquire-lock s))
-                            (os.execute (.. "rmdir " (h.shellquote lock-path))))))
+                            (let [f (assert (io.open script-path :w))]
+                              (f:write script)
+                              (f:close))
+                            (let [child (assert (io.popen (.. "sh -c 'echo $$; exec "
+                                                              lua-bin
+                                                              " \"$0\" \"$1\" \"$2\"' "
+                                                              (h.shellquote script-path)
+                                                              " "
+                                                              (h.shellquote lock-path)
+                                                              " "
+                                                              (h.shellquote stop-path)
+                                                              " 2>&1")
+                                                          :r))
+                                  pid (child:read :*l)
+                                  status (child:read :*l)]
+                              (assert.are.equal :locked status)
+                              (assert.is_nil (session-mod.acquire-lock s))
+                              (let [(busy reason) (session-mod.open-existing s.path)]
+                                (assert.is_nil busy)
+                                (assert.are.equal :busy reason))
+                              ;; Kill the holder: the kernel releases its lock.
+                              (os.execute (.. "kill -9 " pid " 2>/dev/null"))
+                              (child:close)
+                              (let [f (assert (io.open stop-path :w))]
+                                (f:close))
+                              (let [w (session-mod.open-existing s.path)]
+                                (assert.is_table w)
+                                (session-mod.close w))))))
                     (it "appends one JSONL line per message"
                         (fn []
                           (let [s (session-mod.open "/p")
@@ -641,8 +646,11 @@
                                 ass (types.assistant-message {:api :openai-completions
                                                               :provider :openai
                                                               :model "m"
-                                                              :content [(types.text-block "got it")]
-                                                              :stop-reason :stop})
+                                                              :content [(types.text-block "got it")
+                                                                        (types.tool-call-block "c1"
+                                                                                               :ls
+                                                                                               {})]
+                                                              :stop-reason :tool-use})
                                 tr (types.tool-result-message {:tool-call-id "c1"
                                                                :tool-name :ls
                                                                :content [(types.text-block "alpha\nbeta")]

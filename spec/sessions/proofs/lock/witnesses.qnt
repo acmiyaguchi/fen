@@ -1,18 +1,6 @@
 // Deterministic witnesses (quint test) for the lock-reclaim proof model.
 module witnesses {
-  import lock(FIXES = Set()) as C from "./model"
   import lock(FIXES = Set("644")) as F from "./model"
-
-  // #644: both processes read the dead owner and pass the re-read before
-  // either removes anything; 1 reclaims and holds the lock, then 2 removes
-  // the (empty) owner file, rmdirs the empty directory and mkdirs too.
-  run w644DoubleReclaimTest =
-    C::init.then(C::tryMkdir(1)).then(C::tryMkdir(2))
-      .then(C::readOwner(1)).then(C::readOwner(2))
-      .then(C::recheck(1)).then(C::recheck(2))
-      .then(C::rmOwner(1)).then(C::rmdir(1)).then(C::mk(1))
-      .then(C::rmOwner(2)).then(C::rmdir(2)).then(C::mk(2))
-      .expect(C::pc.get(1) == "own" and C::pc.get(2) == "own" and not(C::lockMutex))
 
   // Kernel lock: one process takes over the dead owner's lock, the other
   // is refused while it is held.

@@ -1,6 +1,6 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-current	ackedReadable	violated	#640,#641
-current	replayMatchesMemory	violated	#640,#641
+current	ackedReadable	holds
+current	replayMatchesMemory	holds
 fix640	ackedReadable	violated	#641
 fix641	ackedReadable	violated	#640
 fixed	ackedReadable	holds

@@ -133,27 +133,27 @@
     (array-or-empty out)))
 
 (fn run-turn! [backend info prompt opts resolve-provider-config]
-  (let [release (backend.acquire-lock info)]
-    (if (not release)
+  ;; One writer per transcript (#642): the writable handle holds the backend's
+  ;; writer lock until close, the same lock an interactive --continue or
+  ;; /resume holds, so a busy session is refused rather than interleaved.
+  (let [(session reason) (backend.open-existing info.path)]
+    (if (= reason :busy)
         (failure :session_busy
                  (.. "session " (tostring info.id) " is already being mutated")
                  2)
+        (not session)
+        (failure :runtime_failure "session transcript could not be opened" 1)
         (do
-          (var session nil)
           (var installed? false)
           (var result nil)
           (var exit-code 1)
           (var loading? true)
           (let [(ok? thrown) (xpcall (fn []
-                                       ;; Re-read after locking so a prior writer's complete turn is in this process's context.
+                                       ;; Read under the lock so a prior writer's complete turn is in this process's context.
                                        (let [read-messages (or backend.load-strict
                                                                backend.load)
                                              messages (read-messages info.path)]
                                          (set loading? false)
-                                         (set session
-                                              (backend.open-existing info.path))
-                                         (when (not session)
-                                           (error "session transcript could not be opened"))
                                          (when (not= session.cwd
                                                      (session-lifecycle.cwd))
                                            (error "session cwd changed while acquiring its lock"))
@@ -235,8 +235,7 @@
                                                (set exit-code (if failed? 1 0)))))))
                                      debug.traceback)]
             (when installed? (session-lifecycle.uninstall!))
-            (when session (session-lifecycle.close! backend session))
-            (release)
+            (session-lifecycle.close! backend session)
             (if ok?
                 (values result exit-code)
                 loading?
@@ -244,7 +243,7 @@
                 (failure :runtime_failure thrown 1)))))))
 
 (fn M.send [session-id prompt opts resolve-provider-config]
-  (let [(backend err) (require-backend opts [:get :acquire-lock])]
+  (let [(backend err) (require-backend opts [:get :open-existing])]
     (if err
         (values backend err)
         (let [cwd (session-lifecycle.cwd)
