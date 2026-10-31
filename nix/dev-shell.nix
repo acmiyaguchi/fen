@@ -11,6 +11,8 @@ targetPkgs.mkShell {
     targetPkgs.graphviz
     targetPkgs.xdot
     targetPkgs.gnumake
+    # Quint design models under spec/ (make check-spec).
+    targetPkgs.quint
     targetPkgs.gcc
     # Hero demo tooling (issue #141): termtosvg records a real session to
     # asciicast-v2 and renders it to an animated SVG; asciinema-agg (agg) renders

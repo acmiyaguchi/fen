@@ -1,0 +1,8 @@
+# main	invariant	expect (holds|violated)
+current	noOpenRowWhenIdle	violated
+current	noSupersededText	violated
+current	rowsSingleTurn	violated
+current	okReplyDisplayed	violated
+current	noHostedWhenIdle	holds
+current	boundedAttempts	holds
+fixed	allInvariants	holds
