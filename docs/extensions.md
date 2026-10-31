@@ -188,7 +188,16 @@ The callback may raise for cancellation, so discovery helpers must close pipes a
 
 One entrypoint shape is preferred: the loaded entry returns a register function that receives `api`.
 A manifest can point at either a file (`:entry`) or a module (`:entry-module`); without a manifest, the `init.{fnl,lua}` file fallback is used.
-The loader creates the API, removes prior owner-tagged contributions, and invokes the register function, so normal extensions do not need to call `unregister-by-owner` themselves:
+The loader creates the API, stages a fresh contribution set for the owner, and invokes the register function, so normal extensions do not need to call `unregister-by-owner` themselves.
+
+Contributions are stored per owner (`fen.core.extensions.contrib`); every registry view (tools, commands, hooks, presenters, prompt fragments, bus handlers, ...) is a fold over owners in load order, so a reload or a scoped `/reload-extension` leaves the registry as a fresh start would, and a shared name resolves to the same winner.
+A reload swaps the new set in only on success.
+If a reload module or the register function fails, the previous version keeps serving, the extension is reported `:stale` with the error, the pass continues with the next extension, and the module fingerprints are not committed, so the next `/reload` retries it.
+`register :tool` requires `:name` and an `:execute` function, and tools reach providers in canonical name order regardless of registration order.
+The model-facing `extension` tool's `reload` action only queues a `reload_request`, run at the idle boundary.
+
+Provider usage lives in a per-session append-only ledger (`fen.core.extensions.usage_ledger`).
+`events.emit` appends every `:llm-end` usage (compaction summary and handoff calls included); `mark!` plus `delta` give a turn, run, or invocation view, `session-totals` the session total (usage replayed from a resumed session counts only there), and `context-info` ignores provider-reported context size from before the latest history rewrite (`rewrite!`, called by compaction).
 
 ```fennel
 (fn [api]
@@ -565,6 +574,7 @@ Common event types include:
   including tool loops, queued follow-up/steering consumed by that step,
   cancellation cleanup, and the presenter returning to idle.
   Its `:status` is `:ok`, `:cancelled`, or `:error`, and `:state` is the run-state that ran the turn.
+  The status is the step's own Outcome (`:outcome`, see [the step contract](architecture.md#one-step-one-close)), not a guess from the last message: a safety-cap or refused-twice turn ends in tool results and is still `:error`.
 - `:dismiss` — emitted by the TUI on `Esc`; extensions owning a togglable
   panel should subscribe and close it (no-op when not displayed)
 - `:hint` — `{:type :hint :text str :key str}`, a short dismissable suggestion the TUI shows as its empty-input placeholder, never as a transcript row.

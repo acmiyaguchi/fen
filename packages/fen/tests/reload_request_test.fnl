@@ -64,7 +64,7 @@
                         (missing? missing-error) (reload-request.enqueue! {}
                                                                           {:scope "reload"})]
                     (assert.is_false unknown?)
-                    (assert.are.equal "scope must be reload or registries"
+                    (assert.are.equal "scope must be reload, registries, or extension"
                                       unknown-error)
                     (assert.is_false missing?)
                     (assert.are.equal "reason is required" missing-error))))))

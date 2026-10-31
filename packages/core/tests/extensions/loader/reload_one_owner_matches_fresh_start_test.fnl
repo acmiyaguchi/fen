@@ -1,7 +1,6 @@
-;; Known bug #626: reloading or failing one extension leaves the registry different from a fresh start.
+;; Regression for #626: reloading or failing one extension leaves the registry equal to a fresh start (views fold per-owner sets in load order).
 
 (local h (require :fen.testing))
-(local {: known-bug} h)
 (local test-api (require :fen.core.extensions.test_api))
 (local ext-state (require :fen.core.extensions.state))
 (local tool-registry (require :fen.core.extensions.register.tool))
@@ -92,47 +91,40 @@
                           (h.restore-log-fallback!)
                           (set ext-state.reload-fingerprints fingerprints)
                           (h.restore-package-loaded! snapshot)))
-            (it "reload-extension of the shadowed owner moves the /dup winner and reorders array kinds"
+            (it "reload-extension of the shadowed owner keeps the /dup winner and array order"
                 (fn []
-                  (known-bug 626
-                             (fn []
-                               (fresh-start!)
-                               (let [fresh-command (dup-command-owner)
-                                     fresh-tool (first-dup-tool-owner)
-                                     fresh-prompt (prompt-registry.render)
-                                     (reload-ok? _) (loader.reload-extension! :alpha)]
-                                 ;; Fresh start: last loaded wins the singleton, discovery order for arrays.
-                                 (assert.are.equal :beta fresh-command)
-                                 (assert.are.equal :alpha fresh-tool)
-                                 (assert.are.equal "frag-alpha\n\nfrag-beta"
-                                                   fresh-prompt)
-                                 (and (= true reload-ok?)
-                                      (= :alpha (dup-command-owner))
-                                      (= :beta (first-dup-tool-owner))
-                                      (= "frag-beta\n\nfrag-alpha"
-                                         (prompt-registry.render))))))))
-            (it "a failing reload of the /dup winner drops the name although the other owner still claims it"
+                  (fresh-start!)
+                  (assert.are.equal :beta (dup-command-owner))
+                  (assert.are.equal :alpha (first-dup-tool-owner))
+                  (assert.are.equal "frag-alpha\n\nfrag-beta"
+                                    (prompt-registry.render))
+                  (let [(reload-ok? _) (loader.reload-extension! :alpha)]
+                    (assert.is_true reload-ok?)
+                    (assert.are.equal :beta (dup-command-owner))
+                    (assert.are.equal :alpha (first-dup-tool-owner))
+                    (assert.are.equal "frag-alpha\n\nfrag-beta"
+                                      (prompt-registry.render)))))
+            (it "a failing reload of the /dup winner keeps its previous version (stale) so the name does not vanish"
                 (fn []
-                  (known-bug 626
-                             (fn []
-                               ;; Reference: a fresh start with beta failing resolves /dup to alpha.
-                               (set broken.beta true)
-                               (fresh-start!)
-                               (assert.are.equal :error
-                                                 (?. ext-state.extensions :beta
-                                                     :status))
-                               (assert.are.equal :alpha (dup-command-owner))
-                               (set broken.beta nil)
-                               (fresh-start!)
-                               (assert.are.equal :beta (dup-command-owner))
-                               (set broken.beta true)
-                               (let [(reload-ok? reload-err) (loader.reload-extension! :beta)]
-                                 (and (= false reload-ok?)
-                                      (not= nil
-                                            (string.find (tostring reload-err)
-                                                         "beta register boom" 1
-                                                         true))
-                                      (= :loaded
-                                         (?. ext-state.extensions :alpha
-                                             :status))
-                                      (= nil (dup-command-owner))))))))))
+                  (fresh-start!)
+                  (assert.are.equal :beta (dup-command-owner))
+                  (set broken.beta true)
+                  (let [(reload-ok? reload-err) (loader.reload-extension! :beta)]
+                    (assert.is_false reload-ok?)
+                    (assert.is_not_nil (string.find (tostring reload-err)
+                                                    "beta register boom" 1 true))
+                    (assert.are.equal :stale
+                                      (?. ext-state.extensions :beta :status))
+                    (assert.are.equal :loaded
+                                      (?. ext-state.extensions :alpha :status))
+                    (assert.are.equal :beta (dup-command-owner))
+                    (assert.are.equal "frag-alpha\n\nfrag-beta"
+                                      (prompt-registry.render)))))
+            (it "disabling the /dup winner falls back to the other owner"
+                (fn []
+                  (fresh-start!)
+                  (assert.are.equal :beta (dup-command-owner))
+                  (set ext-state.extensions.beta nil)
+                  ((. (require :fen.core.extensions.register)
+                      :unregister-by-owner) :beta)
+                  (assert.are.equal :alpha (dup-command-owner))))))

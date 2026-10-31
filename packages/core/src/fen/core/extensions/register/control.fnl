@@ -4,6 +4,7 @@
 (local M {})
 
 (local opts {:kind :control
+             :view :controls
              :bucket state.controls-extra
              :list-fields [:description :keys :order]})
 
@@ -14,14 +15,6 @@
 ;; tags: extensions register controls
 (fn M.register [spec owner handle-result]
   (contribution.register opts spec owner handle-result))
-
-;; @doc fen.core.extensions.register.control.unregister-by-owner
-;; kind: function
-;; signature: (unregister-by-owner owner) -> nil
-;; summary: Remove all control contributions installed by owner from the ordered controls registry.
-;; tags: extensions register controls reload
-(fn M.unregister-by-owner [owner]
-  (contribution.unregister-by-owner opts owner))
 
 ;; @doc fen.core.extensions.register.control.list
 ;; kind: function

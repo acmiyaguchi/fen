@@ -1,18 +1,16 @@
-;; Known-bug probe for #619, presenters side: the real JSON presenter, the
-;; real agent, and the mock provider, after a --continue replay put one
-;; earlier turn (1500 tokens) in agent.messages. `usage` and `messages` cover
-;; the replayed turn too, on a successful turn and on a failed one.
-;; (The context-side probe is issue_619_json_usage_includes_replay_test.fnl.)
-;; See spec/presenters/FINDINGS.md and spec/context/FINDINGS.md (#619).
+;; Regression for #619: after a --continue replay, the JSON presenter reports
+;; only this invocation's usage (the usage ledger delta), on a successful turn
+;; and on a failed one. The real presenter, agent, and mock provider run.
+;; See spec/context/FINDINGS.md (#619).
 
 (local test-api (require :fen.core.extensions.test_api))
 (local register-registry (require :fen.core.extensions.register))
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
 (local json (require :fen.util.json))
+(local events (require :fen.core.extensions.events))
 (local mock (require :fen.extensions.provider_mock.mock_provider))
 (local json-presenter (require :fen.extensions.json))
-(local {: known-bug} (require :fen.testing))
 
 (fn usage [n]
   {:input n :output 0 :cache-read 0 :cache-write 0 :total-tokens n})
@@ -24,7 +22,8 @@
     (each [k v (pairs mock)] (tset p k v))
     (set p.name :mock)
     (register-registry.register :provider p :test))
-  (let [agent (agent-mod.make-agent {:provider-name :mock
+  (let [agent (agent-mod.make-agent {:on-event events.emit
+                                     :provider-name :mock
                                      :model "mock"
                                      :api-key :test
                                      :provider-options {:mock-script (fn [_]
@@ -48,20 +47,16 @@
 
 (describe "#619 json presenter after --continue (real agent)"
           (fn []
-            (it "reports the replayed turn's usage as this turn's"
+            (it "reports only this turn's usage, not the replayed turn's"
                 (fn []
-                  (known-bug 619
-                             (fn []
-                               (let [(code blob) (run-json {:text "new"
-                                                            :usage (usage 15)})]
-                                 (and (= 0 code) (= "new" blob.final-text)
-                                      (= 1515 (. blob :usage :total-tokens))
-                                      (= 4 (length blob.messages))))))))
-            (it "reports only replayed usage for a failed turn"
+                  (let [(code blob) (run-json {:text "new" :usage (usage 15)})]
+                    (assert.are.equal 0 code)
+                    (assert.are.equal "new" blob.final-text)
+                    (assert.are.equal 15 (. blob :usage :total-tokens)))))
+            (it "reports none of the replayed usage for a failed turn"
                 (fn []
-                  (known-bug 619
-                             (fn []
-                               (let [(code blob) (run-json {:error "boom"})]
-                                 (and (= 1 code) (= nil blob.final-text)
-                                      (= "error" blob.stop-reason)
-                                      (= 1500 (. blob :usage :total-tokens))))))))))
+                  (let [(code blob) (run-json {:error "boom"})]
+                    (assert.are.equal 1 code)
+                    (assert.is_nil blob.final-text)
+                    (assert.are.equal "error" blob.stop-reason)
+                    (assert.are.equal 0 (or (?. blob :usage :total-tokens) 0)))))))

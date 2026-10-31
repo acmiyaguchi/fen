@@ -1,6 +1,7 @@
 ;; Shared scaffolding for owner-tagged array contribution registries.
 
 (local util (require :fen.core.extensions.util))
+(local contrib (require :fen.core.extensions.contrib))
 
 (local M {})
 
@@ -19,18 +20,10 @@
     (when (= (. record k) nil)
       (tset record k v))))
 
-(fn append-tagged! [bucket record owner]
-  (tset record :__owner owner)
-  (table.insert bucket record)
-  (util.bump-registry-version!)
-  (values record
-          (fn []
-            (util.remove-where bucket (fn [entry _] (= entry record))))))
-
 ;; @doc fen.core.extensions.register.contribution.register
 ;; kind: function
 ;; signature: (register opts spec owner handle-result) -> register-result
-;; summary: Validate, default, and append one owner-tagged array contribution.
+;; summary: Validate, default, and add one owner-tagged array contribution to opts.view.
 ;; tags: extensions register contribution
 (fn M.register [opts spec owner handle-result]
   (when (or (not spec) (not spec.name))
@@ -39,16 +32,8 @@
     (opts.validate spec))
   (let [spec* (util.deep-copy spec)]
     (apply-defaults! spec* opts.defaults)
-    (let [(record unregister) (append-tagged! opts.bucket spec* owner)]
+    (let [(record unregister) (contrib.add! owner opts.view nil spec*)]
       (handle-result opts.kind record.name owner unregister))))
-
-;; @doc fen.core.extensions.register.contribution.unregister-by-owner
-;; kind: function
-;; signature: (unregister-by-owner opts owner) -> nil
-;; summary: Remove all contributions tagged with owner from an array registry bucket.
-;; tags: extensions register contribution reload
-(fn M.unregister-by-owner [opts owner]
-  (util.remove-where opts.bucket (fn [rec _] (= rec.__owner owner))))
 
 ;; @doc fen.core.extensions.register.contribution.list
 ;; kind: function

@@ -2,6 +2,7 @@
 
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
+(local contrib (require :fen.core.extensions.contrib))
 (local json-schema (require :fen.util.json_schema))
 
 (local M {})
@@ -25,15 +26,11 @@
   (when (not= (type spec.invoke) :function)
     (error "register :action requires {:invoke fn}"))
   ;; Replacement is per-owner: two owners may expose the same action name.
-  (util.remove-where state.actions-extra
-                     (fn [record _] (same-owner-name? record owner spec.name)))
-  (let [(record unregister) (util.add-tagged! state.actions-extra spec owner)]
+  (contrib.remove-where! owner :actions
+                         (fn [record] (same-owner-name? record owner spec.name)))
+  (let [(_record unregister) (contrib.add! owner :actions nil
+                                          (util.deep-copy spec))]
     (handle-result :action spec.name owner unregister)))
-
-(fn M.unregister-by-owner [owner]
-  (ensure-state!)
-  (util.remove-where state.actions-extra
-                     (fn [record _] (= record.__owner owner))))
 
 (fn by-owner-name [a b]
   (let [ao (tostring a.owner)

@@ -1,6 +1,7 @@
 ;; /status command: togglable panel showing model, provider, message count,
 ;; token usage, and session info.
 
+(local usage-ledger (require :fen.core.extensions.usage_ledger))
 (local tokens (require :fen.util.tokens))
 (local util (require :fen.extensions.status.util))
 (local panel (require :fen.util.panel))
@@ -64,8 +65,12 @@
 
 (fn status-rows [api state]
   (let [agent state.agent
-        usage (tokens.usage-totals agent.messages)
-        context (tokens.context-token-info agent)
+        ;; Session totals come from the usage ledger, so compaction cannot shrink them (#617).
+        usage (usage-ledger.session-totals (?. (or (api.session.info)
+                                                   (?. state :session))
+                                               :id)
+                                           agent.messages)
+        context (usage-ledger.context-info agent)
         context-n context.tokens
         context-prefix (if context.estimated? "~" "")
         session (or (api.session.info) (?. state :session))

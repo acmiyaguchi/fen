@@ -1,9 +1,6 @@
-;; Known-bug probe for #622: reloading one extension runs
-;; unregister-by-owner and re-registers, which appends that owner's tools at
-;; the end of the registry. The rebuilt agent sends the same tools in a new
-;; order, and since tools precede system and messages the cached prefix is
-;; lost. The reload is reproduced with the two registry calls
-;; `load-module-spec!` makes. See spec/context/FINDINGS.md (#622).
+;; Regression for #622: the tool list a provider receives has a canonical order
+;; (by name), so reloading one extension never reorders it and the cached
+;; prompt prefix survives. See spec/context/FINDINGS.md (#622).
 
 (local test-api (require :fen.core.extensions.test_api))
 (local register-registry (require :fen.core.extensions.register))
@@ -49,17 +46,14 @@
           (fn []
             (before_each (fn [] (test-api.reset!) (register-mock!)))
             (after_each (fn [] (test-api.reset!)))
-            (it "moves the reloaded owner's tools to the end"
+            (it "sends tools in canonical order regardless of registration order"
                 (fn []
-                  (known-bug 622
-                             (fn []
-                               (register-ext! :ext-a :read)
-                               (register-ext! :ext-b :bash)
-                               (register-ext! :ext-c :grep)
-                               (let [before (request-tools)]
-                                 ;; reload-extension! for ext-a, unchanged code
-                                 (register-registry.unregister-by-owner :ext-a)
-                                 (register-ext! :ext-a :read)
-                                 (let [after (request-tools)]
-                                   (and (= "read,bash,grep" before)
-                                        (= "bash,grep,read" after))))))))))
+                  (register-ext! :ext-a :read)
+                  (register-ext! :ext-b :bash)
+                  (register-ext! :ext-c :grep)
+                  (let [before (request-tools)]
+                    (assert.are.equal "bash,grep,read" before)
+                    ;; reload-extension! for ext-a, unchanged code
+                    (register-registry.unregister-by-owner :ext-a)
+                    (register-ext! :ext-a :read)
+                    (assert.are.equal before (request-tools)))))))

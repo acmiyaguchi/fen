@@ -1,12 +1,12 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-current	prefixStableUnlessNamed	violated	#622
-current	cacheReuseOnExtension	violated	#623
+current	prefixStableUnlessNamed	holds
+current	cacheReuseOnExtension	holds
 current	breakpointsWithinLimit	holds
-current	sessionUsageComplete	violated	#617
-current	runUsageExact	violated	#618
-current	headlessUsageExact	violated	#619
-current	exactContextIsCurrent	violated	#620
-current	totalTokensConvention	violated	#621
+current	sessionUsageComplete	holds
+current	runUsageExact	holds
+current	headlessUsageExact	holds
+current	exactContextIsCurrent	holds
+current	totalTokensConvention	holds
 current	toolPairing	holds
 fixed	allInvariants	holds
 fix617	sessionUsageComplete	holds

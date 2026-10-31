@@ -2,15 +2,13 @@
 
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
+(local contrib (require :fen.core.extensions.contrib))
 
 (local M {})
 
 (fn M.promote-ui-slot! []
   "Select the ui table from the first active presenter that supplies one."
-  (set state.ui.slot nil)
-  (each [_ p (ipairs state.presenters)]
-    (when (and (not state.ui.slot) p.active? p.ui)
-      (set state.ui.slot p.ui))))
+  (contrib.promote-ui-slot!))
 
 (fn M.active-presenter []
   "Return the first active presenter record, or nil."
@@ -23,28 +21,14 @@
 ;; @doc fen.core.extensions.register.presenter.register
 ;; kind: function
 ;; signature: (register spec owner handle-result) -> register-result
-;; summary: Validate and append a presenter contribution, promoting its UI slot immediately when it is active.
+;; summary: Validate and add a presenter contribution; the UI slot is re-promoted from the first active presenter in fold order.
 ;; tags: extensions register presenter ui
 (fn M.register [spec owner handle-result]
   (when (or (not spec) (not spec.name))
     (error "register :presenter requires {:name ...}"))
-  (let [(tagged unregister) (util.add-tagged! state.presenters spec owner)]
-    (when (and tagged.active? (not state.ui.slot) tagged.ui)
-      (set state.ui.slot tagged.ui))
-    (handle-result :presenter spec.name owner
-                   (fn []
-                     (unregister)
-                     (when (= state.ui.slot tagged.ui)
-                       (M.promote-ui-slot!))))))
-
-;; @doc fen.core.extensions.register.presenter.unregister-by-owner
-;; kind: function
-;; signature: (unregister-by-owner owner) -> nil
-;; summary: Remove presenters installed by owner and promote the next active UI slot so extension APIs keep working after reload.
-;; tags: extensions presenter reload
-(fn M.unregister-by-owner [owner]
-  (util.remove-where state.presenters (fn [p _] (= p.__owner owner)))
-  (M.promote-ui-slot!))
+  (let [(_record unregister) (contrib.add! owner :presenters nil
+                                           (util.deep-copy spec))]
+    (handle-result :presenter spec.name owner unregister)))
 
 (fn call-active-presenter [method ctx opts]
   (let [p (M.active-presenter)

@@ -1,14 +1,10 @@
 ;; System-prompt fragments.
 
 (local state (require :fen.core.extensions.state))
-(local util (require :fen.core.extensions.util))
+(local contrib (require :fen.core.extensions.contrib))
 (local tokens (require :fen.util.tokens))
 
 (local M {})
-
-(fn next-seq! []
-  (set state.prompt-next-seq (+ (or state.prompt-next-seq 0) 1))
-  state.prompt-next-seq)
 
 (fn order-for [opts]
   (let [raw (or opts.order 90)]
@@ -17,31 +13,17 @@
 ;; @doc fen.core.extensions.register.prompt.contribute
 ;; kind: function
 ;; signature: (contribute text-or-fn ?opts owner handle-result) -> register-result
-;; summary: Append an ordered system-prompt fragment from api.prompt, tagging owner metadata and returning an unregister handle.
+;; summary: Add an ordered system-prompt fragment from api.prompt, tagging owner metadata and returning an unregister handle; :seq is the fragment's fold position, so equal :order ties follow load order.
 ;; tags: extensions prompt register
 (fn M.contribute [text-or-fn ?opts owner handle-result]
   (let [opts (or ?opts {})
         entry {:text-or-fn text-or-fn
-               :__owner owner
                :id opts.id
                :title opts.title
                :description opts.description
-               :order (order-for opts)
-               :seq (next-seq!)}]
-    (table.insert state.prompt-fragments entry)
-    (util.bump-registry-version!)
-    (handle-result :prompt-fragment (or opts.id :prompt) owner
-                   (fn []
-                     (util.remove-where state.prompt-fragments
-                                        (fn [e _] (= e entry)))))))
-
-;; @doc fen.core.extensions.register.prompt.unregister-by-owner
-;; kind: function
-;; signature: (unregister-by-owner owner) -> nil
-;; summary: Remove all system-prompt fragments contributed by owner during reload or extension teardown.
-;; tags: extensions prompt reload
-(fn M.unregister-by-owner [owner]
-  (util.remove-where state.prompt-fragments (fn [e _] (= e.__owner owner))))
+               :order (order-for opts)}
+        (_record unregister) (contrib.add! owner :prompt-fragments nil entry)]
+    (handle-result :prompt-fragment (or opts.id :prompt) owner unregister)))
 
 (fn render-fragment [entry ?ctx]
   (let [val entry.text-or-fn]

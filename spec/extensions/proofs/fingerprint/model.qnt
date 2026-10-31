@@ -55,5 +55,5 @@ module fingerprint {
   }
 }
 
-module current { import fingerprint(FIXES = Set()).* }
+module current { import fingerprint(FIXES = Set("625")).* }
 module fixed { import fingerprint(FIXES = Set("625")).* }

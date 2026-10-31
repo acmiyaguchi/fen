@@ -1,5 +1,6 @@
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
+(local contrib (require :fen.core.extensions.contrib))
 (local events (require :fen.core.extensions.events))
 
 (local M {})
@@ -15,23 +16,17 @@
   (when (not= (type spec.handler) :function)
     (error "register :command requires {:handler fn}"))
   (let [name spec.name
-        (record unregister) (util.set-tagged! state.commands-extra name spec
-                                              owner)]
+        (_record unregister) (contrib.add! owner :commands name
+                                           (util.deep-copy spec))]
     (handle-result :command name owner unregister)))
 
 ;; @doc fen.core.extensions.register.command.unregister-by-owner
 ;; kind: function
 ;; signature: (unregister-by-owner owner) -> nil
-;; summary: Remove all slash commands installed by owner so extension reloads replace commands without stale aliases.
+;; summary: Remove all slash commands installed by owner; a name another owner also claims resolves to that owner again.
 ;; tags: extensions register commands reload
 (fn M.unregister-by-owner [owner]
-  (var removed? false)
-  (each [name rec (pairs state.commands-extra)]
-    (when (= rec.__owner owner)
-      (tset state.commands-extra name nil)
-      (set removed? true)))
-  (when removed?
-    (util.bump-registry-version!)))
+  (contrib.drop-view! owner :commands))
 
 (fn parse-slash [line]
   "Split `/foo bar baz` into (\"foo\", \"bar baz\")."

@@ -5,6 +5,7 @@
 (local util (require :fen.core.extensions.util))
 (local events (require :fen.core.extensions.events))
 (local ext-api (require :fen.core.extensions.loader.api))
+(local contrib (require :fen.core.extensions.contrib))
 
 (local M {})
 
@@ -22,6 +23,8 @@
 
 (fn M.reset! []
   "Wipe all registries IN PLACE so identity references survive reset."
+  (contrib.reset!)
+  ((. (require :fen.core.extensions.usage_ledger) :reset!))
   (util.clear-table state.handlers)
   (util.clear-table state.tools-extra)
   (util.clear-table state.commands-extra)

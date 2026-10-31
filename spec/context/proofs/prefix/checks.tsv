@@ -1,10 +1,10 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-current	prefixStableUnlessNamed	violated	#622
-current	cacheReuseOnExtension	violated	#623
+current	prefixStableUnlessNamed	holds
+current	cacheReuseOnExtension	holds
 current	breakpointsWithinLimit	holds
 fix622	prefixStableUnlessNamed	holds
 fix622	prefixInductive	holds
-fix622	cacheReuseOnExtension	violated	#623
+fix622	cacheReuseOnExtension	holds
 fix623	cacheReuseOnExtension	holds
 fix623	prefixStableUnlessNamed	violated	#622
 fixed	allInvariants	holds

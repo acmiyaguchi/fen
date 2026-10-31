@@ -1,5 +1,5 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-current	noRegistrySwapDuringTurn	violated	#627
-current	turnToolsLive	violated	#627
-current	turnMessagesPersisted	violated	#627
+current	noRegistrySwapDuringTurn	holds
+current	turnToolsLive	holds
+current	turnMessagesPersisted	holds
 fixed	turnIdentityInductive	holds

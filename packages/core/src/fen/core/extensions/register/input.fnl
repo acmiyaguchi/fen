@@ -2,6 +2,7 @@
 
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
+(local contrib (require :fen.core.extensions.contrib))
 
 (local M {})
 
@@ -14,7 +15,7 @@
 ;; @doc fen.core.extensions.register.input.register
 ;; kind: function
 ;; signature: (register spec owner handle-result) -> register-result
-;; summary: Validate and append an ordered input handler contribution consulted before non-slash user input starts a turn.
+;; summary: Validate and add an ordered input handler contribution consulted before non-slash user input starts a turn.
 ;; tags: extensions register input
 (fn M.register [spec owner handle-result]
   (when (or (not spec) (not spec.name))
@@ -23,16 +24,8 @@
     (error "register :input-handler requires {:handle fn}"))
   (let [spec* (util.deep-copy spec)]
     (when (= spec*.order nil) (set spec*.order 100))
-    (let [(record unregister) (util.add-tagged! (handlers) spec* owner)]
+    (let [(_record unregister) (contrib.add! owner :input-handlers nil spec*)]
       (handle-result :input-handler spec.name owner unregister))))
-
-;; @doc fen.core.extensions.register.input.unregister-by-owner
-;; kind: function
-;; signature: (unregister-by-owner owner) -> nil
-;; summary: Remove all input handlers installed by owner during extension reload or teardown.
-;; tags: extensions register input reload
-(fn M.unregister-by-owner [owner]
-  (util.remove-where (handlers) (fn [h _] (= h.__owner owner))))
 
 (fn by-order [a b]
   (let [ao (or a.order 100)

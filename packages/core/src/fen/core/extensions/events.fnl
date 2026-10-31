@@ -1,7 +1,8 @@
 ;; In-process event bus; lifecycle event payloads are sanitized before emit.
 
 (local state (require :fen.core.extensions.state))
-(local util (require :fen.core.extensions.util))
+(local contrib (require :fen.core.extensions.contrib))
+(local usage-ledger (require :fen.core.extensions.usage_ledger))
 (local log (require :fen.util.log))
 (local jsonl (require :fen.util.jsonl))
 (local redact (require :fen.util.redact))
@@ -11,16 +12,6 @@
 (local M {})
 
 (local MAX-ERRORS 100)
-
-(fn append-handler [event-name entry]
-  (let [bucket (or (. state.handlers event-name) [])]
-    (table.insert bucket entry)
-    (tset state.handlers event-name bucket)))
-
-(fn remove-handler [event-name entry]
-  (let [bucket (. state.handlers event-name)]
-    (when bucket
-      (util.remove-where bucket (fn [e _] (= e entry))))))
 
 (local first-line (. (require :fen.util.text) :first-line))
 
@@ -127,15 +118,19 @@
           snapshot (snapshot-bucket bucket)
           wildcard-snapshot (snapshot-bucket wildcard-bucket)]
       (record-error! ev)
+      ;; The single writer of the usage ledger: every :llm-end, whoever emits it.
+      (when (= ev.type :llm-end)
+        (usage-ledger.record! ev.usage))
       (dispatch-bucket bucket snapshot ev)
       (dispatch-bucket wildcard-bucket wildcard-snapshot ev)))
   nil)
 
 (fn M.on [event-name handler ?owner]
-  "Subscribe handler to event-name. Returns unsubscribe function."
-  (let [entry {:fn handler :__owner ?owner}]
-    (append-handler event-name entry)
-    (fn [] (remove-handler event-name entry))))
+  "Subscribe handler to event-name. Returns unsubscribe function. Buckets are
+   views folded in owner load order, so a reloaded owner keeps its place."
+  (let [(_entry unsubscribe) (contrib.add! ?owner :handlers event-name
+                                           {:fn handler})]
+    unsubscribe))
 
 ;; @doc fen.core.extensions.events.unregister-by-owner
 ;; kind: function
@@ -143,8 +138,7 @@
 ;; summary: Remove every event handler tagged with owner from all event buckets during extension reload or teardown.
 ;; tags: extensions events reload
 (fn M.unregister-by-owner [owner]
-  (each [_ bucket (pairs state.handlers)]
-    (util.remove-where bucket (fn [e _] (= e.__owner owner)))))
+  (contrib.drop-view! owner :handlers))
 
 ;; @doc fen.core.extensions.events.list
 ;; kind: function

@@ -33,7 +33,10 @@
 
 (fn install-demo-contributions [api]
   (api.register :command {:name :demo :handler (fn [_ _] nil)})
-  (api.register :tool {:name :demo_tool :description "demo" :parameters {}})
+  (api.register :tool {:name :demo_tool
+                       :description "demo"
+                       :parameters {}
+                       :execute (fn [] nil)})
   (api.register :control {:name :demo-control :keys ["ctrl-d"]})
   (api.register :status {:name :demo-status
                          :side :left
@@ -315,7 +318,7 @@
                       (assert.are.equal :registry
                                         registry-call.result.details.action)
                       (assert.is_not_nil registry-call.result.details.registry))))))
-          (it "requires state for reload and preserves rebuild behavior"
+          (it "requires state for reload and defers it to the idle boundary"
               (fn []
                 (let [api (test-api.make-runtime-api "extensions_inspector")
                       mod (fresh-extension-module)
@@ -350,6 +353,11 @@
                                                  {:state state})]
                     (assert.is_true missing-state.result.is-error?)
                     (assert.is_false call.result.is-error?)
-                    (assert.are.equal 1 provider-refresh.count)
-                    (assert.are.equal replacement state.agent)
-                    (assert.are.equal messages replacement.messages))))))
+                    ;; Deferred (#627): queued for the idle boundary, nothing swapped now.
+                    (assert.are.equal 0 provider-refresh.count)
+                    (assert.are.equal 1 (length state.reload-requests))
+                    (assert.are.equal "/reload-extension demo-ext"
+                                      ((. (require :fen.reload_request)
+                                          :command-line) (. state.reload-requests
+                                                            1)))
+                    (assert.are_not.equal replacement state.agent))))))

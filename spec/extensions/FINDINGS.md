@@ -25,8 +25,8 @@ When the broken extension owns `/reload` (sessions) or `/extensions`, the recove
 `reload-module-in-place!` had already put the old module back in `package.loaded`, so re-registering the previous version was possible.
 A related path raises the same way: a first-party extension whose register fn raises on reload gets `record-spec-error!` (all its registrations dropped), and then `load!` raises its first-party fail-fast error, which aborts `perform-reload!` at the same point.
 
-Witnesses: `w624ModuleErrorAbortsPassTest` ([`witnesses.qnt`](witnesses.qnt) and the [`contrib`](proofs/contrib/) proof model).
-Probe: `packages/core/tests/extensions/loader/issue_624_reload_module_error_aborts_pass_test.fnl` (reproduces).
+Former witnesses (removed once the fix landed): `w624ModuleErrorAbortsPassTest` ([`witnesses.qnt`](witnesses.qnt) and the [`contrib`](proofs/contrib/) proof model).
+Probe: `packages/core/tests/extensions/loader/reload_module_error_keeps_stale_test.fnl` (regression test).
 
 Confirmed (the original throwaway probe, rebuilt as the probe above): alpha (`reload-modules = {alpha_helper, alpha}`) and beta loaded; then alpha_helper raises and beta changes to register `beta-v2`:
 
@@ -40,6 +40,8 @@ reload-extension! alpha: pcall ok?	false	.../loader/reload.fnl:175: reload probe
 alpha lost its command, its bus handler, and its status record, and beta was never reloaded.
 `reload-extension!` raises instead of returning `(false err)` as documented.
 
+Fixed in #605: `load-module-spec!` and `load-path-spec!` stage the owner's new contribution set (`contrib.begin!`) and swap it in on success. A failed module, require, or register fn rolls back to the previous set, marks the owner `:stale` with the error, and returns `(false err)`; `load!` continues with the next owner (the first-party fail-fast error is still raised after the pass).
+
 ### #625: A failed module's fingerprint is committed, so the next `/reload` silently brings back the old code as `:loaded`
 
 Counterexample (`loadedStatusTruthful`): `init → edit(B, badModule) → reloadAll → reloadAll`.
@@ -48,8 +50,8 @@ After the failure in #624, the next reload sees no change, skips the broken modu
 The extension reports `:loaded` with 0 changed while the source on disk is still broken.
 Core reload already does this correctly: `reload-core!` commits a fingerprint only after the module reloads and keeps `reload-core-failures` so it retries next time.
 
-Witnesses: `w625FingerprintRetrySkippedTest` (integration model) and `w625FailedFingerprintCommittedTest` ([`fingerprint`](proofs/fingerprint/) proof model).
-Probe: `packages/core/tests/extensions/loader/issue_625_failed_module_fingerprint_committed_test.fnl` (reproduces; `checksum.module-fingerprint` is patched to return controlled fingerprints).
+Former witnesses (removed once the fix landed): `w625FingerprintRetrySkippedTest` (integration model) and `w625FailedFingerprintCommittedTest` ([`fingerprint`](proofs/fingerprint/) proof model).
+Probe: `packages/core/tests/extensions/loader/failed_module_fingerprint_not_committed_test.fnl` (regression test; `checksum.module-fingerprint` is patched to return controlled fingerprints).
 
 Confirmed (the original throwaway probe, rebuilt as the probe above, with the checksum backend stubbed to return controlled fingerprints):
 
@@ -60,6 +62,8 @@ after #1: alpha-v1	nil	record	nil
 reload #2:	true	nil
 after #2: alpha-v1	alpha	status	loaded	(source on disk is still the broken v2)
 ```
+
+Fixed in #605: `change-summary` only observes fingerprints; `clear-reload-modules!` and the loader commit one after the module reloads (or the extension registers) successfully, so a broken module is retried by the next `/reload`.
 
 ### #626: Reloading or failing one extension makes the registry differ from a fresh start
 
@@ -76,8 +80,8 @@ Array kinds append, so a reloaded owner moves to the end of the bucket. That cha
 
 A full `/reload` replays discovery order, so it restores fresh-start order unless #624 cuts the pass short. The TUI is the exception: it is reloaded last on purpose (see Open questions).
 
-Witnesses: `w626ReloadOneMovesWinnerTest` and `w626UnloadDropsSharedNameTest` (integration model), `w626ReloadOneMovesWinnerTest` and `w626DisableDropsSharedNameTest` ([`contrib`](proofs/contrib/)).
-Probe: `packages/core/tests/extensions/loader/issue_626_reload_one_owner_registry_drift_test.fnl` (reproduces both cases: the shadowed owner reloaded, and the failing winner).
+Former witnesses (removed once the fix landed): `w626ReloadOneMovesWinnerTest` and `w626UnloadDropsSharedNameTest` (integration model), `w626ReloadOneMovesWinnerTest` and `w626DisableDropsSharedNameTest` ([`contrib`](proofs/contrib/)).
+Probe: `packages/core/tests/extensions/loader/reload_one_owner_matches_fresh_start_test.fnl` (regression test, both cases: the shadowed owner reloaded, and the failing winner).
 
 Confirmed (the original throwaway probe, rebuilt as the probe above): alpha and beta both register command `:dup`, tool `:dup_tool`, and a default-order prompt fragment:
 
@@ -88,6 +92,8 @@ fresh2: /dup owner	beta
 reload-extension beta:	false	...: beta register boom
 after beta failure: /dup owner	nil	(fresh start with beta failing would give alpha)
 ```
+
+Fixed in #605: Registrations live in per-owner sets (`fen.core.extensions.contrib`); every registry view (including the bus buckets) is a fold over owners in load rank, and a rank is never reassigned, so `/reload-extension` and a failed reload keep fresh-start order and shared-name winners.
 
 ### #627: The model-facing `extension` tool reloads synchronously mid-turn
 
@@ -102,8 +108,8 @@ The turn keeps stepping the agent `turn_submit` captured, using its `agent.tools
 `session_lifecycle`'s `:message-appended` bridge flushes only when `ev.agent == state.agent`, so the rest of that turn's tool results and reply are not persisted.
 They are written only when the replacement agent appends its first message. Nothing flushes at shutdown, so quitting right after the turn loses them from the session JSONL.
 
-Witnesses: `w627MidTurnAgentSwapTest`, `w627TurnToolsUnregisteredTest`, `w627TurnMessagesUnflushedTest` (integration and [`turn-identity`](proofs/turn-identity/) models).
-Probe: `extensions/behaviors/inspectors/extensions/tests/issue_627_extension_tool_reload_mid_turn_test.fnl` (reproduces). It is the closest observable behaviour, not a real turn: the real `extension` tool and `session_lifecycle` run against a busy run-state stub, and `state.reload-extension` is a stub that counts calls and runs the real `unregister-by-owner`. The `turn_submit`/`agent-step` path and the shutdown-without-flush loss remain a line trace.
+Former witnesses (removed once the fix landed): `w627MidTurnAgentSwapTest`, `w627TurnToolsUnregisteredTest`, `w627TurnMessagesUnflushedTest` (integration and [`turn-identity`](proofs/turn-identity/) models).
+Probe: `extensions/behaviors/inspectors/extensions/tests/extension_tool_reload_deferred_test.fnl` (regression test). It is the closest observable behaviour, not a real turn: the real `extension` tool and `session_lifecycle` run against a busy run-state stub, and `state.reload-extension` is a stub that counts calls and runs the real `unregister-by-owner`. The `turn_submit`/`agent-step` path and the shutdown-without-flush loss remain a line trace.
 
 Confirmed (the original throwaway probe, rebuilt as the probe above): the real `extension` tool runs against a busy run-state stub with the real `session_lifecycle.install!`:
 
@@ -115,6 +121,8 @@ flushes after old-agent message-appended	0
 
 The turn path (`turn_submit.start!` passes `state.agent` once to `agent-step`; `append-message!` emits `{:agent agent}`; `M.close!` does not flush) was traced line by line.
 
+Fixed in #605: The `extension` tool's `reload` action enqueues a `{:scope :extension :name ..}` `reload_request`, drained at the idle boundary as `/reload-extension <name>`.
+
 ### #628: Tool registration does not validate `:execute`
 
 Counterexample (`registeredCallablesPresent`): `init → registerMalformed(tool)`.
@@ -122,8 +130,8 @@ Counterexample (`registeredCallablesPresent`): `init → registerMalformed(tool)
 A tool without `:execute` is advertised to the model and fails only when called, with `attempt to call a nil value (field 'execute')`.
 The agent's pcall turns that into a tool error, so the impact is low (a confusing late failure), but the validation is not uniform.
 
-Witnesses: `w628ToolWithoutExecuteTest` (integration model) and `w628ToolWithoutExecuteAcceptedTest` ([`validation`](proofs/validation/)).
-Probe: `packages/core/tests/extensions/issue_628_tool_register_missing_execute_test.fnl` (reproduces; `:command` and `:hook` without callables are the rejected controls).
+Former witnesses (removed once the fix landed): `w628ToolWithoutExecuteTest` (integration model) and `w628ToolWithoutExecuteAcceptedTest` ([`validation`](proofs/validation/)).
+Probe: `packages/core/tests/extensions/tool_requires_execute_test.fnl` (regression test; `:command` and `:hook` without callables are the rejected controls).
 
 Confirmed (the original throwaway probe, rebuilt as the probe above):
 
@@ -134,6 +142,8 @@ hook w/o fn ok?	false	.../register/hook.fnl:15: register :hook requires {:before
 coop execute-call raises?	true	.../fen/core/tools.fnl:146: attempt to call a nil value (field 'execute')
 ```
 
+Fixed in #605: `register :tool` requires `:execute` to be a function.
+
 ## Holds
 
 `busDeliversOncePerLiveSubscriber` (sampled): `emit` snapshots the bucket and delivers only to snapshot entries still in the live bucket.
@@ -142,7 +152,7 @@ Each subscription gets an event at most once, and an unregistered owner never ge
 
 ## Candidate fixes (named: `FIXES`)
 
-The model takes `const FIXES: Set[str]`; `current` enables none, `fixed` all five, and `fix624` … `fix628` one each. Each fix makes its own issue's rows hold on its own (sampled, `checks.tsv`):
+The model takes `const FIXES: Set[str]`; `current` and `fixed` enable all five, and `fix624` … `fix628` one each. Each fix makes its own issue's rows hold on its own (sampled, `checks.tsv`):
 
 | Fix | Rows it makes hold alone |
 | --- | --- |

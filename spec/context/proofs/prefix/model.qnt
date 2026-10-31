@@ -227,7 +227,7 @@ module prefix {
   val cacheInductive = and { prefixInductive, cacheReuseOnExtension, breakpointsWithinLimit }
 }
 
-module current { import prefix(FIXES = Set()).* }
-module fix622 { import prefix(FIXES = Set("622")).* }
+module current { import prefix(FIXES = Set("622", "623")).* }
+module fix622 { import prefix(FIXES = Set("622", "623")).* }
 module fix623 { import prefix(FIXES = Set("623")).* }
 module fixed { import prefix(FIXES = Set("622", "623")).* }

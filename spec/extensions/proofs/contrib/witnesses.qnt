@@ -3,22 +3,6 @@ module witnesses {
   import contrib(FIXES = Set()) as C from "./model"
   import contrib(FIXES = Set("624", "626")) as F from "./model"
 
-  // #624: A's module error aborts the pass after A was unregistered.
-  run w624ModuleErrorAbortsPassTest =
-    C::init.then(C::edit("A", "badModule")).then(C::reloadAll).then(C::passStep)
-      .expect(not(C::reloadVisitsEveryOwner) and not(C::attemptedOwnerListed)
-              and not(C::reloadCommandAvailable) and not(C::visB))
-
-  // #626: reloading the shadowed owner moves the shared name and the order.
-  run w626ReloadOneMovesWinnerTest =
-    C::init.then(C::reloadOne("A"))
-      .expect(not(C::registryMatchesFreshStart) and C::reg.dup == "A" and C::reg.order == "BA")
-
-  // #626: disabling the winner drops the name A still claims.
-  run w626DisableDropsSharedNameTest =
-    C::init.then(C::disableB)
-      .expect(not(C::registryMatchesFreshStart) and C::reg.dup == "")
-
   // ---- reachability of the fixed design ----
 
   run reachFailedReloadRollsBackTest =

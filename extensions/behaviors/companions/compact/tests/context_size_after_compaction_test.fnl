@@ -8,7 +8,7 @@
 (local command-registry (require :fen.core.extensions.register.command))
 (local types (require :fen.core.types))
 (local tokens (require :fen.util.tokens))
-(local {: known-bug} (require :fen.testing))
+(local ledger (require :fen.core.extensions.usage_ledger))
 
 (local original-agent-mod (. package.loaded :fen.core.agent))
 
@@ -55,6 +55,9 @@
                :busy? false
                :turn-id 1
                :cancel-requested? false}]
+    ;; The turns' usage was reported live before /compact ran.
+    (each [_ m (ipairs state.agent.messages)]
+      (when m.usage (ledger.record! m.usage {:session :s})))
     (set api.settings {:extension (fn [] {})})
     (events.on :* (fn [ev] (table.insert seen ev)) :issue-620-test)
     (compact.register api)
@@ -71,19 +74,14 @@
                           (tset package.loaded :fen.extensions.compact nil)
                           (tset package.loaded :fen.core.agent
                                 original-agent-mod)))
-            (it "reports the pre-compaction size as provider-reported"
+            (it "falls back to the estimate instead of the pre-compaction provider size"
                 (fn []
-                  (known-bug 620
-                             (fn []
-                               (let [(state seen) (run-compact!)
-                                     ctx (tokens.context-token-info state.agent)
-                                     hint (accumulate [h nil _ ev (ipairs seen)]
-                                            (if (= ev.type :set-status-info)
-                                                ev.info.approx-context
-                                                h))
-                                     estimate (tokens.estimated-context-tokens state.agent)]
-                                 (and (= 3 (length state.agent.messages))
-                                      (= 44650 ctx.tokens)
-                                      (= :provider-reported ctx.source)
-                                      (= false ctx.estimated?) (< hint 1000)
-                                      (< estimate 1000)))))))))
+                  ;; The kept assistant message was reported live before the rewrite.
+                  (let [(state seen) (run-compact!)
+                        ctx (ledger.context-info state.agent)
+                        estimate (tokens.estimated-context-tokens state.agent)]
+                    (assert.are.equal 3 (length state.agent.messages))
+                    (assert.are.equal :estimated ctx.source)
+                    (assert.is_true ctx.estimated?)
+                    (assert.is_true (< ctx.tokens 1000))
+                    (assert.is_true (< estimate 1000)))))))

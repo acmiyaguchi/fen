@@ -7,7 +7,7 @@
 (local command-registry (require :fen.core.extensions.register.command))
 (local types (require :fen.core.types))
 (local tokens (require :fen.util.tokens))
-(local {: known-bug} (require :fen.testing))
+(local ledger (require :fen.core.extensions.usage_ledger))
 
 (local original-agent-mod (. package.loaded :fen.core.agent))
 
@@ -54,6 +54,9 @@
                :busy? false
                :turn-id 1
                :cancel-requested? false}]
+    ;; The turns' usage was reported live before /compact ran.
+    (each [_ m (ipairs state.agent.messages)]
+      (when m.usage (ledger.record! m.usage)))
     (set api.settings {:extension (fn [] {})})
     (events.on :* (fn [ev] (table.insert seen ev)) :issue-617-test)
     (compact.register api)
@@ -70,17 +73,17 @@
                           (tset package.loaded :fen.extensions.compact nil)
                           (tset package.loaded :fen.core.agent
                                 original-agent-mod)))
-            (it "drops summarized usage and omits the summary call"
+            (it "keeps summarized usage in session totals and counts the summary call"
                 (fn []
-                  (known-bug 617
-                             (fn []
-                               (let [(state seen before) (run-compact!)
-                                     after (tokens.usage-totals state.agent.messages)
-                                     bus-input (accumulate [n 0 _ ev (ipairs seen)]
-                                                 (if (and (= ev.type :llm-end)
-                                                          ev.usage)
-                                                     (+ n ev.usage.input)
-                                                     n))]
-                                 (and (= 3 (length state.agent.messages))
-                                      (= 22100 before.input) (= 100 after.input)
-                                      (= 30000 bus-input)))))))))
+                  ;; The pre-compaction turns were reported live on the bus (#617).
+                  (let [(state seen) (run-compact!)
+                        bus-input (accumulate [n 0 _ ev (ipairs seen)]
+                                    (if (and (= ev.type :llm-end) ev.usage)
+                                        (+ n ev.usage.input)
+                                        n))
+                        totals (ledger.session-totals nil state.agent.messages)]
+                    (assert.are.equal 3 (length state.agent.messages))
+                    (assert.are.equal 30000 bus-input)
+                    ;; Replayed history seeds totals: 22000 + 100 + the 30000 summary call.
+                    (assert.are.equal 52100 totals.input)
+                    (assert.are.equal 110 totals.output))))))

@@ -45,6 +45,8 @@ PROBE usage-totals.input before=22100 after=100
 PROBE llm-end usage.input on bus during compaction=30000
 ```
 
+Fixed in #605: Session totals come from the usage ledger (`fen.core.extensions.usage_ledger`), appended by `events.emit` for every `:llm-end` (the summary call included); `/status` reads `session-totals`, so compaction cannot shrink them.
+
 ### #618: Wire turn and run usage are index slices of a history that compaction rewrites
 
 Counterexample (`runUsageExact`): same trace as #617.
@@ -60,6 +62,8 @@ PROBE result usage.input=10.0
 PROBE sum of forwarded llm-end usage.input=31010.0
 ```
 
+Fixed in #605: Wire turn and run usage are computed via `usage_ledger.delta` from markers taken at turn/run start, falling back to message sums when the ledger has no delta.
+
 ### #619: Headless JSON usage includes the whole `--continue` history
 
 Counterexample (`headlessUsageExact`): `init(replayed)`, no steps needed.
@@ -70,6 +74,8 @@ Confirmed: JSON presenter over one replayed exchange (`total-tokens 50900`) plus
 ```
 PROBE json usage.total-tokens=50910.0 input=50007.0 messages=4
 ```
+
+Fixed in #605: The JSON presenter reports the ledger delta since its own start marker; replayed usage seeds session totals only.
 
 ### #620: After compaction the old context size is shown as exact
 
@@ -86,6 +92,8 @@ PROBE set-status-info approx-context hint=46
 PROBE full estimate after=46
 ```
 
+Fixed in #605: `compact` calls `usage_ledger.rewrite!` after replacing the history; `usage_ledger.context-info` ignores usage reported before the latest rewrite and returns the estimate (`/status` uses it). Other callers of `tokens.context-token-info` (`interactive.fnl` status refresh) need to switch to it; usage replayed from disk is not known stale.
+
 ### #621: `total-tokens` means different things per provider
 
 Counterexample (`totalTokensConvention`): `init(openai) → userTurn → requestText → userTurn → requestTool` (the second request reads the first from cache).
@@ -100,6 +108,8 @@ PROBE anthropic usage:          input=20 cache-read=80 output=5 total-tokens=25
 PROBE gateway without total_tokens: total-tokens=0
 PROBE usage-totals over both: total-tokens=130 (input+output=50)
 ```
+
+Fixed in #605: The OpenAI adapters compute `total-tokens` as input + output, cache excluded.
 
 ### #622: Reloading one extension reorders the always-visible tools and silently breaks the whole cached prefix
 
@@ -117,6 +127,8 @@ PROBE request tools before reload: read,bash,grep
 PROBE request tools after  reload: bash,grep,read
 ```
 
+Fixed in #605: `register.tool.merged` returns tools in canonical order (by name, fold order for equal names), independent of registration and reload order.
+
 ### #623: One moving message breakpoint: a large tool round loses the cached history
 
 Counterexample (`cacheReuseOnExtension`): `userTurn → requestParallelTools → toolResults → requestTool` (anthropic, `W = 4` scaled).
@@ -132,6 +144,8 @@ PROBE message blocks: req1=22 req2=43 => blocks between req1 breakpoint and req2
 PROBE req2 still marks req1's tail? false
 ```
 The ~20-block lookback is Anthropic's documented behavior and was not exercised against the live API (no network).
+
+Fixed in #605: The Anthropic adapter re-marks the immediate previous tail, so the first request of a tool round also carries four breakpoints.
 
 ## What holds
 
@@ -190,13 +204,13 @@ For both models, `current` gives an Apalache counterexample (checked once by han
 
 | Bug | Counterexample (row) | Witness | Proof model | Probe (confirmed) |
 | --- | --- | --- | --- | --- |
-| #617 | `current.sessionUsageComplete`; ledger `current.sessionUsageComplete` | `w617CompactionDropsSessionUsageTest` (both) | ledger, bounded-safe for the fix | `extensions/behaviors/companions/compact/tests/issue_617_compaction_rewrites_usage_totals_test.fnl` |
-| #618 | `current.runUsageExact`; ledger `current.runUsageExact` | `w618RunUsageIndexSliceTest` (both) | ledger | `extensions/adapters/presenters/rpc/tests/issue_618_run_usage_index_slice_test.fnl` |
-| #619 | `current.headlessUsageExact`; ledger `current.headlessUsageExact` | `w619JsonUsageIncludesReplayTest` (both) | ledger | `extensions/adapters/presenters/json/tests/issue_619_json_usage_includes_replay_test.fnl` |
-| #620 | `current.exactContextIsCurrent`; ledger `current.exactContextIsCurrent` | `w620StaleContextExactTest` (both) | ledger | `extensions/behaviors/companions/compact/tests/issue_620_stale_context_size_after_compaction_test.fnl` |
-| #621 | `current.totalTokensConvention`; ledger `current.totalTokensConvention` | `w621TotalIncludesCacheTest` (both), `w621GatewayOmitsTotalTest` (ledger) | ledger | `extensions/adapters/providers/openai/tests/issue_621_total_tokens_convention_test.fnl` |
-| #622 | `current.prefixStableUnlessNamed`; prefix `current`, `fix623` | `w622ReloadReordersToolsTest` (both), `w622SurvivesFix623Test` | prefix, inductive for the fix | `extensions/adapters/providers/mock/tests/issue_622_reload_reorders_tools_test.fnl` |
-| #623 | `current.cacheReuseOnExtension`; prefix `current`, `fix622` | `w623MovingBreakpointMissesTest` (both), `w623SurvivesFix622Test` | prefix, inductive for the fix | `extensions/adapters/providers/anthropic/tests/issue_623_single_moving_breakpoint_test.fnl` |
+| #617 | `current.sessionUsageComplete`; ledger `current.sessionUsageComplete` | `w617CompactionDropsSessionUsageTest` (both) | ledger, bounded-safe for the fix | `extensions/behaviors/companions/compact/tests/session_usage_survives_compaction_test.fnl` |
+| #618 | `current.runUsageExact`; ledger `current.runUsageExact` | `reach618RunUsageExactTest` (both) | ledger | `extensions/adapters/presenters/rpc/tests/run_usage_survives_compaction_test.fnl` |
+| #619 | `current.headlessUsageExact`; ledger `current.headlessUsageExact` | `w619JsonUsageIncludesReplayTest` (both) | ledger | `extensions/adapters/presenters/json/tests/json_usage_excludes_replay_test.fnl` |
+| #620 | `current.exactContextIsCurrent`; ledger `current.exactContextIsCurrent` | `w620StaleContextExactTest` (both) | ledger | `extensions/behaviors/companions/compact/tests/context_size_after_compaction_test.fnl` |
+| #621 | `current.totalTokensConvention`; ledger `current.totalTokensConvention` | `w621TotalIncludesCacheTest` (both), `w621GatewayOmitsTotalTest` (ledger) | ledger | `extensions/adapters/providers/openai/tests/total_tokens_convention_test.fnl` |
+| #622 | `current.prefixStableUnlessNamed`; prefix `current`, `fix623` | `w622ReloadReordersToolsTest` (both), `w622SurvivesFix623Test` | prefix, inductive for the fix | `extensions/adapters/providers/mock/tests/tool_order_stable_across_reload_test.fnl` |
+| #623 | `current.cacheReuseOnExtension`; prefix `current`, `fix622` | `w623MovingBreakpointMissesTest` (both), `w623SurvivesFix622Test` | prefix, inductive for the fix | `extensions/adapters/providers/anthropic/tests/previous_tail_remarked_test.fnl` |
 
 Each probe is a `known-bug` test that passes while the bug reproduces against today's code:
 

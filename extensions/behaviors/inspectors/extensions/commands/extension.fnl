@@ -11,6 +11,7 @@
 (local args-util (require :fen.util.args))
 (local panel (require :fen.util.panel))
 (local types (require :fen.core.types))
+(local reload-request (require :fen.reload_request))
 (local panel-state
        (require :fen.extensions.extensions_inspector.state.extensions))
 
@@ -592,14 +593,19 @@
                          true)
             (if (or (not args.name) (= (tostring args.name) ""))
                 (tool-result "reload requires name" true)
-                (let [(ok? err) (perform-extension-reload! ctx.state
-                                                           (tostring args.name))]
+                ;; Never swap the registry under the running turn: queue the reload for the
+                ;; run's idle boundary, like the reload tool (#627).
+                (let [(ok? entry) (reload-request.enqueue! ctx.state
+                                                           {:scope :extension
+                                                            :name (tostring args.name)
+                                                            :reason (.. "extension tool reload of "
+                                                                        (tostring args.name))})]
                   (if ok?
                       (tool-result {:action :reload
                                     :name (tostring args.name)
-                                    :reloaded true}
+                                    :queued true}
                                    false)
-                      (tool-result (.. "reload-extension: " (tostring err))
+                      (tool-result (.. "reload-extension: " (tostring entry))
                                    true)))))
         (tool-result (.. "unknown extension action: " action) true))))
 
@@ -633,7 +639,7 @@
                  :label "Extension"
                  :exposure :search
                  :snippet "Inspect or reload extensions"
-                 :description "Inspect loaded extensions and live registries, or reload one external extension. Actions: list, show, registry, reload. Read actions do not require interactive state; reload does."
+                 :description "Inspect loaded extensions and live registries, or reload one external extension. Actions: list, show, registry, reload. Read actions do not require interactive state; reload does, and it is queued until the current turn finishes."
                  :parameters {:type :object
                               :properties {:action {:type :string
                                                     :enum ["list"

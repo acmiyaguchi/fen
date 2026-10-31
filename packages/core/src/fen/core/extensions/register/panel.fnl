@@ -18,6 +18,7 @@
     (error "register :panel requires {:height fn}")))
 
 (local opts {:kind :panel
+             :view :panels
              :bucket state.panel-extra
              :defaults {:placement :above-input :order 50}
              :validate validate
@@ -31,14 +32,6 @@
 ;; tags: extensions register panels ui
 (fn M.register [spec owner handle-result]
   (contribution.register opts spec owner handle-result))
-
-;; @doc fen.core.extensions.register.panel.unregister-by-owner
-;; kind: function
-;; signature: (unregister-by-owner owner) -> nil
-;; summary: Remove all panel contributions installed by owner while preserving the shared panel registry table identity.
-;; tags: extensions panels reload
-(fn M.unregister-by-owner [owner]
-  (contribution.unregister-by-owner opts owner))
 
 ;; @doc fen.core.extensions.register.panel.list
 ;; kind: function

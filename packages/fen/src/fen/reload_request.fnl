@@ -6,31 +6,37 @@
   (let [scope (tostring (or value :reload))]
     (if (= scope "reload") :reload
         (= scope "registries") :registries
+        (= scope "extension") :extension
         nil)))
 
 ;; @doc fen.reload_request.enqueue!
 ;; kind: function
 ;; signature: (enqueue! state request) -> ok?, request|error
-;; summary: Validate and append an agent-requested reload or explicitly scoped recovery request to one interactive run state's deferred queue.
+;; summary: Validate and append an agent-requested reload, single-extension reload (scope :extension with a :name, #627), or explicitly scoped recovery request to one interactive run state's deferred queue.
 ;; tags: reload recovery runtime agent
 (fn M.enqueue! [state request]
   (let [scope (normalized-scope (?. request :scope))
-        reason (tostring (or (?. request :reason) ""))]
+        reason (tostring (or (?. request :reason) ""))
+        name (and (?. request :name) (tostring request.name))]
     (if (not scope)
-        (values false "scope must be reload or registries")
+        (values false "scope must be reload, registries, or extension")
+        (and (= scope :extension) (or (not name) (not (name:match "^%S+$"))))
+        (values false "extension scope requires a name without whitespace")
         (= reason "")
         (values false "reason is required")
         (do
           (when (= state.reload-requests nil)
             (set state.reload-requests []))
           (let [entry {:scope scope
+                       :name (if (= scope :extension) name nil)
                        :reason reason
                        :force? (= (?. request :force?) true)}]
             ;; Coalesce by scope+force so a looping agent cannot stack reloads; latest reason wins.
             (var existing nil)
             (each [_ queued (ipairs state.reload-requests) &until existing]
               (when (and (= queued.scope entry.scope)
-                         (= queued.force? entry.force?))
+                         (= queued.force? entry.force?)
+                         (= queued.name entry.name))
                 (set existing queued)))
             (if existing
                 (do
@@ -67,7 +73,9 @@
 (fn M.command-line [request]
   (let [scope (normalized-scope (?. request :scope))
         force? (= (?. request :force?) true)]
-    (if (= scope :registries)
+    (if (= scope :extension)
+        (.. "/reload-extension " request.name)
+        (= scope :registries)
         (if force? "/reload --all --recover registries"
             "/reload --recover registries")
         force?

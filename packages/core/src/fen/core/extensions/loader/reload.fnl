@@ -48,6 +48,11 @@
     (commit-fingerprint! observation.key observation.fingerprint)
     (values observation.changed? observation.resolved?)))
 
+(fn commit-observation! [summary modname]
+  (let [observation (?. summary :observations modname)]
+    (when observation
+      (commit-fingerprint! observation.key observation.fingerprint))))
+
 ;; @doc fen.core.extensions.loader.reload.file-changed?!
 ;; kind: function
 ;; signature: (file-changed?! file-path) -> boolean
@@ -58,15 +63,20 @@
                          (checksum.file-fingerprint file-path)))
 
 (fn M.change-summary [mods]
-  "Probe each module for a fingerprint change, updating the cache. Returns a
-   summary table the caller folds into the per-extension reload report."
+  "Probe each module for a fingerprint change without committing it (#625).
+   Returns the summary the caller folds into the per-extension reload report;
+   `commit-summary!` (or a successful module reload) commits a fingerprint."
   (let [summary {:checked 0
                  :changed 0
                  :changed-modules []
-                 :unresolved-modules []}]
+                 :unresolved-modules []
+                 :observations {}}]
     (each [_ modname (ipairs (or mods []))]
       (set summary.checked (+ summary.checked 1))
-      (let [(changed? resolved?) (module-change modname)]
+      (let [observation (module-observation modname)
+            changed? observation.changed?
+            resolved? observation.resolved?]
+        (tset summary.observations modname observation)
         (when changed?
           (set summary.changed (+ summary.changed 1))
           (table.insert summary.changed-modules modname))
@@ -74,6 +84,15 @@
         (when (not resolved?)
           (table.insert summary.unresolved-modules modname))))
     summary))
+
+;; @doc fen.core.extensions.loader.reload.commit-summary!
+;; kind: function
+;; signature: (commit-summary! summary) -> nil
+;; summary: Commit every fingerprint a change-summary observed; called after the modules it describes loaded successfully.
+;; tags: extensions loader reload fingerprint
+(fn M.commit-summary! [summary]
+  (each [modname _ (pairs (or (?. summary :observations) {}))]
+    (commit-observation! summary modname)))
 
 (fn install-in-place! [modname old new]
   (let [installed (if (and (= (type old) :table) (= (type new) :table))
@@ -131,7 +150,11 @@
   "Reload manifest.reload-modules (or `fallback`) from the first changed
    module onward, skipping reload-exclude. `:force?` is reserved for an
    explicit registry recovery, which needs known extension bootstrap paths to
-   re-run even when files did not change."
+   re-run even when files did not change.
+   Returns (summary nil) or (summary err) at the first module that fails; that
+   module is restored and later ones are not run. A fingerprint is committed
+   only for a module that is unchanged or reloaded successfully, so a failed
+   module is retried by the next reload (#625)."
   (let [mods (manifest-mod.reload-modules manifest fallback)
         excluded (manifest-mod.reload-exclude manifest)
         summary (M.change-summary mods)
@@ -147,15 +170,19 @@
     ;; Manifests list dependencies before consumers: reload from the first changed
     ;; module onward so downstream captures refresh in declaration order.
     (var reload? false)
-    (each [_ modname (ipairs mods)]
+    (var failure nil)
+    (each [_ modname (ipairs mods) &until failure]
       (when (. changed modname) (set reload? true))
-      (when (and reload? (not (list-has? excluded modname)))
-        (let [(ok? err) (reload-module-in-place! modname)]
-          (when (not ok?)
-            (error (.. "reload " (tostring modname) ": " (tostring err)))))
-        (when ?yield
-          (?yield {:phase :extension-module :module modname}))))
-    summary))
+      (if (and reload? (not (list-has? excluded modname)))
+          (let [(ok? err) (reload-module-in-place! modname)]
+            (if ok?
+                (commit-observation! summary modname)
+                (set failure (.. "reload " (tostring modname) ": "
+                                 (tostring err))))
+            (when (and ?yield (not failure))
+              (?yield {:phase :extension-module :module modname})))
+          (commit-observation! summary modname)))
+    (values summary failure)))
 
 ;; Persistent-identity modules must never reload in place; fen.extensions.* state
 ;; modules are excluded by prefix below.

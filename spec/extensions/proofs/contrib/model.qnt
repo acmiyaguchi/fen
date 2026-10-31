@@ -195,7 +195,7 @@ module contrib {
   }
 }
 
-module current { import contrib(FIXES = Set()).* }
+module current { import contrib(FIXES = Set("624", "626")).* }
 module fixed { import contrib(FIXES = Set("624", "626")).* }
 module fix624 { import contrib(FIXES = Set("624")).* }
 module fix626 { import contrib(FIXES = Set("626")).* }

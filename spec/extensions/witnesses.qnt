@@ -5,53 +5,6 @@ module witnesses {
   import extensions(FIXES = Set()) as C from "./model"
   import extensions(FIXES = Set("624", "625", "626", "627", "628")) as F from "./model"
 
-  // #624: A's reload module fails: A is unregistered and loses its status
-  // record, the raise aborts the pass before B, and /reload is gone.
-  run w624ModuleErrorAbortsPassTest =
-    C::init.then(C::edit("A", "badModule")).then(C::reloadAll)
-      .expect(not(C::reloadVisitsEveryOwner) and not(C::attemptedOwnerListed)
-              and not(C::reloadCommandAvailable)
-              and C::status.get("A") == "none" and not(C::visited.contains("B")))
-
-  // #625: the failed module's fingerprint was committed, so the next /reload
-  // skips it and reports the old code as :loaded.
-  run w625FingerprintRetrySkippedTest =
-    C::init.then(C::edit("B", "badModule")).then(C::reloadAll).then(C::reloadAll)
-      .expect(not(C::loadedStatusTruthful) and C::status.get("B") == "loaded"
-              and C::tried.get("B") == "badModule" and C::src.get("B") == "badModule")
-
-  // #626: /reload-extension of the shadowed owner takes the shared name.
-  run w626ReloadOneMovesWinnerTest =
-    C::init.then(C::reloadOne("A"))
-      .expect(not(C::registryMatchesFreshStart) and C::reg.cmds.get("dup") == "A"
-              and C::reg.tools == ["B", "A"])
-
-  // #626: unloading the winner drops the name the other owner still claims.
-  run w626UnloadDropsSharedNameTest =
-    C::init.then(C::emit(true))
-      .expect(not(C::registryMatchesFreshStart) and C::reg.cmds.get("dup") == ""
-              and C::status.get("A") == "loaded")
-
-  // #627: the extension tool reloads mid-turn and replaces state.agent ...
-  run w627MidTurnAgentSwapTest =
-    C::init.then(C::startTurn).then(C::midTurnReload("A"))
-      .expect(not(C::noRegistrySwapDuringTurn) and C::agentId == 1 and C::turnAgent == 0)
-
-  // ... a failed mid-turn reload leaves the turn calling unregistered tools ...
-  run w627TurnToolsUnregisteredTest =
-    C::init.then(C::edit("A", "badModule")).then(C::startTurn).then(C::midTurnReload("A"))
-      .expect(not(C::turnToolsLive) and C::turnTools == ["A", "B"] and C::reg.tools == ["B"])
-
-  // ... and the rest of the turn's messages are never flushed.
-  run w627TurnMessagesUnflushedTest =
-    C::init.then(C::startTurn).then(C::midTurnReload("A")).then(C::turnAppend).then(C::endTurn)
-      .expect(not(C::turnMessagesPersisted) and C::unflushed == 1)
-
-  // #628: a tool without :execute registers.
-  run w628ToolWithoutExecuteTest =
-    C::init.then(C::registerMalformed("tool"))
-      .expect(not(C::registeredCallablesPresent))
-
   // ---- reachability of the fixed design ----
 
   // A failed module leaves A :stale with its registrations; B still reloads.

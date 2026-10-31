@@ -1,7 +1,15 @@
 (local json (require :fen.util.json))
+(local events (require :fen.core.extensions.events))
+(local ledger (require :fen.core.extensions.usage_ledger))
+
+(fn report-usage! [messages]
+  "The real agent emits :llm-end per provider call; the stubbed step does too."
+  (each [_ m (ipairs messages)]
+    (when m.usage (events.emit {:type :llm-end :usage m.usage}))))
 
 (describe "json presenter"
           (fn []
+            (before_each (fn [] (ledger.reset!)))
             (it "writes a structured result blob with usage and stop-reason"
                 (fn []
                   (let [old-agent (. package.loaded "fen.core.agent")
@@ -18,6 +26,7 @@
                           {:step (fn [agent prompt]
                                    (assert.are.equal "say hello" prompt)
                                    (assert.are.equal :agent agent.name)
+                                   (report-usage! messages)
                                    "hello")})
                     (tset package.loaded "fen.turn_lifecycle"
                           {:emit-complete! (fn [_state ok? result]
@@ -63,7 +72,7 @@
                                    :stop-reason :stop}]]
                     (tset package.loaded "fen.extensions.json" nil)
                     (tset package.loaded "fen.core.agent"
-                          {:step (fn [_ _] "done")})
+                          {:step (fn [_ _] (report-usage! messages) "done")})
                     (tset package.loaded "fen.turn_lifecycle"
                           {:emit-complete! (fn [_ _ _] nil)})
                     (let [(ok? result) (xpcall #(let [p (require :fen.extensions.json)]

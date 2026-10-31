@@ -1,8 +1,8 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-current	registryMatchesFreshStart	violated	#626
-current	reloadVisitsEveryOwner	violated	#624
-current	attemptedOwnerListed	violated	#624
-current	reloadCommandAvailable	violated	#624
+current	registryMatchesFreshStart	holds
+current	reloadVisitsEveryOwner	holds
+current	attemptedOwnerListed	holds
+current	reloadCommandAvailable	holds
 fix624	reloadVisitsEveryOwner	holds
 fix624	attemptedOwnerListed	holds
 fix624	reloadCommandAvailable	holds

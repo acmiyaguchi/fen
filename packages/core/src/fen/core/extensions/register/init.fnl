@@ -1,9 +1,10 @@
-;; Kind dispatcher for `api.register`; per-kind modules own register/unregister/list.
-;; Singleton-dict kinds unregister only the exact record installed, so stale closures cannot clobber newer registrations.
+;; Kind dispatcher for `api.register`; per-kind modules own validation and listing.
+;; Contributions are stored per owner in fen.core.extensions.contrib; every bucket is a view folded in load order.
 
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
 (local events (require :fen.core.extensions.events))
+(local contrib (require :fen.core.extensions.contrib))
 (local logs (require :fen.core.extensions.logs))
 (local tool (require :fen.core.extensions.register.tool))
 (local command (require :fen.core.extensions.register.command))
@@ -108,12 +109,13 @@
       (unknown-register-kind! kind))
     ((. entry.module :register) spec owner handle-result)))
 
+;; @doc fen.core.extensions.register.unregister-by-owner
+;; kind: function
+;; signature: (unregister-by-owner owner) -> nil
+;; summary: Drop owner's whole contribution set (every kind, prompt fragments, and bus subscriptions) and its loader record; views re-derive, so shared names fall back to the other owner.
+;; tags: extensions register reload
 (fn M.unregister-by-owner [owner]
-  "Drop every registration tagged with owner."
-  (each [_ entry (ipairs REGISTER-KINDS)]
-    ((. entry.module :unregister-by-owner) owner))
-  (prompt.unregister-by-owner owner)
-  (events.unregister-by-owner owner)
+  (contrib.drop! owner)
   (tset state.extensions owner nil)
   nil)
 

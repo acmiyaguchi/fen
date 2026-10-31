@@ -427,7 +427,7 @@ module context {
   }
 }
 
-module current { import context(FIXES = Set()).* }
+module current { import context(FIXES = Set("617", "618", "619", "620", "621", "622", "623")).* }
 module fixed {
   import context(FIXES = Set("617", "618", "619", "620", "621", "622", "623")).*
 }

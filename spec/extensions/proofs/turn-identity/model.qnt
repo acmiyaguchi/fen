@@ -91,5 +91,5 @@ module turnIdentity {
   }
 }
 
-module current { import turnIdentity(FIXES = Set()).* }
+module current { import turnIdentity(FIXES = Set("627")).* }
 module fixed { import turnIdentity(FIXES = Set("627")).* }

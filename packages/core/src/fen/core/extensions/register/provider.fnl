@@ -1,5 +1,6 @@
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
+(local contrib (require :fen.core.extensions.contrib))
 
 (local M {})
 
@@ -16,19 +17,8 @@
   (let [name (or spec.name spec.api)
         spec* (util.deep-copy spec)]
     (when (not spec*.name) (set spec*.name name))
-    (let [(tagged unregister) (util.set-tagged! state.providers name spec*
-                                                owner)]
+    (let [(_record unregister) (contrib.add! owner :providers name spec*)]
       (handle-result :provider name owner unregister))))
-
-;; @doc fen.core.extensions.register.provider.unregister-by-owner
-;; kind: function
-;; signature: (unregister-by-owner owner) -> nil
-;; summary: Remove every provider installed by owner without clobbering same-name providers registered later by other owners.
-;; tags: extensions providers reload
-(fn M.unregister-by-owner [owner]
-  (each [name p (pairs state.providers)]
-    (when (= p.__owner owner)
-      (tset state.providers name nil))))
 
 (fn M.find [name]
   "Find a provider by its unique registry name. Provider :api is protocol

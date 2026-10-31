@@ -1,7 +1,6 @@
-;; Known bug #625: a failed reload-module's fingerprint is committed, so the next /reload restores the old code as :loaded.
+;; Regression for #625: a failed module's fingerprint is not committed, so the next /reload retries it and never reports the broken source as :loaded.
 
 (local h (require :fen.testing))
-(local {: known-bug} h)
 (local test-api (require :fen.core.extensions.test_api))
 (local ext-state (require :fen.core.extensions.state))
 
@@ -75,40 +74,42 @@
                           (test-api.reset!)
                           (set ext-state.reload-fingerprints fingerprints)
                           (h.restore-package-loaded! snapshot)))
-            (it "reports the still-broken extension :loaded with 0 changed on the next /reload"
+            (it "retries the still-broken module on the next /reload instead of reporting :loaded"
                 (fn []
-                  (known-bug 625
-                             (fn []
-                               (loader.load! {:extension-paths []}
-                                             {:interactive? false})
-                               (assert.are.equal :alpha (owner-of :alpha-v1))
-                               ;; Edit alpha to a broken v2 and leave it broken on disk.
-                               (set disk.fingerprint :v2)
-                               (set disk.broken? true)
-                               (let [(first-ok? _) (pcall loader.load!
-                                                          {:extension-paths []}
-                                                          {:interactive? false
-                                                           :reload? true})
-                                     after-first-owner (owner-of :alpha-v1)
-                                     committed (. ext-state.reload-fingerprints
-                                                  (.. "module:" PROBE-MODULE))
-                                     (second-ok? summary) (pcall loader.load!
-                                                                 {:extension-paths []}
-                                                                 {:interactive? false
-                                                                  :reload? true})
-                                     entry (?. summary :extensions 1)
-                                     (still-broken-ok? _) (pcall (. package.preload
-                                                                    PROBE-MODULE))]
-                                 (and (= false first-ok?)
-                                      (= nil after-first-owner)
-                                      ;; The failed v2 fingerprint was committed before the module ran.
-                                      (= :v2 committed) (= true second-ok?)
-                                      (= :loaded (?. entry :status))
-                                      (= 0 (?. entry :changed))
-                                      (= :loaded
-                                         (?. ext-state.extensions :alpha
-                                             :status))
-                                      ;; Old v1 registrations came back from package.loaded...
-                                      (= :alpha (owner-of :alpha-v1))
-                                      ;; ...while the source is still broken.
-                                      (= false still-broken-ok?)))))))))
+                  (loader.load! {:extension-paths []} {:interactive? false})
+                  (assert.are.equal :alpha (owner-of :alpha-v1))
+                  ;; Edit alpha to a broken v2 and leave it broken on disk.
+                  (set disk.fingerprint :v2)
+                  (set disk.broken? true)
+                  (let [(first-ok? _) (pcall loader.load! {:extension-paths []}
+                                             {:interactive? false
+                                              :reload? true})]
+                    (assert.is_true first-ok?)
+                    ;; The failed v2 fingerprint was not committed.
+                    (assert.are.equal :v1
+                                      (. ext-state.reload-fingerprints
+                                         (.. "module:" PROBE-MODULE)))
+                    (assert.are.equal :stale
+                                      (?. ext-state.extensions :alpha :status)))
+                  (let [(second-ok? summary) (pcall loader.load!
+                                                    {:extension-paths []}
+                                                    {:interactive? false
+                                                     :reload? true})
+                        entry (?. summary :extensions 1)]
+                    (assert.is_true second-ok?)
+                    (assert.are.equal :error entry.status)
+                    (assert.are.equal 1 entry.changed)
+                    (assert.are.equal :stale
+                                      (?. ext-state.extensions :alpha :status)))
+                  ;; Fixing the source commits the fingerprint and returns to :loaded.
+                  (set disk.fingerprint :v3)
+                  (set disk.broken? false)
+                  (let [(_ summary) (pcall loader.load! {:extension-paths []}
+                                           {:interactive? false :reload? true})]
+                    (assert.are.equal :loaded
+                                      (?. summary :extensions 1 :status))
+                    (assert.are.equal :loaded
+                                      (?. ext-state.extensions :alpha :status))
+                    (assert.are.equal :v3
+                                      (. ext-state.reload-fingerprints
+                                         (.. "module:" PROBE-MODULE))))))))

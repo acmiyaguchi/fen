@@ -2,6 +2,7 @@
 
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
+(local contrib (require :fen.core.extensions.contrib))
 (local events (require :fen.core.extensions.events))
 
 (local M {})
@@ -18,14 +19,9 @@
     (error "register :introspect requires {:name ...}"))
   (when (not= (type spec.snapshot) :function)
     (error "register :introspect requires {:snapshot fn}"))
-  (let [(record unregister) (util.add-tagged! state.introspectors-extra spec
-                                              owner)]
+  (let [(_record unregister) (contrib.add! owner :introspectors nil
+                                           (util.deep-copy spec))]
     (handle-result :introspect spec.name owner unregister)))
-
-(fn M.unregister-by-owner [owner]
-  (ensure-state!)
-  (util.remove-where state.introspectors-extra
-                     (fn [rec _] (= rec.__owner owner))))
 
 (fn by-owner-name [a b]
   (let [ao (tostring (or a.__owner a.owner ""))

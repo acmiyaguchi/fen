@@ -1,5 +1,6 @@
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
+(local contrib (require :fen.core.extensions.contrib))
 
 (local M {})
 
@@ -11,19 +12,9 @@
 (fn M.register [spec owner handle-result]
   (when (or (not spec) (not spec.name))
     (error "register :auth-backend requires {:name ...}"))
-  (let [(tagged unregister) (util.set-tagged! state.auth-backends spec.name
-                                              spec owner)]
+  (let [(_record unregister) (contrib.add! owner :auth-backends spec.name
+                                          (util.deep-copy spec))]
     (handle-result :auth-backend spec.name owner unregister)))
-
-;; @doc fen.core.extensions.register.auth_backend.unregister-by-owner
-;; kind: function
-;; signature: (unregister-by-owner owner) -> nil
-;; summary: Remove every auth backend installed by owner without disturbing backends registered by other extensions.
-;; tags: extensions register auth reload
-(fn M.unregister-by-owner [owner]
-  (each [name b (pairs state.auth-backends)]
-    (when (= b.__owner owner)
-      (tset state.auth-backends name nil))))
 
 ;; @doc fen.core.extensions.register.auth_backend.find
 ;; kind: function

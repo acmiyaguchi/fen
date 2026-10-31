@@ -1,5 +1,6 @@
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
+(local contrib (require :fen.core.extensions.contrib))
 
 (local M {})
 
@@ -19,22 +20,9 @@
     (when (not= (type (. spec k)) :function)
       (error (.. "register :session-backend requires {:" (tostring k) " ...}"))))
   (let [name spec.name
-        (tagged unregister) (util.set-tagged! state.session-backends name spec
-                                              owner)]
+        (_record unregister) (contrib.add! owner :session-backends name
+                                           (util.deep-copy spec))]
     (handle-result :session-backend name owner unregister)))
-
-;; @doc fen.core.extensions.register.session_backend.unregister-by-owner
-;; kind: function
-;; signature: (unregister-by-owner owner) -> nil
-;; summary: Remove session backends installed by owner and clear active session state if the active backend is removed.
-;; tags: extensions session reload
-(fn M.unregister-by-owner [owner]
-  (each [name backend (pairs state.session-backends)]
-    (when (= backend.__owner owner)
-      (when (= state.session.backend backend)
-        (set state.session.backend nil)
-        (set state.session.info nil))
-      (tset state.session-backends name nil))))
 
 ;; @doc fen.core.extensions.register.session_backend.find
 ;; kind: function

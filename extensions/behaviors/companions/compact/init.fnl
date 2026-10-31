@@ -13,6 +13,7 @@
 ;; results before summarizing, and picking a good moment inside the soft
 ;; window below the threshold. Both do nothing while decide is disabled.
 
+(local usage-ledger (require :fen.core.extensions.usage_ledger))
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
 (local tokens (require :fen.util.tokens))
@@ -264,6 +265,8 @@
                               (do
                                 (replace-agent-messages! run-state.agent
                                                          new-messages)
+                                ;; Usage reported before this rewrite no longer describes the context (#620).
+                                (usage-ledger.rewrite!)
                                 (set run-state.flush
                                      (run-state.make-flush run-state.agent
                                                            run-state.session

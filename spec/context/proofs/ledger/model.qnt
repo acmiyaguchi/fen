@@ -208,7 +208,7 @@ module ledger {
   }
 }
 
-module current { import ledger(FIXES = Set()).* }
+module current { import ledger(FIXES = Set("617", "618", "619", "620", "621")).* }
 module fixed { import ledger(FIXES = Set("617", "618", "619", "620", "621")).* }
 module fix617 { import ledger(FIXES = Set("617")).* }
 module fix618 { import ledger(FIXES = Set("618")).* }

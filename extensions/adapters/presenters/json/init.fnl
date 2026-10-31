@@ -1,5 +1,6 @@
 ;; One-shot structured presenter: writes the result blob to FEN_JSON_OUTPUT_PATH (a file avoids stdout corruption) or stdout.
 
+(local usage-ledger (require :fen.core.extensions.usage_ledger))
 (local agent-mod (require :fen.core.agent))
 (local turn-lifecycle (require :fen.turn_lifecycle))
 (local json (require :fen.util.json))
@@ -60,7 +61,8 @@
         prompt (or (?. state :opts :print) ctx.prompt)]
     (when (not prompt)
       (error "json presenter requires a prompt"))
-    (let [(ok? result) (xpcall #(agent-mod.step state.agent prompt)
+    (let [marker (usage-ledger.mark!)
+          (ok? result) (xpcall #(agent-mod.step state.agent prompt)
                                debug.traceback)]
       (turn-lifecycle.emit-complete! state ok? result)
       (let [agent state.agent
@@ -70,7 +72,7 @@
             failed? (turn-result.failed? ok? messages)
             blob {:final-text (if failed? nil result)
                   :messages messages
-                  :usage (turn-result.sum-usage messages)
+                  :usage (usage-ledger.delta marker)
                   :stop-reason (?. asst :stop-reason)
                   :error-details (when failed? (?. asst :error-details))
                   :error (if failed? (tostring result) nil)}

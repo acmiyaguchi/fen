@@ -29,5 +29,5 @@ module validation {
   val wellFormedAccepted = KINDS.forall(k => accepts(k, true))
 }
 
-module current { import validation(FIXES = Set()).* }
+module current { import validation(FIXES = Set("628")).* }
 module fixed { import validation(FIXES = Set("628")).* }

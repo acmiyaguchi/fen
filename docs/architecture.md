@@ -176,6 +176,15 @@ ImageContent, `response-id` / `textSignature` / `thoughtSignature`, `usage.cost`
 schema validation. ThinkingContent is kept — both Anthropic extended thinking and
 OpenAI reasoning models surface it.
 
+### One step, one close
+
+`agent.step` ends through one close-turn boundary, whatever the exit: a natural stop, an error reply, a second `:tool-choice :none` refusal, the safety cap, a cancel, or a crash.
+The boundary answers every tool call the newest assistant left open (matched by call id) with a synthetic error result, so history stays provider-valid; on cancel it also appends one empty `:aborted` assistant and emits `:cancelled`.
+The loop dispatches on content, as pi-mono does: a reply that is not an error and carries tool calls runs them, whatever its stop label (`:length` included).
+Every error exit emits `:error`, and the step returns its text plus one `Outcome` (`types.outcome`: `{:status :ok|:error|:cancelled :text :error}`), also kept in `agent.outcome` until `turn_lifecycle` reports it.
+The tool paths do not pair calls themselves; they stop and unwind.
+After a natural stop the loop continues only when a queued steering or follow-up line was actually appended.
+
 ## Design principles
 
 These shape the core API and what the generated docs cover. They are values, not

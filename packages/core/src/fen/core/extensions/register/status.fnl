@@ -15,6 +15,7 @@
     (error "register :status requires {:render fn}")))
 
 (local opts {:kind :status
+             :view :status
              :bucket state.status-extra
              :defaults {:side :left :order 50}
              :validate validate
@@ -28,14 +29,6 @@
 ;; tags: extensions register status
 (fn M.register [spec owner handle-result]
   (contribution.register opts spec owner handle-result))
-
-;; @doc fen.core.extensions.register.status.unregister-by-owner
-;; kind: function
-;; signature: (unregister-by-owner owner) -> nil
-;; summary: Remove all status contributors installed by owner while preserving contributors from other extensions.
-;; tags: extensions register status reload
-(fn M.unregister-by-owner [owner]
-  (contribution.unregister-by-owner opts owner))
 
 ;; @doc fen.core.extensions.register.status.list
 ;; kind: function

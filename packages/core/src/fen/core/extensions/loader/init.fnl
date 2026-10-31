@@ -10,6 +10,7 @@
 (local discover (require :fen.core.extensions.loader.discover))
 (local reload (require :fen.core.extensions.loader.reload))
 (local rocks (require :fen.core.extensions.rocks))
+(local contrib (require :fen.core.extensions.contrib))
 
 (local M {})
 
@@ -41,6 +42,22 @@
     (record-spec-status! spec :error {:error (tostring display-err)})
     (log.warn (.. "extension " spec.name " failed: " (tostring display-err)))))
 
+;; A reload stages the owner's new contribution set (contrib.begin!) and swaps it
+;; in only on success. On failure the previous version stays serving, marked
+;; :stale, and the pass continues with the next owner (#624, #625).
+(fn fail-staged! [spec token err]
+  (contrib.rollback! token)
+  (if (and token.old (. state.extensions spec.name))
+      (let [display-err (actionable-error spec err)
+            prior (. state.extensions spec.name)]
+        (record-spec-status! spec :stale
+                             {:error (tostring display-err)
+                              :stale-since (or prior.stale-since (os.time))})
+        (log.warn (.. "extension " spec.name
+                      " reload failed; keeping the previous version (stale): "
+                      (tostring display-err))))
+      (record-spec-error! spec err)))
+
 (fn entry-shape-error [entry]
   "Describe why a loaded entry has no register fn. `require` caches `true` for
    a module that returned nil, so booleans read as \"returned nothing\"."
@@ -67,45 +84,49 @@
           (if ok? (values true nil) (values false reg-err))))))
 
 (fn load-module-spec! [spec opts]
-  "Module-shaped extension: require the entry module. The loader drops prior
-   owner-tagged contributions FIRST so extension bodies don't need explicit
-   unregister-by-owner boilerplate. On reload, clear `:reload-modules` from
-   package.loaded so the re-require re-runs every body that owns behavior.
-   Order matters: clearing/requiring installs the new registrations — calling
-   unregister-by-owner *after* it would wipe the registrations that just
-   landed, leaving state.presenters / commands-extra empty."
-  (let [entry-module (manifest-mod.entry-module-of spec.manifest)]
-    (register-registry.unregister-by-owner spec.name)
+  "Module-shaped extension: stage a fresh contribution set, require the entry
+   module (reloading `:reload-modules` on /reload) and run its register fn.
+   Success commits the set and the fingerprints; any failure restores the
+   previous version, marked :stale, and returns (false err) instead of raising."
+  (let [entry-module (manifest-mod.entry-module-of spec.manifest)
+        token (contrib.begin! spec.name)]
     (when (and (or (not opts.reload?) opts.force?)
                (. package.loaded entry-module))
       (tset package.loaded entry-module nil))
-    (let [changes (if opts.reload?
-                      (reload.clear-reload-modules! spec.manifest
-                                                    [entry-module] opts.yield
-                                                    {:force? opts.force?})
-                      (reload.change-summary (manifest-mod.reload-modules spec.manifest
-                                                                          [entry-module])))
-          (ok? entry-or-err) (pcall require entry-module)]
-      (if ok?
-          (let [(reg-ok? reg-err) (try-register-entry! spec entry-or-err)]
-            (if reg-ok?
-                (do
-                  (record-spec-status! spec :loaded {})
-                  (tset loaded spec.name spec)
-                  (events.emit {:type :extension-loaded :name spec.name})
-                  (values true nil changes))
-                (let [display-err (actionable-error spec reg-err)]
-                  (record-spec-error! spec reg-err)
-                  (values false display-err changes))))
+    (let [(changes module-err) (if opts.reload?
+                                   (reload.clear-reload-modules! spec.manifest
+                                                                 [entry-module]
+                                                                 opts.yield
+                                                                 {:force? opts.force?})
+                                   (reload.change-summary (manifest-mod.reload-modules spec.manifest
+                                                                                       [entry-module])))]
+      (if module-err
           (do
-            (let [display-err (actionable-error spec entry-or-err)]
-              (record-spec-error! spec entry-or-err)
-              (values false display-err changes)))))))
+            (fail-staged! spec token module-err)
+            (values false (actionable-error spec module-err) changes))
+          (let [(ok? entry-or-err) (pcall require entry-module)]
+            (if ok?
+                (let [(reg-ok? reg-err) (try-register-entry! spec entry-or-err)]
+                  (if reg-ok?
+                      (do
+                        (contrib.commit! token)
+                        (reload.commit-summary! changes)
+                        (record-spec-status! spec :loaded {})
+                        (tset loaded spec.name spec)
+                        (events.emit {:type :extension-loaded :name spec.name})
+                        (values true nil changes))
+                      (do
+                        (fail-staged! spec token reg-err)
+                        (values false (actionable-error spec reg-err) changes))))
+                (do
+                  (fail-staged! spec token entry-or-err)
+                  (values false (actionable-error spec entry-or-err) changes))))))))
 
 (fn load-path-spec! [spec _opts]
-  "Path-shaped extension: dofile the entry, call its register fn with the api."
-  (register-registry.unregister-by-owner spec.name)
-  (let [changes (reload.change-summary (manifest-mod.reload-modules spec.manifest
+  "Path-shaped extension: dofile the entry, call its register fn with the api.
+   Staged like load-module-spec!."
+  (let [token (contrib.begin! spec.name)
+        changes (reload.change-summary (manifest-mod.reload-modules spec.manifest
                                                                     []))
         entry-path (or spec.entry-path
                        (let [manifest-entry (manifest-mod.entry-of spec.manifest)]
@@ -115,7 +136,7 @@
     (if (not entry-path)
         (let [err (.. "no entry: set :entry-module or :entry, or place "
                       "init.{fnl,lua} in " spec.dir)]
-          (record-spec-error! spec err)
+          (fail-staged! spec token err)
           (values false err changes))
         (do
           (when (reload.file-changed?! entry-path)
@@ -124,19 +145,21 @@
             (table.insert changes.changed-modules entry-path))
           (let [(entry load-err) (manifest-mod.load-file entry-path)]
             (if load-err
-                (let [display-err (actionable-error spec load-err)]
-                  (record-spec-error! spec load-err)
-                  (values false display-err changes))
+                (do
+                  (fail-staged! spec token load-err)
+                  (values false (actionable-error spec load-err) changes))
                 (let [(reg-ok? reg-err) (try-register-entry! spec entry)]
                   (if reg-ok?
                       (do
+                        (contrib.commit! token)
+                        (reload.commit-summary! changes)
                         (record-spec-status! spec :loaded {})
                         (tset loaded spec.name spec)
                         (events.emit {:type :extension-loaded :name spec.name})
                         (values true nil changes))
-                      (let [display-err (actionable-error spec reg-err)]
-                        (record-spec-error! spec reg-err)
-                        (values false display-err changes))))))))))
+                      (do
+                        (fail-staged! spec token reg-err)
+                        (values false (actionable-error spec reg-err) changes))))))))))
 
 (fn presenter-match? [spec opts]
   "True when the spec has no presenter, or its presenter matches opts."

@@ -356,7 +356,7 @@ module extensions {
   }
 }
 
-module current { import extensions(FIXES = Set()).* }
+module current { import extensions(FIXES = Set("624", "625", "626", "627", "628")).* }
 module fixed { import extensions(FIXES = Set("624", "625", "626", "627", "628")).* }
 module fix624 { import extensions(FIXES = Set("624")).* }
 module fix625 { import extensions(FIXES = Set("625")).* }

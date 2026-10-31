@@ -1,9 +1,9 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-current	sessionUsageComplete	violated	#617
-current	runUsageExact	violated	#618
-current	headlessUsageExact	violated	#619
-current	exactContextIsCurrent	violated	#620
-current	totalTokensConvention	violated	#621
+current	sessionUsageComplete	holds
+current	runUsageExact	holds
+current	headlessUsageExact	holds
+current	exactContextIsCurrent	holds
+current	totalTokensConvention	holds
 fix617	sessionUsageComplete	holds
 fix618	runUsageExact	holds
 fix619	headlessUsageExact	holds
