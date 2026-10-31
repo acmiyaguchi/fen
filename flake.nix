@@ -43,11 +43,14 @@
           # Override only busted (test-only) with unstable's 2.3.0, which ships
           # the fennel busted loader missing from 25.11's 2.2.0. busted is not in
           # checkPins and never enters a shipped artifact.
+          # quint (dev shell only, `make check-spec`) also comes from unstable:
+          # 25.11's 0.25.1 simulates about 13x slower than 0.32+.
           overlays = [
             (_final: prev: {
               lua54Packages = prev.lua54Packages // {
                 inherit (nixpkgs-unstable.legacyPackages.${system}.lua54Packages) busted;
               };
+              inherit (nixpkgs-unstable.legacyPackages.${system}) quint;
             })
           ];
         };
@@ -88,6 +91,7 @@
           lua = pkgs.lua5_4;
           devLuaPackages = with pkgs.lua54Packages; [ lua-cjson luasocket ];
           testRocks = with pkgs.lua54Packages; [ busted ];
+          apalache = pkgs.callPackage ./nix/apalache.nix {};
         };
 
         # Guard the non-Nix build's pinned third-party versions against drift
