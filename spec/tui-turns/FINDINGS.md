@@ -32,8 +32,8 @@ On a running subagent tab, `cancel-hint` leaves the hint out on purpose ("would 
 In both cases Ctrl-C does touch a turn: the main one.
 This is a sibling of #433, which fixed only the running-side-chat case.
 
-Witnesses: `w660CtrlCCancelsHiddenMainTest`, `w660SubTabHintOmittedTest`, `w660FirstPressCancelsMainTest` ([`witnesses.qnt`](witnesses.qnt)); `w660IdleSideCancelsMainTest`, `w660SubTabHintOmittedTest` ([`ctrl-c`](proofs/ctrl-c/) proof model).
-Probe: `extensions/adapters/presenters/tui/tests/issue_660_ctrl_c_hidden_main_turn_test.fnl` (reproduces on the idle btw tab and on a running subagent tab).
+Witnesses: `reachMainCancelTest`, `reachSideClearDraftTest` ([`witnesses.qnt`](witnesses.qnt)); `reachCancelThenForceQuitMainTest`, `reachSideClearDraftWhileMainRunsTest` ([`ctrl-c`](proofs/ctrl-c/) proof model).
+Regression test: `extensions/adapters/presenters/tui/tests/ctrl_c_non_main_tab_preserves_main_turn_test.fnl` (tested on the idle btw tab and on a running subagent tab).
 
 Confirmed with a Busted probe against real `input.handle-key` and `panels/busy.render` (main `is-busy?` stubbed true):
 
@@ -58,8 +58,8 @@ Every key except Ctrl-C clears `pending-quit?` at the top of `handle-key`, so Al
 After an idle Ctrl-C on main and a click on the `btw` tab, a Ctrl-C meant to clear the side draft exits fen.
 The `clearDraft` branch is skipped because `pending-quit?` is set.
 
-Witnesses: `w661MouseSwitchKeepsArmTest` (integration and [`ctrl-c`](proofs/ctrl-c/) models).
-Probe: `extensions/adapters/presenters/tui/tests/issue_661_mouse_switch_keeps_quit_arm_test.fnl` (reproduces through the real tabs panel hit regions and `handle-mouse`; the Alt-Right switch is the asserted control).
+Witnesses: `reachQuitAndMouseDisarmTest` ([`witnesses.qnt`](witnesses.qnt)); `reachMouseDisarmTest` ([`ctrl-c`](proofs/ctrl-c/) proof model).
+Regression test: `extensions/adapters/presenters/tui/tests/mouse_switch_disarms_quit_arm_test.fnl` (through the real tabs panel hit regions and `handle-mouse`; the Alt-Right switch is the asserted control).
 
 Confirmed with the same probe (the tabs panel `action-at` stubbed to return the `btw` tab):
 
@@ -84,8 +84,8 @@ The line then sits in the queue until the next prompt.
 `step` appends that prompt first, then `step-loop` injects the stale correction after it, so the model reads the old correction as the newest instruction.
 Nothing is lost (`noSteeringLost` holds); it is delivered to the wrong turn, in the wrong order.
 
-Witnesses: `w662SteeringIntoNextTurnTest` (integration model); `w662SteeringIntoNextTurnTest` and `w662CancelledTurnSteeringTest` ([`steering`](proofs/steering/) proof model).
-Probe: `extensions/behaviors/kernel/steering/tests/issue_662_steering_outlives_failed_turn_test.fnl` (reproduces on the error and the cancel path).
+Witnesses: `reachSteeringHandedBackTest`, `reachSteeringDeliveredTest` ([`witnesses.qnt`](witnesses.qnt)); `reachHandedBackTest`, `reachDeliveredMidTurnTest` ([`steering`](proofs/steering/) proof model).
+Regression test: `extensions/behaviors/kernel/steering/tests/failed_turn_steering_discarded_test.fnl` (on the error and the cancel path).
 
 Confirmed with a probe driving real `agent.step` (mock provider) with the real `steering.service` queue; the correction is typed at the first `:llm-start`:
 
@@ -110,8 +110,8 @@ Then:
 1. The new tab shows `idle`, but every submit fails with "side agent is busy" until the reap finishes.
 2. The old turn's events, including its final reply, go through `on-event! WORKSPACE-ID`, which routes by id, so they land in the new tab's transcript.
 
-Witnesses: `w663ReopenAdoptsParkedTurnTest`, `w663OldReplyInNewTabTest` (integration and [`side-ownership`](proofs/side-ownership/) models).
-Probe: `extensions/adapters/presenters/tui/tests/issue_663_btw_reopen_adopts_reaped_turn_test.fnl` (reproduces). The probe sets `state.presenter-ctx` (restored after) to stand in for the live presenter, which the submit after the reap needs to rebuild the side agent; that part is a test-environment stand-in, not part of the bug.
+Witnesses: `reachReopenWhileReapingTest`, `reachSideTurnCompletesTest` ([`witnesses.qnt`](witnesses.qnt)); `reachReopenWhileReapingTest`, `reachReapFinishesTest` ([`side-ownership`](proofs/side-ownership/) proof model).
+Regression test: `extensions/adapters/presenters/tui/tests/reopened_btw_isolated_from_reaped_turn_test.fnl`.
 
 Confirmed with a probe on real `side_chat.fnl`, using a fake `agent.step` that needs 12 yields to unwind:
 
@@ -143,6 +143,16 @@ Evidence: sampled (`check-spec`); `draftsPreserved`, `noSteeringLost`, `closedSi
 - Which real turns take more than 8 resumes to unwind after a cancel request (#663's precondition)? Candidates are tools that `pcall` around the yield function, and parallel tool tasks in nested coroutines. None has been shown yet.
 - While a closed side turn is being reaped, `side-chat.busy?` is false, so `peek-timeout-ms` uses the long idle poll and the reap advances slowly. This is a latency concern only and was not probed.
 - `guard-tick!` errors from `side-chat.tick!` go out on the bus, so they land in the main transcript, not the `btw` tab. That is arguably right for a presenter fault. Not modelled.
+
+## Fixed in #605
+
+All of #660–#663 are fixed in the code, and `current` now enables the fixes, so its former `violated` rows are `holds`.
+The counterexample witnesses became `reach...Test` traces on the fixed design.
+
+- Ctrl-C on non-main tabs (#660): `input.fnl` restricts the main session's cancel/force-quit ladder to the main tab; other tabs cancel their own turn or clear local drafts / run the two-press quit without touching the main turn.
+- Mouse switch disarms quit arm (#661): `workspaces.activate!` disarms `state.pending-quit?`, so mouse switches match keyboard switches.
+- Steering discarded on turn error/cancel (#662): `agent.close-turn!` in `packages/core/src/fen/core/agent.fnl` clears steering on error or cancel via `:clear-steering`.
+- Reopened `/btw` isolated from reaped turn (#663): `side_chat.fnl` removes parked entries from `live` into `reap`, captures `ws` in event callbacks and drops events for closed tabs, and reflects `reap` in `busy?`.
 
 ## Candidate fixes (named: `FIXES`)
 

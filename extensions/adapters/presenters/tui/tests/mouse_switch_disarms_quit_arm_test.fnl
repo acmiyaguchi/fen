@@ -1,6 +1,7 @@
-;; Known bug #661: a quit armed on one tab survives a mouse tab click (handle-mouse -> workspaces.activate!), so a Ctrl-C meant to clear the other tab's draft exits fen; an Alt-arrow switch disarms.
+;; Regression for #661 (spec/tui-turns, `quitArmOnFocusedTab`):
+;; a quit armed on one tab is disarmed when switching tabs by mouse
+;; (handle-mouse -> workspaces.activate!), matching the keyboard Alt-arrow behavior.
 
-(local {: known-bug} (require :fen.testing))
 (local tui-test (require :fen.testing.tui))
 (local tb (tui-test.install-termbox-stub!))
 (tui-test.install-markdown-stub!)
@@ -55,28 +56,27 @@
   (assert.is_false (key! tb.KEY_CTRL_C))
   (assert.is_true state.pending-quit?))
 
-(describe "#661 quit arm carries across a mouse tab switch"
+(describe "mouse switch disarms quit arm (#661)"
           (fn []
             (after_each (fn []
                           (side-chat.reset!)
                           (tui-test.reset-state!)))
-            (it "mouse click to btw keeps the arm, so Ctrl-C on the side draft quits"
+            (it "mouse click to btw disarms the quit arm, so Ctrl-C on side draft clears draft instead of quitting"
                 (fn []
-                  (known-bug 661
-                             (fn []
-                               ;; Control: an Alt-right keyboard switch disarms.
-                               (setup!)
-                               (key! tb.KEY_ARROW_RIGHT tb.MOD_ALT)
-                               (assert.are.equal :btw state.active-workspace-id)
-                               (assert.is_false state.pending-quit?)
-                               (assert.is_false (key! tb.KEY_CTRL_C))
-                               (assert.are.equal "" state.input-buf)
-                               ;; Bug: the same switch by mouse keeps the arm; Ctrl-C quits instead of clearing "side draft".
-                               (setup!)
-                               (click-tab! :btw)
-                               (let [focused state.active-workspace-id
-                                     armed? state.pending-quit?
-                                     quit? (key! tb.KEY_CTRL_C)]
-                                 (and (= focused :btw) (= armed? true)
-                                      (= quit? true)
-                                      (= state.input-buf "side draft")))))))))
+                  ;; Control: an Alt-right keyboard switch disarms.
+                  (setup!)
+                  (key! tb.KEY_ARROW_RIGHT tb.MOD_ALT)
+                  (assert.are.equal :btw state.active-workspace-id)
+                  (assert.is_false state.pending-quit?)
+                  (assert.is_false (key! tb.KEY_CTRL_C))
+                  (assert.are.equal "" state.input-buf)
+                  ;; Fixed: the same switch by mouse now disarms; Ctrl-C clears "side draft" instead of quitting.
+                  (setup!)
+                  (click-tab! :btw)
+                  (let [focused state.active-workspace-id
+                        armed? state.pending-quit?
+                        quit? (key! tb.KEY_CTRL_C)]
+                    (assert.are.equal :btw focused)
+                    (assert.is_false armed?)
+                    (assert.is_false quit?)
+                    (assert.are.equal "" state.input-buf))))))

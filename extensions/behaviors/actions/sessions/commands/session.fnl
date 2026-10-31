@@ -186,9 +186,12 @@
               picked (ui.select {:label "resume session"
                                  :choices (build-session-choices sessions)})]
           (when picked
-            (let [rec (or picked.value picked)]
-              (when rec
-                (resume-session! api state (or rec.path rec.id rec)))))))))
+            (if (or state.busy? state.turn)
+                (api.emit {:type :error
+                           :error "cannot resume session: agent became busy while selecting"})
+                (let [rec (or picked.value picked)]
+                  (when rec
+                    (resume-session! api state (or rec.path rec.id rec))))))))))
 
 (fn register-new [api]
   (api.register :command

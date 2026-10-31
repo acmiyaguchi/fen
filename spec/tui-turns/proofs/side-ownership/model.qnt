@@ -134,5 +134,5 @@ module sideOwnership {
   }
 }
 
-module current { import sideOwnership(FIXES = Set()).* }
+module current { import sideOwnership(FIXES = Set("663")).* }
 module fixed { import sideOwnership(FIXES = Set("663")).* }

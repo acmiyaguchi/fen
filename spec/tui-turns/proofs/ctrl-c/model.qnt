@@ -203,7 +203,7 @@ module ctrlC {
   }
 }
 
-module current { import ctrlC(FIXES = Set()).* }
+module current { import ctrlC(FIXES = Set("660", "661")).* }
 module fixed { import ctrlC(FIXES = Set("660", "661")).* }
 module fix660 { import ctrlC(FIXES = Set("660")).* }
 module fix661 { import ctrlC(FIXES = Set("661")).* }

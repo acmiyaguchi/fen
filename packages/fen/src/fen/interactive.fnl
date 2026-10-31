@@ -170,6 +170,7 @@
                                      (events.emit {:type :set-status-info
                                                    :info info})))))
         agent-extra {:get-steering (fn [] (steering.get-steering))
+                     :clear-steering (fn [] (steering.clear-queues! :steering))
                      :get-follow-up (fn [] (steering.get-follow-up))
                      :tool-context (fn [_agent]
                                      {:state _state-box.state})}

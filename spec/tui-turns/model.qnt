@@ -372,7 +372,7 @@ module tuiTurns {
   }
 }
 
-module current { import tuiTurns(FIXES = Set()).* }
+module current { import tuiTurns(FIXES = Set("660", "661", "662", "663")).* }
 module fixed { import tuiTurns(FIXES = Set("660", "661", "662", "663")).* }
 module fix660 { import tuiTurns(FIXES = Set("660")).* }
 module fix661 { import tuiTurns(FIXES = Set("661")).* }

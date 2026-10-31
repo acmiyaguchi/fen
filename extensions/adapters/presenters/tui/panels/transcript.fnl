@@ -407,12 +407,16 @@
              (= ev.render-cache-version version)
              (= ev.render-cache-toggles bits))
         ev.render-cache-lines
-        (let [rows (render-lines-for-event ev width)]
+        (let [(ok? rows) (pcall render-lines-for-event ev width)
+              final-rows (if ok?
+                             rows
+                             [{:text (.. "render-error: " (tostring rows))
+                               :attr C.err}])]
           (set ev.render-cache-width width)
           (set ev.render-cache-version version)
           (set ev.render-cache-toggles bits)
-          (set ev.render-cache-lines rows)
-          rows))))
+          (set ev.render-cache-lines final-rows)
+          final-rows))))
 
 ;; @doc fen.extensions.tui.panels.transcript.lines-for-event
 ;; kind: data

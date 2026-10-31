@@ -1,18 +1,6 @@
 // Deterministic witnesses for the pump proof model.
 module witnesses {
-  import pump(FIXES = Set()) as C from "./model"
   import pump(FIXES = Set("635", "637")) as F from "./model"
-
-  // #635: one unrenderable row ends the loop at the next paint.
-  run w635BadRowCrashesLoopTest =
-    C::init.then(C::submitMain).then(C::emitBadRow)
-      .then(C::iterate(false, false, false, false))
-      .expect(not(C::loopSurvivesFaults) and C::terminalRestoredWhenStopped)
-
-  // #637: a pending runtime-tick task waits the idle poll.
-  run w637IdlePollForPendingTaskTest =
-    C::init.then(C::startBgTask).then(C::iterate(false, false, false, false))
-      .expect(not(C::pendingWorkPolledActively) and C::s.lastBgGap == C::IDLE_MS)
 
   // ---- reachability of the fixed design ----
 

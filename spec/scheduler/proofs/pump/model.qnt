@@ -105,5 +105,5 @@ module pump {
   }
 }
 
-module current { import pump(FIXES = Set()).* }
+module current { import pump(FIXES = Set("635", "637")).* }
 module fixed { import pump(FIXES = Set("635", "637")).* }

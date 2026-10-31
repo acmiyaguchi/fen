@@ -1,10 +1,10 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-current	ctrlCActsOnShownTurn	violated	#660
-current	busyHintTruthful	violated	#660
-current	quitArmOnFocusedTab	violated	#661
-current	steeringReachesItsTurn	violated	#662
-current	eventsInOwnTab	violated	#663
-current	sideEntryOwned	violated	#663
+current	ctrlCActsOnShownTurn	holds
+current	busyHintTruthful	holds
+current	quitArmOnFocusedTab	holds
+current	steeringReachesItsTurn	holds
+current	eventsInOwnTab	holds
+current	sideEntryOwned	holds
 current	noSteeringLost	holds
 current	closedSideCancelled	holds
 current	closedSideIdle	holds

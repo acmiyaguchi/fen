@@ -1,5 +1,5 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-current	loopSurvivesFaults	violated	#635
-current	pendingWorkPolledActively	violated	#637
+current	loopSurvivesFaults	holds
+current	pendingWorkPolledActively	holds
 current	terminalRestoredWhenStopped	holds
 fixed	pumpInductive	holds

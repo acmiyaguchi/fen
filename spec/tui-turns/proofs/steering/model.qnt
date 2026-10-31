@@ -103,5 +103,5 @@ module steering {
   }
 }
 
-module current { import steering(FIXES = Set()).* }
+module current { import steering(FIXES = Set("662")).* }
 module fixed { import steering(FIXES = Set("662")).* }

@@ -197,7 +197,13 @@
   "Run the presenter loop's cooperative ticks: the main turn, then side turns
    and subagent sync, so background tabs keep streaming under a modal."
   (when state.on-tick
-    (pcall state.on-tick))
+    (let [turn-before (when state.get-turn (state.get-turn))]
+      (pcall state.on-tick)
+      (let [turn-after (when state.get-turn (state.get-turn))]
+        (when (and state.cancel-pressed? (not= turn-after turn-before))
+          (set state.cancel-pressed? false)
+          (set state.cancel-armed-turn nil)
+          (set state.status-info.cancelling? false)))))
   ;; Resolved at tick time (the presenter requires this module) so the modal
   ;; follows /reload.
   (let [(ok? tui) (pcall require :fen.extensions.tui)]

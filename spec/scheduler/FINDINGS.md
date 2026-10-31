@@ -38,8 +38,8 @@ A field the renderer cannot handle (a non-string `:text`, for example) then rais
 The error leaves `M.run`, `interactive.fnl`'s xpcall runs presenter shutdown, which restores the terminal correctly, and the process exits with `presenter crashed`.
 The in-flight turn, side chat, and background subagent jobs all go with it.
 
-Witnesses: `w635BadRowCrashesLoopTest` ([`witnesses.qnt`](witnesses.qnt)) and the [`pump`](proofs/pump/) proof model's `w635BadRowCrashesLoopTest`.
-Probe: `extensions/adapters/presenters/tui/tests/issue_635_unguarded_paint_test.fnl` (reproduces; a well-formed row is the control).
+Witnesses: `reachBadRowSurvivedTest` ([`witnesses.qnt`](witnesses.qnt)) and the [`pump`](proofs/pump/) proof model's `reachBadRowIsolatedTest`.
+Regression test: `extensions/adapters/presenters/tui/tests/paint_isolated_from_render_error_test.fnl`.
 
 Confirmed (counterexample, then a Busted probe): real `events.emit` into the real TUI subscriber, then the real `M.run` with the termbox stub (`tb-initialized? true`, peeks scripted to no-event):
 
@@ -67,8 +67,8 @@ The busy row then reads `ctrl-c again quit` for a turn the user never cancelled,
 The select modal's pump also finalizes turns without ever reaching the bottom check, so it is a second path to the same state.
 (The `rpc` child presenter tracks turns by coroutine identity, `ch.state.turn ≠ ch.active.co`, and does not have this bug.)
 
-Witnesses: `w636ArmOutlivesTurnTest`, `w636NextCtrlCForceQuitsTest`, and in the [`cancel-arm`](proofs/cancel-arm/) proof model also `w636ModalPumpPathTest` (the select-overlay path: Ctrl-C arms on a `/reload` turn, the overlay's pump finishes it and starts a goal continuation, and no bottom reset runs).
-Probe: `extensions/adapters/presenters/tui/tests/issue_636_cancel_arm_outlives_turn_test.fnl` (reproduces; the run without a queued reload is the asserted control). Its `on-tick` is a copy of `interactive.fnl`'s order, since the real one cannot be driven in-process.
+Witnesses: `reachSameTickReloadDisarmedTest`, `reachForceQuitOwnTurnTest`, and in the [`cancel-arm`](proofs/cancel-arm/) proof model also `reachGoalContinuationTest`.
+Regression test: `extensions/adapters/presenters/tui/tests/cancel_arm_disarmed_on_turn_end_test.fnl`. Its `on-tick` is a copy of `interactive.fnl`'s order, since the real one cannot be driven in-process.
 
 Confirmed with a probe: the real `M.run`, the real `input.handle-event` Ctrl-C ladder, and the real `reload_request.enqueue!`/`drain!`, with an `on-tick` that copies `interactive.fnl`'s order (resume → on death clear `busy?`/`turn` → drain reload at the idle boundary) and an agent-like turn that raises on cancel at resume. Peeks: `none, Ctrl-C, none, Ctrl-C`:
 
@@ -90,8 +90,8 @@ A decide request drives `fen_http` cooperatively: each resume runs at most one �
 An idle-time ask (an auto-compaction moment, or a durable-preference hint that resolves after the turn has ended) therefore advances at roughly 1/7 of its network speed.
 The side-chat reap list (the open question in tui-turns) is the same blind spot: `side-chat.busy?` is false while a parked turn is still being reaped.
 
-Witnesses: `w637IdlePollForPendingTaskTest` (integration and [`pump`](proofs/pump/) models).
-Probe: `extensions/adapters/presenters/tui/tests/issue_637_idle_poll_pending_task_test.fnl` (reproduces: four peeks with a pending decide task, all 300 ms; the busy main turn's 30 ms is the control).
+Witnesses: `reachBgTaskFinishesActiveTest` (integration and [`pump`](proofs/pump/) models).
+Regression test: `extensions/adapters/presenters/tui/tests/pending_runtime_task_polled_actively_test.fnl`.
 
 Confirmed with a probe: the real `M.run` (`tb-initialized? true`), the real decide `service.pump!` subscribed to `:runtime-tick`, and a real decide task that needs 4 resumes:
 
@@ -121,6 +121,15 @@ Evidence: sampled (`check-spec`) unless a proof model below says otherwise.
 - **Ctrl-C during `/reload`.** The first press arms the ladder and shows `cancelling…`, but the reload ignores it. The second press force-quits in the middle of a module swap. The documented escape hatch makes this defensible, but the hint promises a cancel that cannot happen.
 - **`reload_request.drain!` writes failures with `io.stderr:write`.** While termbox owns the screen this bypasses the b48b10b log sink and corrupts the frame. It is only reachable if the `/reload` dispatch prelude throws.
 - **`warn-if-stalled!` only knows the main coroutine** (`?get-turn`). A stall inside a side-chat resume or a runtime-tick task is logged as `phase=tick` with the main turn's stack, or none. Diagnostics would point at the wrong coroutine.
+
+## Fixed in #605
+
+All of #635–#637 are fixed in the code, and `current` now enables the fixes, so its former `violated` rows are `holds`.
+The counterexample witnesses became `reach...Test` traces on the fixed design.
+
+- Unguarded paint (#635): `lines-for-event` in `panels/transcript.fnl` wraps `render-lines-for-event` in `pcall` and emits a `render-error:` placeholder row if rendering fails, and `M.run` isolates `paint.redraw-if-needed!` under `pcall`.
+- Cancel arm outlives turn (#636): `M.run` tracks turn identity around `on-tick` and disarms `cancel-pressed?` when the turn changes or completes (`:agent-turn-complete`), as does `select.fnl`'s modal pump; `input.handle-key` keys the arm by turn identity.
+- Idle poll for pending work (#637): `M.peek-timeout-ms` queries pending cooperative background tasks (decide tasks, codex usage `refresh-co`, subagent jobs, side-chat reap list) and polls at `ACTIVE-TICK-MS` (30 ms) while any background work remains.
 
 ## Candidate fixes (named: `FIXES`)
 

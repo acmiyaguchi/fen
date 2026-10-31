@@ -65,7 +65,7 @@ The serve model has no `FIXED` flag, so the named-fixes convention (`FIXES`, `fi
 
 | Bug | Kind | Rows | Witness (`witnesses.qnt`) | Proof-model witness | Confirmed against code |
 | --- | --- | --- | --- | --- | --- |
-| #638 | counterexample, confirmed | `issue.resolutionInScope` | `w638IdleCommandActsInTurnTest` | `proofs/requests`: `w638IdleCommandActsInTurnTest` | probe `extensions/behaviors/actions/sessions/tests/issue_638_idle_command_after_turn_start_test.fnl` |
+| #638 | counterexample, confirmed | `issue.resolutionInScope` | `w638IdleCommandActsInTurnTest` | `proofs/requests`: `w638IdleCommandActsInTurnTest` | regression test `extensions/behaviors/actions/sessions/tests/idle_command_refuses_when_busy_test.fnl` |
 | V1 (#397) | counterexample | `issue.cancelHitsSeenTurn`, `issue.steeringReachesSeenTurn` | `w397CancelHitsSeenTurnTest`, `w397SteeringIntoOtherTurnTest` | `proofs/controls`: `w397CancelHitsSeenTurnTest`, `w397SteeringIntoOtherTurnTest`, `w397StaleSteerStartsTurnTest` | line trace of the reused code (`request-cancel`, `steering.service`) |
 | V2 (#398) | counterexample | `issue.noPendingForEndedTurn` | `w398TurnRequestOutlivesTurnTest` | `proofs/requests`: `w398TurnRequestOutlivesTurnTest`, `w398AnswerForEndedTurnTest` | design only (no code yet) |
 | V4 (#398) | counterexample | `headless.pendingHasPossibleResolver` | `w398HeadlessRequestNoResolverTest` | `proofs/requests`: `w398HeadlessRequestNoResolverTest` | design only; today's fallback traced in `presenter.fnl` |
@@ -115,7 +115,7 @@ Counterexample (`resolutionInScope`): `cmdRequest(0) [/resume picker] → send [
 `on-tick` runs `steering.start-idle-follow-up!`, which can start a turn.
 When the picker returns, `resume-session!` swaps `state.agent` and `state.session` under the running turn.
 
-Confirmed today with a Busted probe, now kept as [`issue_638_idle_command_after_turn_start_test.fnl`](../../extensions/behaviors/actions/sessions/tests/issue_638_idle_command_after_turn_start_test.fnl) (a `known-bug` test: it passes while the bug reproduces).
+Confirmed with a Busted probe, now regression test [`idle_command_refuses_when_busy_test.fnl`](../../extensions/behaviors/actions/sessions/tests/idle_command_refuses_when_busy_test.fnl) (fixed in #605).
 It drove the real `/resume` handler through `command-registry.dispatch`, with a ui slot whose `select` enqueues a follow-up with `start-if-idle?` and runs `start-idle-follow-up!` the way the overlay's tick does:
 
 ```

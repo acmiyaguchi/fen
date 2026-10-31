@@ -350,12 +350,25 @@
                       (.. line "\ncoroutine-stack:\n" tb)
                       line))))))
 
+(fn pending-background-work? []
+  (or
+    ;; decide async tasks
+    (let [(ok? store) (pcall require :fen.extensions.decide.state)]
+      (and ok? store.tasks (> (length store.tasks) 0)))
+    ;; codex usage refresh coroutine
+    (let [(ok? u-state) (pcall require :fen.extensions.providers.openai.usage_state)]
+      (and ok? u-state.refresh-co))
+    ;; detached background subagent jobs
+    (let [(ok? runs) (pcall require :fen.extensions.subagent.runs)]
+      (and ok? runs.jobs (> (length (runs.jobs)) 0)))))
+
 (fn M.peek-timeout-ms [is-busy?]
   "Use a short poll while busy or resolving Esc/Alt, but sleep longer when the
    TUI is clean and idle. Dirty redraw already prevents repaint churn; this
    prevents a 33Hz no-op wakeup loop on slow/battery-constrained terminals."
   (if (or state.dirty? state.force-redraw? state.alt-pending?
-          (and is-busy? (is-busy?)) (side-chat.busy?) (paint.busy?))
+          (and is-busy? (is-busy?)) (side-chat.busy?) (paint.busy?)
+          (pending-background-work?))
       ACTIVE-TICK-MS
       IDLE-TICK-MS))
 
@@ -446,19 +459,26 @@
 ;; tags: tui presenter loop termbox
 (fn M.run [on-submit on-tick on-cancel is-busy? ?get-turn]
   (set state.on-tick on-tick)
+  (set state.get-turn ?get-turn)
   (workspaces.with-main! #(ingest.append-event {:type :info
                                                 :text "fen — ctrl-d to quit, ctrl-c twice to quit, ctrl-j for newline"}))
   (var quit? false)
   (while (not quit?)
-    (if (profile-enabled?)
-        (let [paint-span (profile-span-begin! :tui-paint {})]
-          (paint.advance-spinner-if-due!)
-          (paint.redraw-if-needed!)
-          (profile-span-end! paint-span)
-          (profile-counter-add! :tui-paint-attempts))
-        (do
-          (paint.advance-spinner-if-due!)
-          (paint.redraw-if-needed!)))
+    (let [(paint-ok? paint-err)
+          (pcall (fn []
+                   (if (profile-enabled?)
+                       (let [paint-span (profile-span-begin! :tui-paint {})]
+                         (paint.advance-spinner-if-due!)
+                         (paint.redraw-if-needed!)
+                         (profile-span-end! paint-span)
+                         (profile-counter-add! :tui-paint-attempts))
+                       (do
+                         (paint.advance-spinner-if-due!)
+                         (paint.redraw-if-needed!)))))]
+      (when (not paint-ok?)
+        (state.api.emit {:type :error
+                         :error (.. "paint: " (first-line paint-err))
+                         :traceback (tostring paint-err)})))
     (let [(ev err code) (tb.peek_event (M.peek-timeout-ms is-busy?))]
       (if (and (= ev nil)
                (or (= code tb.ERR_NO_EVENT)
@@ -505,11 +525,13 @@
             (when batch-quit?
               (set quit? true)))))
     (when (and (not quit?) on-tick)
-      (let [profiling? (profile-enabled?)
+      (let [turn-before (when ?get-turn (?get-turn))
+            profiling? (profile-enabled?)
             start-ms (clock.monotonic-ms)
             start-cpu (and profiling? (os.clock))
             span (and profiling? (profile-span-begin! :tui-tick {}))
-            (ok? err) (xpcall on-tick debug.traceback)]
+            (ok? err) (xpcall on-tick debug.traceback)
+            turn-after (when ?get-turn (?get-turn))]
         (when profiling?
           (profile-span-end! span)
           (profile-counter-add! :tui-ticks))
@@ -517,13 +539,21 @@
         (when (not ok?)
           (state.api.emit {:type :error
                            :error (.. "on-tick: " (first-line err))
-                           :traceback (tostring err)}))))
+                           :traceback (tostring err)}))
+        (when (and state.cancel-pressed? (not= turn-after turn-before))
+          (set state.cancel-pressed? false)
+          (set state.cancel-armed-turn nil)
+          (set state.status-info.cancelling? false)
+          (paint.invalidate!))))
     ;; Side chat and detached subagents share this cooperative tick so they stream alongside the main turn.
     (when (not quit?)
       (M.tick-background!))
     ;; Clear stale first-press cancel state when the turn ends normally, so the next ctrl-c arms quit, not force-quit.
-    (when (and state.cancel-pressed? is-busy? (not (is-busy?)))
+    (when (and state.cancel-pressed?
+               (or (and is-busy? (not (is-busy?)))
+                   (and ?get-turn (not (?get-turn)))))
       (set state.cancel-pressed? false)
+      (set state.cancel-armed-turn nil)
       (set state.status-info.cancelling? false)
       (paint.invalidate!))))
 
@@ -552,6 +582,12 @@
   ;; Bus events that ask the TUI to do something. Built-in commands
   ;; (/new, /reload) emit these instead of importing the TUI module.
   (api.on :reset-conversation (fn [_] (M.reset-conversation!)))
+  (api.on :agent-turn-complete
+          (fn [_]
+            (set state.cancel-pressed? false)
+            (set state.cancel-armed-turn nil)
+            (set state.status-info.cancelling? false)
+            (paint.invalidate!)))
   (api.on :reinit-presenter
           (fn [_]
             (M.init!)

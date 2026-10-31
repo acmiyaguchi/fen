@@ -1,18 +1,6 @@
 // Deterministic witnesses for the btw ownership proof model.
 module witnesses {
-  import sideOwnership(FIXES = Set()) as C from "./model"
   import sideOwnership(FIXES = Set("663")) as F from "./model"
-
-  // #663: the reopened tab adopts the parked turn of the closed one ...
-  run w663ReopenAdoptsParkedTurnTest =
-    C::init.then(C::openSide).then(C::submitSide).then(C::closeSide(false)).then(C::openSide)
-      .expect(not(C::sideEntryOwned) and C::liveGen == 1 and C::sideGen == 2)
-
-  // ... and the old turn's final reply is delivered into the new tab.
-  run w663OldReplyInNewTabTest =
-    C::init.then(C::openSide).then(C::submitSide).then(C::closeSide(false)).then(C::openSide)
-      .then(C::liveEvent(true))
-      .expect(not(C::eventsInOwnTab))
 
   // ---- reachability of the fixed design ----
 

@@ -1,6 +1,8 @@
-;; Known bug #636: the Ctrl-C arm (state.cancel-pressed?) survives into a turn started in the same on-tick that ended the cancelled one.
+;; Regression for #636 (spec/scheduler, `cancelArmMatchesTurn`, `forceQuitOnlyOnArmedTurn`):
+;; the Ctrl-C cancel arm is disarmed when the cancelled turn ends, so a turn started
+;; in the same on-tick (e.g. reload-request drain) does not inherit the armed state
+;; and is not force-quit by a subsequent Ctrl-C.
 
-(local {: known-bug} (require :fen.testing))
 (local tui-test (require :fen.testing.tui))
 (local tb (tui-test.install-termbox-stub!))
 (local default-peek tb.peek_event)
@@ -83,29 +85,30 @@
     (tui.run (fn [_line] nil) on-tick on-cancel is-busy? (fn [] rs.turn))
     (or at-end (snapshot rs peeks))))
 
-(describe "#636 Ctrl-C arm outlives its turn"
+(describe "Ctrl-C arm outlives its turn (#636)"
           (fn []
             (before_each (fn []
                            (tui-test.reset-state!)))
             (after_each (fn []
                           (set tb.peek_event default-peek)
                           (tui-test.reset-state!)))
-            (it "a reload queued by the cancelled turn starts in the same tick and the next Ctrl-C force-quits it"
+            (it "a reload queued by the cancelled turn starts in the same tick and the next Ctrl-C does not force-quit"
                 (fn []
-                  (known-bug 636
-                             (fn []
-                               ;; Control: no queued reload. The arm clears when turn A ends; the second Ctrl-C (idle) only arms the two-press quit.
-                               (let [ctl (run-scenario false)]
-                                 (assert.are.same {:peeks 5
-                                                   :turn-id 1
-                                                   :busy? false
-                                                   :cancel-pressed? false
-                                                   :pending-quit? true}
-                                                  ctl))
-                               (tui-test.reset-state!)
-                               ;; Bug: the queued reload starts turn 2 in the tick that killed turn 1; the arm survives and Ctrl-C #2 quits mid-reload.
-                               (let [got (run-scenario true)]
-                                 (and (= got.peeks 4) (= got.turn-id 2)
-                                      (= got.busy? true)
-                                      (= got.cancel-pressed? true)
-                                      (= got.pending-quit? false)))))))))
+                  ;; Control: no queued reload. The arm clears when turn A ends; the second Ctrl-C (idle) only arms the two-press quit.
+                  (let [ctl (run-scenario false)]
+                    (assert.are.same {:peeks 5
+                                      :turn-id 1
+                                      :busy? false
+                                      :cancel-pressed? false
+                                      :pending-quit? true}
+                                     ctl))
+                  (tui-test.reset-state!)
+                  ;; Fixed: the queued reload starts turn 2 in the tick that killed turn 1;
+                  ;; the arm is disarmed so Ctrl-C #2 arms cancel on turn 2 instead of force-quitting.
+                  (let [got (run-scenario true)]
+                    (assert.are.same {:peeks 5
+                                      :turn-id 2
+                                      :busy? true
+                                      :cancel-pressed? true
+                                      :pending-quit? false}
+                                     got))))))

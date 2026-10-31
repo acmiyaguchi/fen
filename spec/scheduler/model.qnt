@@ -346,7 +346,7 @@ module scheduler {
   }
 }
 
-module current { import scheduler(FIXES = Set()).* }
+module current { import scheduler(FIXES = Set("635", "636", "637")).* }
 module fixed { import scheduler(FIXES = Set("635", "636", "637")).* }
 module fix635 { import scheduler(FIXES = Set("635")).* }
 module fix636 { import scheduler(FIXES = Set("636")).* }

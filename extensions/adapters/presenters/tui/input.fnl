@@ -739,27 +739,46 @@
                     (if (workspaces.cancel-active!)
                         ;; Workspace-owned turns cancel via their kind policy, never the main-session quit ladder.
                         false
-                        (and busy? state.cancel-pressed?)
-                        true
-                        busy?
-                        ;; First busy press queues cancellation; the agent coroutine bails at its next yield and emits :cancelled.
-                        (do
-                          (when on-cancel (on-cancel))
-                          (set state.cancel-pressed? true)
-                          (set state.status-info.cancelling? true)
-                          false)
-                        (and (workspaces.allows? :submit)
-                             (not= state.input-buf "") (not state.pending-quit?))
-                        (do
-                          (set state.input-buf "")
-                          (set state.input-cursor 0)
-                          (set state.history-pos 0)
-                          false)
-                        state.pending-quit?
-                        true
-                        (do
-                          (set state.pending-quit? true)
-                          false))
+                        (let [ws (workspaces.active)
+                              main-focused? (or (not ws) (= ws.kind :main-session))]
+                          (if main-focused?
+                              (if (and busy? state.cancel-pressed?
+                                       (or (not state.cancel-armed-turn)
+                                           (= (when state.get-turn (state.get-turn)) state.cancel-armed-turn)))
+                                  true
+                                  busy?
+                                  ;; First busy press queues cancellation; the agent coroutine bails at its next yield and emits :cancelled.
+                                  (do
+                                    (when on-cancel (on-cancel))
+                                    (set state.cancel-pressed? true)
+                                    (set state.cancel-armed-turn (when state.get-turn (state.get-turn)))
+                                    (set state.status-info.cancelling? true)
+                                    false)
+                                  (and (workspaces.allows? :submit)
+                                       (not= state.input-buf "") (not state.pending-quit?))
+                                  (do
+                                    (set state.input-buf "")
+                                    (set state.input-cursor 0)
+                                    (set state.history-pos 0)
+                                    false)
+                                  state.pending-quit?
+                                  true
+                                  (do
+                                    (set state.pending-quit? true)
+                                    false))
+                              ;; Non-main tab: ladder never cancels or force-quits the hidden main turn.
+                              (if (and (workspaces.allows? :submit)
+                                       (not= state.input-buf "") (not state.pending-quit?))
+                                  (do
+                                    (set state.input-buf "")
+                                    (set state.input-cursor 0)
+                                    (set state.history-pos 0)
+                                    false)
+                                  state.pending-quit?
+                                  true
+                                  (do
+                                    (set state.pending-quit? true)
+                                    false)))))
                     ;; Tab may arrive as KEY_TAB, raw Ctrl-I (key=9), or key=0,ch=9 from synthetic tests/alternate shims.
                     (or (= k tb.KEY_TAB) (= k 9) (and (= k 0) (= ch 9)))
                     (do

@@ -1,45 +1,10 @@
-// Deterministic witnesses (quint test). Each w<issue>...Test replays the
-// shortest known counterexample for that issue against `current`; each
-// reach...Test shows a case the `fixed` invariants rely on is reachable.
+// Deterministic witnesses (quint test). Each reach...Test shows a case the
+// `fixed` invariants rely on is reachable.
 //
 // iterate(ev, mainOutcome, sideOutcome, nextTurn, bgFinish) is one pass of
 // M.run; pumpModal(...) is one select-overlay pump.
 module witnesses {
-  import scheduler(FIXES = Set()) as C from "./model"
   import scheduler(FIXES = Set("635", "636", "637")) as F from "./model"
-
-  // #635: a row the renderer cannot draw crashes the loop at the next paint
-  // (the terminal is restored on the way out, so only the crash is the bug).
-  run w635BadRowCrashesLoopTest =
-    C::init.then(C::emitBadRow).then(C::iterate("none", "yield", "yield", false, false))
-      .expect(not(C::loopSurvivesFaults) and C::s.loop == "crashed"
-              and C::terminalRestoredWhenStopped)
-
-  // #636: Ctrl-C cancels turn 1; the same on-tick drains the reload request
-  // the turn queued and starts turn 2, so the bottom-of-loop reset sees busy?
-  // and keeps the arm, which now points at a turn nobody cancelled.
-  run w636ArmOutlivesTurnTest =
-    C::init.then(C::iterate("submit", "yield", "yield", false, false))
-      .then(C::agentQueuesReload)
-      .then(C::iterate("ctrlC", "yield", "yield", false, false))
-      .expect(not(C::cancelArmMatchesTurn) and C::s.mainKind == "reload"
-              and C::s.cancelPressed and C::s.pressGen == 1 and C::s.mainGen == 2)
-
-  // #636: ... and the next Ctrl-C force-quits fen during the /reload turn.
-  run w636NextCtrlCForceQuitsTest =
-    C::init.then(C::iterate("submit", "yield", "yield", false, false))
-      .then(C::agentQueuesReload)
-      .then(C::iterate("ctrlC", "yield", "yield", false, false))
-      .then(C::iterate("ctrlC", "yield", "yield", false, false))
-      .expect(not(C::forceQuitOnlyOnArmedTurn) and C::s.quit == "forceFresh"
-              and C::s.mainKind == "reload")
-
-  // #637: a pending runtime-tick task with the main turn idle waits the idle
-  // 300 ms poll before its resume.
-  run w637IdlePollForPendingTaskTest =
-    C::init.then(C::startBgTask).then(C::iterate("none", "yield", "yield", false, false))
-      .expect(not(C::pendingWorkPolledActively) and not(C::s.busy)
-              and C::s.lastBgGap == C::IDLE_MS)
 
   // ---- reachability of the fixed design ----
 

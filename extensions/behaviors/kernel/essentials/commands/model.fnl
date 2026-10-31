@@ -172,9 +172,12 @@
                                :initial-query (or ?initial-query "")
                                :on-tick (discovery-tick api state)})]
     (when picked
-      (let [m (or picked.value picked)]
-        (when (and m m.provider m.id)
-          (switch-model! api state m))))))
+      (if (or state.busy? state.turn)
+          (api.emit {:type :error
+                     :error "cannot switch model: agent became busy while selecting"})
+          (let [m (or picked.value picked)]
+            (when (and m m.provider m.id)
+              (switch-model! api state m)))))))
 
 (fn exact-resolution? [api query resolved]
   (and (= resolved.status :ok)

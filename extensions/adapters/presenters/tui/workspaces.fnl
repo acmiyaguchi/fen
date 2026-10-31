@@ -264,6 +264,7 @@
       (load-view! next)
       ;; Close completion popup so it cannot steal focus in the new tab.
       (set state.completion nil)
+      (set state.pending-quit? false)
       (set next.activity-count 0)
       (set next.dirty? false)
       (redraw.invalidate-full!))

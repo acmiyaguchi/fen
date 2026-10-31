@@ -131,5 +131,5 @@ module cancelArm {
   }
 }
 
-module current { import cancelArm(FIXES = Set()).* }
+module current { import cancelArm(FIXES = Set("636")).* }
 module fixed { import cancelArm(FIXES = Set("636")).* }

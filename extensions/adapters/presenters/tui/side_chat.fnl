@@ -148,7 +148,7 @@
             (values nil "side agent factory is unavailable; retry /btw")
             (let [(ok? agent-or-error) (pcall factory opts
                                               (fn [ev]
-                                                (M.on-event! WORKSPACE-ID ev))
+                                                (M.on-event-for-ws! ws ev))
                                               {})]
               (if (and ok? agent-or-error)
                   (do
@@ -174,19 +174,25 @@
               (append-construction-error! ws error)
               false)))))
 
+(fn M.on-event-for-ws! [ws ev]
+  "Ingest a side-agent event into only its workspace if still active."
+  (when (and ws (= ws.kind :side-chat) ws.side (not= ws.status :closed)
+             (= (workspaces.find ws.id) ws))
+    ;; Fallback for factories that do not share the history table.
+    (when (and (= ev.type :message-appended) ev.message ev.index
+               (> ev.index (length (or ws.side.history []))))
+      (tset ws.side.history ev.index ev.message))
+    (when (= ev.type :llm-end)
+      (add-usage! ws.usage ev.usage))
+    ;; Side chats have no session flush subscriber; drop message-appended.
+    (when (not= ev.type :message-appended)
+      (workspaces.append-to! ws.id ev))))
+
 (fn M.on-event! [id ev]
   "Ingest a side-agent event into only its workspace."
   (let [ws (workspaces.find id)]
-    (when (and ws (= ws.kind :side-chat) ws.side)
-      ;; Fallback for factories that do not share the history table.
-      (when (and (= ev.type :message-appended) ev.message ev.index
-                 (> ev.index (length (or ws.side.history []))))
-        (tset ws.side.history ev.index ev.message))
-      (when (= ev.type :llm-end)
-        (add-usage! ws.usage ev.usage))
-      ;; Side chats have no session flush subscriber; drop message-appended.
-      (when (not= ev.type :message-appended)
-        (workspaces.append-to! id ev)))))
+    (when ws
+      (M.on-event-for-ws! ws ev))))
 
 (fn submit-agent-turn! [entry line emit]
   ;; Resolved every turn so the implementation follows /reload.
@@ -203,7 +209,7 @@
         {:ok false
          :error "side agent could not be constructed; check credentials/model and retry /btw"}
         (let [result (submit-agent-turn! entry line
-                                         (fn [ev] (M.on-event! WORKSPACE-ID ev)))]
+                                         (fn [ev] (M.on-event-for-ws! ws ev)))]
           (when result.started
             (set ws.side.busy? true)
             (set ws.status :running)
@@ -323,7 +329,7 @@
     (when (resume-entry! item CANCEL-RESUME-LIMIT)
       ;; Finalize only after the coroutine is dead; until then the entry
       ;; stays reachable.
-      (when (and ws ws.side (= (live-entry ws) entry))
+      (when (and ws ws.side)
         (finish-turn! ws entry item.ok? item.value))
       true)))
 
@@ -384,7 +390,8 @@
 
 (fn M.busy? []
   (let [ws (workspaces.find WORKSPACE-ID)]
-    (not (not (and ws ws.side ws.side.busy?)))))
+    (or (not (not (and ws ws.side ws.side.busy?)))
+        (> (length volatile.reap) 0))))
 
 (fn last-assistant-text [ws]
   (var found nil)
@@ -447,7 +454,9 @@
                   (finish-turn! ws entry item.ok? item.value)
                   (do
                     (set ws.status :closed)
-                    (park-for-reap! ws entry)))))
+                    (park-for-reap! ws entry)
+                    (tset volatile.live ws.id nil)
+                    (tset volatile.runtimes ws.id nil)))))
           (do
             (tset volatile.live ws.id nil)
             (tset volatile.runtimes ws.id nil)

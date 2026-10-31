@@ -287,6 +287,8 @@
  :alt-pending? false
  :on-tick nil
  :cancel-pressed? false
+ :cancel-armed-turn nil
+ :get-turn nil
  ;; Kept here so /reload does not reset stall-warning rate limiting.
  :last-stall-warn-ms 0
  ;; cum-* are cumulative billed tokens; cum-input re-counts the full context each turn ("wallet input").
