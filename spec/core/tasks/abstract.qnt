@@ -1,21 +1,11 @@
-// Abstract specification of task table (#671): one task table with turn-keyed
-// ownership and fault-isolated step.
+// Abstract specification of task table (#671):
+//   Part 1 (`tasksAbstract`): cooperative task table with turn-keyed ownership,
+//     cancel arms, active poll cadence, and xpcall fault isolation (#635–#637, #660–#663).
+//   Part 2 (`requestsAbstract`): turn-keyed steering, async request resolution,
+//     reload generation, and bounded park countdown budgets (#638, #662, #397, #398).
 //
-// Refined and used by scheduler (presenter loop, active poll cadence, cancel arm),
-// tui-turns (tab-keyed turns, side chat ownership, draft and Ctrl-C routing), and serve.
-//
-// The contract:
-// 1. One central cooperative task table tracks all live work.
-// 2. Each task entry carries its owning turn/tab id from start to finish. Cancel
-//    requests and cancel arms (second-press quit) are strictly turn-keyed and
-//    never leak to other turns (#636, #660, #661, #663).
-// 3. Driver step executes tasks under xpcall: an error in one task is caught and
-//    the task is retired without crashing the scheduler loop (#635).
-// 4. Polling cadence is active (e.g. 30ms) if and only if runnable work is pending;
-//    otherwise idle (300ms) (#637).
-//
-// Pure definitions only, so concrete models can import them and check that
-// their mapped state refines absNext.
+// Pure definitions only, so concrete models (`spec/serve`, `spec/serve/proofs/*`)
+// can import them and check step-by-step refinement (`absNext(prevAbs, absOf(state))`).
 module tasksAbstract {
   type Abs = {
     // Task slot 1
@@ -263,5 +253,221 @@ module tasksAbstract {
     cadenceMatchesRunnable(a),
     runnableConsistency(a),
     cancelRequiresRegistered(a),
+  }
+}
+
+module requestsAbstract {
+  type ReqAbs = {
+    running: bool,          // a turn is open
+    turnNo: int,            // id of the current or last turn (0 = none yet)
+    parkedOn: int,          // request id the running turn is parked on, or -1
+    gen: int,               // /reload generation
+    hasResolver: bool,      // at least one resolver (local UI or connected remote) is present
+    queue: Set[int],        // turn tags of queued steering lines
+    rScope: int -> int,     // req -> 0 (idle slash-command picker) or turn t > 0
+    rGen: int -> int,       // req -> /reload generation when issued
+    rVer: int -> int,       // req -> choice-list version
+    rStatus: int -> str,    // req -> "none" | "pending" | "answered" | "timeout" | "ended" | "cancelled" | "aborted"
+    rRes: int -> int,       // req -> number of resolution broadcasts emitted
+    rRem: int -> int,       // req -> remaining tick budget while pending (0 when not pending)
+  }
+
+  pure val IDS: Set[int] = Set(1, 2)
+  pure val STATUSES: Set[str] =
+    Set("none", "pending", "answered", "timeout", "ended", "cancelled", "aborted")
+  pure val RESOLVED_STATUSES: Set[str] =
+    Set("answered", "timeout", "ended", "cancelled", "aborted")
+
+  pure def reqAbsInit(hasRes: bool): ReqAbs = {
+    running: false,
+    turnNo: 0,
+    parkedOn: -1,
+    gen: 0,
+    hasResolver: hasRes,
+    queue: Set(),
+    rScope: IDS.mapBy(_i => 0),
+    rGen: IDS.mapBy(_i => 0),
+    rVer: IDS.mapBy(_i => 0),
+    rStatus: IDS.mapBy(_i => "none"),
+    rRes: IDS.mapBy(_i => 0),
+    rRem: IDS.mapBy(_i => 0),
+  }
+
+  pure def isPending(a: ReqAbs, i: int): bool =
+    a.rStatus.get(i) == "pending"
+
+  pure def pendingSet(a: ReqAbs): Set[int] =
+    IDS.filter(i => isPending(a, i))
+
+  pure def resolveSet(a: ReqAbs, ids: Set[int], st: str): ReqAbs = {
+    ...a,
+    rStatus: IDS.mapBy(i => if (ids.contains(i)) st else a.rStatus.get(i)),
+    rRes: IDS.mapBy(i => if (ids.contains(i)) a.rRes.get(i) + 1 else a.rRes.get(i)),
+    rRem: IDS.mapBy(i => if (ids.contains(i)) 0 else a.rRem.get(i)),
+  }
+
+  pure def absStartTurn(a: ReqAbs, b: ReqAbs): bool = and {
+    not(a.running),
+    b == { ...a, running: true, turnNo: a.turnNo + 1, parkedOn: -1 },
+  }
+
+  pure def absEndTurn(a: ReqAbs, b: ReqAbs): bool =
+    val own = pendingSet(a).filter(i => a.rScope.get(i) == a.turnNo)
+    val resolved = resolveSet(a, own, "ended")
+    and {
+      a.running,
+      b == { ...resolved, running: false, parkedOn: -1, queue: Set() },
+    }
+
+  pure def absQueueSteer(a: ReqAbs, b: ReqAbs): bool = and {
+    a.running,
+    b == { ...a, queue: a.queue.union(Set(a.turnNo)) },
+  }
+
+  pure def absInjectSteer(a: ReqAbs, b: ReqAbs): bool = and {
+    a.running,
+    a.parkedOn < 0,
+    a.queue.contains(a.turnNo),
+    b.queue.subseteq(a.queue),
+    b == { ...a, queue: b.queue },
+  }
+
+  pure def absOpenReq(a: ReqAbs, b: ReqAbs, i: int, scope: int, bgt: int): bool = and {
+    IDS.contains(i),
+    a.rStatus.get(i) == "none",
+    bgt >= 1,
+    if (scope > 0) (a.running and a.parkedOn < 0 and scope == a.turnNo)
+    else (not(a.running) and pendingSet(a).forall(j => a.rScope.get(j) != 0)),
+    if (a.hasResolver)
+      b == {
+        ...a,
+        parkedOn: if (scope > 0) i else a.parkedOn,
+        rScope: a.rScope.set(i, scope),
+        rGen: a.rGen.set(i, a.gen),
+        rVer: a.rVer.set(i, 0),
+        rStatus: a.rStatus.set(i, "pending"),
+        rRes: a.rRes.set(i, 0),
+        rRem: a.rRem.set(i, bgt),
+      }
+    else
+      b == {
+        ...a,
+        rScope: a.rScope.set(i, scope),
+        rGen: a.rGen.set(i, a.gen),
+        rVer: a.rVer.set(i, 0),
+        rStatus: a.rStatus.set(i, "timeout"),
+        rRes: a.rRes.set(i, 1),
+        rRem: a.rRem.set(i, 0),
+      },
+  }
+
+  pure def absUpdateChoices(a: ReqAbs, b: ReqAbs, i: int): bool = and {
+    IDS.contains(i),
+    a.rStatus.get(i) == "pending",
+    a.rScope.get(i) == 0,
+    b == { ...a, rVer: a.rVer.set(i, a.rVer.get(i) + 1) },
+  }
+
+  pure def absAnswer(a: ReqAbs, b: ReqAbs, i: int): bool = and {
+    IDS.contains(i),
+    a.rStatus.get(i) == "pending",
+    a.hasResolver,
+    if (a.rScope.get(i) > 0) and {
+      a.running,
+      a.parkedOn == i,
+      b == { ...resolveSet(a, Set(i), "answered"), parkedOn: -1 },
+    } else if (a.running)
+      b == resolveSet(a, Set(i), "aborted")
+    else
+      b == resolveSet(a, Set(i), "answered"),
+  }
+
+  pure def absTickOrTimeout(a: ReqAbs, b: ReqAbs, i: int): bool = and {
+    IDS.contains(i),
+    a.rStatus.get(i) == "pending",
+    or {
+      and {
+        a.rRem.get(i) > 1,
+        b == { ...a, rRem: a.rRem.set(i, a.rRem.get(i) - 1) },
+      },
+      b == {
+        ...resolveSet(a, Set(i), "timeout"),
+        parkedOn: if (a.parkedOn == i) -1 else a.parkedOn,
+      },
+    },
+  }
+
+  pure def absReload(a: ReqAbs, b: ReqAbs): bool =
+    val idleP = pendingSet(a).filter(i => a.rScope.get(i) == 0)
+    and {
+      not(a.running),
+      b == { ...resolveSet(a, idleP, "cancelled"), gen: a.gen + 1 },
+    }
+
+  pure def absSetResolver(a: ReqAbs, b: ReqAbs, hasRes: bool): bool =
+    val P = pendingSet(a)
+    or {
+      b == { ...a, hasResolver: hasRes },
+      and {
+        not(hasRes),
+        b == { ...resolveSet(a, P, "timeout"), hasResolver: false, parkedOn: -1 },
+      },
+    }
+
+  pure def reqAbsNext(a: ReqAbs, b: ReqAbs): bool = or {
+    a == b,
+    absStartTurn(a, b),
+    absEndTurn(a, b),
+    absQueueSteer(a, b),
+    absInjectSteer(a, b),
+    absReload(a, b),
+    absSetResolver(a, b, b.hasResolver),
+    IDS.exists(i => or {
+      absOpenReq(a, b, i, b.rScope.get(i), if (b.rRem.get(i) > 0) b.rRem.get(i) else 1),
+      absUpdateChoices(a, b, i),
+      absAnswer(a, b, i),
+      absTickOrTimeout(a, b, i),
+    }),
+  }
+
+  pure def resolvedOnce(a: ReqAbs): bool =
+    IDS.forall(i =>
+      a.rRes.get(i) == (if (RESOLVED_STATUSES.contains(a.rStatus.get(i))) 1 else 0))
+
+  pure def noOrphanTurnReq(a: ReqAbs): bool =
+    IDS.forall(i =>
+      a.rStatus.get(i) != "pending"
+        or a.rScope.get(i) == 0
+        or (a.running and a.rScope.get(i) == a.turnNo))
+
+  pure def parkConsistent(a: ReqAbs): bool = and {
+    a.parkedOn >= 0 implies (
+      a.running and IDS.contains(a.parkedOn)
+        and a.rStatus.get(a.parkedOn) == "pending"
+        and a.rScope.get(a.parkedOn) == a.turnNo
+    ),
+    IDS.forall(i =>
+      (a.rStatus.get(i) == "pending" and a.rScope.get(i) > 0)
+        implies a.parkedOn == i),
+  }
+
+  pure def pendingCurrentGen(a: ReqAbs): bool =
+    IDS.forall(i =>
+      a.rStatus.get(i) == "pending" implies a.rGen.get(i) == a.gen)
+
+  pure def queueOwnedByRunningTurn(a: ReqAbs): bool =
+    a.queue.forall(t => a.running and t == a.turnNo)
+
+  pure def pendingBoundedBudget(a: ReqAbs): bool =
+    IDS.forall(i =>
+      if (a.rStatus.get(i) == "pending") a.rRem.get(i) >= 1 else a.rRem.get(i) == 0)
+
+  pure def reqAbsInv(a: ReqAbs): bool = and {
+    resolvedOnce(a),
+    noOrphanTurnReq(a),
+    parkConsistent(a),
+    pendingCurrentGen(a),
+    queueOwnedByRunningTurn(a),
+    pendingBoundedBudget(a),
   }
 }

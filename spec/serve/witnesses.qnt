@@ -1,10 +1,10 @@
 // Deterministic witnesses (quint test) for the serve integration model.
 // Each w<issue>...Test replays the shortest known counterexample for one
 // violated row against the design instance that row names; each reach...Test
-// shows the proposed protocol still reaches a case its invariants guard
-// (answers, cancels, steering, timeouts, resume, reset), so no invariant
-// holds vacuously. The serve model has design instances, not a FIXED flag;
-// `proposed` and `proposedTui` play the part of `fixed`.
+// shows the proposed protocol (`proposed`/`proposedTui`, which play the part
+// of `fixed`) still reaches a case its invariants guard (answers, cancels,
+// steering, countdown timeouts, immediate fallback, resume, reset), so no
+// invariant holds vacuously.
 module witnesses {
   import serve(ANSWER_BY_ID = true, ACK_ANSWERS = false, END_RESOLVES = false,
                TIMEOUTS = false, TARGETED = false, REPLAY = "jsonlGap",
@@ -30,6 +30,8 @@ module witnesses {
                TIMEOUTS = true, TARGETED = true, REPLAY = "ring",
                RECHECK = true, VERSIONED = true, LOCAL = true,
                REMOTE_SLASH = false, RELOAD_RESOLVES = true) as T from "./model"
+  import issueRefines as IR from "./model"
+  import proposedRefines as PR from "./model"
 
   // ---- #638 (today's code) ----
 
@@ -39,6 +41,12 @@ module witnesses {
     I::init.then(I::cmdRequest(0)).then(I::send(0)).then(I::answer(0, 1))
       .expect(not(I::resolutionInScope) and I::lastAction == "answerCmdWhileBusy"
               and I::s.running and I::s.reqs.get(1).turn == 0)
+
+  // issueRefines.refinesTasks (#638): answering an idle picker while a turn is
+  // running resolves it to "answered" instead of "aborted", breaking `reqAbsNext`.
+  run w638RefinementViolatedTest =
+    IR::init.then(IR::mCmdRequest(0)).then(IR::mSend(0)).then(IR::mAnswer(0, 1))
+      .expect(not(IR::refinesTasks))
 
   // ---- #397 (V1) ----
 
@@ -56,6 +64,13 @@ module witnesses {
       .expect(not(I::steeringReachesSeenTurn) and I::lastAction == "inject"
               and I::s.steers[1] == { seen: 0, into: 1 })
 
+  // issueRefines.refinesTasks (#397): queueing a steering line tagged `seen == 0`
+  // into turn 1 breaks `absQueueSteer` / `queueOwnedByRunningTurn`.
+  run w397RefinementViolatedTest =
+    IR::init.then(IR::mConnect(1, false)).then(IR::mFinishReplay(1)).then(IR::mSend(0))
+      .then(IR::mSend(1))
+      .expect(not(IR::refinesTasks))
+
   // ---- #398 ----
 
   // issue.noPendingForEndedTurn (V2): a turn's request outlives the cancel.
@@ -63,6 +78,12 @@ module witnesses {
     I::init.then(I::send(0)).then(I::toolRequest).then(I::cancel(0))
       .expect(not(I::noPendingForEndedTurn) and I::s.reqs.get(1).status == "pending"
               and not(I::s.running))
+
+  // issueRefines.refinesTasks / inheritsTasksInvariants (#398): opening a request
+  // without a countdown budget or leaving it pending on cancel violates refinement.
+  run w398RefinementViolatedTest =
+    IR::init.then(IR::mSend(0)).then(IR::mToolRequest)
+      .expect(not(IR::refinesTasks) and not(IR::inheritsTasksInvariants))
 
   // issue.noStaleContinuation (V5): a picker survives /reload and its
   // pre-reload continuation runs.
@@ -180,9 +201,10 @@ module witnesses {
       .expect(T::lastAction == "answerLate" and T::s.unacked == 0 and T::allInvariants)
 
   run reachTimeoutTest =
-    P::init.then(P::connect(1, false)).then(P::send(1)).then(P::toolRequest)
-      .then(P::disconnect(1)).then(P::timeout(1))
-      .expect(P::s.reqs.get(1).status == "timeout" and P::s.parkedOn == -1 and P::allInvariants)
+    PR::init.then(PR::mConnect(1, false)).then(PR::mSend(1)).then(PR::mToolRequest)
+      .then(PR::mDisconnect(1)).then(PR::mTickReq(1)).then(PR::mTimeout(1))
+      .expect(PR::state.reqs.get(1).status == "timeout" and PR::state.parkedOn == -1
+              and PR::allInvariants and PR::refinesTasks and PR::inheritsTasksInvariants)
 
   run reachResumeFromRingTest =
     P::init.then(P::connect(1, false)).then(P::send(1)).then(P::deliver(1)).then(P::disconnect(1))

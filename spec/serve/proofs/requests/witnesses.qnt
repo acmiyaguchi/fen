@@ -1,7 +1,7 @@
 // Deterministic witnesses (quint test) for the request-resolution proof model.
 // w<issue>...Test: one counterexample per issue-design bug. reach...Test: the
-// proposed protocol still answers, aborts, times out, and resolves on turn
-// end and reload.
+// proposed protocol still answers, aborts, counts down and times out, falls
+// back immediately when no resolver is present, and resolves on turn end and reload.
 module witnesses {
   import requests(ANSWER_BY_ID = true, ACK_ANSWERS = false, END_RESOLVES = false,
                   TIMEOUTS = false, RECHECK = false, VERSIONED = false, LOCAL = true,
@@ -20,15 +20,19 @@ module witnesses {
                   RELOAD_RESOLVES = true) as T from "./model"
 
   // #638: an idle-only command's picker is open, a turn starts under it, and
-  // the answer runs the command's continuation while the turn runs.
+  // the answer runs the command's continuation while the turn runs (breaking
+  // `resolutionInScope` and `refinesTasks`).
   run w638IdleCommandActsInTurnTest =
     I::init.then(I::cmdRequest).then(I::startTurn).then(I::answer(1, 0))
-      .expect(not(I::resolutionInScope) and I::lastAction == "answerCmdWhileBusy" and I::running)
+      .expect(not(I::resolutionInScope) and not(I::refinesTasks)
+              and I::lastAction == "answerCmdWhileBusy" and I::running)
 
   // #398 (V2): a turn's request outlives the cancelled turn ...
   run w398TurnRequestOutlivesTurnTest =
     I::init.then(I::startTurn).then(I::toolRequest).then(I::cancel)
-      .expect(not(I::noPendingForEndedTurn) and I::rStatus.get(1) == "pending" and not(I::running))
+      .expect(not(I::noPendingForEndedTurn) and not(I::refinesTasks)
+              and not(I::inheritsTasksInvariants)
+              and I::rStatus.get(1) == "pending" and not(I::running))
 
   // ... and an answer to it is accepted for a turn that no longer exists.
   run w398AnswerForEndedTurnTest =
@@ -55,7 +59,8 @@ module witnesses {
   // parked on a request with no deadline.
   run w398HeadlessRequestNoResolverTest =
     H::init.then(H::connect).then(H::startTurn).then(H::toolRequest).then(H::disconnect)
-      .expect(not(H::pendingHasPossibleResolver) and H::parkedOn == 1)
+      .expect(not(H::pendingHasPossibleResolver) and not(H::refinesTasks)
+              and not(H::inheritsTasksInvariants) and H::parkedOn == 1)
 
   // #396 (V9): the reused web /select applies a stale answer to the active select.
   run w396BareIndexHitsOtherRequestTest =
@@ -75,8 +80,14 @@ module witnesses {
 
   run reachTimeoutUnparksTest =
     P::init.then(P::connect).then(P::startTurn).then(P::toolRequest).then(P::disconnect)
-      .then(P::timeout(1))
-      .expect(P::rStatus.get(1) == "timeout" and P::parkedOn == -1 and P::inductiveInv)
+      .then(P::tick(1)).then(P::timeout(1))
+      .expect(P::rStatus.get(1) == "timeout" and P::parkedOn == -1 and P::rRem.get(1) == 0
+              and P::inductiveInv)
+
+  run reachNoResolverImmediateFallbackTest =
+    P::init.then(P::startTurn).then(P::toolRequest)
+      .expect(P::lastAction == "toolRequestFallback" and P::rStatus.get(1) == "timeout"
+              and P::parkedOn == -1 and P::inductiveInv)
 
   run reachPickerAnsweredTest =
     T::init.then(T::cmdRequest).then(T::updateChoices(1)).then(T::answer(1, 1))

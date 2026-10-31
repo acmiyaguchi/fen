@@ -5,3 +5,12 @@ tasksSpec	cadenceMatchesRunnableInv	holds
 tasksSpec	runnableConsistencyInv	holds
 tasksSpec	cancelRequiresRegisteredInv	holds
 tasksSpec	inductiveInv	holds
+requestsSpec	movesAreAbsSteps	holds
+requestsSpec	resolvedOnceInv	holds
+requestsSpec	noOrphanTurnReqInv	holds
+requestsSpec	parkConsistentInv	holds
+requestsSpec	pendingCurrentGenInv	holds
+requestsSpec	queueOwnedByRunningTurnInv	holds
+requestsSpec	pendingBoundedBudgetInv	holds
+requestsSpec	boundedWaitTicksInv	holds
+requestsSpec	inductiveInv	holds

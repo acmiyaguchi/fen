@@ -97,7 +97,7 @@ A fix therefore changes both sides in one PR: e.g. the network streaming-row fix
 ## Domains
 
 Every bug in today's code is a GitHub issue in the [`modeling` milestone](https://github.com/acmiyaguchi/fen/milestone/11), and every `violated` row in a `checks.tsv` names its issue in the fourth column.
-The serve design findings (V1–V9) are posted as comments on the design issues they affect; the one that is also in today's code is #638.
+The serve design findings (V1–V10) are recorded on the design issues they affect (#394, #396, #397, #398); the one that is also in today's code is #638.
 
 | Domain | Scope | Bugs | Integration checks (violated / holds) | Proof models (`proofs/`) |
 | --- | --- | --- | --- | --- |
@@ -113,9 +113,9 @@ The serve design findings (V1–V9) are posted as comments on the design issues 
 | [wire](wire/FINDINGS.md) | parent/child protocol, acks, result, parent mirror | #664–#667 | 6 / 13 + table and lifecycle conformance | acks |
 | [subagents](subagents/FINDINGS.md) | run lifecycle, budgets, delivery, inheritance | #645–#650 | 8 / 11 | inheritance, lifecycle |
 | [auth](auth/FINDINGS.md) | OAuth refresh rotation, credential store, quota cache | #611–#616 | 7 / 11 | rotation, pinning, quota |
-| [serve](serve/FINDINGS.md) | design-first: attachable fen (#394, #396, #397), async UI contract (#398) | #638, plus V1–V9 on #396, #397, #398 | 15 / 8 (`proposed` protocol holds) | controls, requests, replay |
+| [serve](serve/FINDINGS.md) | design-first: attachable fen (#394, #396, #397), async UI contract (#398) | #638, plus V1–V10 on #394, #396, #397, #398 | 17 / 12 (`proposed` protocol and refinement monitors hold) | controls, requests, replay, escalation |
 
-Totals: 62 bugs in today's code (#606–#667) and 8 bugs in the serve designs. Every bug has a witness and a `known-bug` probe against the real code (the serve design findings, which have no code, have witnesses only). The whole tree is 51 models with about 640 `check-spec` checks (about 780 in `check-spec-full`) and 68 `verify-spec` obligations, most of them inductive.
+Totals: 62 bugs in today's code (#606–#667) and 9 design bug classes (V1–V2, V4–V10) in the serve designs. Every bug has a witness and a `known-bug` probe against the real code (the serve design findings, which have no code, have witnesses only). The whole tree is 59 models with about 720 `check-spec` checks (about 890 in `check-spec-full`) and 86 `verify-spec` obligations, most of them inductive.
 
 Every bug listed was confirmed against the real code (a throwaway probe or a line trace, recorded in its `FINDINGS.md`); model-only suspicions sit under each domain's "Open questions".
 Related findings: the presenters model found #619 independently; #622 is the prompt-cache cost of #626; #634 follows from #609; #639 is #606's persistence twin; #631 is #629 in the web presenter.

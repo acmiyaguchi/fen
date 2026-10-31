@@ -1,6 +1,7 @@
 # file	sed edit	main	invariant	description
-model.qnt	s|    if (END_RESOLVES) resolve(|    if (false) resolve(|	proposedTui	noPendingForEndedTurn	ending or cancelling a turn leaves its requests pending (V2)
+model.qnt	s|      if (END_RESOLVES)|      if (false)|	proposedTui	noPendingForEndedTurn	ending or cancelling a turn leaves its requests pending (V2)
 model.qnt	s|        if (RECHECK)|        if (false)|	proposedTui	resolutionInScope	an idle-scoped continuation does not re-check idle (#638)
-model.qnt	s|    if (RELOAD_RESOLVES) resolve(|    if (false) resolve(|	proposedTui	noStaleContinuation	/reload leaves idle-scoped requests pending (V5)
-model.qnt	s|rDeadline.set(i, TIMEOUTS)),|rDeadline.set(i, false)),|	proposed	pendingHasPossibleResolver	requests are issued without a deadline (V4)
+model.qnt	s|      if (RELOAD_RESOLVES)|      if (false)|	proposedTui	noStaleContinuation	/reload leaves idle-scoped requests pending (V5)
+model.qnt	s|               rRem.set(i, if (TIMEOUTS) MAX_BUDGET else 0),|               rRem.set(i, 0),|	proposed	pendingHasPossibleResolver	requests are issued without a countdown budget (V4)
 model.qnt	s|      else if (VERSIONED and target == aim and shown != rVer.get(target))|      else if (false)|	proposedTui	answerMatchesShownChoices	an answer against an old choice list is applied (V6)
+model.qnt	s|    rRem: rRem,|    rRem: IDS.mapBy(_i => 0),|	proposed	refinesTasks	refinement projection drops the remaining countdown budget on pending requests

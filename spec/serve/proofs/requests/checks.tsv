@@ -7,9 +7,17 @@ issue	resolutionInScope	violated	#638,#398
 issue	noStaleContinuation	violated	#398
 issue	answerMatchesShownChoices	violated	#398
 issue	noPendingForEndedTurn	violated	#398
+issue	refinesTasks	violated	#638,#398
+issue	inheritsTasksInvariants	violated	#398
 headless	pendingHasPossibleResolver	violated	#398
+headless	refinesTasks	violated	#398
+headless	inheritsTasksInvariants	violated	#398
 webReuse	answerHitsItsRequest	violated	#396
 proposed	allInvariants	holds
 proposed	inductiveInv	holds
+proposed	refinesTasks	holds
+proposed	inheritsTasksInvariants	holds
 proposedTui	allInvariants	holds
 proposedTui	inductiveInv	holds
+proposedTui	refinesTasks	holds
+proposedTui	inheritsTasksInvariants	holds

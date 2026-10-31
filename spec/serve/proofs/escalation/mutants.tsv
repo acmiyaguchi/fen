@@ -1,0 +1,6 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|           if (CHILD_OUTLASTS) C_MAX_REM else P_MAX_REM, 0,|           P_MAX_REM, 0,|	proposed	boundedTwoHopDeadlines	child starts with a deadline no longer than the parent's (V10a)
+model.qnt	s|           if (CHILD_OUTLASTS) C_MAX_REM else P_MAX_REM, 0,|           P_MAX_REM, 0,|	proposed	parentAnswerReachesChild	child expires during in-flight hop before the parent's accepted answer arrives (V10a)
+model.qnt	s|             if (CHILD_EXIT_RESOLVES and wasPending) "childExited" else pStatus,|             pStatus,|	proposed	noOrphanParentReq	polling child exit leaves the parent's relayed request pending (V10b)
+model.qnt	s|           if (PARENT_END_FORWARDS and cAlive) "abortToChild" else wire, cExitPending,|           wire, cExitPending,|	proposed	noParkedChildWithoutParent	parent timeout does not forward an abort to the parked child (V10c)
+model.qnt	s|           pResCount + 1, cResCount, "clientAnswer"),|           pResCount + 2, cResCount, "clientAnswer"),|	proposed	resolvedAtMostOnce	answering a parent request increments its resolution count twice

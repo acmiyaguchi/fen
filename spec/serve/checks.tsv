@@ -1,5 +1,4 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-# main	invariant	expect (holds|violated)	issues (violated rows)
 issue	singleTurn	holds
 issue	resolvedAtMostOnce	holds
 issue	answersAcked	violated	#398
@@ -16,14 +15,16 @@ issue	pendingHasPossibleResolver	holds
 issue	remoteNoCommands	holds
 issue	answerHitsItsRequest	holds
 issue	noDuplicateDelivery	holds
-# main	invariant	expect (holds|violated)	issues (violated rows)
 issueDup	noDuplicateDelivery	violated	#396
 issueDup	inOrderDelivery	violated	#396
-# main	invariant	expect (holds|violated)	issues (violated rows)
 headless	pendingHasPossibleResolver	violated	#398
-# main	invariant	expect (holds|violated)	issues (violated rows)
 webReuse	answerHitsItsRequest	violated	#396
 webReuse	remoteNoCommands	violated	#396
-# main	invariant	expect (holds|violated)	issues (violated rows)
 proposed	allInvariants	holds
 proposedTui	allInvariants	holds
+issueRefines	refinesTasks	violated	#397,#398,#638
+issueRefines	inheritsTasksInvariants	violated	#398
+proposedRefines	refinesTasks	holds
+proposedRefines	inheritsTasksInvariants	holds
+proposedTuiRefines	refinesTasks	holds
+proposedTuiRefines	inheritsTasksInvariants	holds

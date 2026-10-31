@@ -2,3 +2,10 @@
 model.qnt	s|val nextArmed = if (completes) false else a.t1Armed|val nextArmed = a.t1Armed|	tasksSpec	ownershipIsolatedInv	task completes without disarming cancel ladder
 model.qnt	s|pollActive: runnable,|pollActive: false,|	tasksSpec	cadenceMatchesRunnableInv	scheduler drops active poll cadence while work is runnable
 model.qnt	s|t1Owner: 0,|t1Owner: a.t1Owner,|	tasksSpec	ownershipIsolatedInv	retiring task leaves owner recorded on empty slot
+model.qnt	s|        { ...resolved, running: false, parkedOn: -1, queue: Set() },|        { ...a, running: false, parkedOn: -1, queue: Set() },|	requestsSpec	noOrphanTurnReqInv	ending a turn leaves its pending request open
+model.qnt	s|        { ...resolved, running: false, parkedOn: -1, queue: Set() },|        { ...resolved, running: false, parkedOn: -1, queue: a.queue },|	requestsSpec	queueOwnedByRunningTurnInv	ending a turn leaves its steering queued for the next turn
+model.qnt	s|        { ...resolveSet(a, idleP, "cancelled"), gen: a.gen + 1 },|        { ...a, gen: a.gen + 1 },|	requestsSpec	pendingCurrentGenInv	/reload leaves idle-scoped requests pending across generations
+model.qnt	s|            rRem: a.rRem.set(i, bgt),|            rRem: a.rRem.set(i, 0),|	requestsSpec	pendingBoundedBudgetInv	a pending request is opened with zero countdown budget
+model.qnt	s|            rRes: a.rRes.set(i, 1),|            rRes: a.rRes.set(i, 2),|	requestsSpec	resolvedOnceInv	immediate no-resolver fallback increments resolution count twice
+model.qnt	s|            parkedOn: if (tool) i else a.parkedOn,|            parkedOn: -1,|	requestsSpec	parkConsistentInv	opening a turn-scoped request leaves parkedOn unset
+model.qnt	s|      fromAbs({ ...a, rVer: a.rVer.set(i, a.rVer.get(i) + 1) }, ticksSinceOpen),|      fromAbs({ ...a, rVer: a.rVer.set(i, a.rVer.get(i) + 2) }, ticksSinceOpen),|	requestsSpec	movesAreAbsSteps	choice update jumps two versions in one step, violating reqAbsNext

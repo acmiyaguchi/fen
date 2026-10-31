@@ -1,7 +1,8 @@
 // Design-first model of attachable fen: the serve sidecar and wire event
 // stream (#394, #396), remote input / steering / cancel (#397), and the async
 // UI contract that replaces blocking ui.select with
-// select-requested / select-resolved (#398).
+// select-requested / select-resolved (#398), refined against the abstract
+// turn-ownership & async-request core spec (`spec/core/tasks/abstract.qnt`, #671).
 //
 // Nothing here is built yet. The model encodes the designs as the issues
 // state them, plus the existing code they say they reuse:
@@ -22,6 +23,8 @@
 // Each const selects one design choice; the module instances at the bottom
 // pick the issue designs as written and the proposed protocol.
 module serve {
+  import requestsAbstract as TA from "../core/tasks/abstract"
+
   // true: an answer names its request id and resolves only that request
   // (#398). false: today's web /select, whose POST body is a bare index that
   // finish-select! applies to whatever select is active.
@@ -32,7 +35,8 @@ module serve {
   const ACK_ANSWERS: bool
   // Ending or cancelling a turn resolves its pending request (#398 silent).
   const END_RESOLVES: bool
-  // Pending requests carry a deadline (#398 silent).
+  // Pending requests carry a deadline with a countdown budget (and resolve at
+  // once to default when no resolver is attached; #398 silent).
   const TIMEOUTS: bool
   // Steer / cancel / prompt carry the turn id the sender saw and are
   // rejected when it is not the running turn (#397: plain queue + TUI cancel).
@@ -61,10 +65,13 @@ module serve {
   pure val CLIENTS = Set(0, 1, 2)
   pure val REMOTES = Set(1, 2)
   pure val MAX_TURNS = 3
-  pure val MAX_REQS = 3
+  // Must match `TA::IDS = Set(1, 2)` in `spec/core/tasks/abstract.qnt` so
+  // `absOf` projects every issued request id into the abstract table.
+  pure val MAX_REQS = 2
   pure val MAX_LOG = 10
   pure val RING = 3
   pure val MAX_VER = 1
+  pure val MAX_BUDGET = 2
 
   // Bus event. kind: "turn" (turn-started), "end" (turn complete/cancelled),
   // "msg" (a message appended: persisted in the session JSONL), "req"
@@ -75,7 +82,8 @@ module serve {
   // /model); turn > 0: issued from inside that turn (tool, permission).
   // status: pending | answered | timeout | ended | cancelled | aborted
   // deadline: the request was issued with a deadline (TIMEOUTS).
-  type Req = { turn: int, gen: int, status: str, wins: int, ver: int, deadline: bool }
+  // rem: remaining countdown ticks while pending (0 when not armed/pending).
+  type Req = { turn: int, gen: int, status: str, wins: int, res: int, ver: int, deadline: bool, rem: int }
 
   type Cl = {
     conn: bool, attaching: bool,
@@ -143,9 +151,10 @@ module serve {
     st.reqs.keys().filter(i => st.reqs.get(i).status == "pending")
 
   pure def setStatus(st: S, i: int, status: str): S =
-    { ...st, reqs: st.reqs.set(i, { ...st.reqs.get(i), status: status }) }
+    val r = st.reqs.get(i)
+    { ...st, reqs: st.reqs.set(i, { ...r, status: status, res: r.res + 1, rem: 0 }) }
 
-  // Resolve every pending request matching `which` with `status`, broadcasting.
+  // Resolve every pending request matching `ids` with `status`, broadcasting.
   pure def resolveWhere(st: S, ids: Set[int], status: str): S =
     ids.fold(st, (acc, i) => acc.setStatus(i, status).emit(ev("res", 0, i, 0)))
 
@@ -164,6 +173,24 @@ module serve {
     { ...st, turnNo: st.turnNo + 1, running: true, parkedOn: -1 }
       .emit(ev("turn", st.turnNo + 1, -1, 0)).emit(ev("msg", st.turnNo + 1, -1, 0))
 
+  // Refinement mapping onto the abstract `requestsAbstract::ReqAbs` machine (#671).
+  pure def absOf(st: S): TA::ReqAbs =
+    val hasRes = LOCAL or REMOTES.exists(c => st.cl.get(c).conn)
+    {
+      running: st.running,
+      turnNo: st.turnNo,
+      parkedOn: st.parkedOn,
+      gen: st.gen,
+      hasResolver: hasRes,
+      queue: st.queue.foldl(Set(), (acc, q) => acc.union(Set(q.seen))),
+      rScope: TA::IDS.mapBy(i => if (st.reqs.keys().contains(i)) st.reqs.get(i).turn else 0),
+      rGen: TA::IDS.mapBy(i => if (st.reqs.keys().contains(i)) st.reqs.get(i).gen else 0),
+      rVer: TA::IDS.mapBy(i => if (st.reqs.keys().contains(i)) st.reqs.get(i).ver else 0),
+      rStatus: TA::IDS.mapBy(i => if (st.reqs.keys().contains(i)) st.reqs.get(i).status else "none"),
+      rRes: TA::IDS.mapBy(i => if (st.reqs.keys().contains(i)) st.reqs.get(i).res else 0),
+      rRem: TA::IDS.mapBy(i => if (st.reqs.keys().contains(i)) st.reqs.get(i).rem else 0),
+    }
+
   // ---- state ----
   var s: S
   var lastAction: str
@@ -172,6 +199,9 @@ module serve {
 
   pure def isClient(st: S, c: int): bool =
     if (c == 0) LOCAL else st.cl.get(c).conn and not(st.cl.get(c).attaching)
+
+  pure def anyResolver(st: S): bool =
+    LOCAL or REMOTES.exists(c => st.cl.get(c).conn)
 
   action commit(st: S, label: str): bool = all { s' = syncLocal(st), lastAction' = label }
 
@@ -220,26 +250,33 @@ module serve {
     commit(endTurn(s), "turnEnd"),
   }
 
-  // A tool / permission check inside the running turn asks a question and parks.
+  // A tool / permission check inside the running turn asks a question and parks
+  // (or resolves immediately to default if TIMEOUTS and no resolver is attached).
   action toolRequest: bool = all {
-    s.running, s.parkedOn < 0, s.nextReq <= MAX_REQS, room(s, 1),
+    s.running, s.parkedOn < 0, s.nextReq <= MAX_REQS, room(s, 2),
     val i = s.nextReq
-    commit({ ...s.emit(ev("req", s.turnNo, i, 0)),
-             reqs: s.reqs.put(i, { turn: s.turnNo, gen: s.gen, status: "pending", wins: 0, ver: 0,
-                                   deadline: TIMEOUTS }), // a turn-scoped request
-             nextReq: i + 1, parkedOn: i }, "toolRequest")
+    if (TIMEOUTS and not(anyResolver(s)))
+      commit({ ...s.emit(ev("req", s.turnNo, i, 0)).emit(ev("res", 0, i, 0)),
+               reqs: s.reqs.put(i, { turn: s.turnNo, gen: s.gen, status: "timeout", wins: 0, res: 1,
+                                     ver: 0, deadline: true, rem: 0 }),
+               nextReq: i + 1 }, "toolRequestFallback")
+    else
+      commit({ ...s.emit(ev("req", s.turnNo, i, 0)),
+               reqs: s.reqs.put(i, { turn: s.turnNo, gen: s.gen, status: "pending", wins: 0, res: 0,
+                                     ver: 0, deadline: TIMEOUTS, rem: if (TIMEOUTS) MAX_BUDGET else 0 }),
+               nextReq: i + 1, parkedOn: i }, "toolRequest")
   }
 
   // An idle-only slash command (/resume, /model) opens a picker. Local user,
   // or a remote client when remote "/" lines dispatch commands.
   action cmdRequest(c: int): bool = all {
-    not(s.running), s.nextReq <= MAX_REQS, room(s, 1),
+    not(s.running), s.nextReq <= MAX_REQS, room(s, 2),
     if (c == 0) LOCAL else REMOTE_SLASH and isClient(s, c),
     pendingIds(s).forall(i => s.reqs.get(i).turn != 0),
     val i = s.nextReq
     commit({ ...s.emit(ev("req", 0, i, 0)),
-             reqs: s.reqs.put(i, { turn: 0, gen: s.gen, status: "pending", wins: 0, ver: 0,
-                                   deadline: TIMEOUTS }),
+             reqs: s.reqs.put(i, { turn: 0, gen: s.gen, status: "pending", wins: 0, res: 0,
+                                   ver: 0, deadline: TIMEOUTS, rem: if (TIMEOUTS) MAX_BUDGET else 0 }),
              nextReq: i + 1, remoteCmds: s.remoteCmds + (if (c == 0) 0 else 1) }, "cmdRequest")
   }
 
@@ -268,7 +305,8 @@ module serve {
         commit(s, "answerRejectedStaleChoices")
       else
         val won = { ...s.emit(ev("res", 0, target, 0)),
-                    reqs: s.reqs.set(target, { ...r, status: "answered", wins: r.wins + 1 }) }
+                    reqs: s.reqs.set(target, { ...r, status: "answered", wins: r.wins + 1,
+                                               res: r.res + 1, rem: 0 }) }
         val rec = { aimed: aim, target: target, inScope: true,
                     fresh: r.gen == s.gen, verOk: shown == r.ver }
         if (r.turn > 0)
@@ -279,13 +317,22 @@ module serve {
             commit({ ...won, applied: s.applied.append({ ...rec, inScope: false }) }, "answerForEndedTurn")
         else if (s.running)
           if (RECHECK)
-            commit({ ...won, reqs: won.reqs.set(target, { ...r, status: "aborted", wins: r.wins + 1 }) },
+            commit({ ...won, reqs: won.reqs.set(target, { ...r, status: "aborted", wins: r.wins + 1,
+                                                          res: r.res + 1, rem: 0 }) },
                    "answerAbortedBusy")
           else
             // the command continuation runs while a turn is running
             commit({ ...won, applied: s.applied.append({ ...rec, inScope: false }) }, "answerCmdWhileBusy")
         else
           commit({ ...won, applied: s.applied.append(rec) }, "answerCmd")
+  }
+
+  // Countdown tick on a pending request with a deadline.
+  action tickReq(i: int): bool = all {
+    s.reqs.keys().contains(i), s.reqs.get(i).deadline, s.reqs.get(i).status == "pending",
+    s.reqs.get(i).rem > 1,
+    val r = s.reqs.get(i)
+    commit({ ...s, reqs: s.reqs.set(i, { ...r, rem: r.rem - 1 }) }, "tickReq")
   }
 
   action timeout(i: int): bool = all {
@@ -405,7 +452,7 @@ module serve {
     nondet resume = Bool.oneOf()
     any {
       send(c), inject, naturalEnd, toolRequest, cmdRequest(c), updateChoices(i),
-      answer(c, i), timeout(i), cancel(c), reload,
+      answer(c, i), tickReq(i), timeout(i), cancel(c), reload,
       disconnect(r), connect(r, resume), replayStep(r), finishReplay(r), deliver(r), overflow(r),
     }
   }
@@ -475,13 +522,12 @@ module serve {
   val caughtUpSeesTurn = REMOTES.forall(c =>
     not(caughtUp(s, c)) or s.cl.get(c).seenTurn == (if (s.running) s.turnNo else 0))
 
-  // Safety, not liveness: in every state each pending request has a party
+  // Safety + bounded-progress: in every state each pending request has a party
   // that could resolve it: the in-process presenter, a connected remote
-  // client, or a deadline armed on the request itself. It does not claim
-  // that anyone answers or that the deadline fires (no fairness is assumed,
-  // see spec/README.md "Kinds of evidence").
+  // client, or an active countdown budget (`rem >= 1`) armed on the request.
   val pendingHasPossibleResolver = pendingIds(s).forall(i =>
-    LOCAL or s.reqs.get(i).deadline or REMOTES.exists(c => s.cl.get(c).conn))
+    LOCAL or (s.reqs.get(i).deadline and s.reqs.get(i).rem >= 1)
+          or REMOTES.exists(c => s.cl.get(c).conn))
 
   // A remote client cannot dispatch slash commands (#397: input only
   // reaches the steering/follow-up queues).
@@ -543,4 +589,72 @@ module proposedTui {
                TIMEOUTS = true, TARGETED = true, REPLAY = "ring",
                RECHECK = true, VERSIONED = true, LOCAL = true,
                REMOTE_SLASH = false, RELOAD_RESOLVES = true).*
+}
+
+// Refinement monitors (#671): every step of the serve integration model must
+// be a step (or stutter) of the abstract `spec/core/tasks` machine, and inherit
+// its invariants (`TA::absInv`).
+module issueRefines {
+  import serve(ANSWER_BY_ID = true, ACK_ANSWERS = false, END_RESOLVES = false,
+               TIMEOUTS = false, TARGETED = false, REPLAY = "jsonlGap",
+               RECHECK = false, VERSIONED = false, LOCAL = true,
+               REMOTE_SLASH = false, RELOAD_RESOLVES = false) as SI
+  import requestsAbstract as TA from "../core/tasks/abstract"
+
+  var prevAbs: TA::ReqAbs
+
+  action init = all { SI::init, prevAbs' = TA::reqAbsInit(true) }
+  action step = all { SI::step, prevAbs' = SI::absOf(SI::s) }
+
+  action mConnect(c: int, resume: bool): bool = all { SI::connect(c, resume), prevAbs' = SI::absOf(SI::s) }
+  action mFinishReplay(c: int): bool = all { SI::finishReplay(c), prevAbs' = SI::absOf(SI::s) }
+  action mSend(c: int): bool = all { SI::send(c), prevAbs' = SI::absOf(SI::s) }
+  action mCmdRequest(c: int): bool = all { SI::cmdRequest(c), prevAbs' = SI::absOf(SI::s) }
+  action mAnswer(c: int, i: int): bool = all { SI::answer(c, i), prevAbs' = SI::absOf(SI::s) }
+  action mToolRequest: bool = all { SI::toolRequest, prevAbs' = SI::absOf(SI::s) }
+  action mCancel(c: int): bool = all { SI::cancel(c), prevAbs' = SI::absOf(SI::s) }
+
+  val refinesTasks = TA::reqAbsNext(prevAbs, SI::absOf(SI::s))
+  val inheritsTasksInvariants = TA::reqAbsInv(SI::absOf(SI::s))
+}
+
+module proposedRefines {
+  import serve(ANSWER_BY_ID = true, ACK_ANSWERS = true, END_RESOLVES = true,
+               TIMEOUTS = true, TARGETED = true, REPLAY = "ring",
+               RECHECK = true, VERSIONED = true, LOCAL = false,
+               REMOTE_SLASH = false, RELOAD_RESOLVES = true) as SP
+  import requestsAbstract as TA from "../core/tasks/abstract"
+
+  var prevAbs: TA::ReqAbs
+
+  action init = all { SP::init, prevAbs' = TA::reqAbsInit(false) }
+  action step = all { SP::step, prevAbs' = SP::absOf(SP::s) }
+
+  action mConnect(c: int, resume: bool): bool = all { SP::connect(c, resume), prevAbs' = SP::absOf(SP::s) }
+  action mDisconnect(c: int): bool = all { SP::disconnect(c), prevAbs' = SP::absOf(SP::s) }
+  action mSend(c: int): bool = all { SP::send(c), prevAbs' = SP::absOf(SP::s) }
+  action mToolRequest: bool = all { SP::toolRequest, prevAbs' = SP::absOf(SP::s) }
+  action mTickReq(i: int): bool = all { SP::tickReq(i), prevAbs' = SP::absOf(SP::s) }
+  action mTimeout(i: int): bool = all { SP::timeout(i), prevAbs' = SP::absOf(SP::s) }
+
+  val refinesTasks = TA::reqAbsNext(prevAbs, SP::absOf(SP::s))
+  val inheritsTasksInvariants = TA::reqAbsInv(SP::absOf(SP::s))
+  val state = SP::s
+  val allInvariants = SP::allInvariants
+}
+
+module proposedTuiRefines {
+  import serve(ANSWER_BY_ID = true, ACK_ANSWERS = true, END_RESOLVES = true,
+               TIMEOUTS = true, TARGETED = true, REPLAY = "ring",
+               RECHECK = true, VERSIONED = true, LOCAL = true,
+               REMOTE_SLASH = false, RELOAD_RESOLVES = true) as ST
+  import requestsAbstract as TA from "../core/tasks/abstract"
+
+  var prevAbs: TA::ReqAbs
+
+  action init = all { ST::init, prevAbs' = TA::reqAbsInit(true) }
+  action step = all { ST::step, prevAbs' = ST::absOf(ST::s) }
+
+  val refinesTasks = TA::reqAbsNext(prevAbs, ST::absOf(ST::s))
+  val inheritsTasksInvariants = TA::reqAbsInv(ST::absOf(ST::s))
 }

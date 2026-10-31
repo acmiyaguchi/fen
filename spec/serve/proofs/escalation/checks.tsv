@@ -1,0 +1,8 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+issue	resolvedAtMostOnce	holds
+issue	parentAnswerReachesChild	violated	#398
+issue	noOrphanParentReq	violated	#398
+issue	noParkedChildWithoutParent	violated	#398
+issue	boundedTwoHopDeadlines	violated	#398
+proposed	allInvariants	holds
+proposed	inductiveInv	holds
