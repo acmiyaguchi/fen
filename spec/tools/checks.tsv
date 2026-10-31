@@ -1,0 +1,16 @@
+# main	invariant	expect (holds|violated)
+current	noLiveProcessAfterAbnormalEnd	violated
+current	noUnboundedBlockingWait	violated
+current	noTornFile	violated
+current	okMeansWritten	violated
+current	cancelledMeansUnchanged	violated
+current	noLostUpdate	violated
+current	batchAllOrNothing	violated
+current	exitStatusVisible	violated
+current	noSplitChar	violated
+current	uniqueMatchIsUnique	violated
+current	killOnlyOnAbnormalEnd	holds
+current	deniedUnreachable	holds
+current	hookVetoFinal	holds
+current	validatedBeforeEffect	holds
+fixed	allInvariants	holds
