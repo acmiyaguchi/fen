@@ -1,0 +1,14 @@
+# main	invariant	expect (holds|violated)
+current	everyReadControlAcked	violated
+current	userSteersAccounted	violated
+current	noDoomedSteer	violated
+current	naturalAnswerKept	violated
+current	queuedSteersAccounted	violated
+current	finalTextFileRemovedOnce	violated
+current	atMostOneAck	holds
+current	ackBeforeEffect	holds
+current	resultOnlyBeforeExitDone	holds
+current	mirrorAgreesWhenDrained	holds
+current	controlSeqIncreasing	holds
+current	boundedTurns	holds
+fixed	allInvariants	holds
