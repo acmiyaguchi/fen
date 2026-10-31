@@ -1,0 +1,12 @@
+# main	invariant	expect (holds|violated)
+current	ctrlCActsOnShownTurn	violated
+current	busyHintTruthful	violated
+current	quitArmOnFocusedTab	violated
+current	steeringReachesItsTurn	violated
+current	eventsInOwnTab	violated
+current	sideEntryOwned	violated
+current	noSteeringLost	holds
+current	closedSideCancelled	holds
+current	closedSideIdle	holds
+current	draftsPreserved	holds
+fixed	allInvariants	holds

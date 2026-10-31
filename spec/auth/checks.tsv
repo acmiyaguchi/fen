@@ -1,0 +1,11 @@
+# main	invariant	expect (holds|violated)
+current	storeRefreshable	violated
+current	noResurrection	violated
+current	noSpuriousAuthFailure	violated
+current	singleRefreshInFlight	violated
+current	secretsPrivate	violated
+current	quotaFreshNotContradicted	violated
+current	storeWholeRecord	holds
+current	cacheLockExclusive	holds
+current	quotaNoStaleExhausted	holds
+fixed	allInvariants	holds
