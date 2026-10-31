@@ -8,6 +8,9 @@
 #              the current code. When the bug is fixed, update the model and
 #              flip the row to `holds`.
 #
+# A domain may also ship conform.sh, which checks the model against the real
+# code (table comparison or trace replay); it runs after the domain's checks.
+#
 # Usage: sh scripts/spec/check.sh [spec/<domain> ...]
 # Env: QUINT (default quint), SPEC_SAMPLES, SPEC_STEPS, SPEC_SEED.
 set -u
@@ -58,6 +61,16 @@ for dir in "$@"; do
       fail=$((fail + 1))
     fi
   done < "$checks"
+  if [ -f "$dir/conform.sh" ]; then
+    total=$((total + 1))
+    if out=$(QUINT="$QUINT" sh "$dir/conform.sh" 2>&1); then
+      echo "ok   $dir conformance: $(printf '%s' "$out" | tail -1)"
+    else
+      echo "FAIL $dir conformance"
+      printf '%s\n' "$out" | tail -15 | sed 's/^/    /'
+      fail=$((fail + 1))
+    fi
+  fi
 done
 
 echo "spec: $total checks, $fail failed"

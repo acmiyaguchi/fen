@@ -32,6 +32,12 @@ Confirmed against real ingest for both paths: the transcript renders `"Partial a
 All invariants hold under `fixed`.
 An alternative that keeps the rule in one place: the agent always emits `assistant-stream-end` (with a reason) when a provider call ends for any reason, so every presenter gets the close.
 
+## Conformance
+
+`conform.sh` replays 200 model traces through the real `ingest.fnl` and compares transcripts row by row.
+Its first run caught a model error, not a code bug: the real ingest adds an `:info` row when a hosted tool ends, which the model had omitted.
+The model now records every emitted event (`emitted`, ghost state) so traces can be replayed.
+
 ## Core
 
 The essential contract is small: *a stream is a sequence of attempts; only the last attempt's content is real; every stream is closed exactly once*.

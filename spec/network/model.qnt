@@ -70,7 +70,7 @@ module network {
             rows: t.rows.replaceAt(t.open,
                     { ...t.rows[t.open], toks: t.rows[t.open].toks.append(tok) }) }
     | HostedStart => { ...t, hosted: true }
-    | HostedEnd => { ...t, hosted: false }
+    | HostedEnd => { ...t, hosted: false }.pushRow("info") // hosted-tool-row
     | ProviderRetry =>
         // today: clear hosted tools (#574) and show retrying; streamed text kept
         val base = { ...t, hosted: false, retrying: true }
@@ -102,12 +102,13 @@ module network {
   var finalAttempt: int -> int
   var tui: Tui
   var lastAction: str
+  var emitted: List[Event] // ghost: every bus event, for trace replay
 
   action init = all {
     phase' = "idle", turn' = 0, attempt' = 0, buf' = [], hostedOpen' = false,
     visible' = false, history' = [], finalAttempt' = Map(),
     tui' = { rows: [], open: -1, hosted: false, retrying: false },
-    lastAction' = "init",
+    lastAction' = "init", emitted' = [],
   }
 
   action startTurn = all {
@@ -115,7 +116,7 @@ module network {
     phase' = "streaming", turn' = turn + 1, attempt' = 1, buf' = [],
     hostedOpen' = false, visible' = false,
     history' = history, finalAttempt' = finalAttempt,
-    tui' = tui.emitAll([User, LlmStart]),
+    tui' = tui.emitAll([User, LlmStart]), emitted' = emitted.concat([User, LlmStart]),
     lastAction' = "startTurn",
   }
 
@@ -124,7 +125,7 @@ module network {
     val tok = { turn: turn, attempt: attempt, idx: buf.length() }
     all {
       buf' = buf.append(tok), visible' = true,
-      tui' = tui.ingest(TextDelta(tok)),
+      tui' = tui.ingest(TextDelta(tok)), emitted' = emitted.append(TextDelta(tok)),
       phase' = phase, turn' = turn, attempt' = attempt, hostedOpen' = hostedOpen,
       history' = history, finalAttempt' = finalAttempt,
       lastAction' = "streamToken",
@@ -134,7 +135,7 @@ module network {
   action hosted(start: bool): bool = all {
     phase == "streaming", hostedOpen != start,
     hostedOpen' = start,
-    tui' = tui.ingest(if (start) HostedStart else HostedEnd),
+    tui' = tui.ingest(if (start) HostedStart else HostedEnd), emitted' = emitted.append(if (start) HostedStart else HostedEnd),
     phase' = phase, turn' = turn, attempt' = attempt, buf' = buf,
     visible' = visible, history' = history, finalAttempt' = finalAttempt,
     lastAction' = if (start) "hostedStart" else "hostedEnd",
@@ -151,21 +152,21 @@ module network {
       all {
         phase' = "backoff", attempt' = attempt, buf' = buf,
         history' = history, finalAttempt' = finalAttempt,
-        tui' = tui.ingest(ProviderRetry),
+        tui' = tui.ingest(ProviderRetry), emitted' = emitted.append(ProviderRetry),
       }
     else if (outcome == "complete")
       all {
         phase' = "idle", attempt' = attempt, buf' = buf,
         history' = history.append({ turn: turn, outcome: "ok", toks: buf }),
         finalAttempt' = finalAttempt.put(turn, attempt),
-        tui' = tui.emitAll([LlmEnd, StreamEnd]),
+        tui' = tui.emitAll([LlmEnd, StreamEnd]), emitted' = emitted.concat([LlmEnd, StreamEnd]),
       }
     else
       all {
         phase' = "idle", attempt' = attempt, buf' = buf,
         history' = history.append({ turn: turn, outcome: "error", toks: [] }),
         finalAttempt' = finalAttempt.put(turn, attempt),
-        tui' = tui.emitAll([LlmEnd, Error]),
+        tui' = tui.emitAll([LlmEnd, Error]), emitted' = emitted.concat([LlmEnd, Error]),
       }
   }
 
@@ -173,7 +174,7 @@ module network {
     phase == "backoff",
     phase' = "streaming", attempt' = attempt + 1, buf' = [], hostedOpen' = false,
     turn' = turn, visible' = visible, history' = history,
-    finalAttempt' = finalAttempt, tui' = tui,
+    finalAttempt' = finalAttempt, tui' = tui, emitted' = emitted,
     lastAction' = "backoffDone",
   }
 
@@ -184,7 +185,7 @@ module network {
     hostedOpen' = false, visible' = visible,
     history' = history.append({ turn: turn, outcome: "aborted", toks: [] }),
     finalAttempt' = finalAttempt.put(turn, attempt),
-    tui' = tui.ingest(Cancelled),
+    tui' = tui.ingest(Cancelled), emitted' = emitted.append(Cancelled),
     lastAction' = "cancel",
   }
 

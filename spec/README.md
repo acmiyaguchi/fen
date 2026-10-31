@@ -31,6 +31,19 @@ A `violated` row records a known bug in the current design: the check passes whi
 When the code is fixed, update the model and flip the row to `holds`.
 Where a candidate fix is modelled, a `fixed` instance (`module fixed { import <model>(FIXED = true).* }`) carries it and should satisfy every invariant.
 
+## Conformance
+
+A model that is never compared with the code drifts into a second, stale description.
+A domain may ship `conform.sh`, which `check-spec` runs after the domain's checks:
+
+| Domain | Kind | What it compares |
+| --- | --- | --- |
+| [wire](wire/conform.qnt) | table | Every (state, control) and (state, event) pair of the model's `decide`/`advance` against `fen.util.wire_session` (`scripts/spec/conform-wire.fnl`). |
+| [network](network/replay_test.fnl) | trace replay | 200 Quint traces of the `current` model, each event sequence fed through the real TUI ingest; the transcript must equal the model's. |
+
+Conformance pins the model to today's code, bugs included.
+A fix therefore changes both sides in one PR: e.g. the network streaming-row fix flips `SPEC_NETWORK_MAIN` in `network/conform.sh` to `fixed` (today 113 of 200 `fixed` traces diverge from the code, as they should).
+
 ## Conventions
 
 - Model the code as it is, cite the files it mirrors, and keep models small: 2–3 turns, attempts, or tabs are enough to expose interleavings.
