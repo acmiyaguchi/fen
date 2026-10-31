@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+fixed	contribInductive	inductive	1	300	finite state (two owners, scalar registry); the registry is re-derived on every reload and disable, so induction covers any depth

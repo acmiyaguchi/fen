@@ -10,6 +10,20 @@ Coroutines yield, finish, or error. Agent turns observe a cancel at the first re
 Code: `extensions/adapters/presenters/tui/init.fnl` (`M.run`, `peek-timeout-ms`, `guard-tick!`, `tick-background!`, `warn-if-stalled!`), `extensions/adapters/presenters/tui/paint.fnl` (`redraw-if-needed!`, `paint-frame!`, `paint-panels`), `extensions/adapters/presenters/tui/panels/transcript.fnl` (`render-lines-for-event`, `wrap-text`), `extensions/adapters/presenters/tui/input.fnl` (Ctrl-C ladder), `extensions/adapters/presenters/tui/select.fnl` (`run-overlay`), `extensions/adapters/presenters/tui/side_chat.fnl` (`tick!`, `resume-entry!`, reap), `packages/fen/src/fen/interactive.fnl` (`on-tick`, presenter xpcall and shutdown), `packages/fen/src/fen/{turn_submit,reload_request}.fnl`, `packages/core/src/fen/core/agent.fnl` (`make-yield`), `packages/core/src/fen/core/extensions/events.fnl` (per-handler xpcall), `extensions/behaviors/kernel/decide/service.fnl` (`ask-async!`, `pump!`), `extensions/behaviors/actions/sessions/commands/session.fnl` (`start-reload!`, `reload` tool).
 Streaming rows, turn ownership across tabs, and the tool-side yield contract belong to [network](../network/FINDINGS.md), [tui-turns](../tui-turns/FINDINGS.md), and `spec/tools`. They are not repeated here.
 
+## Input assumptions
+
+What the environment actions can produce:
+
+- Any interleaving of whole pumps (`iterate`, one pass of `M.run`; `pumpModal`, one select-overlay pump) with the environment actions: a bad row, a reload request queued from inside an agent turn, a runtime-tick task (at most 2 live), a side-chat submit or cancel.
+- Inside a pump, each coroutine's resume outcome is any of yield, finish, error; the key read by the poll is none, Ctrl-C, or Enter; at the idle boundary a next turn may or may not be started (goal continuation, idle follow-up).
+- At most 4 main turns per trace (`MAX_TURNS`).
+
+What they cannot produce:
+
+- A pump interrupted part-way: the phases of one pass are one atomic step, in the code's order (paint, poll, input, on-tick, background, bottom). #636 depends on that order (input before on-tick before the bottom reset), and the model keeps it.
+- Nested `on-tick` from inside the main turn (see Open questions), a `tb_peek_event` failure, or real time: the poll wait is recorded, not slept.
+- Fairness: nothing forces pumps to run or environment actions to stop. No property here is a liveness property.
+
 ## Bugs
 
 ### #635: A transcript row that fails to render ends the session
@@ -24,7 +38,10 @@ A field the renderer cannot handle (a non-string `:text`, for example) then rais
 The error leaves `M.run`, `interactive.fnl`'s xpcall runs presenter shutdown, which restores the terminal correctly, and the process exits with `presenter crashed`.
 The in-flight turn, side chat, and background subagent jobs all go with it.
 
-Confirmed with a Busted probe: real `events.emit` into the real TUI subscriber, then the real `M.run` with the termbox stub (`tb-initialized? true`, peeks scripted to no-event):
+Witnesses: `w635BadRowCrashesLoopTest` ([`witnesses.qnt`](witnesses.qnt)) and the [`pump`](proofs/pump/) proof model's `w635BadRowCrashesLoopTest`.
+Probe: `extensions/adapters/presenters/tui/tests/issue_635_unguarded_paint_test.fnl` (reproduces; a well-formed row is the control).
+
+Confirmed (counterexample, then a Busted probe): real `events.emit` into the real TUI subscriber, then the real `M.run` with the termbox stub (`tb-initialized? true`, peeks scripted to no-event):
 
 ```
 (events.emit {:type :info :text 42})
@@ -50,6 +67,9 @@ The busy row then reads `ctrl-c again quit` for a turn the user never cancelled,
 The select modal's pump also finalizes turns without ever reaching the bottom check, so it is a second path to the same state.
 (The `rpc` child presenter tracks turns by coroutine identity, `ch.state.turn ≠ ch.active.co`, and does not have this bug.)
 
+Witnesses: `w636ArmOutlivesTurnTest`, `w636NextCtrlCForceQuitsTest`, and in the [`cancel-arm`](proofs/cancel-arm/) proof model also `w636ModalPumpPathTest` (the select-overlay path: Ctrl-C arms on a `/reload` turn, the overlay's pump finishes it and starts a goal continuation, and no bottom reset runs).
+Probe: `extensions/adapters/presenters/tui/tests/issue_636_cancel_arm_outlives_turn_test.fnl` (reproduces; the run without a queued reload is the asserted control). Its `on-tick` is a copy of `interactive.fnl`'s order, since the real one cannot be driven in-process.
+
 Confirmed with a probe: the real `M.run`, the real `input.handle-event` Ctrl-C ladder, and the real `reload_request.enqueue!`/`drain!`, with an `on-tick` that copies `interactive.fnl`'s order (resume → on death clear `busy?`/`turn` → drain reload at the idle boundary) and an agent-like turn that raises on cancel at resume. Peeks: `none, Ctrl-C, none, Ctrl-C`:
 
 ```
@@ -70,6 +90,9 @@ A decide request drives `fen_http` cooperatively: each resume runs at most one �
 An idle-time ask (an auto-compaction moment, or a durable-preference hint that resolves after the turn has ended) therefore advances at roughly 1/7 of its network speed.
 The side-chat reap list (the open question in tui-turns) is the same blind spot: `side-chat.busy?` is false while a parked turn is still being reaped.
 
+Witnesses: `w637IdlePollForPendingTaskTest` (integration and [`pump`](proofs/pump/) models).
+Probe: `extensions/adapters/presenters/tui/tests/issue_637_idle_poll_pending_task_test.fnl` (reproduces: four peeks with a pending decide task, all 300 ms; the busy main turn's 30 ms is the control).
+
 Confirmed with a probe: the real `M.run` (`tb-initialized? true`), the real decide `service.pump!` subscribed to `:runtime-tick`, and a real decide task that needs 4 resumes:
 
 ```
@@ -82,9 +105,11 @@ This costs latency, not correctness.
 
 ## Holds
 
+Evidence: sampled (`check-spec`) unless a proof model below says otherwise.
+
 - `terminalRestoredWhenStopped`: each way the loop can stop (Ctrl-D, the force-quit ladder, a `tb_peek_event` failure, or a crash out of `M.run`) passes through `presenter-registry.shutdown-active-presenter` → `M.shutdown`. If the presenter slot was lost, `interactive.fnl` falls back to a raw `termbox2.shutdown`. Bracketed paste and the log sink are restored too.
-- `noStarvation`: each iteration resumes the main turn once, each live side turn once, and each runtime-tick task once. The modal pump does the same. No source can starve another, and `tick-background!`'s nesting guard prevents re-entry from a modal opened by a background turn.
-- `cancelObservedWithinOneTick`: an agent turn's cancel is observed at the very next resume, because `make-yield` checks after `coroutine.yield` returns. That resume happens in the same iteration as the Ctrl-C (input runs before `on-tick`). The exception is the `/reload` turn, whose plain `coroutine.yield` never checks. This is by design (reload is atomic), but see the open questions.
+- `runnableResumedEachPump` (was `noStarvation`): each pump resumes the main turn once, each live side turn once, and each runtime-tick task once, and `tick-background!`'s nesting guard prevents re-entry from a modal opened by a background turn. This is a per-pump safety bound, not a scheduling guarantee: the wait counters are bumped by the pump itself (`age`) and reset by the resume in the same pump, so they say nothing about how often pumps run. No liveness is claimed ("every runnable task is eventually resumed" would need a fairness assumption on pumps, which no model states).
+- `cancelledTurnEndsInPump` (was `cancelObservedWithinOneTick`): an agent turn whose cancel was requested before or during a pump's input phase has ended when that pump finishes, because `make-yield` checks after `coroutine.yield` returns and `on-tick` runs after input. Again a per-pump bound, not "eventually". The exception is the `/reload` turn, whose plain `coroutine.yield` never checks. This is by design (reload is atomic), but see the open questions.
 - `busyMatchesAlive`, `noDeadResume`: `state.busy?` and `state.turn` are set together in `turn_submit.start!`/`start-reload!` and cleared together in `on-tick`'s death path. `on-tick` resumes only `state.turn`. `side_chat.resume-entry!` checks `coroutine.status` first. Decide drops dead tasks, and codex usage nils `refresh-co` once it is dead. Nothing resumes a finished coroutine.
 - `noStaleSideAdvanced`: after `/reload` swaps `side_chat`'s `OWNER`, `tick-one!` never resumes the old entry as live. It requests a cancel and moves the entry to the reap path (#441).
 - Errors in `:runtime-tick` handlers, the main turn (`agent task: …`), `side-chat.tick!`, `sync-subagents!`, and input all become `:error` events and the loop continues. `guard-tick!`'s own error path cannot throw, because `events.emit` xpcalls every handler, so `background-ticking?` cannot stick at `true`.
@@ -97,13 +122,30 @@ This costs latency, not correctness.
 - **`reload_request.drain!` writes failures with `io.stderr:write`.** While termbox owns the screen this bypasses the b48b10b log sink and corrupts the frame. It is only reachable if the `/reload` dispatch prelude throws.
 - **`warn-if-stalled!` only knows the main coroutine** (`?get-turn`). A stall inside a side-chat resume or a runtime-tick task is logged as `phase=tick` with the main turn's stack, or none. Diagnostics would point at the wrong coroutine.
 
-## Candidate fix (modelled as `fixed`)
+## Candidate fixes (named: `FIXES`)
+
+The model takes `const FIXES: Set[str]`. `current` enables none, `fixed` all three, and `fix635`, `fix636`, `fix637` one each; `checks.tsv` shows each fix makes its own issue's invariants hold (sampled).
 
 - #635: run the paint phase under the same guard as the ticks. Better, give `paint-transcript` per-row isolation, as `paint-panels` already has, so a bad row renders as `render-error:` and the frame continues.
 - #636: disarm the ladder where the turn is finalized (`on-tick`'s death path, or the TUI's `:agent-turn-complete` handler), not at the loop bottom. Equivalently, key the arm by turn id (`pressGen == state.turn-id`). Then the modal pump and same-tick turn starts are covered too, and the bottom check can be deleted.
 - #637: let runtime-tick sources report pending work. One way is a `busy?` query on the scheduler's task registry (decide tasks, `refresh-co`, live subagent jobs, the side-chat reap list) that `peek-timeout-ms` ORs in.
 
-All invariants hold under `fixed` (`fixed.allInvariants`).
+All invariants hold under `fixed` (`fixed.allInvariants`, sampled).
+Reachability witnesses (`reach...Test`) show the fixed design still completes, cancels, starts the `/reload` turn in the same tick (now disarmed), force-quits a turn on its own second press, survives a bad row with the turn still running, finishes a background task at the active cadence, and finalizes a turn from the modal pump beside a side turn.
+
+Mutants ([`mutants.tsv`](mutants.tsv)), each caught by `check-spec`: unguarded paint (`fixed.loopSurvivesFaults`), runtime-tick tasks ignored by the poll (`fixed.pendingWorkPolledActively`), the finalize-time disarm removed so only the bottom check remains (`fixed.cancelArmMatchesTurn`, via the modal pump), and the main resume no longer resetting its wait counter (`current.runnableResumedEachPump`, so the per-pump bound is not vacuous).
+
+## Proof models
+
+Small models of single contracts under [`proofs/`](proofs/), checked by `verify-spec` (Apalache 0.56.1, one lane, `-Xmx3g`, on a shared, loaded machine):
+
+| Model | State | Obligation | Result | Time |
+| --- | --- | --- | --- | --- |
+| [`cancel-arm`](proofs/cancel-arm/model.qnt) (#636) | turn kind and generation, cancel request, queued reload, the arm and its generation; phases in the code's order, plus the modal pump | `fixed.armInductive` | inductive | 8–12 s |
+| | | `fixed.cancelArmMatchesTurn forceQuitOnlyOnArmedTurn`, 5 steps | bounded-safe (cross-check at the counterexample length) | 29–114 s (machine load) |
+| [`pump`](proofs/pump/model.qnt) (#635, #637) | loop, terminal, bad row, pending main/side/runtime-tick work, last poll wait | `fixed.pumpInductive` | inductive | 2 s |
+
+Both also have a `current` instance whose `checks.tsv` rows are `violated` with witnesses, so the bugs are counterexamples there too.
 
 ## Core
 

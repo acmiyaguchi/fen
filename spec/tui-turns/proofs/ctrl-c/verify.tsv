@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+fixed	ctrlCInductive	inductive	1	300	thirteen finite variables; Ctrl-C's effect is a function of the focused tab's state, so induction covers any depth

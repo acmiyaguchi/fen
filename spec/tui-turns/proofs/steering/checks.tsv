@@ -1,0 +1,4 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	steeringReachesItsTurn	violated	#662
+current	noSteeringLost	holds
+fixed	steeringInductive	holds

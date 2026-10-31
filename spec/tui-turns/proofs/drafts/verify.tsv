@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+drafts	draftsInductive	inductive	1	300	ten finite variables; every focus path saves and loads the views, so induction covers any sequence of switches

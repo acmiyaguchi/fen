@@ -1,0 +1,8 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	ctrlCActsOnShownTurn	violated	#660
+current	busyHintTruthful	violated	#660
+current	quitArmOnFocusedTab	violated	#661
+fix660	ctrlCActsOnShownTurn	holds
+fix660	busyHintTruthful	holds
+fix661	quitArmOnFocusedTab	holds
+fixed	ctrlCInductive	holds

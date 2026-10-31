@@ -4,9 +4,13 @@ current	forceQuitOnlyOnArmedTurn	violated	#636
 current	cancelArmMatchesTurn	violated	#636
 current	pendingWorkPolledActively	violated	#637
 current	terminalRestoredWhenStopped	holds
-current	noStarvation	holds
-current	cancelObservedWithinOneTick	holds
+current	runnableResumedEachPump	holds
+current	cancelledTurnEndsInPump	holds
 current	busyMatchesAlive	holds
 current	noStaleSideAdvanced	holds
 current	noDeadResume	holds
 fixed	allInvariants	holds
+fix635	loopSurvivesFaults	holds
+fix636	forceQuitOnlyOnArmedTurn	holds
+fix636	cancelArmMatchesTurn	holds
+fix637	pendingWorkPolledActively	holds

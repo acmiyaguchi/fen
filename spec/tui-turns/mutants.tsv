@@ -1,0 +1,6 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|else if (FIXES.contains("660") and st.focus != "main") ladder|else if (false) ladder|	fixed	ctrlCActsOnShownTurn	Ctrl-C on any tab falls through to the main ladder again
+model.qnt	s|else if (FIXES.contains("660") and st.focus != "main") ladder|else if (false) ladder|	fixed	busyHintTruthful	the busy hint again promises nothing on a tab where Ctrl-C cancels main
+model.qnt	s|val base = if (FIXES.contains("661")) key(s) else s|val base = s|	fixed	quitArmOnFocusedTab	the mouse focus path skips the disarm
+model.qnt	s|      else if (FIXES.contains("662"))|      else if (false)|	fixed	steeringReachesItsTurn	steering of a failed turn stays queued for the next one
+model.qnt	s|else if (FIXES.contains("663")) { ...k, live: NO_LIVE,|else if (false) { ...k, live: NO_LIVE,|	fixed	sideEntryOwned	the slow cancel path parks the turn in live[:btw] again

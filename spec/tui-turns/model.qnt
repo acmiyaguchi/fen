@@ -17,9 +17,14 @@
 //   steering/service.fnl + core/agent.fnl  steering queue drained only at a
 //                    natural stop or at the top of the next step-loop
 //
-// FIXED selects the candidate fixes so the same invariants can be checked.
+// FIXES names the candidate fixes enabled, by issue (see FINDINGS.md):
+//   "660" the main cancel/force-quit ladder applies only on the main tab
+//   "661" workspaces.activate! disarms the pending quit (mouse path too)
+//   "662" a turn that ends by error or cancel hands its steering back
+//   "663" the slow cancel path moves the turn to the reap list, and side
+//         events route to the tab generation that started the turn
 module tuiTurns {
-  const FIXED: bool
+  const FIXES: Set[str]
 
   pure val MAX_MAIN_TURNS = 3
   pure val MAX_SIDE_GENS = 3
@@ -93,7 +98,7 @@ module tuiTurns {
       else if (st.pendingQuit) "quit"
       else "arm"
     if (st.focus == "side" and sideRunning(st)) "cancelSide"   // workspaces.cancel-active!
-    else if (FIXED and st.focus != "main") ladder               // fix: main ladder only on main
+    else if (FIXES.contains("660") and st.focus != "main") ladder               // fix: main ladder only on main
     else if (st.mainBusy and st.cancelPressed) "forceQuit"
     else if (st.mainBusy) "cancelMain"
     else ladder
@@ -143,7 +148,7 @@ module tuiTurns {
   // Tab click: handle-mouse calls activate! without the handle-key preamble.
   action focusMouse(t: str): bool = all {
     not(s.quit), isOpen(s, t), t != s.focus,
-    val base = if (FIXED) key(s) else s   // fix: activate! disarms
+    val base = if (FIXES.contains("661")) key(s) else s   // fix: activate! disarms
     go(base.switchTo(t), "focusMouse"),
   }
 
@@ -210,7 +215,7 @@ module tuiTurns {
     val disposed =
       if (not(s.live.present)) k
       else if (fast) { ...k, live: NO_LIVE }   // drained within 8 resumes
-      else if (FIXED) { ...k, live: NO_LIVE, reaping: k.reaping.append(s.live.gen) }
+      else if (FIXES.contains("663")) { ...k, live: NO_LIVE, reaping: k.reaping.append(s.live.gen) }
       else { ...k, live: { ...s.live, cancel: true, discard: true } }  // parked, still live[:btw]
     val gone = { ...disposed, sideOpen: false, sideBusy: false,
                  transcripts: disposed.transcripts.put("side", []) }
@@ -243,7 +248,7 @@ module tuiTurns {
         // inject-after-natural-stop!: the turn takes its queued steering
         { ...base, steerQ: [],
           delivered: s.steerQ.foldl(s.delivered, (acc, q) => acc.append({ typedFor: q, deliveredIn: s.mainTurn })) }
-      else if (FIXED)
+      else if (FIXES.contains("662"))
         // fix: lines typed for a turn that died are handed back, not carried over
         { ...base, steerQ: [], returned: s.returned + s.steerQ.length() }
       else base   // error / cancelled: steering stays queued
@@ -252,7 +257,7 @@ module tuiTurns {
 
   // side-chat on-event!: routed by WORKSPACE-ID, i.e. to whatever tab is :btw
   pure def sideDest(st: S): bool =
-    st.sideOpen and (not(FIXED) or st.live.gen == st.sideGen)
+    st.sideOpen and (not(FIXES.contains("663")) or st.live.gen == st.sideGen)
 
   action sideEmit = all {
     not(s.quit), s.live.present,
@@ -367,5 +372,9 @@ module tuiTurns {
   }
 }
 
-module current { import tuiTurns(FIXED = false).* }
-module fixed { import tuiTurns(FIXED = true).* }
+module current { import tuiTurns(FIXES = Set()).* }
+module fixed { import tuiTurns(FIXES = Set("660", "661", "662", "663")).* }
+module fix660 { import tuiTurns(FIXES = Set("660")).* }
+module fix661 { import tuiTurns(FIXES = Set("661")).* }
+module fix662 { import tuiTurns(FIXES = Set("662")).* }
+module fix663 { import tuiTurns(FIXES = Set("663")).* }

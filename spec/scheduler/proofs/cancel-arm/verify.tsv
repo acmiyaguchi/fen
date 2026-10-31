@@ -1,0 +1,3 @@
+# main	invariants	mode	steps	seconds	why
+fixed	armInductive	inductive	1	300	finite lock-like machine: the arm, its generation and the turn generation are related by one equation, so induction covers any depth
+fixed	cancelArmMatchesTurn forceQuitOnlyOnArmedTurn	bounded	5	300	cross-check of the inductive proof at the length of the known counterexamples: #636 is 4 steps (submit, queue reload, Ctrl-C, Ctrl-C), the modal-pump variant 5

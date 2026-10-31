@@ -7,6 +7,12 @@ Actions: edit a source to `ok` / `badModule` (a reload-module fails to load, suc
 
 Code: `packages/core/src/fen/core/extensions/loader/init.fnl` (`load-module-spec!`, `load!`, `reload-extension!`), `loader/reload.fnl` (`clear-reload-modules!`, `change-summary`, `reload-module-in-place!`), `register/init.fnl` and the per-kind modules (`util.set-tagged!` for singleton dicts, `util.add-tagged!` / `contribution.fnl` / `prompt.fnl` for arrays), `events.fnl` (`emit`, `dispatch-bucket`), `extensions/behaviors/actions/sessions/commands/session.fnl` (`perform-reload!`), `extensions/behaviors/inspectors/extensions/commands/extension.fnl` (`perform-extension-reload!`, `execute-tool`), `packages/fen/src/fen/{interactive,turn_submit,session_lifecycle}.fnl`.
 
+## Input assumptions
+
+What the environment actions can produce: any interleaving of source edits (each owner's source becomes `ok`, `badModule`, or `badRegister`), `/reload` (only at idle and only while the `reload` command is registered), `/reload-extension <o>` at idle for an owner the loader knows, turns that start, append messages and end, the `extension` tool's `reload` during a turn, an emit whose first handler unloads `B` (at idle, like the idle-only disable commands), and a contribution registered without its callable.
+
+What they cannot produce: more than two owners or one shared name per kind; first-party fail-fast errors on reload (noted under #624, not modelled); a yield in the middle of `clear-reload-modules!` (see Open questions); nested emits; the TUI's reload-last ordering; more than 3 unflushed messages per turn.
+
 ## Bugs
 
 ### #624: A module error during `/reload` aborts the pass after the extension was already unregistered
@@ -19,7 +25,10 @@ When the broken extension owns `/reload` (sessions) or `/extensions`, the recove
 `reload-module-in-place!` had already put the old module back in `package.loaded`, so re-registering the previous version was possible.
 A related path raises the same way: a first-party extension whose register fn raises on reload gets `record-spec-error!` (all its registrations dropped), and then `load!` raises its first-party fail-fast error, which aborts `perform-reload!` at the same point.
 
-Confirmed (probe `zz_probe_extensions_reload_test.fnl`): alpha (`reload-modules = {alpha_helper, alpha}`) and beta loaded; then alpha_helper raises and beta changes to register `beta-v2`:
+Witnesses: `w624ModuleErrorAbortsPassTest` ([`witnesses.qnt`](witnesses.qnt) and the [`contrib`](proofs/contrib/) proof model).
+Probe: `packages/core/tests/extensions/loader/issue_624_reload_module_error_aborts_pass_test.fnl` (reproduces).
+
+Confirmed (the original throwaway probe, rebuilt as the probe above): alpha (`reload-modules = {alpha_helper, alpha}`) and beta loaded; then alpha_helper raises and beta changes to register `beta-v2`:
 
 ```
 before:	alpha	beta	loaded	1
@@ -39,7 +48,10 @@ After the failure in #624, the next reload sees no change, skips the broken modu
 The extension reports `:loaded` with 0 changed while the source on disk is still broken.
 Core reload already does this correctly: `reload-core!` commits a fingerprint only after the module reloads and keeps `reload-core-failures` so it retries next time.
 
-Confirmed (probe `zz_probe_extensions_fingerprint_test.fnl`, with the checksum backend stubbed to return controlled fingerprints):
+Witnesses: `w625FingerprintRetrySkippedTest` (integration model) and `w625FailedFingerprintCommittedTest` ([`fingerprint`](proofs/fingerprint/) proof model).
+Probe: `packages/core/tests/extensions/loader/issue_625_failed_module_fingerprint_committed_test.fnl` (reproduces; `checksum.module-fingerprint` is patched to return controlled fingerprints).
+
+Confirmed (the original throwaway probe, rebuilt as the probe above, with the checksum backend stubbed to return controlled fingerprints):
 
 ```
 loaded:	alpha
@@ -64,7 +76,10 @@ Array kinds append, so a reloaded owner moves to the end of the bucket. That cha
 
 A full `/reload` replays discovery order, so it restores fresh-start order unless #624 cuts the pass short. The TUI is the exception: it is reloaded last on purpose (see Open questions).
 
-Confirmed (probe `zz_probe_extensions_reload_test.fnl`): alpha and beta both register command `:dup`, tool `:dup_tool`, and a default-order prompt fragment:
+Witnesses: `w626ReloadOneMovesWinnerTest` and `w626UnloadDropsSharedNameTest` (integration model), `w626ReloadOneMovesWinnerTest` and `w626DisableDropsSharedNameTest` ([`contrib`](proofs/contrib/)).
+Probe: `packages/core/tests/extensions/loader/issue_626_reload_one_owner_registry_drift_test.fnl` (reproduces both cases: the shadowed owner reloaded, and the failing winner).
+
+Confirmed (the original throwaway probe, rebuilt as the probe above): alpha and beta both register command `:dup`, tool `:dup_tool`, and a default-order prompt fragment:
 
 ```
 fresh: /dup owner	beta	first dup_tool	alpha	prompt	frag-alpha||frag-beta
@@ -87,7 +102,10 @@ The turn keeps stepping the agent `turn_submit` captured, using its `agent.tools
 `session_lifecycle`'s `:message-appended` bridge flushes only when `ev.agent == state.agent`, so the rest of that turn's tool results and reply are not persisted.
 They are written only when the replacement agent appends its first message. Nothing flushes at shutdown, so quitting right after the turn loses them from the session JSONL.
 
-Confirmed (probe `zz_probe_extensions_midturn_test.fnl`): the real `extension` tool runs against a busy run-state stub with the real `session_lifecycle.install!`:
+Witnesses: `w627MidTurnAgentSwapTest`, `w627TurnToolsUnregisteredTest`, `w627TurnMessagesUnflushedTest` (integration and [`turn-identity`](proofs/turn-identity/) models).
+Probe: `extensions/behaviors/inspectors/extensions/tests/issue_627_extension_tool_reload_mid_turn_test.fnl` (reproduces). It is the closest observable behaviour, not a real turn: the real `extension` tool and `session_lifecycle` run against a busy run-state stub, and `state.reload-extension` is a stub that counts calls and runs the real `unregister-by-owner`. The `turn_submit`/`agent-step` path and the shutdown-without-flush loss remain a line trace.
+
+Confirmed (the original throwaway probe, rebuilt as the probe above): the real `extension` tool runs against a busy run-state stub with the real `session_lifecycle.install!`:
 
 ```
 tool is-error?	false	reloads ran while busy?	true	1	state.agent	new	old agent still has	doomed	messages shared	true
@@ -104,7 +122,10 @@ Counterexample (`registeredCallablesPresent`): `init → registerMalformed(tool)
 A tool without `:execute` is advertised to the model and fails only when called, with `attempt to call a nil value (field 'execute')`.
 The agent's pcall turns that into a tool error, so the impact is low (a confusing late failure), but the validation is not uniform.
 
-Confirmed (probe `zz_probe_extensions_midturn_test.fnl`):
+Witnesses: `w628ToolWithoutExecuteTest` (integration model) and `w628ToolWithoutExecuteAcceptedTest` ([`validation`](proofs/validation/)).
+Probe: `packages/core/tests/extensions/issue_628_tool_register_missing_execute_test.fnl` (reproduces; `:command` and `:hook` without callables are the rejected controls).
+
+Confirmed (the original throwaway probe, rebuilt as the probe above):
 
 ```
 register ok?	true
@@ -115,11 +136,21 @@ coop execute-call raises?	true	.../fen/core/tools.fnl:146: attempt to call a nil
 
 ## Holds
 
-`busDeliversOncePerLiveSubscriber`: `emit` snapshots the bucket and delivers only to snapshot entries still in the live bucket.
+`busDeliversOncePerLiveSubscriber` (sampled): `emit` snapshots the bucket and delivers only to snapshot entries still in the live bucket.
 A handler that unloads another owner mid-dispatch therefore stops delivery to it, and handlers added mid-emit wait for the next emit.
 Each subscription gets an event at most once, and an unregistered owner never gets one.
 
-## Candidate fix (modelled as `fixed`)
+## Candidate fixes (named: `FIXES`)
+
+The model takes `const FIXES: Set[str]`; `current` enables none, `fixed` all five, and `fix624` … `fix628` one each. Each fix makes its own issue's rows hold on its own (sampled, `checks.tsv`):
+
+| Fix | Rows it makes hold alone |
+| --- | --- |
+| `624` transactional per-owner reload | `reloadVisitsEveryOwner`, `attemptedOwnerListed`, `reloadCommandAvailable` |
+| `625` fingerprint committed only on success | `loadedStatusTruthful` |
+| `626` views derived from per-owner sets | `registryMatchesFreshStart` |
+| `627` `extension` tool reload deferred to idle | `noRegistrySwapDuringTurn`, `turnToolsLive`, `turnMessagesPersisted` |
+| `628` `:execute` validated | `registeredCallablesPresent` |
 
 - Make per-owner reload transactional:
   - pcall the whole module-reload-plus-register step.
@@ -131,7 +162,24 @@ Each subscription gets an event at most once, and an unregistered owner never ge
 - Route the `extension` tool's `reload` through `reload_request` (deferred to idle), like the `reload` tool.
 - Validate `:execute` as a function in `register :tool`.
 
-All invariants hold under `fixed` (60k samples × 30 steps).
+All invariants hold under `fixed` (sampled; 60k samples × 30 steps when first checked, 20k × 20 in `check-spec`).
+Reachability witnesses show the fixed design still reaches a failed reload kept as `:stale` with the pass continuing, a repair back to `:loaded`, a retried (not skipped) broken module, fresh-start order after `/reload-extension`, the other owner's claim exposed by an unload, and a mid-turn reload queued, the turn's messages flushed, and the reload drained at idle.
+
+Mutants ([`mutants.tsv`](mutants.tsv)), each caught by `check-spec`: in-place registry mutation instead of derived views (`registryMatchesFreshStart`), a failed reload marking the owner `:error` instead of `:stale` (`reloadCommandAvailable`), the fingerprint committed before the module runs again (`loadedStatusTruthful`), the synchronous mid-turn reload (`noRegistrySwapDuringTurn`), and the `:execute` check removed (`registeredCallablesPresent`).
+
+## Proof models
+
+One per contract, under [`proofs/`](proofs/), each with a `current` instance whose rows are `violated` with witnesses and a `fixed` instance proved by `verify-spec` (Apalache 0.56.1, one lane, `-Xmx3g`, shared machine):
+
+| Model | Issues | State | Obligation | Result | Time |
+| --- | --- | --- | --- | --- | --- |
+| [`contrib`](proofs/contrib/model.qnt) | #624, #626 | two owners' status and source; the registry as four scalars (shared-name winner, `reload` and `bcmd` owners, bucket order); `/reload` as one `passStep` per owner with a next-owner pointer and visited flags | `fixed.contribInductive` | inductive | 7 s |
+| [`fingerprint`](proofs/fingerprint/model.qnt) | #625 | one module's source, committed flag, status, source seen by the last attempt | `fixed.fingerprintInductive` | inductive | 1 s |
+| [`turn-identity`](proofs/turn-identity/model.qnt) | #627 | phase, agent identity, B's source and tool, the turn's tool snapshot, unflushed flag, deferred request | `fixed.turnIdentityInductive` | inductive | 1 s |
+| [`validation`](proofs/validation/model.qnt) | #628 | none: a finite function check over every kind and both inputs | `fixed.registeredCallablesPresent wellFormedAccepted`, 0 steps | bounded-safe (the whole input space) | 0 s |
+
+`contrib` also has `fix624` and `fix626` instances, so ordering (#626) and rollback (#624) are checked one at a time there as well.
+A first version of `contrib` evaluated the whole `/reload` pass in one step, with nested record updates; Apalache took 173 s and later ran out of a 3 GB heap. Splitting the pass into one step per owner and keeping the state in scalar variables brought it to 7 s.
 
 ## Open questions
 

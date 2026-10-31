@@ -10,3 +10,10 @@ current	closedSideCancelled	holds
 current	closedSideIdle	holds
 current	draftsPreserved	holds
 fixed	allInvariants	holds
+fix660	ctrlCActsOnShownTurn	holds
+fix660	busyHintTruthful	holds
+fix661	quitArmOnFocusedTab	holds
+fix662	steeringReachesItsTurn	holds
+fix662	noSteeringLost	holds
+fix663	eventsInOwnTab	holds
+fix663	sideEntryOwned	holds

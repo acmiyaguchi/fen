@@ -1,0 +1,6 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	sideEntryOwned	violated	#663
+current	eventsInOwnTab	violated	#663
+current	closedSideCancelled	holds
+current	closedSideIdle	holds
+fixed	ownershipInductive	holds

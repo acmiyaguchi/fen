@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+fixed	fingerprintInductive	inductive	1	120	four finite variables; a committed fingerprint always belongs to a good source, so induction covers any number of edits and reloads

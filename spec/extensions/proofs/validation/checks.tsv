@@ -1,0 +1,5 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	registeredCallablesPresent	violated	#628
+current	wellFormedAccepted	holds
+fixed	registeredCallablesPresent	holds
+fixed	wellFormedAccepted	holds

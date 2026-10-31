@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+fixed	ownershipInductive	inductive	1	300	generations are compared, never enumerated: a live turn is the open tab's, a reaped one older, so induction covers any number of reopenings

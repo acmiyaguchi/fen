@@ -10,3 +10,12 @@ current	turnMessagesPersisted	violated	#627
 current	registeredCallablesPresent	violated	#628
 current	busDeliversOncePerLiveSubscriber	holds
 fixed	allInvariants	holds
+fix624	reloadVisitsEveryOwner	holds
+fix624	attemptedOwnerListed	holds
+fix624	reloadCommandAvailable	holds
+fix625	loadedStatusTruthful	holds
+fix626	registryMatchesFreshStart	holds
+fix627	noRegistrySwapDuringTurn	holds
+fix627	turnToolsLive	holds
+fix627	turnMessagesPersisted	holds
+fix628	registeredCallablesPresent	holds

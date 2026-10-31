@@ -36,9 +36,9 @@
 // coroutine.yield returns); /reload turns use plain coroutine.yield and never
 // observe it (by design: reload is atomic).
 //
-// FIXED selects the candidate fixes (see FINDINGS.md).
+// FIXES names the candidate fixes enabled (issue numbers, see FINDINGS.md).
 module scheduler {
-  const FIXED: bool
+  const FIXES: Set[str]
 
   pure val ACTIVE_MS = 30
   pure val IDLE_MS = 300
@@ -67,7 +67,10 @@ module scheduler {
     // runtime-tick tasks (decide ask-async!, usage refresh-co, ...)
     bgTasks: int,
     lastBgGap: int,       // wall ms waited before the latest bg resume
-    // fairness / liveness counters (iterations)
+    // per-pump counters: bumped by `age` at the start of every pump (an
+    // iteration or a modal pump) and reset when that pump resumes the task.
+    // Environment actions between pumps do not count, so these state
+    // per-pump safety bounds, not eventual scheduling (no fairness is modelled).
     mainWait: int, sideWait: int, cancelAge: int,
     resumedDead: bool,
   }
@@ -95,7 +98,7 @@ module scheduler {
   // 1. paint. A renderer error escapes M.run; interactive.fnl's xpcall then
   // runs presenter shutdown (terminal restored) and os.exit(1).
   pure def paint(st: S): S =
-    if (st.badRow and not(FIXED))
+    if (st.badRow and not(FIXES.contains("635")))
       st.with("loop", "crashed").with("termRaw", false)
     else
       // fixed: per-row isolation renders a placeholder and the frame continues
@@ -103,7 +106,7 @@ module scheduler {
 
   // 2. peek timeout predicate (peek-timeout-ms)
   pure def loopBusy(st: S): bool =
-    st.busy or st.sideAlive or (FIXED and st.bgTasks > 0)
+    st.busy or st.sideAlive or (FIXES.contains("637") and st.bgTasks > 0)
 
   pure def waitMs(st: S, key: bool): int =
     if (key) 0 else if (loopBusy(st)) ACTIVE_MS else IDLE_MS
@@ -136,7 +139,7 @@ module scheduler {
   pure def endMain(st: S): S =
     st.with("mainKind", "none").with("busy", false).with("mainCancelReq", false)
       .with("moduleGen", if (st.mainKind == "reload") st.moduleGen + 1 else st.moduleGen)
-      .with("cancelPressed", if (FIXED) false else st.cancelPressed)
+      .with("cancelPressed", if (FIXES.contains("636")) false else st.cancelPressed)
 
   pure def resumeMain(st: S, outcome: str): S =
     // on-tick resumes only `state.turn`, which is nil once the coroutine died;
@@ -198,7 +201,7 @@ module scheduler {
     if (st.loop != "running") st
     else
       val clear =
-        if (FIXED) st.cancelPressed and (not(st.busy) or st.pressGen != st.mainGen)
+        if (FIXES.contains("636")) st.cancelPressed and (not(st.busy) or st.pressGen != st.mainGen)
         else st.cancelPressed and not(st.busy)
       if (clear) st.with("cancelPressed", false) else st
 
@@ -216,12 +219,11 @@ module scheduler {
       .with("cancelAge",
             if (st.mainKind == "agent" and st.mainCancelReq) st.cancelAge else 0)
 
-  action iteration = {
-    nondet ev = Set("none", "ctrlC", "submit").oneOf()
-    nondet outcome = Set("yield", "finish", "error").oneOf()
-    nondet sideOutcome = Set("yield", "finish", "error").oneOf()
-    nondet nextTurn = Set(true, false).oneOf()
-    nondet bgFinish = Set(true, false).oneOf()
+  // One pass of M.run with the environment's choices made explicit (the
+  // phase order is the code's: paint, peek, input, on-tick, background, bottom;
+  // #636 depends on input and on-tick running before the bottom reset).
+  action iterate(ev: str, outcome: str, sideOutcome: str, nextTurn: bool,
+                 bgFinish: bool): bool =
     all {
       s.loop == "running",
       val s0 = age(s)
@@ -233,6 +235,14 @@ module scheduler {
       s' = settle(bottom(s4)),
       lastAction' = ev,
     }
+
+  action iteration = {
+    nondet ev = Set("none", "ctrlC", "submit").oneOf()
+    nondet outcome = Set("yield", "finish", "error").oneOf()
+    nondet sideOutcome = Set("yield", "finish", "error").oneOf()
+    nondet nextTurn = Set(true, false).oneOf()
+    nondet bgFinish = Set(true, false).oneOf()
+    iterate(ev, outcome, sideOutcome, nextTurn, bgFinish)
   }
 
   // ---- environment, between iterations ----
@@ -271,17 +281,21 @@ module scheduler {
   // select.fnl run-overlay: a modal opened from the input handler (main
   // stack, turn suspended) polls termbox every 30 ms and pumps state.on-tick
   // and tick-background! itself; M.run's bottom-of-loop reset does not run.
-  action modalPump = {
-    nondet outcome = Set("yield", "finish", "error").oneOf()
-    nondet sideOutcome = Set("yield", "finish", "error").oneOf()
-    nondet nextTurn = Set(true, false).oneOf()
-    nondet bgFinish = Set(true, false).oneOf()
+  action pumpModal(outcome: str, sideOutcome: str, nextTurn: bool,
+                  bgFinish: bool): bool =
     all {
       s.loop == "running",
       s' = settle(sideTick(onTick(age(s), outcome, nextTurn, ACTIVE_MS, bgFinish),
                            sideOutcome)),
       lastAction' = "modalPump",
     }
+
+  action modalPump = {
+    nondet outcome = Set("yield", "finish", "error").oneOf()
+    nondet sideOutcome = Set("yield", "finish", "error").oneOf()
+    nondet nextTurn = Set(true, false).oneOf()
+    nondet bgFinish = Set(true, false).oneOf()
+    pumpModal(outcome, sideOutcome, nextTurn, bgFinish)
   }
 
   action step = any {
@@ -306,11 +320,15 @@ module scheduler {
   // Pending cooperative work is polled at the active cadence, never the idle one.
   val pendingWorkPolledActively = s.lastBgGap <= ACTIVE_MS
 
-  // Every runnable coroutine is resumed in every iteration (no starvation).
-  val noStarvation = s.mainWait <= 1 and s.sideWait <= 1
+  // Per-pump bound (safety, not liveness): every pump that starts with a
+  // runnable main or side turn resumes it before the pump ends. The counters
+  // only advance inside pumps, so this says nothing about how often pumps
+  // run; no fairness is assumed, so no "eventually resumed" claim is made.
+  val runnableResumedEachPump = s.mainWait <= 1 and s.sideWait <= 1
 
-  // An agent turn whose cancel was requested is gone within one iteration.
-  val cancelObservedWithinOneTick = s.cancelAge <= 1
+  // Per-pump bound: an agent turn whose cancel was requested before or during
+  // a pump's input phase has ended when that pump finishes.
+  val cancelledTurnEndsInPump = s.cancelAge <= 1
 
   // busy? (peek timeout, busy row, Ctrl-C ladder) matches the live coroutine.
   val busyMatchesAlive = s.busy == (s.mainKind != "none")
@@ -322,11 +340,14 @@ module scheduler {
 
   val allInvariants = and {
     loopSurvivesFaults, terminalRestoredWhenStopped, forceQuitOnlyOnArmedTurn,
-    cancelArmMatchesTurn, pendingWorkPolledActively, noStarvation,
-    cancelObservedWithinOneTick, busyMatchesAlive, noStaleSideAdvanced,
+    cancelArmMatchesTurn, pendingWorkPolledActively, runnableResumedEachPump,
+    cancelledTurnEndsInPump, busyMatchesAlive, noStaleSideAdvanced,
     noDeadResume,
   }
 }
 
-module current { import scheduler(FIXED = false).* }
-module fixed { import scheduler(FIXED = true).* }
+module current { import scheduler(FIXES = Set()).* }
+module fixed { import scheduler(FIXES = Set("635", "636", "637")).* }
+module fix635 { import scheduler(FIXES = Set("635")).* }
+module fix636 { import scheduler(FIXES = Set("636")).* }
+module fix637 { import scheduler(FIXES = Set("637")).* }

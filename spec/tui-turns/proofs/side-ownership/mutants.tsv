@@ -1,0 +1,3 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    open and (not(FIXES.contains("663")) or turnGen == tabGen)|    open|	fixed	eventsInOwnTab	reap list without generation routing: the reaped turn's reply reaches the reopened tab
+model.qnt	s|      if (slow and FIXES.contains("663"))|      if (false)|	fixed	sideEntryOwned	generation routing without the reap list: the parked entry still blocks the reopened tab

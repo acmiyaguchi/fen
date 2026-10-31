@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+fixed	registeredCallablesPresent wellFormedAccepted	bounded	0	120	a finite function check over every kind and both inputs; no state evolves, so the initial state is the whole obligation

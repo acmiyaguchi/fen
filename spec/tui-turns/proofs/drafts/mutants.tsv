@@ -1,0 +1,3 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    recMain' = if (focus == "main") view else recMain,|    recMain' = recMain,|	drafts	draftsPreserved	activate! does not save the main view before switching away
+model.qnt	s|    sideOpen' = true, focus' = "side", view' = 0, recMain' = view, recSide' = 0,|    sideOpen' = true, focus' = "side", view' = 0, recMain' = recMain, recSide' = 0,|	drafts	draftsPreserved	/btw switches to the side tab without saving the main draft

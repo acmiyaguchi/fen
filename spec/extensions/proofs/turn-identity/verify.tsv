@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+fixed	turnIdentityInductive	inductive	1	120	seven booleans; the registry and state.agent change only at idle, so induction covers any depth

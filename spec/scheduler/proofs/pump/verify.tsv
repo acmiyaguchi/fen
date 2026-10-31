@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+fixed	pumpInductive	inductive	1	300	each pump either isolates the bad row or polls actively in one step; no history, so induction covers any depth

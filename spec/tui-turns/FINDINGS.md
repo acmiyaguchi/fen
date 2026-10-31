@@ -10,6 +10,13 @@ The presenter state is one record; every key, click, bus event, and tick is one 
 Code: `extensions/adapters/presenters/tui/{input,workspaces,side_chat,init}.fnl`, `extensions/adapters/presenters/tui/panels/busy.fnl`, `extensions/behaviors/kernel/steering/service.fnl`, `packages/core/src/fen/core/agent.fnl` (`step`, `step-loop`, `inject-after-natural-stop!`), `packages/fen/src/fen/{interactive,turn_submit}.fnl`.
 Streaming rows on retry, error, and cancel are covered in [network](../network/FINDINGS.md) and are not repeated here.
 
+## Input assumptions
+
+What the environment actions can produce: any interleaving of keys (type, Enter, Ctrl-C, Alt-arrow, Ctrl-W), tab clicks, `/btw`, the main turn emitting and finishing `ok` or `error` (a cancel request turns the finish into `cancelled`), the side turn emitting and finishing, a closed side turn being reaped, one subagent run starting, emitting and finishing, and `/reload` at idle.
+Closing the btw tab chooses the fast path (the turn unwinds within 8 resumes) or the slow one (it is parked).
+
+What they cannot produce: more than 3 main turns, 3 btw generations, or 3 steering lines per trace; more than one subagent run; a draft's content beyond empty/non-empty; a cancel request that a turn ignores (except by taking the slow close path); key-repeat timing; mouse events other than tab clicks.
+
 ## Bugs
 
 ### #660: Ctrl-C on a side or subagent tab cancels, then force-quits, the hidden main turn
@@ -24,6 +31,9 @@ On an idle `btw` tab there is no busy row.
 On a running subagent tab, `cancel-hint` leaves the hint out on purpose ("would not touch that turn"), and `docs/tui.md` promises the same ("omitted on tabs where `ctrl-c` would not cancel that turn").
 In both cases Ctrl-C does touch a turn: the main one.
 This is a sibling of #433, which fixed only the running-side-chat case.
+
+Witnesses: `w660CtrlCCancelsHiddenMainTest`, `w660SubTabHintOmittedTest`, `w660FirstPressCancelsMainTest` ([`witnesses.qnt`](witnesses.qnt)); `w660IdleSideCancelsMainTest`, `w660SubTabHintOmittedTest` ([`ctrl-c`](proofs/ctrl-c/) proof model).
+Probe: `extensions/adapters/presenters/tui/tests/issue_660_ctrl_c_hidden_main_turn_test.fnl` (reproduces on the idle btw tab and on a running subagent tab).
 
 Confirmed with a Busted probe against real `input.handle-key` and `panels/busy.render` (main `is-busy?` stubbed true):
 
@@ -48,6 +58,9 @@ Every key except Ctrl-C clears `pending-quit?` at the top of `handle-key`, so Al
 After an idle Ctrl-C on main and a click on the `btw` tab, a Ctrl-C meant to clear the side draft exits fen.
 The `clearDraft` branch is skipped because `pending-quit?` is set.
 
+Witnesses: `w661MouseSwitchKeepsArmTest` (integration and [`ctrl-c`](proofs/ctrl-c/) models).
+Probe: `extensions/adapters/presenters/tui/tests/issue_661_mouse_switch_keeps_quit_arm_test.fnl` (reproduces through the real tabs panel hit regions and `handle-mouse`; the Alt-Right switch is the asserted control).
+
 Confirmed with the same probe (the tabs panel `action-at` stubbed to return the `btw` tab):
 
 ```
@@ -70,6 +83,9 @@ Ctrl-C does not clear the queue either.
 The line then sits in the queue until the next prompt.
 `step` appends that prompt first, then `step-loop` injects the stale correction after it, so the model reads the old correction as the newest instruction.
 Nothing is lost (`noSteeringLost` holds); it is delivered to the wrong turn, in the wrong order.
+
+Witnesses: `w662SteeringIntoNextTurnTest` (integration model); `w662SteeringIntoNextTurnTest` and `w662CancelledTurnSteeringTest` ([`steering`](proofs/steering/) proof model).
+Probe: `extensions/behaviors/kernel/steering/tests/issue_662_steering_outlives_failed_turn_test.fnl` (reproduces on the error and the cancel path).
 
 Confirmed with a probe driving real `agent.step` (mock provider) with the real `steering.service` queue; the correction is typed at the first `:llm-start`:
 
@@ -94,6 +110,9 @@ Then:
 1. The new tab shows `idle`, but every submit fails with "side agent is busy" until the reap finishes.
 2. The old turn's events, including its final reply, go through `on-event! WORKSPACE-ID`, which routes by id, so they land in the new tab's transcript.
 
+Witnesses: `w663ReopenAdoptsParkedTurnTest`, `w663OldReplyInNewTabTest` (integration and [`side-ownership`](proofs/side-ownership/) models).
+Probe: `extensions/adapters/presenters/tui/tests/issue_663_btw_reopen_adopts_reaped_turn_test.fnl` (reproduces). The probe sets `state.presenter-ctx` (restored after) to stand in for the live presenter, which the submit after the reap needs to rebuild the side agent; that part is a test-environment stand-in, not part of the bug.
+
 Confirmed with a probe on real `side_chat.fnl`, using a fake `agent.step` that needs 12 yields to unwind:
 
 ```
@@ -111,6 +130,8 @@ The bug needs a turn that takes longer to unwind, which is exactly the case the 
 
 ## Holds
 
+Evidence: sampled (`check-spec`); `draftsPreserved`, `noSteeringLost`, `closedSideCancelled`, and `closedSideIdle` are also inductive in the proof models below (for the fixed design; `draftsPreserved` for today's).
+
 - `noSteeringLost`: every line typed while busy is delivered, still queued, or handed back. A side-chat Enter while busy and a `Steer>` submit that fails both keep the draft.
 - `closedSideCancelled`, `closedSideIdle`: closing the `btw` tab always asks its turn to cancel, and the tab stays non-running.
 - `draftsPreserved`: per-tab drafts survive key and mouse switches, other tabs' turns, close, and `/reload`. `activate!`/`with-view!` save and load all view keys, and after a reload `ensure!` only fills fields that are missing.
@@ -123,14 +144,34 @@ The bug needs a turn that takes longer to unwind, which is exactly the case the 
 - While a closed side turn is being reaped, `side-chat.busy?` is false, so `peek-timeout-ms` uses the long idle poll and the reap advances slowly. This is a latency concern only and was not probed.
 - `guard-tick!` errors from `side-chat.tick!` go out on the bus, so they land in the main transcript, not the `btw` tab. That is arguably right for a presenter fault. Not modelled.
 
-## Candidate fix (modelled as `fixed`)
+## Candidate fixes (named: `FIXES`)
+
+The model takes `const FIXES: Set[str]`; `current` enables none, `fixed` all four, and `fix660` … `fix663` one each, with `checks.tsv` rows showing each fix makes its own issue's invariants hold (sampled).
 
 - #660: the main cancel/force-quit ladder applies only when the main tab is focused. Other tabs either cancel their own turn through the kind's `cancel!` or fall through to clear-draft and the two-press quit. The hint then matches the action.
 - #661: `workspaces.activate!` clears `pending-quit?`, so every focus path disarms it.
 - #662: when a turn ends by error or cancel, its queued steering lines are handed back (for example restored to the main draft or shown as an info row), not left for the next turn.
 - #663: `cancel!`'s slow path removes the entry from `volatile.live` into the reap list. Each turn routes events to the tab generation that started it (capture the workspace record or a turn token, not `WORKSPACE-ID`), and events for a closed tab are dropped.
 
-All invariants hold under `fixed`.
+All invariants hold under `fixed` (sampled).
+Reachability witnesses show the fixed design still cancels and force-quits the main turn from the main tab, clears the side draft on an idle btw tab while main runs, cancels a running side turn from its tab, keeps the two-press quit (and a click disarms it), hands back steering of an errored turn and delivers it at a natural stop, and gives a usable reopened btw tab while the old turn is reaped.
+
+Mutants ([`mutants.tsv`](mutants.tsv)), each caught: the main ladder on every tab again (`ctrlCActsOnShownTurn`, `busyHintTruthful`), the mouse path without the disarm (`quitArmOnFocusedTab`), a failed turn's steering left queued (`steeringReachesItsTurn`), and the slow close parking the turn in `live[:btw]` (`sideEntryOwned`).
+In the side-ownership proof model two more show both halves of the #663 fix are needed: the reap list without generation routing lets the reaped turn's reply into the reopened tab, and routing without the reap list leaves the reopened tab blocked.
+The drafts proof model's mutants drop the view save on `activate!` and on `/btw`.
+
+## Proof models
+
+One per contract under [`proofs/`](proofs/), without transcripts: ownership is checked by generation identity plus a sticky bad-delivery monitor, and drafts need only the views. Verified with `verify-spec` (Apalache 0.56.1, one lane, `-Xmx3g`, shared machine):
+
+| Model | Issues | State | Obligation | Result | Time |
+| --- | --- | --- | --- | --- | --- |
+| [`ctrl-c`](proofs/ctrl-c/model.qnt) | #660, #661 | focus, open tabs, which turns run, a draft flag per tab, the main ladder (cancel-pressed?, pending-quit?, armed-on tab) | `fixed.ctrlCInductive` | inductive | 4 s |
+| [`side-ownership`](proofs/side-ownership/model.qnt) | #663 | btw tab generation, live entry (present, generation, cancel), one reaped turn and its generation, bad-delivery monitor | `fixed.ownershipInductive` | inductive | 1 s |
+| [`steering`](proofs/steering/model.qnt) | #662 | main turn number and busy flag, queue as (length, owner turn), typed/delivered/returned counters, misdelivery monitor | `fixed.steeringInductive` | inductive | 1 s |
+| [`drafts`](proofs/drafts/model.qnt) | none (holds today) | focus, open tabs, the focused view, each tab's saved draft and a ghost of the intended one | `drafts.draftsInductive` | inductive | 2 s |
+
+`ctrl-c` also has `fix660` and `fix661` instances. The side-ownership model assumes at most one closed turn is reaped at a time.
 
 ## Core
 

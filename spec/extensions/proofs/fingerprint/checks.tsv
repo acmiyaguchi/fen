@@ -1,0 +1,3 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	loadedStatusTruthful	violated	#625
+fixed	fingerprintInductive	holds

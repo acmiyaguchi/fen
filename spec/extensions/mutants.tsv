@@ -1,0 +1,6 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|        if (FIXES.contains("626")) view(serving(st2)) else mutated|        mutated|	fixed	registryMatchesFreshStart	a reload mutates the shared registry in place instead of deriving it from per-owner sets
+model.qnt	s|        val st2 = acc.st.set(o, if (serving(acc.st).contains(o)) "stale" else "error")|        val st2 = acc.st.set(o, "error")|	fixed	reloadCommandAvailable	a failed reload marks the owner :error, dropping the previous registrations it should keep (so /reload goes)
+model.qnt	s|      val fp2 = if (raw == "badModule" and not(FIXES.contains("625"))) acc.fp.set(o, true) else acc.fp|      val fp2 = if (raw == "badModule") acc.fp.set(o, true) else acc.fp|	fixed	loadedStatusTruthful	the fingerprint is committed before the module runs again
+model.qnt	s|    if (FIXES.contains("627"))|    if (false)|	fixed	noRegistrySwapDuringTurn	the extension tool reloads synchronously again
+model.qnt	s|pure def validatesCallable(kind: str): bool = FIXES.contains("628") or kind != "tool"|pure def validatesCallable(kind: str): bool = kind != "tool"|	fixed	registeredCallablesPresent	register :tool skips the :execute check

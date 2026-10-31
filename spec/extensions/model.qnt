@@ -24,12 +24,15 @@
 //
 // Two owners in discovery order A, B. A plays the sessions extension: it owns
 // /reload. Both claim command "dup", a tool, a bus subscription, and a prompt
-// fragment. FIXED selects the candidate fix (transactional per-owner reload,
-// registry views derived from per-owner sets in load order, fingerprints
-// committed only on success, mid-turn reload deferred to idle, tool
-// :execute validated).
+// fragment. FIXES names the candidate fixes enabled, by issue:
+//   "624" transactional per-owner reload (failure keeps the previous
+//         registrations as :stale and the pass continues)
+//   "625" fingerprints committed only after a module reloads successfully
+//   "626" registry views derived from per-owner sets folded in load order
+//   "627" the `extension` tool's reload is deferred to the idle boundary
+//   "628" register :tool validates :execute
 module extensions {
-  const FIXED: bool
+  const FIXES: Set[str]
 
   pure val ORDER = ["A", "B"]
   pure val OWNERS = Set("A", "B")
@@ -77,29 +80,35 @@ module extensions {
   // One owner through load-module-spec! with :reload? true.
   pure def reloadStep(srcs: str -> str, acc: Acc, o: str): Acc =
     if (acc.aborted) acc
-    else if (FIXED)
-      val st2 =
-        if (srcs.get(o) == "ok") acc.st.set(o, "loaded")
-        else if (serving(acc.st).contains(o)) acc.st.set(o, "stale")
-        else acc.st.set(o, "error")
-      { ...acc, st: st2, r: view(serving(st2)),
-        known: if (srcs.get(o) == "ok") acc.known.union(Set(o)) else acc.known,
-        visited: acc.visited.union(Set(o)), tried: acc.tried.set(o, srcs.get(o)) }
     else
-      val r1 = unregisterOwner(acc.r, o)
-      // An already-committed fingerprint skips the broken module; require
-      // returns the restored old table and registration succeeds.
-      val eff = if (srcs.get(o) == "badModule" and acc.fp.get(o)) "ok" else srcs.get(o)
-      val base = { ...acc, visited: acc.visited.union(Set(o)), tried: acc.tried.set(o, srcs.get(o)) }
+      val raw = srcs.get(o)
+      // change-summary commits a fingerprint before the module runs; an
+      // already-committed one skips the broken module, require returns the
+      // restored old table, and registration succeeds (#625).
+      val eff = if (raw == "badModule" and acc.fp.get(o)) "ok" else raw
+      val fp2 = if (raw == "badModule" and not(FIXES.contains("625"))) acc.fp.set(o, true) else acc.fp
+      val base = { ...acc, fp: fp2, visited: acc.visited.union(Set(o)), tried: acc.tried.set(o, raw) }
+      // fixed (#626): every view is a fold of the serving owners in load order
+      pure def regFor(st2: str -> str, mutated: Reg): Reg =
+        if (FIXES.contains("626")) view(serving(st2)) else mutated
       if (eff == "ok")
-        { ...base, r: registerOwner(r1, o), st: acc.st.set(o, "loaded"),
+        val st2 = acc.st.set(o, "loaded")
+        { ...base, st: st2, r: regFor(st2, registerOwner(unregisterOwner(acc.r, o), o)),
           known: acc.known.union(Set(o)) }
+      else if (FIXES.contains("624"))
+        // fixed (#624): staged reload under pcall; on failure the previous
+        // registrations stay, the owner is :stale (or :error if it never
+        // served), and the pass goes on.
+        val st2 = acc.st.set(o, if (serving(acc.st).contains(o)) "stale" else "error")
+        { ...base, st: st2, r: regFor(st2, acc.r) }
       else if (eff == "badRegister")
-        { ...base, r: r1, st: acc.st.set(o, "error") }
+        val st2 = acc.st.set(o, "error")
+        { ...base, st: st2, r: regFor(st2, unregisterOwner(acc.r, o)) }
       else
         // clear-reload-modules! raised: unregister-by-owner also dropped the
         // state.extensions record; the raise escapes load!.
-        { ...base, r: r1, st: acc.st.set(o, "none"), fp: acc.fp.set(o, true), aborted: true }
+        val st2 = acc.st.set(o, "none")
+        { ...base, st: st2, r: regFor(st2, unregisterOwner(acc.r, o)), aborted: true }
 
   // ---- state ----
   var src: str -> str          // source on disk per owner
@@ -192,7 +201,7 @@ module extensions {
   action midTurnReload(o: str): bool = all {
     phase == "busy",
     known.contains(o),
-    if (FIXED)
+    if (FIXES.contains("627"))
       all {
         pending' = pending.append(o),
         src' = src, fpCommitted' = fpCommitted, reg' = reg, status' = status,
@@ -259,7 +268,7 @@ module extensions {
     val st2 = if (unloadB and snapshot.length() > 0) status.set("B", "disabled") else status
     val r2 =
       if (unloadB and snapshot.length() > 0)
-        (if (FIXED) view(serving(st2)) else unregisterOwner(reg, "B"))
+        (if (FIXES.contains("626")) view(serving(st2)) else unregisterOwner(reg, "B"))
       else reg
     all {
       busOk' = (busOk and res.ok),
@@ -273,7 +282,7 @@ module extensions {
   }
 
   // An extension registers a contribution missing its callable.
-  pure def validatesCallable(kind: str): bool = FIXED or kind != "tool"
+  pure def validatesCallable(kind: str): bool = FIXES.contains("628") or kind != "tool"
 
   action registerMalformed(kind: str): bool = all {
     not(validatesCallable(kind)),
@@ -347,5 +356,10 @@ module extensions {
   }
 }
 
-module current { import extensions(FIXED = false).* }
-module fixed { import extensions(FIXED = true).* }
+module current { import extensions(FIXES = Set()).* }
+module fixed { import extensions(FIXES = Set("624", "625", "626", "627", "628")).* }
+module fix624 { import extensions(FIXES = Set("624")).* }
+module fix625 { import extensions(FIXES = Set("625")).* }
+module fix626 { import extensions(FIXES = Set("626")).* }
+module fix627 { import extensions(FIXES = Set("627")).* }
+module fix628 { import extensions(FIXES = Set("628")).* }

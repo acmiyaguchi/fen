@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+fixed	steeringInductive	inductive	1	300	the queue is summarised by its length and owner turn, and the counters by one linear equation, so induction covers any number of turns and lines

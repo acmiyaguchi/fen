@@ -1,0 +1,4 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	cancelArmMatchesTurn	violated	#636
+current	forceQuitOnlyOnArmedTurn	violated	#636
+fixed	armInductive	holds

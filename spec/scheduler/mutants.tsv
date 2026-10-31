@@ -1,0 +1,5 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|if (st.badRow and not(FIXES.contains("635")))|if (st.badRow)|	fixed	loopSurvivesFaults	paint runs unguarded again (no per-row isolation)
+model.qnt	s|(FIXES.contains("637") and st.bgTasks > 0)|false|	fixed	pendingWorkPolledActively	peek-timeout-ms ignores runtime-tick tasks again
+model.qnt	s|.with("cancelPressed", if (FIXES.contains("636")) false else st.cancelPressed)|.with("cancelPressed", st.cancelPressed)|	fixed	cancelArmMatchesTurn	only the bottom-of-loop check disarms: the modal pump finalizes a turn without it
+model.qnt	s|      val st1 = st.with("mainWait", 0)|      val st1 = st|	current	runnableResumedEachPump	the main resume no longer resets its per-pump wait counter
