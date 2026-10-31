@@ -1,0 +1,29 @@
+# main	invariant	expect (holds|violated)
+# issue designs as written (#394/#396/#397/#398)
+issue	singleTurn	holds
+issue	resolvedAtMostOnce	holds
+issue	answersAcked	violated
+issue	resolutionInScope	violated
+issue	noStaleContinuation	violated
+issue	answerMatchesShownChoices	violated
+issue	noPendingForEndedTurn	violated
+issue	cancelHitsSeenTurn	violated
+issue	steeringReachesSeenTurn	violated
+issue	noSilentGap	violated
+issue	caughtUpSeesPending	violated
+issue	caughtUpSeesTurn	violated
+issue	pendingHasAnswerer	holds
+issue	remoteNoCommands	holds
+issue	answerHitsItsRequest	holds
+issue	noDuplicateDelivery	holds
+# replay option: subscribe before the yielding JSONL replay
+issueDup	noDuplicateDelivery	violated
+issueDup	inOrderDelivery	violated
+# serve alongside a headless presenter
+headless	pendingHasAnswerer	violated
+# web presenter code #396 says to reuse
+webReuse	answerHitsItsRequest	violated
+webReuse	remoteNoCommands	violated
+# proposed protocol
+proposed	allInvariants	holds
+proposedTui	allInvariants	holds
