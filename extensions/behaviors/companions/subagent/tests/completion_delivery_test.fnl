@@ -256,7 +256,8 @@
                                                         :follow-up))))
                                   (turn-submit.start! state "what is 2+2?"
                                                       agent-mod.step)
-                                  (while (not= :dead (coroutine.status state.turn))
+                                  (while (not= :dead
+                                               (coroutine.status state.turn))
                                     (assert (coroutine.resume state.turn)))
                                   (assert (= 1 (length record)))
                                   (let [first-call (user-texts (. record 1

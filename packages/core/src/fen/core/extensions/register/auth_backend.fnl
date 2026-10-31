@@ -13,7 +13,7 @@
   (when (or (not spec) (not spec.name))
     (error "register :auth-backend requires {:name ...}"))
   (let [(_record unregister) (contrib.add! owner :auth-backends spec.name
-                                          (util.deep-copy spec))]
+                                           (util.deep-copy spec))]
     (handle-result :auth-backend spec.name owner unregister)))
 
 ;; @doc fen.core.extensions.register.auth_backend.find

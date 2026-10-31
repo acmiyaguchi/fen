@@ -288,8 +288,7 @@
   "The parent's materialized thinking level (a valid `--thinking` value), or
    nil when it has none: the agent's provider option, else the run options."
   (let [level (or (?. ctx :agent :provider-options :thinking-level)
-                  (?. ctx :agent :thinking)
-                  (?. ctx :opts :thinking)
+                  (?. ctx :agent :thinking) (?. ctx :opts :thinking)
                   (?. ctx :state :opts :thinking))]
     (when (and (present? level) (thinking-mod.valid-level? level))
       (tostring level))))
@@ -476,7 +475,8 @@
                        :child-tools policy.tools
                        :message "cannot launch background subagent: read-only policy removes every tool from the child's --tools allowlist"})
               (values {:flag "--tools" :tools effective} nil)))
-        (let [denied (icollect [_ name (ipairs (or policy.tools []))] name)]
+        (let [denied (icollect [_ name (ipairs (or policy.tools []))]
+                       name)]
           (each [_ name (ipairs BACKGROUND-DENIED)]
             (when (not (tool-name-in-list? denied name))
               (table.insert denied name)))
@@ -783,7 +783,8 @@
             (let [control (or msg.control {})
                   steer? (= control.type :steer)]
               (append-local-event! run
-                                   {:type (if steer? :steering-rejected :warning)
+                                   {:type (if steer? :steering-rejected
+                                              :warning)
                                     :summary (.. (tostring (or control.type
                                                                "control"))
                                                  " rejected: "
@@ -944,7 +945,8 @@
                            {:type :steering-dropped
                             :summary (.. "steer not delivered: " summary)}))
     (when (> (length dropped) 0)
-      (set run.dropped-steering (+ (or run.dropped-steering 0) (length dropped))))))
+      (set run.dropped-steering
+           (+ (or run.dropped-steering 0) (length dropped))))))
 
 (fn finish! [run process-result ?err]
   "Settle a run once its child process is gone (or never started)."
@@ -1128,14 +1130,14 @@
         (values nil (result "cannot resolve fen binary to spawn subagent" true))
         (not sys-path)
         (values nil (result "cannot stage subagent system prompt" true))
-        (and routing.thinking (not (thinking-mod.valid-level? routing.thinking)))
+        (and routing.thinking
+             (not (thinking-mod.valid-level? routing.thinking)))
         (do
           (os.remove sys-path)
-          (values nil
-                  (result (.. "cannot launch subagent: invalid thinking level "
-                              (tostring routing.thinking)
-                              " (use " (thinking-mod.level-list) ")")
-                          true)))
+          (values nil (result (.. "cannot launch subagent: invalid thinking level "
+                                  (tostring routing.thinking) " (use "
+                                  (thinking-mod.level-list) ")")
+                              true)))
         (let [fingerprint (task-fingerprint agent task cwd routing)
               run (runs.start! {:agent agent
                                 :task task
@@ -1746,8 +1748,10 @@
                                          (fit note 120))})
                     (api.emit {:type :assistant-text
                                :text (if (= why :closing)
-                                         (.. run-id " is finishing; steering not accepted.")
-                                         (.. "No active subagent run named " run-id))})))))
+                                         (.. run-id
+                                             " is finishing; steering not accepted.")
+                                         (.. "No active subagent run named "
+                                             run-id))})))))
         (api.emit {:type :assistant-text :text (render-subagent-runs)}))))
 
 (fn subagent-status-render [_ctx]

@@ -201,9 +201,10 @@
                                                  (prompt! child)
                                                  (answer! child "answer")
                                                  (child.expect! :close)
-                                                 (let [(run why) ((. (runs) :request-steer!) "subagent-1"
-                                                                                             "too late"
-                                                                                             :agent)]
+                                                 (let [(run why) ((. (runs)
+                                                                     :request-steer!) "subagent-1"
+                                                                                      "too late"
+                                                                                      :agent)]
                                                    (set child.steer-why why))
                                                  (coroutine.yield)
                                                  (result! child "answer")))
@@ -223,9 +224,10 @@
                                                  (prompt! child)
                                                  (answer! child "answer")
                                                  ;; the user's request lands before close was sent
-                                                 (assert ((. (runs) :request-steer!) "subagent-1"
-                                                                                     "before close"
-                                                                                     :agent))
+                                                 (assert ((. (runs)
+                                                             :request-steer!) "subagent-1"
+                                                                              "before close"
+                                                                              :agent))
                                                  (result! child "answer")))
                                 (fresh)
                                 (let [r (execute-tool {:agent :scout

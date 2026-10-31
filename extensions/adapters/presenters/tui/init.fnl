@@ -351,16 +351,15 @@
                       line))))))
 
 (fn pending-background-work? []
-  (or
-    ;; decide async tasks
-    (let [(ok? store) (pcall require :fen.extensions.decide.state)]
-      (and ok? store.tasks (> (length store.tasks) 0)))
-    ;; codex usage refresh coroutine
-    (let [(ok? u-state) (pcall require :fen.extensions.providers.openai.usage_state)]
-      (and ok? u-state.refresh-co))
-    ;; detached background subagent jobs
-    (let [(ok? runs) (pcall require :fen.extensions.subagent.runs)]
-      (and ok? runs.jobs (> (length (runs.jobs)) 0)))))
+  (or ;; decide async tasks
+      (let [(ok? store) (pcall require :fen.extensions.decide.state)]
+        (and ok? store.tasks (> (length store.tasks) 0)))
+      ;; codex usage refresh coroutine
+      (let [(ok? u-state) (pcall require
+                                 :fen.extensions.providers.openai.usage_state)]
+        (and ok? u-state.refresh-co)) ;; detached background subagent jobs
+      (let [(ok? runs) (pcall require :fen.extensions.subagent.runs)]
+        (and ok? runs.jobs (> (length (runs.jobs)) 0)))))
 
 (fn M.peek-timeout-ms [is-busy?]
   "Use a short poll while busy or resolving Esc/Alt, but sleep longer when the
@@ -464,17 +463,17 @@
                                                 :text "fen — ctrl-d to quit, ctrl-c twice to quit, ctrl-j for newline"}))
   (var quit? false)
   (while (not quit?)
-    (let [(paint-ok? paint-err)
-          (pcall (fn []
-                   (if (profile-enabled?)
-                       (let [paint-span (profile-span-begin! :tui-paint {})]
-                         (paint.advance-spinner-if-due!)
-                         (paint.redraw-if-needed!)
-                         (profile-span-end! paint-span)
-                         (profile-counter-add! :tui-paint-attempts))
-                       (do
-                         (paint.advance-spinner-if-due!)
-                         (paint.redraw-if-needed!)))))]
+    (let [(paint-ok? paint-err) (pcall (fn []
+                                         (if (profile-enabled?)
+                                             (let [paint-span (profile-span-begin! :tui-paint
+                                                                                   {})]
+                                               (paint.advance-spinner-if-due!)
+                                               (paint.redraw-if-needed!)
+                                               (profile-span-end! paint-span)
+                                               (profile-counter-add! :tui-paint-attempts))
+                                             (do
+                                               (paint.advance-spinner-if-due!)
+                                               (paint.redraw-if-needed!)))))]
       (when (not paint-ok?)
         (state.api.emit {:type :error
                          :error (.. "paint: " (first-line paint-err))

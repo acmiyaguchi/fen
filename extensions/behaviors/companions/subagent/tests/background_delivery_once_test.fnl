@@ -236,7 +236,8 @@
                                                waited.details.run.status))
                                     (assert (not (pending-frame?)))
                                     (assert (= nil
-                                               ((. (runs) :take-completion-frame!))))))))))
+                                               ((. (runs)
+                                                   :take-completion-frame!))))))))))
             (it "keeps the completion across /cancel-all"
                 (fn []
                   (with-stubs (fn []

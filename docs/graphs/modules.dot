@@ -41,6 +41,7 @@ digraph fen_modules {
   "fen.core.extensions.rocks" [fillcolor="lightyellow", label="fen.core.extensions.rocks", style="filled", tooltip="packages/core/src/fen/core/extensions/rocks.fnl persistent"];
   "fen.core.extensions.state" [fillcolor="lightyellow", label="fen.core.extensions.state", style="filled", tooltip="packages/core/src/fen/core/extensions/state.fnl persistent"];
   "fen.core.extensions.test_api" [fillcolor="lightyellow", label="fen.core.extensions.test_api", style="filled", tooltip="packages/core/src/fen/core/extensions/test_api.fnl persistent"];
+  "fen.core.extensions.usage_ledger" [fillcolor="lightyellow", label="fen.core.extensions.usage_ledger", style="filled", tooltip="packages/core/src/fen/core/extensions/usage_ledger.fnl persistent"];
   "fen.core.extensions.util" [fillcolor="lightyellow", label="fen.core.extensions.util", style="filled", tooltip="packages/core/src/fen/core/extensions/util.fnl persistent"];
   "fen.core.llm" [fillcolor="lightyellow", label="fen.core.llm", style="filled", tooltip="packages/core/src/fen/core/llm/init.fnl persistent"];
   "fen.core.llm.models" [fillcolor="lightyellow", label="fen.core.llm.models", style="filled", tooltip="packages/core/src/fen/core/llm/models.fnl persistent"];
@@ -130,6 +131,7 @@ digraph fen_modules {
   "fen.extensions.provider_shared" [fillcolor="lightyellow", label="fen.extensions.provider_shared", style="filled", tooltip="extensions/adapters/providers/shared/init.fnl persistent"];
   "fen.extensions.provider_shared.retry" [fillcolor="lightyellow", label="fen.extensions.provider_shared.retry", style="filled", tooltip="extensions/adapters/providers/shared/retry.fnl persistent"];
   "fen.extensions.provider_shared.streaming" [fillcolor="lightyellow", label="fen.extensions.provider_shared.streaming", style="filled", tooltip="extensions/adapters/providers/shared/streaming.fnl persistent"];
+  "fen.extensions.providers.openai.usage_state" [color="gray", fontcolor="gray", label="fen.extensions.providers.openai.usage_state", style="dashed"];
   "fen.extensions.queue" [fillcolor="lightyellow", label="fen.extensions.queue", style="filled", tooltip="extensions/behaviors/inspectors/queue/init.fnl persistent"];
   "fen.extensions.queue.commands.queue" [fillcolor="lightyellow", label="fen.extensions.queue.commands.queue", style="filled", tooltip="extensions/behaviors/inspectors/queue/commands/queue.fnl persistent"];
   "fen.extensions.queue.state.queue" [fillcolor="lightyellow", label="fen.extensions.queue.state.queue", style="filled", tooltip="extensions/behaviors/inspectors/queue/state/queue.fnl persistent"];
@@ -305,12 +307,14 @@ digraph fen_modules {
   "fen.core.extensions.events" -> "fen.core.diagnostics" [label="require"];
   "fen.core.extensions.events" -> "fen.core.extensions.contrib" [label="require"];
   "fen.core.extensions.events" -> "fen.core.extensions.state" [label="require"];
+  "fen.core.extensions.events" -> "fen.core.extensions.usage_ledger" [label="require"];
   "fen.core.extensions.events" -> "fen.util.jsonl" [label="require"];
   "fen.core.extensions.events" -> "fen.util.log" [label="require"];
   "fen.core.extensions.events" -> "fen.util.path" [label="require"];
   "fen.core.extensions.events" -> "fen.util.redact" [label="require"];
   "fen.core.extensions.events" -> "fen.util.text" [label="require"];
   "fen.core.extensions.input" -> "fen.core.extensions.register.input" [label="require"];
+  "fen.core.extensions.loader" -> "fen.core.extensions.contrib" [label="require"];
   "fen.core.extensions.loader" -> "fen.core.extensions.events" [label="require"];
   "fen.core.extensions.loader" -> "fen.core.extensions.loader.api" [label="require"];
   "fen.core.extensions.loader" -> "fen.core.extensions.loader.discover" [label="require"];
@@ -424,10 +428,14 @@ digraph fen_modules {
   "fen.core.extensions.register.tool" -> "fen.util.json_schema" [label="require"];
   "fen.core.extensions.rocks" -> "fen.core.extensions.build" [color="gray50", label="optional", style="dotted"];
   "fen.core.extensions.rocks" -> "fen.util.path" [label="require"];
+  "fen.core.extensions.test_api" -> "fen.core.extensions.contrib" [label="require"];
   "fen.core.extensions.test_api" -> "fen.core.extensions.events" [label="require"];
   "fen.core.extensions.test_api" -> "fen.core.extensions.loader.api" [label="require"];
   "fen.core.extensions.test_api" -> "fen.core.extensions.state" [label="require"];
+  "fen.core.extensions.test_api" -> "fen.core.extensions.usage_ledger" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.test_api" -> "fen.core.extensions.util" [label="require"];
+  "fen.core.extensions.usage_ledger" -> "fen.core.extensions.state" [label="require"];
+  "fen.core.extensions.usage_ledger" -> "fen.util.tokens" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.util" -> "fen.core.extensions.state" [label="require"];
   "fen.core.llm" -> "fen.core.extensions.register.provider" [label="require"];
   "fen.core.llm.models" -> "fen.core.extensions.register" [label="require"];
@@ -497,6 +505,7 @@ digraph fen_modules {
   "fen.extensions.claude_memory" -> "fen.util.path" [label="require"];
   "fen.extensions.compact" -> "fen.core.agent" [label="require"];
   "fen.extensions.compact" -> "fen.core.extensions.state" [label="require"];
+  "fen.extensions.compact" -> "fen.core.extensions.usage_ledger" [label="require"];
   "fen.extensions.compact" -> "fen.core.types" [label="require"];
   "fen.extensions.compact" -> "fen.extensions.decide.compaction" [label="require"];
   "fen.extensions.compact" -> "fen.util.coroutines" [label="require"];
@@ -552,6 +561,7 @@ digraph fen_modules {
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.core.settings" [color="gray50", label="late", style="dashed"];
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.core.types" [label="require"];
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.extensions.extensions_inspector.state.extensions" [label="require"];
+  "fen.extensions.extensions_inspector.commands.extension" -> "fen.reload_request" [label="require"];
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.util.args" [label="require"];
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.util.panel" [label="require"];
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.util.tokens" [label="require"];
@@ -570,6 +580,7 @@ digraph fen_modules {
   "fen.extensions.handoff" -> "fen.util.coroutines" [label="require"];
   "fen.extensions.handoff" -> "fen.util.text" [label="require"];
   "fen.extensions.json" -> "fen.core.agent" [label="require"];
+  "fen.extensions.json" -> "fen.core.extensions.usage_ledger" [label="require"];
   "fen.extensions.json" -> "fen.turn_lifecycle" [label="require"];
   "fen.extensions.json" -> "fen.util.headless_progress" [label="require"];
   "fen.extensions.json" -> "fen.util.json" [label="require"];
@@ -702,6 +713,7 @@ digraph fen_modules {
   "fen.extensions.queue.commands.queue" -> "fen.util.text" [label="require"];
   "fen.extensions.rpc" -> "fen.core.agent" [label="require"];
   "fen.extensions.rpc" -> "fen.core.extensions.events" [label="require"];
+  "fen.extensions.rpc" -> "fen.core.extensions.usage_ledger" [label="require"];
   "fen.extensions.rpc" -> "fen.core.types" [label="require"];
   "fen.extensions.rpc" -> "fen.extensions.steering.service" [color="gray50", label="late", style="dashed"];
   "fen.extensions.rpc" -> "fen.turn_submit" [label="require"];
@@ -749,6 +761,7 @@ digraph fen_modules {
   "fen.extensions.skills.ignore" -> "fen.util.path" [label="require"];
   "fen.extensions.skills.ignore" -> "fen.util.text" [label="require"];
   "fen.extensions.status" -> "fen.extensions.status.commands.status" [label="require"];
+  "fen.extensions.status.commands.status" -> "fen.core.extensions.usage_ledger" [label="require"];
   "fen.extensions.status.commands.status" -> "fen.extensions.status.state.status" [label="require"];
   "fen.extensions.status.commands.status" -> "fen.extensions.status.util" [label="require"];
   "fen.extensions.status.commands.status" -> "fen.util.panel" [label="require"];
@@ -763,8 +776,8 @@ digraph fen_modules {
   "fen.extensions.subagent" -> "fen.core.extensions.register.presenter" [label="require"];
   "fen.extensions.subagent" -> "fen.core.extensions.register.provider" [label="require"];
   "fen.extensions.subagent" -> "fen.core.llm.models" [label="require"];
+  "fen.extensions.subagent" -> "fen.core.thinking" [label="require"];
   "fen.extensions.subagent" -> "fen.core.types" [label="require"];
-  "fen.extensions.subagent" -> "fen.extensions.steering.service" [color="gray50", label="late", style="dashed"];
   "fen.extensions.subagent" -> "fen.extensions.subagent.channel" [label="require"];
   "fen.extensions.subagent" -> "fen.extensions.subagent.discover" [label="require"];
   "fen.extensions.subagent" -> "fen.extensions.subagent.runs" [label="require"];
@@ -797,8 +810,11 @@ digraph fen_modules {
   "fen.extensions.todo" -> "fen.extensions.todo.state" [label="require"];
   "fen.extensions.todo" -> "fen.util.args" [label="require"];
   "fen.extensions.todo" -> "fen.util.text" [label="require"];
+  "fen.extensions.tui" -> "fen.extensions.decide.state" [color="gray50", label="optional", style="dotted"];
   "fen.extensions.tui" -> "fen.extensions.profiler.activity" [color="gray50", label="optional", style="dotted"];
   "fen.extensions.tui" -> "fen.extensions.profiler.state" [color="gray50", label="optional", style="dotted"];
+  "fen.extensions.tui" -> "fen.extensions.providers.openai.usage_state" [color="gray50", label="optional", style="dotted"];
+  "fen.extensions.tui" -> "fen.extensions.subagent.runs" [color="gray50", label="optional", style="dotted"];
   "fen.extensions.tui" -> "fen.extensions.tui.completion" [label="require"];
   "fen.extensions.tui" -> "fen.extensions.tui.ingest" [label="require"];
   "fen.extensions.tui" -> "fen.extensions.tui.input" [label="require"];
@@ -983,6 +999,7 @@ digraph fen_modules {
   "fen.turn_lifecycle" -> "fen.core.extensions.events" [label="require"];
   "fen.turn_lifecycle" -> "fen.util.text" [label="require"];
   "fen.turn_submit" -> "fen.extensions.steering.service" [color="gray50", label="late", style="dashed"];
+  "fen.turn_submit" -> "fen.extensions.subagent.runs" [color="gray50", label="optional", style="dotted"];
   "fen.turn_submit" -> "fen.util.coroutines" [label="require"];
   "fen.update" -> "fen.util.http" [label="require"];
   "fen.update" -> "fen.util.id" [label="require"];

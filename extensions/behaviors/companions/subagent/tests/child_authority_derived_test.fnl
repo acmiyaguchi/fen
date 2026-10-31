@@ -226,18 +226,17 @@
                 (fn []
                   (with-stubs (fn []
                                 (let [argv (background-argv {:agent {:tool-restriction {:flag "--tools"
-                                                                                       :active-names ["read"
-                                                                                                      "edit"
-                                                                                                      "grep"]}}})]
+                                                                                        :active-names ["read"
+                                                                                                       "edit"
+                                                                                                       "grep"]}}})]
                                   (assert (= "read,grep"
                                              (argv-value argv "--tools")))
-                                  (assert (not (has-flag? argv
-                                                          "--denied-tools"))))))))
+                                  (assert (not (has-flag? argv "--denied-tools"))))))))
             (it "unions with a parent denylist"
                 (fn []
                   (with-stubs (fn []
                                 (let [argv (background-argv {:agent {:tool-restriction {:flag "--denied-tools"
-                                                                                       :restricted-names {:find true}}}})]
+                                                                                        :restricted-names {:find true}}}})]
                                   (assert (= "bash,edit,find,write"
                                              (argv-value argv "--denied-tools"))))))))
             (it "leaves a blocking run unrestricted by the background policy"

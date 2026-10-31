@@ -706,13 +706,12 @@
   (let [cancelled? (and (not ok?) (= result CANCEL-MARKER))
         crash-text (when (and (not ok?) (not cancelled?))
                      (text-util.first-line (tostring result)))
-        failed? (or cancelled? crash-text (= status :error) (= status :cancelled))]
+        failed? (or cancelled? crash-text (= status :error)
+                    (= status :cancelled))]
     (when failed?
-      (if agent.clear-steering
-          (agent.clear-steering)
-          agent.get-steering
-          (while (> (length (agent.get-steering)) 0)
-            nil)))
+      (if agent.clear-steering (agent.clear-steering)
+          agent.get-steering (while (> (length (agent.get-steering)) 0)
+                               nil)))
     (close-open-calls! agent
                        (if cancelled? CANCELLED-RESULT crash-text
                            (.. "error: tool call interrupted: " crash-text)

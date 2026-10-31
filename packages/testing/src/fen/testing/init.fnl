@@ -362,7 +362,6 @@
     (assert (not root) (.. "leaked temp root: " (tostring root)))
     (assert (not file) (.. "leaked temp file: " (tostring file)))))
 
-
 ;; @doc fen.testing.known-bug
 ;; kind: function
 ;; signature: (known-bug issue probe) -> nil

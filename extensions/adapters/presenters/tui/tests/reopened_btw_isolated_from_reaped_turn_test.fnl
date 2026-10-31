@@ -84,8 +84,9 @@
                     (side-chat.tick!)
                     (assert.are.equal :running old.status)
                     ;; Ctrl-W while running: the bounded drain cannot finish, so the turn is parked.
-                    (input.handle-key {:key tb.KEY_CTRL_W :ch 0 :mod 0}
-                                      nil nil (fn [] false))
+                    (input.handle-key {:key tb.KEY_CTRL_W :ch 0 :mod 0} nil nil
+                                      (fn []
+                                        false))
                     (assert.is_nil (workspaces.find :btw))
                     (assert.are.equal :closed old.status)
                     (command-registry.dispatch "/btw" runtime)

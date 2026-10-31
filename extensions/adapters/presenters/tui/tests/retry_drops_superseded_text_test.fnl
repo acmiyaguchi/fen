@@ -44,8 +44,7 @@
                                 :reason "HTTP 500"})
                   (delta! "Hello world.")
                   (events.emit {:type :llm-end})
-                  (events.emit {:type :assistant-stream-end
-                                :final? true})
+                  (events.emit {:type :assistant-stream-end :final? true})
                   (let [texts (assistant-texts)]
                     (assert.are.equal 1 (length texts))
                     (assert.are.equal "Hello world." (. texts 1)))))))

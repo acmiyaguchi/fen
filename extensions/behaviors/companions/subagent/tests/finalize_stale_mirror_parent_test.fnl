@@ -203,10 +203,12 @@
                                                               {:name "read"
                                                                :arguments {:path "a"}})
                                                  (coroutine.yield)
-                                                 (answer! child "natural answer")
+                                                 (answer! child
+                                                          "natural answer")
                                                  ;; finalize in ready: finish (the table)
                                                  (child.expect! :finalize)
-                                                 (result! child "natural answer")))
+                                                 (result! child
+                                                          "natural answer")))
                                 (fresh)
                                 (let [r (execute-tool {:agent :scout
                                                        :task "review"

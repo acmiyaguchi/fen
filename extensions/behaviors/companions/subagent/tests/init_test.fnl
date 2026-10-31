@@ -960,8 +960,10 @@
                                      (prompt! child)
                                      (answer! child "cut")
                                      (child.expect! :close)
-                                     (set spilled-path child.env.FEN_WIRE_RESULT_PATH)
-                                     (with-open [f (io.open spilled-path :wb)] (f:write big))
+                                     (set spilled-path
+                                          child.env.FEN_WIRE_RESULT_PATH)
+                                     (with-open [f (io.open spilled-path :wb)]
+                                       (f:write big))
                                      (child.emit! :result
                                                   {:final-text "cut"
                                                    :stop-reason "stop"
@@ -1031,8 +1033,7 @@
                                    ;; A steer arriving while running is rejected by the child.
                                    ((. (runs) :request-steer!) "subagent-1"
                                                                "steer" :agent)
-                                   (child.expect! :steer :rejected
-                                                  "queue full")
+                                   (child.expect! :steer :rejected "queue full")
                                    (answer! child "answer")
                                    (child.expect! :close)
                                    (result! child "answer"))

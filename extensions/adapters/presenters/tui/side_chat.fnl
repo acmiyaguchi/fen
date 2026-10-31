@@ -390,8 +390,7 @@
 
 (fn M.busy? []
   (let [ws (workspaces.find WORKSPACE-ID)]
-    (or (not (not (and ws ws.side ws.side.busy?)))
-        (> (length volatile.reap) 0))))
+    (or (not (not (and ws ws.side ws.side.busy?))) (> (length volatile.reap) 0))))
 
 (fn last-assistant-text [ws]
   (var found nil)

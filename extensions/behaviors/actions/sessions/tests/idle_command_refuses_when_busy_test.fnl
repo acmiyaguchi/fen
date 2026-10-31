@@ -47,9 +47,12 @@
                                                             (and (not state.busy?)
                                                                  (not state.turn)))
                                                 :start-follow-up! (fn [_text]
-                                                                    (set state.busy? true)
-                                                                    (set state.turn :follow-up)
-                                                                    (set state.turn-id 1))})
+                                                                    (set state.busy?
+                                                                         true)
+                                                                    (set state.turn
+                                                                         :follow-up)
+                                                                    (set state.turn-id
+                                                                         1))})
                     ;; The picker: while it is open, a turn starts.
                     (set extension-state.ui.slot
                          {:select (fn [opts]
@@ -66,6 +69,7 @@
                     (assert.are.equal old-agent state.agent)
                     ;; An error event was emitted explaining the refusal.
                     (assert.is_true (> (length emitted) 0))
-                    (assert.is_true (not= nil (string.find (. emitted 1 :error)
-                                                           "cannot resume session: agent became busy"
-                                                           1 true))))))))
+                    (assert.is_true (not= nil
+                                          (string.find (. emitted 1 :error)
+                                                       "cannot resume session: agent became busy"
+                                                       1 true))))))))

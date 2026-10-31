@@ -40,11 +40,11 @@
                                                             :action))
                                        (set ctl.cancel? true)))
                          :provider-options {:mock-script (fn [_req]
-                                                            (set calls
-                                                                 (+ calls 1))
-                                                            (if (= calls 1)
-                                                                first-turn
-                                                                "ok"))}}))
+                                                           (set calls
+                                                                (+ calls 1))
+                                                           (if (= calls 1)
+                                                               first-turn
+                                                               "ok"))}}))
 
 (fn run-coop [agent line cancel-fn]
   (let [co (coroutine.create #(agent-mod.step agent line cancel-fn))]
@@ -72,18 +72,21 @@
                       (agent-mod.step agent "now write the docs")
                       ;; Messages has 4 items: user 1, assistant error 2, user 3, assistant 4 (no stale steering injected).
                       (assert.are.equal 4 (length agent.messages))
-                      (assert.are.equal "now write the docs" (. agent.messages 3 :content))))))
+                      (assert.are.equal "now write the docs"
+                                        (. agent.messages 3 :content))))))
             (it "cancel path: steering queued for cancelled turn is discarded and not injected into next turn"
                 (fn []
                   (let [ctl {}
                         agent (make-agent "never seen" ctl)
                         final1 (run-coop agent "fix the parser" #ctl.cancel?)]
                     (assert.are.equal "[cancelled]" final1)
-                    (assert.are.equal :aborted (. agent.messages 2 :stop-reason))
+                    (assert.are.equal :aborted
+                                      (. agent.messages 2 :stop-reason))
                     (let [queued (. (steering.queue-info) :steering-queued)]
                       ;; Steering queue was cleared when the turn failed.
                       (assert.are.equal 0 queued)
                       (agent-mod.step agent "now write the docs")
                       ;; Messages has 4 items: user 1, assistant aborted 2, user 3, assistant 4.
                       (assert.are.equal 4 (length agent.messages))
-                      (assert.are.equal "now write the docs" (. agent.messages 3 :content))))))))
+                      (assert.are.equal "now write the docs"
+                                        (. agent.messages 3 :content))))))))

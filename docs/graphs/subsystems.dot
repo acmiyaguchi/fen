@@ -4,7 +4,7 @@ digraph fen_subsystems {
   edge [fontname="monospace"];
   "cli" [fillcolor="lightblue", label="CLI\n2 modules", style="filled"];
   "core" [fillcolor="palegreen", label="core\n10 modules", style="filled"];
-  "core.extensions" [fillcolor="palegreen", label="core.extensions\n33 modules", style="filled"];
+  "core.extensions" [fillcolor="palegreen", label="core.extensions\n34 modules", style="filled"];
   "core.llm" [fillcolor="palegreen", label="core.llm\n2 modules", style="filled"];
   "extension.agent_state" [fillcolor="lightyellow", label="extension: agent_state\n2 modules", style="filled"];
   "extension.builtin_tools" [fillcolor="lightyellow", label="extension: builtin_tools\n13 modules", style="filled"];
@@ -31,6 +31,7 @@ digraph fen_subsystems {
   "extension.provider_openrouter" [fillcolor="lightyellow", label="extension: provider_openrouter\n2 modules", style="filled"];
   "extension.provider_sakana" [fillcolor="lightyellow", label="extension: provider_sakana\n2 modules", style="filled"];
   "extension.provider_shared" [fillcolor="lightyellow", label="extension: provider_shared\n3 modules", style="filled"];
+  "extension.providers" [fillcolor="lightyellow", label="extension: providers\n1 modules", style="filled"];
   "extension.queue" [fillcolor="lightyellow", label="extension: queue\n3 modules", style="filled"];
   "extension.rpc" [fillcolor="lightyellow", label="extension: rpc\n1 modules", style="filled"];
   "extension.session_jsonl" [fillcolor="lightyellow", label="extension: session_jsonl\n3 modules", style="filled"];
@@ -85,6 +86,7 @@ digraph fen_subsystems {
   "extension.essentials" -> "core";
   "extension.essentials" -> "util";
   "extension.extensions_inspector" -> "core";
+  "extension.extensions_inspector" -> "other";
   "extension.extensions_inspector" -> "util";
   "extension.goal" -> "core";
   "extension.goal" -> "util";
@@ -94,6 +96,7 @@ digraph fen_subsystems {
   "extension.handoff" -> "extension.steering";
   "extension.handoff" -> "util";
   "extension.json" -> "core";
+  "extension.json" -> "core.extensions";
   "extension.json" -> "other";
   "extension.json" -> "util";
   "extension.mem" -> "util";
@@ -147,20 +150,22 @@ digraph fen_subsystems {
   "extension.skills" -> "core";
   "extension.skills" -> "util";
   "extension.status" -> "cli";
+  "extension.status" -> "core.extensions";
   "extension.status" -> "util";
   "extension.stdio" -> "util";
   "extension.steering" -> "core.extensions";
   "extension.subagent" -> "core";
   "extension.subagent" -> "core.extensions";
   "extension.subagent" -> "core.llm";
-  "extension.subagent" -> "extension.steering";
   "extension.subagent" -> "other";
   "extension.subagent" -> "util";
   "extension.todo" -> "core";
   "extension.todo" -> "util";
   "extension.tui" -> "cli";
   "extension.tui" -> "core.extensions";
+  "extension.tui" -> "extension.decide";
   "extension.tui" -> "extension.profiler";
+  "extension.tui" -> "extension.providers";
   "extension.tui" -> "extension.subagent";
   "extension.tui" -> "other";
   "extension.tui" -> "util";

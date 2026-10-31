@@ -247,4 +247,5 @@
                                 (let [st (launch steered-run)]
                                   (assert (> st.count 2))
                                   (assert st.requested?)
-                                  (assert (= "prompt,steer,finalize" (table.concat st.types ","))))))))))
+                                  (assert (= "prompt,steer,finalize"
+                                             (table.concat st.types ","))))))))))

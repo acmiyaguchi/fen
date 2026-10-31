@@ -29,7 +29,7 @@
   (contrib.remove-where! owner :actions
                          (fn [record] (same-owner-name? record owner spec.name)))
   (let [(_record unregister) (contrib.add! owner :actions nil
-                                          (util.deep-copy spec))]
+                                           (util.deep-copy spec))]
     (handle-result :action spec.name owner unregister)))
 
 (fn by-owner-name [a b]

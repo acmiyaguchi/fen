@@ -90,8 +90,7 @@
                                                              true)))
                     (service.ask-async! {} QUESTIONS
                                         (fn [answers]
-                                          (table.insert done
-                                                        answers)))
+                                          (table.insert done answers)))
                     (assert.are.equal 1 (length store.tasks))
                     (var peeks 0)
                     (var ticks 0)
@@ -99,16 +98,13 @@
                          (fn [timeout]
                            (set peeks (+ peeks 1))
                            (when (> (length store.tasks) 0)
-                             (table.insert pending-timeouts
-                                           timeout))
-                           (if (or (> (length done) 0)
-                                   (> peeks 20))
+                             (table.insert pending-timeouts timeout))
+                           (if (or (> (length done) 0) (> peeks 20))
                                {:type tb.EVENT_KEY
                                 :key tb.KEY_CTRL_D
                                 :ch 0
                                 :mod 0}
-                               (values nil "no event"
-                                       tb.ERR_NO_EVENT))))
+                               (values nil "no event" tb.ERR_NO_EVENT))))
                     ;; on-tick emits :runtime-tick like interactive.fnl; decide's real handler pumps the task.
                     (tui.run (fn [_line] nil)
                              (fn []

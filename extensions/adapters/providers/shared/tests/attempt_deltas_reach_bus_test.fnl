@@ -54,9 +54,9 @@
                                               :make-stream-pipeline (fn [model
                                                                          emit]
                                                                       (streaming.make-stream-pipeline {: model
-                                                                                                        : new-state
-                                                                                                        : process-event
-                                                                                                        :on-event emit}))
+                                                                                                       : new-state
+                                                                                                       : process-event
+                                                                                                       :on-event emit}))
                                               :build-request-opts (fn [_model
                                                                        _context
                                                                        _options
@@ -100,12 +100,12 @@
                   (let [(asst seen attempts) (run-two-attempts)
                         kinds (icollect [_ ev (ipairs seen)]
                                 (if (= ev.type :text-delta)
-                                    (.. "delta:" ev.content-index
-                                        ":" ev.delta)
+                                    (.. "delta:" ev.content-index ":" ev.delta)
                                     (when (not= ev.type :start)
                                       (tostring ev.type))))]
                     (assert.are.equal 2 attempts)
-                    (assert.are.equal "Hello world." (types.assistant-text asst))
+                    (assert.are.equal "Hello world."
+                                      (types.assistant-text asst))
                     (assert.are.equal (table.concat ["delta:1:Hello wor"
                                                      :provider-retry
                                                      "delta:1:Hello world."

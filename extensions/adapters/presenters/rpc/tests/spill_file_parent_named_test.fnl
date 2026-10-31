@@ -154,11 +154,10 @@
                         result-path (os.tmpname)
                         names []
                         real-tmpname os.tmpname]
-                    (set os.tmpname
-                         (fn []
-                           (let [n (real-tmpname)]
-                             (table.insert names n)
-                             n)))
+                    (set os.tmpname (fn []
+                                      (let [n (real-tmpname)]
+                                        (table.insert names n)
+                                        n)))
                     (let [(ok? r) (pcall run-child
                                          {:mock [big]
                                           :tools []
@@ -168,7 +167,9 @@
                                                         (let [ch ctx.state.wire-channel
                                                               real ch.out]
                                                           (set ch.out
-                                                               {:write (fn [_ line ...]
+                                                               {:write (fn [_
+                                                                            line
+                                                                            ...]
                                                                          (when (string.find line
                                                                                             "\"type\":\"result\""
                                                                                             1

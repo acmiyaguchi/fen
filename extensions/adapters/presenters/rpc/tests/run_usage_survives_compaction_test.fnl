@@ -199,16 +199,14 @@
                   (let [r (run-child {:mock script
                                       :script (fn [p]
                                                 (p.wait-type :ready)
-                                                (p.send! :prompt
-                                                         {:text "go"})
+                                                (p.send! :prompt {:text "go"})
                                                 (p.wait-type :turn-complete)
                                                 (p.send! :close {}))})
                         p r.parent
                         tc (p.find #(= $1.type :turn-complete))
                         result (p.find #(= $1.type :result))
                         bus (accumulate [n 0 _ ev (ipairs p.seen)]
-                              (if (and (= ev.type :llm-end)
-                                       ev.usage)
+                              (if (and (= ev.type :llm-end) ev.usage)
                                   (+ n (or ev.usage.input 0))
                                   n))]
                     (assert r.ok? r.err)

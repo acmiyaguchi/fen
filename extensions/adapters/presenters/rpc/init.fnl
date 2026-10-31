@@ -188,8 +188,8 @@
   (let [state ch.state
         step-opts (when ?final? {:tool-choice :none})
         agent-step (fn [agent line cancel-fn]
-                     (let [(text outcome) (agent-mod.step agent line
-                                                          cancel-fn step-opts)]
+                     (let [(text outcome) (agent-mod.step agent line cancel-fn
+                                                          step-opts)]
                        (set ch.last-outcome outcome)
                        (values text outcome)))]
     (set ch.turn (+ ch.turn 1))
@@ -220,18 +220,17 @@
       (f)))
 
 (fn perform! [ch action ?msg]
-  (if (= action :finish) (defer-exit! ch #(finish! ch))
-      (= action :start-turn) (start-turn! ch ?msg.text)
-      (= action :queue-steering) (queue! ch :steering ?msg)
-      (= action :queue-follow-up) (queue! ch :follow-up ?msg)
-      (= action :start-finalize-turn)
+  (if (= action :finish) (defer-exit! ch #(finish! ch)) (= action :start-turn)
+      (start-turn! ch ?msg.text) (= action :queue-steering)
+      (queue! ch :steering ?msg) (= action :queue-follow-up)
+      (queue! ch :follow-up ?msg) (= action :start-finalize-turn)
       (start-turn! ch (or (text.blank->nil ch.finalize-note)
                           DEFAULT-FINALIZE-NOTE) true)
       (= action :interrupt-turn) (interrupt-turn! ch) (= action :abort)
       (if ch.active
           (interrupt-turn! ch)
-          (defer-exit! ch #(exit! ch ch.status ch.error))) (= action :exit)
-      (defer-exit! ch #(exit! ch ch.status ch.error)) nil))
+          (defer-exit! ch #(exit! ch ch.status ch.error)))
+      (= action :exit) (defer-exit! ch #(exit! ch ch.status ch.error)) nil))
 
 (fn advance! [ch event]
   (let [entry (wire-session.advance ch.status event)]
