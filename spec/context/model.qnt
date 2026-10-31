@@ -28,10 +28,11 @@
 //                                                  unregister-by-owner + append
 //
 // Ghost state records every usage report on the bus (`bus`); the TUI's
-// cumulative counters are exactly that fold of :llm-end events. FIXED selects
-// the candidate fixes so the same invariants can be checked against both.
+// cumulative counters are exactly that fold of :llm-end events. FIXES names
+// the candidate fixes (by issue) so the same invariants can be checked against
+// today's code, each fix alone, and all of them together.
 module context {
-  const FIXED: bool
+  const FIXES: Set[str]
 
   pure val W = 4          // Anthropic lookback window, scaled (real: ~20 blocks)
   pure val MAX_BP = 4     // Anthropic cache_control breakpoint limit
@@ -81,13 +82,13 @@ module context {
   pure def suffix(ms: List[Msg], start: int): List[Msg] =
     if (start >= ms.length()) [] else ms.slice(start, ms.length())
 
-  // build-body: system + last tool + last message; FIXED also re-marks the
+  // build-body: system + last tool + last message; fix #623 also re-marks the
   // previous request's tail when it is still a prefix (4 of 4).
   pure def breakpoints(req: Key, prev: Key, havePrev: bool): List[Key] =
     val base = (if (req.tools.length() > 0) [{ tools: req.tools, sys: -1, msgs: [] }] else [])
                  .append({ ...req, msgs: [] })
     val withPrev =
-      if (FIXED and havePrev and extends(prev, req) and prev.msgs.length() > 0
+      if (FIXES.contains("623") and havePrev and extends(prev, req) and prev.msgs.length() > 0
           and prev.msgs.length() < req.msgs.length())
         base.append(prev)
       else base
@@ -106,15 +107,15 @@ module context {
       if (keyPrefix(e, req) and se > acc) se else acc)
 
   // tokens.context-token-info: the latest assistant with non-zero usage is
-  // the baseline; exact when it is the last message. FIXED ignores reports
-  // older than the last history rewrite (epoch).
+  // the baseline; exact when it is the last message. Fix #620 ignores
+  // reports older than the last history rewrite (epoch).
   type Ctx = { exact: bool, tokens: int, idx: int }
   pure def contextInfo(ms: List[Msg], epoch: int): Ctx =
     ms.indices().fold({ exact: false, tokens: 0, idx: -1 }, (acc, i) =>
       val m = ms[i]
       val u = m.usage
       val n = u.input + u.output + u.cacheRead + u.cacheWrite
-      if (m.role == "assistant" and n > 0 and i > acc.idx and (not(FIXED) or m.id > epoch))
+      if (m.role == "assistant" and n > 0 and i > acc.idx and (not(FIXES.contains("620")) or m.id > epoch))
         { exact: i == ms.length() - 1, tokens: n, idx: i }
       else acc)
 
@@ -132,10 +133,10 @@ module context {
   var prevReq: Key
   var havePrev: bool
   var brokeNamed: bool       // an intended break point happened since the last request
-  var epoch: int             // id of the latest compaction summary (FIXED)
+  var epoch: int             // id of the latest compaction summary (fix #620)
   // ghost accounting
   var bus: Usage             // every :llm-end usage this process (== TUI cum-*)
-  var ledger: Usage          // FIXED: session usage ledger, independent of msgs
+  var ledger: Usage          // fixes #617-#619: session usage ledger, independent of msgs
   var replayed: int          // --continue messages before the run
   var replayedUsage: Usage
   var toolCalls: int
@@ -157,9 +158,8 @@ module context {
     replayed' = replayed, replayedUsage' = replayedUsage, maxBp' = maxBp,
   }
 
-  action init = {
-    nondet p = Set("anthropic", "openai").oneOf()
-    nondet rep = Set(true, false).oneOf()
+  // Startup on provider p, with or without a --continue replay (rep).
+  action initWith(p: str, rep: bool): bool = {
     val ru = { input: 0, output: 1, cacheRead: 0, cacheWrite: 5, total: 1 }
     all {
       provider' = p,
@@ -182,6 +182,12 @@ module context {
       prefixOk' = true, reuseOk' = true,
       lastAction' = "init",
     }
+  }
+
+  action init = {
+    nondet p = Set("anthropic", "openai").oneOf()
+    nondet rep = Set(true, false).oneOf()
+    initWith(p, rep)
   }
 
   action userTurn = all {
@@ -211,7 +217,7 @@ module context {
         input: reqSize - hit, output: out, cacheRead: hit, cacheWrite: 0,
         // openai_completions/responses keep the provider's total_tokens,
         // which includes cached prompt tokens.
-        total: if (FIXED) reqSize - hit + out else reqSize + out,
+        total: if (FIXES.contains("621")) reqSize - hit + out else reqSize + out,
       }
     val ext = havePrev and extends(prevReq, req)
     all {
@@ -312,7 +318,7 @@ module context {
   // are appended at the end of the registry. The agent is rebuilt.
   action reloadExtension = all {
     phase == "idle",
-    alwaysVis' = if (FIXED) alwaysVis else alwaysVis.tail().append(alwaysVis.head()),
+    alwaysVis' = if (FIXES.contains("622")) alwaysVis else alwaysVis.tail().append(alwaysVis.head()),
     msgs' = msgs, blocksOf' = blocksOf, nextId' = nextId, phase' = phase,
     pendingK' = pendingK, brokeNamed' = brokeNamed, epoch' = epoch,
     bus' = bus, ledger' = ledger, toolCalls' = toolCalls, toolResults' = toolResults,
@@ -368,12 +374,12 @@ module context {
 
   // ---- derived views ----
   // /status "reported usage" (tokens.usage-totals agent.messages).
-  val statusUsage: Usage = if (FIXED) ledger else sumUsage(msgs)
+  val statusUsage: Usage = if (FIXES.contains("617")) ledger else sumUsage(msgs)
   // rpc `result` usage: sum-usage over agent.messages from run-start-index.
   val wireResultUsage: Usage =
-    if (FIXED) ledger else sumUsage(suffix(msgs, replayed))
+    if (FIXES.contains("618")) ledger else sumUsage(suffix(msgs, replayed))
   // json presenter usage: sum-usage over all agent.messages.
-  val jsonUsage: Usage = if (FIXED) ledger else sumUsage(msgs)
+  val jsonUsage: Usage = if (FIXES.contains("619")) ledger else sumUsage(msgs)
   pure def minus(a: Usage, b: Usage): Usage =
     { input: a.input - b.input, output: a.output - b.output,
       cacheRead: a.cacheRead - b.cacheRead, cacheWrite: a.cacheWrite - b.cacheWrite,
@@ -394,11 +400,11 @@ module context {
 
   // Wire `result` usage sums the whole run (docs/wire.md).
   val runUsageExact =
-    sameTokens(if (FIXED) minus(wireResultUsage, replayedUsage) else wireResultUsage, bus)
+    sameTokens(if (FIXES.contains("618")) minus(wireResultUsage, replayedUsage) else wireResultUsage, bus)
 
   // Headless JSON usage covers this invocation only.
   val headlessUsageExact =
-    sameTokens(if (FIXED) minus(jsonUsage, replayedUsage) else jsonUsage, bus)
+    sameTokens(if (FIXES.contains("619")) minus(jsonUsage, replayedUsage) else jsonUsage, bus)
 
   // A context size shown as exact (provider-reported) is the real size of
   // what the next request would send.
@@ -421,5 +427,15 @@ module context {
   }
 }
 
-module current { import context(FIXED = false).* }
-module fixed { import context(FIXED = true).* }
+module current { import context(FIXES = Set()).* }
+module fixed {
+  import context(FIXES = Set("617", "618", "619", "620", "621", "622", "623")).*
+}
+// One fix at a time.
+module fix617 { import context(FIXES = Set("617")).* }
+module fix618 { import context(FIXES = Set("618")).* }
+module fix619 { import context(FIXES = Set("619")).* }
+module fix620 { import context(FIXES = Set("620")).* }
+module fix621 { import context(FIXES = Set("621")).* }
+module fix622 { import context(FIXES = Set("622")).* }
+module fix623 { import context(FIXES = Set("623")).* }

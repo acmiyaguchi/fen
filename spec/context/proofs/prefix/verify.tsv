@@ -1,0 +1,4 @@
+# main	invariants	mode	steps	seconds	why
+fix622	prefixInductive	inductive	1	300	the canonical tool order alone makes prefixStableUnlessNamed hold at any depth: every non-break step keeps the previous prefix a strict prefix of the next
+fixed	cacheInductive	inductive	1	300	with the canonical order and the re-marked previous tail, every extension reads the previous entry back within 4 breakpoints, at any depth
+fixed	allInvariants	bounded	8	300	cross-check from the real initial state; the #623 counterexample is 4 steps and #622 is 5

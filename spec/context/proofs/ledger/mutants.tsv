@@ -1,0 +1,5 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|      log' = log.append(su), msgU' = lastN(msgU, sinceUser),|      log' = log, msgU' = lastN(msgU, sinceUser),|	fixed	sessionUsageComplete	the summary call is not a ledger entry
+model.qnt	s|    runMarkLog' = log.length(), runMarkMsg' = msgU.length(), runBusTok' = 0,|    runMarkLog' = runMarkLog, runMarkMsg' = msgU.length(), runBusTok' = 0,|	fixed	runUsageExact	a run does not take a ledger marker at its start
+model.qnt	s|    msgU.length() > 0 and lastIsAsst and (not(FIXES.contains("620")) or latest.epoch == epoch)|    msgU.length() > 0 and lastIsAsst|	fixed	exactContextIsCurrent	the context baseline ignores the rewrite epoch (#620 fix removed)
+model.qnt	s|      if (FIXES.contains("621")) inp + out            // normalized: input + output|      if (false) inp + out|	fixed	totalTokensConvention	adapters keep the provider's total_tokens (#621 fix removed)

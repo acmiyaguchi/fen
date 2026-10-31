@@ -1,0 +1,7 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    if (FIXES.contains("639")) closeReplay(replayRaw(disk)) else replayRaw(disk)|    replayRaw(disk)|	fixed	providerContextValid	replay does not close interrupted tool calls (#639 fix removed)
+model.qnt	s|      disk' = disk, torn' = if (FIXES.contains("640")) false else torn,|      disk' = disk, torn' = torn,|	fixed	ackedPersisted	open-existing does not terminate a torn tail (#640 fix removed)
+model.qnt	s|      if (FIXES.contains("641")) { ...s, fail: false, stopped: true }|      if (false) { ...s, fail: false, stopped: true }|	fixed	ackedPersisted	the flush cursor advances past a failed append (#641 fix removed)
+model.qnt	s|(not(FIXES.contains("641")) or fs.saved == mem.length())|true|	fixed	replayMatchesMemory	compaction checks only the first kept message's entry id
+model.qnt	s|    not(FIXES.contains("642")) or not(up),  // fix #642: interactive writers hold the lock too|    true,|	fixed	replayMatchesMemory	interactive writers do not hold the session lock (#642 fix removed)
+model.qnt	s|    if (FIXES.contains("643")) doctorIssuesCore(disk) else doctorIssuesById(disk)|    doctorIssuesById(disk)|	fix643	doctorCleanMeansReplayable	the doctor pairs by id, not by adjacency (#643 fix removed; in `fixed` the #642 lock already rules out the interleaving)

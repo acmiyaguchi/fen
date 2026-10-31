@@ -1,0 +1,4 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    torn' = if (FIXES.contains("640")) false else torn,|    torn' = torn,|	fixed	ackedReadable	resume does not terminate the torn tail
+model.qnt	s|      if (FIXES.contains("641"))$|      if (false)|	fixed	ackedReadable	a failed append still advances the cursor
+model.qnt	s|mem' = readable, saved' = nextId - 1,|mem' = readable, saved' = saved,|	fixed	replayMatchesMemory	resume keeps the old cursor, so replayed messages are flushed again

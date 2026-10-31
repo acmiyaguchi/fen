@@ -9,3 +9,10 @@ current	exactContextIsCurrent	violated	#620
 current	totalTokensConvention	violated	#621
 current	toolPairing	holds
 fixed	allInvariants	holds
+fix617	sessionUsageComplete	holds
+fix618	runUsageExact	holds
+fix619	headlessUsageExact	holds
+fix620	exactContextIsCurrent	holds
+fix621	totalTokensConvention	holds
+fix622	prefixStableUnlessNamed	holds
+fix623	cacheReuseOnExtension	holds

@@ -15,5 +15,17 @@ currentSolo	compactionCutKeepsPairs	holds
 currentSolo	doctorCleanMeansReplayable	holds
 currentSolo	doctorRepairReplayable	holds
 fixed	allInvariants	holds
+fix639	providerContextValid	holds
+fix640	compactionResolves	holds
+fix640	ackedPersisted	violated	#641
+fix641	ackedPersisted	violated	#640
+fix640641	ackedPersisted	holds
+fix640641	replayMatchesMemory	holds
+fix640641	compactionResolves	holds
+fix642	compactionCutKeepsPairs	holds
+fix642	doctorCleanMeansReplayable	holds
+fix642	doctorRepairReplayable	holds
+fix643	doctorCleanMeansReplayable	holds
+fix643	doctorRepairReplayable	holds
 lockCurrent	lockMutex	violated	#644
 lockFixed	lockMutex	holds

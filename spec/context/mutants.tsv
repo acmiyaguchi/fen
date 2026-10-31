@@ -1,0 +1,6 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|      if (FIXES.contains("623") and havePrev|      if (false and havePrev|	fixed	cacheReuseOnExtension	the previous request's tail is not re-marked (#623 fix removed)
+model.qnt	s|    alwaysVis' = if (FIXES.contains("622")) alwaysVis else|    alwaysVis' = if (false) alwaysVis else|	fixed	prefixStableUnlessNamed	reload re-appends the owner's tools (#622 fix removed)
+model.qnt	s|(not(FIXES.contains("620")) or m.id > epoch)|true|	fixed	exactContextIsCurrent	context size ignores the rewrite epoch (#620 fix removed)
+model.qnt	s|      bus' = add(bus, su), ledger' = add(ledger, su),|      bus' = add(bus, su), ledger' = ledger,|	fixed	sessionUsageComplete	the summary call's usage is not recorded in the ledger
+model.qnt	s|        total: if (FIXES.contains("621")) reqSize - hit + out else reqSize + out,|        total: reqSize + out,|	fixed	totalTokensConvention	adapters keep the provider's total_tokens (#621 fix removed)

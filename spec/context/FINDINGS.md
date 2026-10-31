@@ -11,9 +11,23 @@ Retry attempts reuse the view in [`spec/network`](../network/FINDINGS.md): a req
 
 Code: `packages/core/src/fen/core/agent.fnl` (`visible-tools`, `build-context`, `build-options`, `step-loop`, cancel pairing), `extensions/adapters/providers/anthropic/anthropic_messages.fnl` (`build-body`, `mark-last-message-cache!`, `convert-messages`, `parse-response`, `merge-usage!`), `extensions/adapters/providers/openai/openai_completions.fnl` (`usage->canonical`), `extensions/adapters/providers/openai/openai_responses_shared.fnl` (`extract-usage`), `extensions/adapters/providers/openrouter/openrouter_completions.fnl` (`add-cache-breakpoints!`), `packages/util/src/fen/util/{tokens,usage,turn_result}.fnl`, `extensions/behaviors/companions/compact/init.fnl` (`finish-compact!`), `extensions/adapters/presenters/rpc/init.fnl` (`run-messages`, `messages-from`, `turn-ended!`, `finish!`), `extensions/adapters/presenters/json/init.fnl`, `packages/fen/src/fen/session_control.fnl` (turn usage), `extensions/behaviors/companions/subagent/{init,runs}.fnl` (`apply-usage-telemetry!`, `accumulate-usage!`), `extensions/adapters/presenters/tui/ingest.fnl` (`:llm-end`), `extensions/behaviors/inspectors/status/commands/status.fnl`, `packages/core/src/fen/core/extensions/register/tool.fnl`, `packages/core/src/fen/core/extensions/loader/init.fnl` (`reload-extension!`).
 
-Probes were run once through `make test TESTS=…` and then deleted:
-`extensions/behaviors/companions/compact/tests/zz_probe_context_compact_test.fnl`, `extensions/adapters/presenters/rpc/tests/zz_probe_context_rpc_test.fnl`, `extensions/adapters/presenters/json/tests/zz_probe_context_json_test.fnl`, `extensions/adapters/providers/anthropic/tests/zz_probe_context_cache_test.fnl`, `extensions/adapters/providers/openai/tests/zz_probe_context_total_test.fnl`.
-Every probe reported `0 failures / 0 errors`; the lines quoted below are their output.
+The bugs were first confirmed by throwaway probes (`zz_probe_context_*_test.fnl`, `0 failures / 0 errors`; the lines quoted below are their output).
+Each now has a permanent `known-bug` probe against the real code (see "Evidence per bug").
+
+## Input assumptions
+
+What the environment actions of [`model.qnt`](model.qnt) can and cannot produce:
+
+- Provider calls return 0, 1 or 2 tool calls; every message's block count stands in for both its wire blocks and its tokens, and history is bounded at `MAXM = 12` messages.
+- A request is the last retry attempt; failed attempts and cancelled requests report no usage (see Open questions).
+- Anthropic cache hits follow a scaled lookback window `W = 4`; OpenAI hits the longest cached prefix. Cache entries never expire (no TTL).
+- Only one always-visible owner moves on a reload (a rotation of three tools), two search tools can be activated, the system prompt is re-rendered at most twice, and `--continue` replays at most one exchange, only at startup.
+- Compaction keeps the messages from the last user boundary and its summary call reads every summarized block; it runs idle or as the compact tool with one pending call.
+
+The proof models generate less:
+[`proofs/prefix`](proofs/prefix/model.qnt) has only scalar prefix coordinates (tool order, activated tools, system render, history generation, history blocks) and never models usage; a compaction may leave any history size up to the current one.
+[`proofs/ledger`](proofs/ledger/model.qnt) has at most 5 provider calls of 0 or 1 tool calls, cache reads of 0 or 1 tokens, an OpenAI gateway that may omit `total_tokens`, cancel, and compaction to any smaller size; it never models caching, tool order or provider switches.
+
 
 ## Bugs
 
@@ -147,7 +161,55 @@ The ~20-block lookback is Anthropic's documented behavior and was not exercised 
 - A canonical always-visible tool order that does not depend on registration order (for example by name, as search tools already are).
 - On Anthropic, re-mark the previous request's tail when it is still a prefix (4 of 4 breakpoints: tools, system, previous tail, new tail), so the previous entry is always an exact hit.
 
-All invariants hold under `fixed`.
+Each fix is named after its issue (`FIXES`): `fixed` enables all seven, and each `fix<issue>` instance enables one; every issue's own invariant holds with its fix alone (sampled), so the seven fixes are independent.
+All invariants hold under `fixed` (sampled).
+
+## Proof models
+
+The integration model mixes the two concerns, and its cache is a `Set[Key]` of list-valued keys, which is expensive for Apalache and irrelevant to accounting.
+So the contracts are split:
+
+- [`proofs/prefix`](proofs/prefix/model.qnt) (#622, #623): the request prefix as scalars. Between named breaks history only grows, so "extends" is equality of tool order, activated tools, system render and history generation plus `<=` on history blocks; the previous request's entry is read back exactly when a breakpoint is within `W` of it (Anthropic) or always (OpenAI).
+- [`proofs/ledger`](proofs/ledger/model.qnt) (#617–#621): an append-only usage log, one entry per provider call (turns and compaction, plus the replayed usage as a seed), and markers for the run and the invocation; every view is a fold of the log from a marker. Today's design is the same log kept on the messages (`msgU`), which compaction rewrites and the presenters index into.
+
+Measured with `SPEC_VERIFY_JOBS=1 JVM_ARGS=-Xmx3g` (Apalache 0.56.1):
+
+| Model | Obligation | Kind | Result |
+| --- | --- | --- | --- |
+| prefix | `fix622.prefixInductive` (implies `prefixStableUnlessNamed`) | inductive | holds, 3 s |
+| prefix | `fixed.cacheInductive` (adds `cacheReuseOnExtension`, `breakpointsWithinLimit`) | inductive | holds, 2 s |
+| prefix | `fixed.allInvariants`, 8 steps | bounded-safe | holds, 2 s |
+| ledger | `fixed.allInvariants`, 7 steps | bounded-safe | holds, 9 s |
+
+The prefix strengthening is: unless a named break came since the previous request, the next request's prefix coordinates equal the previous one's and its history is strictly longer.
+With the canonical tool order alone (#622) that is inductive, so prefix stability holds at any depth; the re-marked tail (#623) then makes every extension an exact hit within 4 breakpoints.
+The ledger is a list, which Apalache cannot generate from an invariant, so it is bounded: every ledger counterexample is at most 3 steps, and 7 steps exhaust the 5-call bound. The same obligation at 12 steps also holds but takes 297 s, so the obligation stays at 7.
+For both models, `current` gives an Apalache counterexample (checked once by hand), and the `current` and single-fix instances reproduce each bug as a `violated` row with a witness.
+
+## Evidence per bug
+
+| Bug | Counterexample (row) | Witness | Proof model | Probe (confirmed) |
+| --- | --- | --- | --- | --- |
+| #617 | `current.sessionUsageComplete`; ledger `current.sessionUsageComplete` | `w617CompactionDropsSessionUsageTest` (both) | ledger, bounded-safe for the fix | `extensions/behaviors/companions/compact/tests/issue_617_compaction_rewrites_usage_totals_test.fnl` |
+| #618 | `current.runUsageExact`; ledger `current.runUsageExact` | `w618RunUsageIndexSliceTest` (both) | ledger | `extensions/adapters/presenters/rpc/tests/issue_618_run_usage_index_slice_test.fnl` |
+| #619 | `current.headlessUsageExact`; ledger `current.headlessUsageExact` | `w619JsonUsageIncludesReplayTest` (both) | ledger | `extensions/adapters/presenters/json/tests/issue_619_json_usage_includes_replay_test.fnl` |
+| #620 | `current.exactContextIsCurrent`; ledger `current.exactContextIsCurrent` | `w620StaleContextExactTest` (both) | ledger | `extensions/behaviors/companions/compact/tests/issue_620_stale_context_size_after_compaction_test.fnl` |
+| #621 | `current.totalTokensConvention`; ledger `current.totalTokensConvention` | `w621TotalIncludesCacheTest` (both), `w621GatewayOmitsTotalTest` (ledger) | ledger | `extensions/adapters/providers/openai/tests/issue_621_total_tokens_convention_test.fnl` |
+| #622 | `current.prefixStableUnlessNamed`; prefix `current`, `fix623` | `w622ReloadReordersToolsTest` (both), `w622SurvivesFix623Test` | prefix, inductive for the fix | `extensions/adapters/providers/mock/tests/issue_622_reload_reorders_tools_test.fnl` |
+| #623 | `current.cacheReuseOnExtension`; prefix `current`, `fix622` | `w623MovingBreakpointMissesTest` (both), `w623SurvivesFix622Test` | prefix, inductive for the fix | `extensions/adapters/providers/anthropic/tests/issue_623_single_moving_breakpoint_test.fnl` |
+
+Each probe is a `known-bug` test that passes while the bug reproduces against today's code:
+
+- #617: real `/compact` with only the summary call stubbed; `usage-totals` input drops from 22100 to 100, and the summary's `:llm-end` input (30000) is in no message-derived total.
+- #618: real rpc presenter, agent loop and `compact` tool on the mock provider; `turn-complete` and `result` report input 10 while the forwarded `:llm-end` events sum to 31010.
+- #619: JSON presenter over one replayed exchange plus a new turn reports `total-tokens 50910` and 4 messages.
+- #620: after real `/compact`, `context-token-info` still reports 44650 as `provider-reported`, while compaction's own hint and the full estimate are both under 1000.
+- #621: OpenAI Chat Completions reports `total-tokens 105` and Anthropic 25 for the same 20 + 80 cached + 5 tokens; a gateway without `total_tokens` gives 0; `usage-totals` over both gives 130. `openai_responses_shared` is not probed.
+- #622: tools from owners ext-a, ext-b, ext-c are sent `read,bash,grep` before and `bash,grep,read` after replaying the loader's `unregister-by-owner` plus re-register for ext-a (the two registry calls `load-module-spec!` makes, not a full on-disk reload). It lives with the mock provider because core tests may not depend on an extension provider.
+- #623: real `build-body` for one and two rounds of ten parallel calls: 3 markers each, 22 and 43 message blocks, the tail breakpoint moves 21 blocks, and request 2 does not re-mark request 1's tail. The ~20-block lookback itself is Anthropic's documented behaviour and is not exercised (no network).
+
+Mutants (`mutants.tsv`): removing the #623 re-mark, the #622 canonical order, the #620 epoch, the #621 normalization, or the summary call's ledger entry is each caught by its invariant in `fixed`; each proof model has its own mutants (including a tool_search activation not counted as a named break, and a run without a ledger marker).
+
 
 ## Core
 

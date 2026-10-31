@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+fixed	allInvariants	bounded	7	600	every ledger counterexample is at most 3 steps (#617, #618, #620: user turn, tool request, compaction; #621: user turn, request; #619: none), and MAXLOG = 5 provider calls are exhausted within 7 steps (each call needs a user turn or tool results before it)

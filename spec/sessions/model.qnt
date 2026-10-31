@@ -24,13 +24,14 @@
 //                             marker result after each never-answered call
 //
 // Entry ids are message ids (`mid`); one tool call per assistant is enough.
-// FIXED selects the candidate fixes so the same invariants can be checked.
+// FIXES names the candidate fixes (by issue) so the same invariants can be
+// checked against today's code, each fix alone, and all of them together.
 module sessions {
   // Replay repair, the provider rule, and the doctor's pairing check come from
   // the close-turn core (#668): one rule for memory and disk.
   import turn.* from "../core/turn/turn"
 
-  const FIXED: bool
+  const FIXES: Set[str]
   // Whether a second process (`fen session send`) may touch the session.
   const OTHER_WRITER: bool
 
@@ -99,7 +100,7 @@ module sessions {
       acc.append(if (st.src >= 0) ms[st.src] else synth(st.call)))
 
   pure def replay(disk: List[Line]): List[Msg] =
-    if (FIXED) closeReplay(replayRaw(disk)) else replayRaw(disk)
+    if (FIXES.contains("639")) closeReplay(replayRaw(disk)) else replayRaw(disk)
 
   // Anthropic-shaped validity (no converter-side repair): every tool call is
   // immediately followed by its result and every result immediately follows
@@ -160,15 +161,16 @@ module sessions {
     keepCompactions(r.out, disk, r.ptr, disk.length())
 
   pure def doctorIssues(disk: List[Line]): int =
-    if (FIXED) doctorIssuesCore(disk) else doctorIssuesById(disk)
+    if (FIXES.contains("643")) doctorIssuesCore(disk) else doctorIssuesById(disk)
   pure def doctorRepair(disk: List[Line]): List[Line] =
-    if (FIXED) doctorRepairCore(disk) else doctorRepairById(disk)
+    if (FIXES.contains("643")) doctorRepairCore(disk) else doctorRepairById(disk)
 
   // ---- writer: append-entry + flush closure ----
   type FS = { disk: List[Line], torn: bool, saved: int, persisted: Set[int],
               acked: Set[int], fail: bool, stopped: bool }
 
-  // Today a torn tail swallows the next line. FIXED terminates it on open.
+  // Today a torn tail swallows the next line. Fix #640 terminates it on open
+  // (see `resume`), so a writer never appends onto a partial line.
   pure def appendLine(disk: List[Line], torn: bool, l: Line): { disk: List[Line], torn: bool } =
     if (torn) { disk: disk.replaceAt(disk.length() - 1, GARBAGE), torn: false }
     else { disk: disk.append(l), torn: false }
@@ -177,7 +179,7 @@ module sessions {
     if (s.stopped) s
     else if (s.fail)
       // write error (ENOSPC, EIO, unopenable dir): append returns nil
-      if (FIXED) { ...s, fail: false, stopped: true }
+      if (FIXES.contains("641")) { ...s, fail: false, stopped: true }
       else { ...s, fail: false, saved: s.saved + 1, acked: s.acked.union(Set(m.mid)) }
     else
       val w = appendLine(s.disk, s.torn, msgLine(m))
@@ -268,8 +270,8 @@ module sessions {
     cut >= 1, roleAt(mem, cut) == "user",
     val fs = flush(curFS, mem)
     val firstKept = midAt(mem, cut)
-    // FIXED: every kept message must be persisted, not only the first.
-    val idsOk = fs.persisted.contains(firstKept) and (not(FIXED) or fs.saved == mem.length())
+    // Fix #641: every kept message must be persisted, not only the first.
+    val idsOk = fs.persisted.contains(firstKept) and (not(FIXES.contains("641")) or fs.saved == mem.length())
     val w = appendLine(fs.disk, fs.torn, { kind: "compaction", msg: NOMSG, keep: firstKept })
     val newMem = [SUMMARY].concat(mem.slice(cut, mem.length()))
     // validation error, or append-entry failed: no replace
@@ -303,7 +305,7 @@ module sessions {
     val m = replay(disk)
     all {
       up' = true, phase' = "idle", mem' = m, saved' = m.length(), pendingCall' = -1,
-      disk' = disk, torn' = if (FIXED) false else torn,
+      disk' = disk, torn' = if (FIXES.contains("640")) false else torn,
       persisted' = midsOf(disk), acked' = acked, failNext' = failNext, nextMid' = nextMid,
       bContextOk' = bContextOk, lastAction' = "resume",
     },
@@ -316,7 +318,7 @@ module sessions {
     OTHER_WRITER, disk.length() > 0, not(torn),
     disk.select(l => l.kind == "garbage").length() == 0,
     nextMid + 1 <= MAX_MID,
-    not(FIXED) or not(up),  // FIXED: interactive writers hold the lock too
+    not(FIXES.contains("642")) or not(up),  // fix #642: interactive writers hold the lock too
     val u = { mid: nextMid, role: "user", call: -1 }
     val a = { mid: nextMid + 1, role: "asst", call: -1 }
     all {
@@ -363,7 +365,7 @@ module sessions {
   // exactly the context the live process holds.
   val replayMatchesMemory =
     (up and assistantPresent(mem) and saved == mem.length()) implies
-      replay(disk) == (if (FIXED) closeReplay(mem) else mem)
+      replay(disk) == (if (FIXES.contains("639")) closeReplay(mem) else mem)
 
   // A message a writer counted as saved is in the log.
   val ackedPersisted = acked.forall(x => midsOf(disk).contains(x))
@@ -400,90 +402,24 @@ module sessions {
   }
 }
 
-// Stale-lock reclaim in the JSONL backend's acquire-lock: mkdir lock; on
-// failure read owner, kill -0, re-read owner, os.remove owner, rmdir
-// (result ignored), mkdir again; the winner writes its pid afterwards.
-// Two `fen session send` processes start while a dead owner (pid 9) holds it.
-module lock {
-  const FIXED: bool
+// Stale-lock reclaim (#644) is its own proof model: proofs/lock/model.qnt.
+// The lockCurrent and lockFixed rows name that model's instances (loaded by
+// `lockInstances` below), so these rows and the proof check one module.
 
-  pure val PROCS = Set(1, 2)
-  pure val DEAD = 9
-
-  var lockDir: bool
-  var owner: int            // 0 = no owner file
-  var pc: int -> str
-  var seen: int -> int
-
-  action init = all {
-    lockDir' = true, owner' = DEAD,
-    pc' = PROCS.mapBy(_ => "try"), seen' = PROCS.mapBy(_ => 0),
-  }
-
-  action tryMkdir(p: int): bool = all {
-    pc.get(p) == "try",
-    if (not(lockDir)) all { lockDir' = true, owner' = 0, pc' = pc.set(p, "own"), seen' = seen }
-    else all { lockDir' = lockDir, owner' = owner, pc' = pc.set(p, "read"), seen' = seen },
-  }
-
-  action readOwner(p: int): bool = all {
-    pc.get(p) == "read",
-    // only a recorded owner whose process is gone is stale
-    if (owner == DEAD)
-      if (FIXED)
-        // OS-level lock (e.g. lfs.lock / flock): released by the kernel on
-        // death, so takeover is one atomic step.
-        all { lockDir' = true, owner' = 0, pc' = pc.set(p, "own"), seen' = seen }
-      else all { lockDir' = lockDir, owner' = owner, pc' = pc.set(p, "recheck"), seen' = seen.set(p, owner) }
-    else all { lockDir' = lockDir, owner' = owner, pc' = pc.set(p, "fail"), seen' = seen },
-  }
-
-  action recheck(p: int): bool = all {
-    pc.get(p) == "recheck",
-    lockDir' = lockDir, owner' = owner, seen' = seen,
-    pc' = pc.set(p, if (owner == seen.get(p)) "rmOwner" else "fail"),
-  }
-
-  action rmOwner(p: int): bool = all {
-    pc.get(p) == "rmOwner",
-    owner' = 0, lockDir' = lockDir, seen' = seen, pc' = pc.set(p, "rmdir"),
-  }
-
-  action rmdir(p: int): bool = all {
-    pc.get(p) == "rmdir",
-    lockDir' = if (owner == 0) false else lockDir,
-    owner' = owner, seen' = seen, pc' = pc.set(p, "mk"),
-  }
-
-  action mk(p: int): bool = all {
-    pc.get(p) == "mk",
-    if (not(lockDir)) all { lockDir' = true, owner' = 0, pc' = pc.set(p, "own"), seen' = seen }
-    else all { lockDir' = lockDir, owner' = owner, pc' = pc.set(p, "fail"), seen' = seen },
-  }
-
-  action writeOwner(p: int): bool = all {
-    pc.get(p) == "own",
-    owner' = p, lockDir' = lockDir, seen' = seen, pc' = pc.set(p, "hold"),
-  }
-
-  action release(p: int): bool = all {
-    pc.get(p) == "hold",
-    owner' = 0, lockDir' = false, seen' = seen, pc' = pc.set(p, "done"),
-  }
-
-  action step = {
-    nondet p = PROCS.oneOf()
-    any { tryMkdir(p), readOwner(p), recheck(p), rmOwner(p), rmdir(p), mk(p),
-          writeOwner(p), release(p) }
-  }
-
-  // At most one process believes it holds the session lock.
-  val lockMutex = PROCS.filter(p => pc.get(p) == "own" or pc.get(p) == "hold").size() <= 1
-}
-
-module current { import sessions(FIXED = false, OTHER_WRITER = true).* }
+module current { import sessions(FIXES = Set(), OTHER_WRITER = true).* }
 // Same code with one process per session: attributes violations to bugs.
-module currentSolo { import sessions(FIXED = false, OTHER_WRITER = false).* }
-module fixed { import sessions(FIXED = true, OTHER_WRITER = true).* }
-module lockCurrent { import lock(FIXED = false).* }
-module lockFixed { import lock(FIXED = true).* }
+module currentSolo { import sessions(FIXES = Set(), OTHER_WRITER = false).* }
+module fixed {
+  import sessions(FIXES = Set("639", "640", "641", "642", "643"), OTHER_WRITER = true).*
+}
+// One fix at a time, with one process per session (#642 needs the second
+// process, so its instance keeps it).
+module fix639 { import sessions(FIXES = Set("639"), OTHER_WRITER = false).* }
+module fix640 { import sessions(FIXES = Set("640"), OTHER_WRITER = false).* }
+module fix641 { import sessions(FIXES = Set("641"), OTHER_WRITER = false).* }
+module fix640641 { import sessions(FIXES = Set("640", "641"), OTHER_WRITER = false).* }
+module fix642 { import sessions(FIXES = Set("642"), OTHER_WRITER = true).* }
+module fix643 { import sessions(FIXES = Set("643"), OTHER_WRITER = true).* }
+// Loads proofs/lock/model.qnt, whose lockCurrent and lockFixed instances
+// the lock rows name.
+module lockInstances { import lockCurrent.* from "./proofs/lock/model" }

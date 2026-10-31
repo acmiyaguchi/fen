@@ -1,0 +1,3 @@
+# main	invariants	mode	steps	seconds	why
+fixed	persistInductive	inductive	1	300	persistInductive implies ackedReadable and replayMatchesMemory and is preserved by every step (append, failed append, crash, torn crash, resume), so both hold at any depth
+fixed	allInvariants	bounded	8	300	cross-check of the induction from the real initial state: the #640 counterexample is 7 steps (produce, flush, produce, torn crash, resume, produce, flush) and #641 is 3

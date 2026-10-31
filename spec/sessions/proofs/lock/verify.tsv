@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+lockFixed	lockInductive	inductive	1	300	lockInductive implies lockMutex and is preserved by every step, so the kernel lock is exclusive at any depth; no bound has to cover the 12-step reclaim race of the current design

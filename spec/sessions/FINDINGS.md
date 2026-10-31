@@ -5,13 +5,27 @@ Scope: one JSONL session file and the processes that write it.
 The interactive process keeps `agent.messages`, and its flush closure appends new messages on every `:message-appended`, but only after the first assistant message exists.
 The model covers turns with one tool call each, cancel (synthetic results plus an `:aborted` marker), `/compact` and auto or tool-driven compaction (also mid-turn, before the compact tool's own result), and the process being killed at any point, including partway through writing a line.
 It also covers `--continue` replay, a second process running `fen session send` on the same file, append failures, and `session doctor` and its `--repair`.
-A separate `lock` module covers the JSONL backend's stale-lock reclaim with two `send` processes.
+The JSONL backend's stale-lock reclaim with two `send` processes is the [`lock` proof model](proofs/lock/model.qnt); the `lockCurrent`/`lockFixed` rows here run its instances.
 `currentSolo` is the current code with only one process allowed to touch the session, so each violation can be traced to the bug that causes it.
 
 Code: `packages/fen/src/fen/session_lifecycle.fnl` (`start!`, `make-flush`, `install!`), `extensions/adapters/session-backends/jsonl/session.fnl` (`append-entry`, `open-existing`, `read-entries`, `load`, `latest-valid-compaction`, `acquire-lock`, `doctor`), `extensions/behaviors/companions/compact/init.fnl` (`find-cut-point`, `finish-compact!`), `packages/fen/src/fen/session_control.fnl` (`run-turn!`), `packages/core/src/fen/core/agent.fnl` (`append-message!`, `build-context`, cancel pairing), `extensions/adapters/providers/anthropic/anthropic_messages.fnl` (`convert-messages`).
 
-The probes were run once as `extensions/adapters/session-backends/jsonl/tests/zz_probe_sessions_jsonl_test.fnl` through `make test TESTS=…` and then deleted.
-Output: `6 successes / 0 failures`, with the lines quoted below.
+The bugs were first confirmed by a throwaway probe (`zz_probe_sessions_jsonl_test.fnl`, `6 successes / 0 failures`, lines quoted below).
+Each now has a permanent `known-bug` probe against the real code (see "Evidence per bug").
+
+## Input assumptions
+
+What the environment actions of [`model.qnt`](model.qnt) can and cannot produce:
+
+- Turns have at most one tool call each, and message ids are never reused (`nextMid` only grows, bounded by `MAX_MID = 12`).
+- `crash(true)` (a torn write) happens only during a turn (`phase != idle`), on a non-empty log whose last line is whole; at most one partial line is ever open.
+- `failAppend` arms one failure for the next write; failures are transient (the write after it succeeds). Persistent failures are not modelled.
+- `otherSend` is one complete `fen session send` turn (user plus text reply, no tools) done atomically between two interactive steps; it never runs on a log with a malformed line (`load-strict` refuses), and only when `OTHER_WRITER`. Sends with tool calls, and two senders, are not generated.
+- `compact(cut)` cuts at any user message after index 0 (an over-approximation of `find-cut-point`'s token budget), idle or mid-tool.
+- The second process, the lock, and replay laws for arbitrary logs are each covered elsewhere: the lock in [`proofs/lock`](proofs/lock/model.qnt) (two senders and one dead owner; the owner pid is never reused), replay laws in the coordinator's replay obligation.
+
+[`proofs/persistence`](proofs/persistence/model.qnt) generates only: in-order messages (ids 1..5), one-message appends from the cursor, a one-shot write failure, crashes (torn only while an append is pending), and `--continue`. No compaction, roles, or second writer.
+
 
 ## Bugs
 
@@ -96,7 +110,58 @@ Confirmed: lock dir with owner `99999999` (dead). `os.remove` is wrapped so that
   That removes stale-lock reclaim, and with it #644.
 - Doctor (#643): report and repair exactly what replay would change (core `replayRepairs` / `replayPlan`), so the doctor and the providers cannot disagree: a call whose result is not next is missing, and a result not right after its call is an orphan.
 
-`fixed.allInvariants` and `lockFixed.lockMutex` hold, including with a second process present.
+Each fix is named (`FIXES` holds issue numbers): `fixed` enables all of #639–#643, and `lockFixed` (in the lock proof model) #644.
+`fixed.allInvariants` and `lockFixed.lockMutex` hold, including with a second process present (sampled).
+One fix at a time (sampled, `fix<issue>` instances, one process per session unless the fix needs the second one):
+
+| Instance | Holds | Still violated |
+| --- | --- | --- |
+| `fix639` | `providerContextValid` | |
+| `fix640` | `compactionResolves` | `ackedPersisted` (#641) |
+| `fix641` | | `ackedPersisted` (#640) |
+| `fix640641` | `ackedPersisted`, `replayMatchesMemory`, `compactionResolves` | |
+| `fix642` (second process) | `compactionCutKeepsPairs`, both doctor checks | |
+| `fix643` (second process) | both doctor checks | |
+
+So #640 and #641 are both needed for an acknowledged message to be readable, and #642 alone already makes the doctor sound, because the interleaving #643 misreads cannot arise; #643 still matters for logs written before the fix or by other tools.
+
+## Proof models
+
+Measured with `SPEC_VERIFY_JOBS=1 JVM_ARGS=-Xmx3g` (Apalache 0.56.1).
+
+| Model | Obligation | Kind | Result |
+| --- | --- | --- | --- |
+| [`proofs/persistence`](proofs/persistence/model.qnt) | `fixed.persistInductive` (implies `ackedReadable`, `replayMatchesMemory`) | inductive | holds, 1–8 s |
+| | `fixed.allInvariants`, 8 steps | bounded-safe | holds, 2–3 s |
+| [`proofs/lock`](proofs/lock/model.qnt) | `lockFixed.lockInductive` (implies `lockMutex`) | inductive | holds, 3–5 s |
+
+`persistInductive` says: every readable id was allocated, every acknowledged entry is readable, and under a live writer there is no partial line, the writer holds every readable entry, every message up to the cursor is readable, and every message past it is still in memory.
+`lockInductive` says: with the kernel lock no process enters the reclaim states; a holder implies the lock is held by a live owner; the owner file names the holder.
+Both inductions fail (Apalache counterexample) when a conjunct is dropped or for the instances missing a fix (checked once by hand: `fix640`/`fix641` for persistence, `lockCurrent` for the lock), so they are not vacuous.
+The #644 race needs 12 steps; the inductive invariant covers any depth, so no 12-step bound is needed.
+`current` instances of both proof models reproduce their bugs as counterexamples (`violated` rows with witnesses).
+
+## Evidence per bug
+
+| Bug | Counterexample (row) | Witness (`witnesses.qnt`) | Proof model | Probe (confirmed) |
+| --- | --- | --- | --- | --- |
+| #639 | `currentSolo.providerContextValid`, `current.providerContextValid` | `w639CrashLeavesUnpairedCallTest` | (replay obligation) | `extensions/adapters/session-backends/jsonl/tests/issue_639_crash_leaves_unpaired_tool_call_test.fnl` |
+| #640 | `currentSolo.compactionResolves`, `fix641.ackedPersisted`; `proofs/persistence` `current.ackedReadable` | `w640TornTailSwallowsAppendTest`, `w640SurvivesFix641Test` | persistence (inductive for the fix) | `extensions/adapters/session-backends/jsonl/tests/issue_640_torn_tail_swallows_append_test.fnl` |
+| #641 | `currentSolo.ackedPersisted`, `currentSolo.replayMatchesMemory`, `fix640.ackedPersisted`; `proofs/persistence` `current.ackedReadable` | `w641CursorPassesFailedAppendTest`, `w641SurvivesFix640Test` | persistence (inductive for the fix) | `packages/fen/tests/issue_641_flush_cursor_skips_failed_append_test.fnl` |
+| #642 | `current.providerContextValid`, `current.replayMatchesMemory`, `current.compactionCutKeepsPairs` | `w642SendDuringInteractiveTurnTest` | — | `extensions/adapters/session-backends/jsonl/tests/issue_642_interactive_writer_ignores_lock_test.fnl` |
+| #643 | `current.doctorCleanMeansReplayable`, `current.doctorRepairReplayable` | `w643DoctorCleanOnInterleavedTest` | — | `extensions/adapters/session-backends/jsonl/tests/issue_643_doctor_pairs_by_id_not_order_test.fnl` |
+| #644 | `lockCurrent.lockMutex` | `w644DoubleReclaimTest` (here and in `proofs/lock`) | lock (inductive for the fix) | `extensions/adapters/session-backends/jsonl/tests/issue_644_double_stale_lock_reclaim_test.fnl` |
+
+Each probe is a `known-bug` test that passes while the bug reproduces against today's code:
+
+- #639: a log ending at a tool call goes through `load`, then a new user message, then the Anthropic `convert-messages`; the wire shape is `user:text assistant:tool_use user:text`.
+- #640: after a torn last line, `open-existing` plus `append "three"` returns an entry id, yet replay has 3 messages (`user,assistant,assistant`) and `load-strict` fails.
+- #641: `S.append` returns nil when its directory cannot be created, and the real `make-flush` with a backend whose first append fails gives `mem=3 disk=2`.
+- #642: while a sender holds `acquire-lock`, the real `session_lifecycle.start! {:continue? true}` opens a writable handle without calling `acquire-lock` (0 calls), and the two writers' appends interleave. The sender side is an `open-existing` in the same process, not a second OS process.
+- #643: on that interleaved transcript `doctor` reports 0 issues, and `--repair` keeps the split pair.
+- #644: lock dir with a dead owner; `os.remove` is wrapped so a second `acquire-lock` runs at the moment the first removes the owner file, and both get a release function. The two "processes" share one OS process (a real race cannot be run deterministically).
+
+Mutants (`mutants.tsv`, run by `check-spec`): removing each candidate fix from the integration model (#639 replay repair, #640 torn-tail termination, #641 cursor stop and the all-kept compaction check, #642 lock, #643 doctor) is caught by the named invariant; the #643 mutant runs on `fix643`, because in `fixed` the #642 lock already rules out the interleaving. Each proof model has its own mutants.
 
 ## What holds today
 

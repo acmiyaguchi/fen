@@ -1,0 +1,4 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+lockCurrent	lockMutex	violated	#644
+lockFixed	lockMutex	holds
+lockFixed	lockInductive	holds

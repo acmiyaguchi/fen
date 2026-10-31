@@ -1,0 +1,4 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    val remark = FIXES.contains("623") and ext and pHist < hist|    val remark = false|	fixed	cacheReuseOnExtension	the previous tail is not re-marked (#623 fix removed)
+model.qnt	s|    order' = if (FIXES.contains("622")) order else (order + 1) % 3,|    order' = (order + 1) % 3,|	fixed	prefixStableUnlessNamed	reload re-appends the owner's tools (#622 fix removed)
+model.qnt	s|    brokeNamed' = (brokeNamed or search),|    brokeNamed' = brokeNamed,|	fixed	prefixStableUnlessNamed	a tool_search activation is not counted as a named break
