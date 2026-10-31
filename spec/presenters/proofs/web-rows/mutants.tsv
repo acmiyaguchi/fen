@@ -1,0 +1,4 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    val drop = FIXES.contains("631") and open|    val drop = false|	fixed	webRowsSingleAttempt	retry keeps the superseded text (#631's fix removed)
+model.qnt	s|    phase == "idle", iter < MAX_STEPS, typed or lastOk,|    phase == "idle", iter < MAX_STEPS,|	current	webRowsSingleStep	a goal iteration may follow a failed step: the latent #630 join in web appears
+model.qnt	s|    reach' = if (typed) false else reach,|    reach' = reach,|	current	webRowsSingleStep	a typed prompt's :user row is not a barrier

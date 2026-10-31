@@ -1,0 +1,4 @@
+# main	invariants	mode	steps	seconds	why
+current	stepInv	inductive	1	300	today's web rows never mix two steps, at any depth (the latent #630 join needs a step with no :user row after a failure, which goal never starts)
+fixed	fixedInv	inductive	1	300	with #631's fix every web invariant holds at any depth
+fixed	allInvariants	bounded	10	300	the #631 counterexample is 6 steps (start, token, retry, token, token, endStop); 10 covers it and a second step

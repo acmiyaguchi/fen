@@ -1,0 +1,3 @@
+# main	invariants	mode	steps	seconds	why
+fixed	inductiveInv	inductive	1	300	holds initially and every step preserves it, so allInvariants (one of its conjuncts) holds at any depth
+fixed	allInvariants	bounded	12	300	both counterexamples on current are at most 7 steps (#629: start, token, retry, backoff, token, token, complete; #630: start, token, cancel, start, token); 12 covers them with margin

@@ -1,0 +1,5 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|        if (FIXES.contains("629") and base.open >= 0)|        if (false and base.open >= 0)|	fixed	noSupersededText	:provider-retry keeps the superseded text (#629's fix removed)
+model.qnt	s|        (if (FIXES.contains("630")) closeOpen(base) else base).pushRow("cancelled")|        base.pushRow("cancelled")|	fixed	rowsSingleTurn	:cancelled leaves the streaming row open (#630's fix removed on one path)
+model.qnt	s|        (if (FIXES.contains("630")) closeOpen(base) else base).pushRow("error")|        base.pushRow("error")|	fixed	noOpenRowWhenIdle	:error leaves the streaming row open (#630's fix removed on the other path)
+model.qnt	s|StreamEnd => { ...closeOpen(t), hosted|StreamEnd => { ...t, hosted|	fixed	noOpenRowWhenIdle	assistant-stream-end does not close the row

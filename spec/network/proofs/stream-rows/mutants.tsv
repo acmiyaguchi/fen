@@ -1,0 +1,4 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    val drop = FIXES.contains("629") and open|    val drop = false|	fixed	noSupersededText	retry keeps the superseded text (#629's fix removed)
+model.qnt	s|    val close = FIXES.contains("630")|    val close = false|	fixed	rowsSingleTurn	error/cancel leave the row open (#630's fix removed)
+model.qnt	s|    open' = false, rowTurn' = 0, rowLo' = 0,$|    open' = open, rowTurn' = rowTurn, rowLo' = rowLo,|	fixed	noOpenRowWhenIdle	assistant-stream-end does not close the row

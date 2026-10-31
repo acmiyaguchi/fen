@@ -1,0 +1,15 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	headlessExitMatchesStatus	holds
+current	headlessFinalTextMatches	holds
+current	headlessErrorDetailsMatch	holds
+current	sendStatusMatchesOutcome	holds
+current	headlessUsageIsTurnUsage	violated	#619
+current	lifecycleStatusMatchesOutcome	violated	#634
+current	goalExitMatches	violated	#634
+current	rpcExitMatchesStatus	violated	#632
+current	rpcFinalTextMatches	violated	#632
+current	goalFinalTextMatches	violated	#633
+fix634	lifecycleStatusMatchesOutcome	holds
+fix634	goalExitMatches	holds
+fix634	goalFinalTextMatches	violated	#633
+fixed	allInvariants	holds

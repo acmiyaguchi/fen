@@ -1,0 +1,4 @@
+# main	invariants	mode	steps	seconds	why
+fixed	allInvariants	bounded	0	300	every output is a function of the inputs init picks and step stutters, so depth 0 covers all 6 x 2 x 2 x 3 inputs: exhaustive
+current	headlessExitMatchesStatus headlessFinalTextMatches headlessErrorDetailsMatch sendStatusMatchesOutcome	bounded	0	300	the parts of today's design that are right, checked over every input (depth 0 is exhaustive, as above)
+fix634	lifecycleStatusMatchesOutcome goalExitMatches	bounded	0	300	#634's fix alone fixes the lifecycle status and the goal exit code, over every input

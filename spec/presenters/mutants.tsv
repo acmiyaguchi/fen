@@ -1,0 +1,6 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    else if (FIXES.contains("632") and sendFailed) 1|    else if (false and sendFailed) 1|	fixed	rpcExitMatchesStatus	rpc exits done after a failed turn (#632's exit fix removed)
+model.qnt	s|        { ...g0, status: "stopped", result: if (FIXES.contains("633")) NO_TEXT else goal.result }|        { ...g0, status: "stopped", result: goal.result }|	fixed	goalFinalTextMatches	a cancelled goal keeps the last iteration's text (#633's fix removed on one path)
+model.qnt	s|  val jsonUsage: int = if (FIXES.contains("619")) refUsage else sumUsage(hist)|  val jsonUsage: int = sumUsage(hist)|	fixed	headlessUsageIsTurnUsage	json usage over all messages (#619's fix removed)
+model.qnt	s|        val w = if (FIXES.contains("631") and d.webOpen >= 0)|        val w = if (false and d.webOpen >= 0)|	fixed	webRowsSingleAttempt	web keeps the superseded text on retry (#631's fix removed)
+model.qnt	s|    if (FIXES.contains("634")) refStatus|    if (false) refStatus|	fixed	goalExitMatches	the lifecycle guesses the status from the last message again (#634's fix removed)

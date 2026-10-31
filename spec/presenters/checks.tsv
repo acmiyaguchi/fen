@@ -16,3 +16,11 @@ current	stdioLinesSingleAttempt	holds
 current	stdioOkReplyShown	holds
 current	boundedCalls	holds
 fixed	allInvariants	holds
+fix619	headlessUsageIsTurnUsage	holds
+fix631	webRowsSingleAttempt	holds
+fix631	webOkReplyShown	holds
+fix632	rpcExitMatchesStatus	holds
+fix632	rpcFinalTextMatches	holds
+fix634	lifecycleStatusMatchesOutcome	holds
+fix634	goalExitMatches	holds
+fix634	goalFinalTextMatches	violated	#633

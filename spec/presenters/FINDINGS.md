@@ -11,6 +11,28 @@ Each presenter's actual fold is modelled next to it, and the invariants compare 
 
 Code: `extensions/adapters/presenters/{print,json,stdio,web,rpc,goal_headless}/init.fnl`, `extensions/adapters/presenters/web/ingest.fnl`, `packages/util/src/fen/util/{turn_result,headless_progress}.fnl`, `packages/fen/src/fen/{turn_lifecycle,interactive,session_control,session_cli,main}.fnl`, `extensions/behaviors/companions/goal/init.fnl` (`on-turn-complete`, `handle-success!`), `packages/core/src/fen/core/agent.fnl` (`step`, `step-loop`, `finish-stream-display`), `packages/core/src/fen/core/types.fnl` (`assistant-error`).
 
+## Input assumptions
+
+The environment actions are the user (a typed prompt starts step 1; goal starts step 2 only after an ok "continue" step, with no `:user` row), the provider (tokens, a transient retry, a natural stop, a provider error with or without `error-details`, tool use), the safety cap (`SAFETY = 2` provider calls per step), `:tool-choice :none` refusals, and a cancel at a yield.
+
+They can produce: a `--continue` replay of one earlier turn (`initWith(true)`), up to 2 steps, 2 calls per step, 2 attempts per call, retries before or after text, and a GOAL_STATUS marker `continue` or `done` on an ok step.
+
+They cannot produce: a typed prompt while a goal runs, steering or follow-up injection, compaction during the step, an ok step with no marker (the `outcome` proof model does cover that: it ends `blocked`), `:length` stops (treated as ok everywhere, see Open questions), SIGINT in headless modes, an rpc wire cancel or deadline (only the outcome of a cancel at a yield), or more than one text block per attempt.
+
+## Evidence
+
+| Claim | Kind | Where |
+| --- | --- | --- |
+| #619, #631, #632, #633, #634 in the model | counterexample | `current` rows; witnesses in `witnesses.qnt` and in `proofs/outcome`, `proofs/web-rows` |
+| the same bugs in the code | confirmed | probes (per bug, below) |
+| every consumer reports the step outcome under the fixes | bounded-safe at depth 0 over every input (exhaustive) | `proofs/outcome`: `fixed.allInvariants` |
+| json/print/`session send` exit codes, final text, and error details are right today | exhaustive (depth 0) | `proofs/outcome`: `current` obligation |
+| #634's fix alone fixes the lifecycle status and the goal exit | exhaustive (depth 0) | `proofs/outcome`: `fix634` obligation; `fix634.goalFinalTextMatches` stays violated (#633) |
+| web rows never mix two steps today (#630 latent in web) | inductive | `proofs/web-rows`: `current.stepInv` |
+| web rows satisfy every invariant under #631's fix | inductive | `proofs/web-rows`: `fixed.fixedInv` |
+| integration `fixed` satisfies every invariant | sampled | `fixed.allInvariants` |
+| the checks are not vacuous | mutants | `mutants.tsv` here and in both proof dirs |
+
 ## What holds
 
 - `headlessExitMatchesStatus`: `fen --print`, the JSON presenter, and `fen session send --json` exit non-zero iff the step did not succeed, on every modelled path: error after streaming, quota error, cancel, safety cap, and refused tool turn.
@@ -48,6 +70,9 @@ WEB-CANCEL-NEXT-NO-USER user=q | assistant-text=Partial ansFresh | cancelled=   
 STDIO>> ai> Hello wor\ninfo> provider retry 1/3: 500\nai> Hello world.\nai> Partial\nerr> boom\nai> Fresh\n
 ```
 
+Witnesses: `w631WebRetryJoinsAttemptsTest` (`witnesses.qnt`), `w631RetryJoinsAttemptsTest` (`proofs/web-rows`).
+Probe (reproduces): `extensions/adapters/presenters/web/tests/issue_631_retry_joins_attempt_rows_test.fnl`, the retry sequence through the real web ingest.
+
 ### #632: The rpc child exits `done` with code 0 and an `[error] …` final-text after a failed turn
 
 Counterexample (`rpcExitMatchesStatus`, `rpcFinalTextMatches`): `startStep → endError`.
@@ -69,6 +94,9 @@ mock ["working" {:error "boom"}]; prompt; finalize
 RPC-FINALIZE-ERR result.stop-reason= error  final-text= [error] boom  exit.status= done  code= 0
 ```
 
+Witnesses: `w632RpcErrorExitsDoneTest`, `w632RpcCapExitsDoneTest` (`witnesses.qnt`), `w632RpcQuotaExitsDoneTest`, `w632RpcCapToolTextTest` (`proofs/outcome`).
+Probe (reproduces): `extensions/adapters/presenters/rpc/tests/issue_632_failed_turn_exits_done_test.fnl`, the real rpc presenter, cooperative agent, and mock provider through a fake parent: after a quota error, `turn-complete` and `result` say `stop-reason error`, `final-text` starts with `[error] `, `result` has no `error-details`, `exit` is `done`, and `run` returns 0.
+
 ### #633: A goal that fails or is cancelled reports the previous iteration's text as its final text
 
 Counterexample (`goalFinalTextMatches`): `startStep → … → endStop → finishStep(continue) → startStep → cancel → finishStep`, and the same with `endError`.
@@ -85,6 +113,9 @@ GOAL-ERR    code= 1  goal.status= failure  final-text= Iter one text.\nGOAL_STAT
 iter2 {:status :cancelled}
 GOAL-CANCEL code= 2  goal.status= blocked  final-text= Iter one text.\nGOAL_STATUS: continue
 ```
+
+Witnesses: `w633CancelKeepsStaleResultTest`, `w633ErrorKeepsStaleResultWith634Test` (`witnesses.qnt`), `w633CancelKeepsPrevTextTest`, `w633ErrorKeepsPrevTextWith634Test` (`proofs/outcome`).
+Probe (reproduces, both paths): `extensions/adapters/presenters/goal_headless/tests/issue_633_failed_goal_reports_stale_text_test.fnl`, the real goal companion and `goal_headless.run` with scripted `:agent-turn-complete` events.
 
 ### #619: The JSON presenter's `usage` and `messages` include `--continue` history
 
@@ -103,6 +134,9 @@ Confirmed with a probe that ran the real JSON presenter and real agent with the 
 JSON-CONTINUE replayed= 2  code= 0  usage.total= 1515.0  this-turn=15  messages= 4  final-text= new
 JSON-ERR      code= 1  stop-reason= error  final-text= nil  error= [error] boom  usage.total= 1500.0
 ```
+
+Witnesses: `w619ContinueUsageIncludesReplayTest` (`witnesses.qnt`), `w619ReplayedUsageTest` (`proofs/outcome`).
+Probe (reproduces): `extensions/adapters/presenters/json/tests/issue_619_json_real_agent_counts_replay_test.fnl`, the real JSON presenter, agent, and mock provider, ok and error turns (the context domain's probe, `issue_619_json_usage_includes_replay_test.fnl`, stubs the agent).
 
 An end-to-end CLI run was not possible here: `--provider mock` is rejected because the out-of-tree extension cannot register a provider (the mock is "off by default").
 So the CLI half (`--continue` together with `--presenter json`) is confirmed by reading `main.fnl` and `session_lifecycle.fnl`.
@@ -124,7 +158,15 @@ This domain's goal probe fed that event to the real goal companion and `goal_hea
 GOAL-CAP code= 2  goal.status= blocked  reason= missing GOAL_STATUS marker  final-text= [error] tool-call loop exceeded safety cap
 ```
 
-## Candidate fix (modelled as `fixed`)
+Witnesses: `w634CapLifecycleOkTest`, `w634CapGoalBlockedTest` (`witnesses.qnt`), `w634CapGoalBlockedTest`, `w634RefusedGoalBlockedTest` (`proofs/outcome`).
+Probe (reproduces): `extensions/adapters/presenters/goal_headless/tests/issue_634_cap_goal_exits_blocked_test.fnl`: the real `turn_lifecycle.complete-event` over what the cap leaves (last message a tool result) says `:ok`, and the real goal companion and `goal_headless` then exit 2, `blocked`, "missing GOAL_STATUS marker", with the cap error as `final-text`. The cap itself is not run (1000 provider calls); agent-loop's #610 probe covers it.
+
+## Candidate fixes (named, `FIXES`)
+
+Each fix is guarded by its issue number; instances `fix619`, `fix631`, `fix632`, `fix634` enable one fix each, and their rows show that fix makes its own issue's invariants hold.
+#633's fix is not independent: on the cap path the wrong lifecycle status (#634) also puts the error text in `last-result`, so `goalFinalTextMatches` needs both; `fix634.goalFinalTextMatches` stays violated, which shows #633 is a separate bug.
+`"631"` also closes web's open row on `:error` and `:cancelled` (the web twin of network #630, latent here).
+
 
 - One step outcome, computed once: `turn_lifecycle` takes `{status, final-text, error-details}` from the step (agent-loop #609/#610 fix) instead of guessing from the last message.
   That fixes #634 and makes `lifecycleStatusMatchesOutcome` hold.
@@ -135,6 +177,25 @@ GOAL-CAP code= 2  goal.status= blocked  reason= missing GOAL_STATUS marker  fina
 - #631: on `:provider-retry`, drop the open row's text in web (`fixed` models this), or have the agent emit an explicit attempt-boundary event (network's fix).
 
 All invariants hold under `fixed` (`fixed.allInvariants`).
+
+## Proof models
+
+`proofs/outcome`: a common outcome alphabet (`ok`, `error`, `quota`, `cap`, `refused`, `cancelled`) and each consumer's output as a pure function of it plus the replay flag, the goal iteration, and the marker: json/print exit, final text, usage and details; `session send` status; rpc exit and final text; lifecycle status; goal status, exit, and final text.
+`init` picks the input, `step` stutters, so depth 0 is every input (72 of them) and the result is exhaustive, not sampled.
+It replaces re-running retries and tool loops per property; the integration model keeps those for conformance with the stream.
+
+`proofs/web-rows`: the web transcript as scalars (open row, whether `find-streaming-row` reaches it, the step/call/attempt of its first text, sticky ghost flags), with typed prompts (a `:user` barrier) and goal iterations (no row, only after an ok step).
+
+| Obligation | Result | Time |
+| --- | --- | --- |
+| `outcome` `fixed.allInvariants`, bounded 0 | bounded-safe (exhaustive) | 6 s |
+| `outcome` `current` exit/final/details/send status, bounded 0 | bounded-safe (exhaustive) | 3 s |
+| `outcome` `fix634` lifecycle and goal exit, bounded 0 | bounded-safe (exhaustive) | 2 s |
+| `web-rows` `current.stepInv`, inductive | inductive | 4 s |
+| `web-rows` `fixed.fixedInv`, inductive | inductive | 2 s |
+| `web-rows` `fixed.allInvariants`, bounded 10 (the #631 counterexample is 6 steps) | bounded-safe | 1 s |
+
+Negative controls (run once by hand): `outcome` `current.rpcExitMatchesStatus` at depth 0 and `web-rows` `current.fixedInv` inductive both give counterexamples.
 
 ## Open questions
 

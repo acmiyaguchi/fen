@@ -1,0 +1,9 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	noOpenRowWhenIdle	violated	#630
+current	rowsSingleTurn	violated	#630
+current	noSupersededText	violated	#629
+current	okReplyDisplayed	violated	#629
+current	noHostedWhenIdle	holds
+current	boundedAttempts	holds
+fixed	allInvariants	holds
+fixed	inductiveInv	holds

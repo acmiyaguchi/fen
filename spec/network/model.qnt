@@ -16,10 +16,17 @@
 //                       no stream-end)
 //
 // The TUI side is `ingest`, a pure (tui, event) -> tui step that mirrors
-// extensions/adapters/presenters/tui/ingest.fnl. FIXED selects a candidate
-// fix so the same invariants can be checked against both.
+// extensions/adapters/presenters/tui/ingest.fnl. FIXES names the candidate
+// fixes that are enabled, by issue number:
+//   "629"  :provider-retry drops the open row's superseded text
+//   "630"  :error and :cancelled close the open streaming row
+//
+// Input assumption (see FINDINGS): one text block per provider attempt, and
+// hosted-tool items come before it (a hosted item ends the current block in
+// the Responses reducer, so text after it would open a second content index,
+// which this model does not represent).
 module network {
-  const FIXED: bool
+  const FIXES: Set[str]
 
   pure val MAX_TURNS = 2
   pure val REPLY_LEN = 2
@@ -74,7 +81,7 @@ module network {
     | ProviderRetry =>
         // today: clear hosted tools (#574) and show retrying; streamed text kept
         val base = { ...t, hosted: false, retrying: true }
-        if (FIXED and base.open >= 0)
+        if (FIXES.contains("629") and base.open >= 0)
           { ...base,
             rows: base.rows.replaceAt(base.open, { ...base.rows[base.open], toks: [] }) }
         else base
@@ -82,10 +89,10 @@ module network {
     | StreamEnd => { ...closeOpen(t), hosted: false, retrying: false }
     | Error =>
         val base = { ...t, hosted: false, retrying: false }
-        (if (FIXED) closeOpen(base) else base).pushRow("error")
+        (if (FIXES.contains("630")) closeOpen(base) else base).pushRow("error")
     | Cancelled =>
         val base = { ...t, hosted: false, retrying: false }
-        (if (FIXED) closeOpen(base) else base).pushRow("cancelled")
+        (if (FIXES.contains("630")) closeOpen(base) else base).pushRow("cancelled")
   }
 
   pure def emitAll(t: Tui, evs: List[Event]): Tui =
@@ -121,7 +128,7 @@ module network {
   }
 
   action streamToken = all {
-    phase == "streaming", buf.length() < REPLY_LEN,
+    phase == "streaming", buf.length() < REPLY_LEN, not(hostedOpen),
     val tok = { turn: turn, attempt: attempt, idx: buf.length() }
     all {
       buf' = buf.append(tok), visible' = true,
@@ -133,7 +140,7 @@ module network {
   }
 
   action hosted(start: bool): bool = all {
-    phase == "streaming", hostedOpen != start,
+    phase == "streaming", hostedOpen != start, buf.length() == 0,
     hostedOpen' = start,
     tui' = tui.ingest(if (start) HostedStart else HostedEnd), emitted' = emitted.append(if (start) HostedStart else HostedEnd),
     phase' = phase, turn' = turn, attempt' = attempt, buf' = buf,
@@ -200,6 +207,19 @@ module network {
     cancel,
   }
 
+  // Conformance only (conform.sh): the same steps without cancel. Cancel is
+  // enabled in every busy state, so plain `step` traces rarely complete a
+  // turn; these traces replay completions and retried completions too.
+  action stepNoCancel = any {
+    startTurn,
+    streamToken,
+    hosted(true),
+    hosted(false),
+    nondet o = Set("complete", "transient", "permanent").oneOf()
+    attemptEnd(o),
+    backoffDone,
+  }
+
   // ---- properties ----
   pure def assistantRows(t: Tui): List[Row] =
     t.rows.select(r => r.kind == "assistant")
@@ -237,5 +257,7 @@ module network {
   }
 }
 
-module current { import network(FIXED = false).* }
-module fixed { import network(FIXED = true).* }
+module current { import network(FIXES = Set()).* }
+module fixed { import network(FIXES = Set("629", "630")).* }
+module fix629 { import network(FIXES = Set("629")).* }
+module fix630 { import network(FIXES = Set("630")).* }

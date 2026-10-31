@@ -25,9 +25,15 @@
 //                  + extensions/adapters/presenters/goal_headless/init.fnl
 //   web            extensions/adapters/presenters/web/ingest.fnl
 //   stdio          extensions/adapters/presenters/stdio/init.fnl render-event
-// FIXED selects the candidate fixes so the same invariants can be checked.
+// FIXES names the candidate fixes that are enabled, by issue number:
+//   "619"  json/print usage over this turn's messages (the replay suffix)
+//   "631"  web drops the open row's text on :provider-retry, and closes it
+//          on :error / :cancelled (network's #629/#630 fix, in web)
+//   "632"  rpc finish! exits failed, with no final-text, when the turn failed
+//   "633"  goal clears last-result on the :error / :cancelled branches
+//   "634"  turn_lifecycle reports the step's own outcome (agent-loop #609)
 module presenters {
-  const FIXED: bool
+  const FIXES: Set[str]
 
   pure val MAX_STEPS = 2      // goal iterations (goal --max-iterations 2)
   pure val SAFETY = 2         // provider calls per step before the cap
@@ -99,17 +105,17 @@ module presenters {
     | User => d.webPush("user").stdioPush("you")
     | Delta(tok) => d.webDelta(tok).stdioDelta(tok)
     | Retry =>
-        // web: generic row, open row kept (FIXED: superseded text dropped);
+        // web: generic row, open row kept ("631": superseded text dropped);
         // stdio: finish-stream! then "info> provider retry"
-        val w = if (FIXED and d.webOpen >= 0)
+        val w = if (FIXES.contains("631") and d.webOpen >= 0)
                   { ...d, web: d.web.replaceAt(d.webOpen, { ...d.web[d.webOpen], toks: [] }) }
                 else d
         w.webPush("retry").stdioPush("retry")
     | StreamEnd => d.webClose().stdioClose()
     | ErrorEv =>
-        // web leaves the open row streaming (FIXED closes it); stdio closes.
-        (if (FIXED) d.webClose() else d).webPush("error").stdioPush("err")
-    | CancelledEv => (if (FIXED) d.webClose() else d).webPush("cancelled").stdioPush("info")
+        // web leaves the open row streaming ("631" closes it); stdio closes.
+        (if (FIXES.contains("631")) d.webClose() else d).webPush("error").stdioPush("err")
+    | CancelledEv => (if (FIXES.contains("631")) d.webClose() else d).webPush("cancelled").stdioPush("info")
     | ToolRow => d.webPush("tool").stdioPush("tool")
   }
 
@@ -137,8 +143,8 @@ module presenters {
   var goal: Goal
   var lastAction: str
 
-  action init = {
-    nondet replayed = Bool.oneOf()
+  // `replayed`: --continue put an earlier turn in agent.messages.
+  action initWith(replayed: bool): bool = {
     val h0: List[Msg] =
       if (replayed)
         [ { role: "user", stop: "", toks: [], usage: 0, details: false },
@@ -152,6 +158,11 @@ module presenters {
       goal' = { status: "none", result: NO_TEXT, lastFinal: NO_TEXT, lastEnd: "", lastMarker: "" },
       lastAction' = "init",
     }
+  }
+
+  action init = {
+    nondet replayed = Bool.oneOf()
+    initWith(replayed)
   }
 
   // A typed prompt (step 1) or the next goal iteration (emit-user? false).
@@ -251,7 +262,7 @@ module presenters {
 
   // turn_lifecycle.complete-event: status from the last message (#609).
   val lifecycleStatus: str =
-    if (FIXED) refStatus
+    if (FIXES.contains("634")) refStatus
     else
       val last = hist[hist.length() - 1]
       if (last.stop == "aborted") "cancelled"
@@ -272,9 +283,9 @@ module presenters {
     val g0 = { ...goal, lastFinal: refFinal, lastEnd: stepEnd, lastMarker: mk }
     val g1 =
       if (ls == "cancelled")
-        { ...g0, status: "stopped", result: if (FIXED) NO_TEXT else goal.result }
+        { ...g0, status: "stopped", result: if (FIXES.contains("633")) NO_TEXT else goal.result }
       else if (ls == "error")
-        { ...g0, status: "error", result: if (FIXED) NO_TEXT else goal.result }
+        { ...g0, status: "error", result: if (FIXES.contains("633")) NO_TEXT else goal.result }
       else
         // handle-success!: last-result := ev.result, then the marker decides
         val g2 = { ...g0, result: stepResult }
@@ -311,7 +322,7 @@ module presenters {
   val jsonExit: int = if (jsonFailed) 1 else 0
   val jsonFinal: Text =
     if (jsonFailed) NO_TEXT else { has: true, toks: lastAssistant(hist).toks, blob: false }
-  val jsonUsage: int = if (FIXED) refUsage else sumUsage(hist)
+  val jsonUsage: int = if (FIXES.contains("619")) refUsage else sumUsage(hist)
   val jsonDetails: bool = jsonFailed and lastAssistant(hist).details
   // session send: turn_result over the turn's suffix.
   val sendFailed: bool = turnFailed(stepMsgs)
@@ -324,11 +335,11 @@ module presenters {
   // unless the turn threw; a wire cancel exits cancelled with no result.
   val rpcExit: int =
     if (stepEnd == "cancelled") 1
-    else if (FIXED and sendFailed) 1
+    else if (FIXES.contains("632") and sendFailed) 1
     else 0
   val rpcFinal: Text =
     val a = lastAssistant(stepMsgs)
-    if (stepEnd == "cancelled" or (FIXED and sendFailed)) NO_TEXT
+    if (stepEnd == "cancelled" or (FIXES.contains("632") and sendFailed)) NO_TEXT
     else if (a.stop == "error") { has: true, toks: [], blob: true }
     else { has: a.toks.length() > 0, toks: a.toks, blob: false }
 
@@ -410,5 +421,9 @@ module presenters {
   }
 }
 
-module current { import presenters(FIXED = false).* }
-module fixed { import presenters(FIXED = true).* }
+module current { import presenters(FIXES = Set()).* }
+module fixed { import presenters(FIXES = Set("619", "631", "632", "633", "634")).* }
+module fix619 { import presenters(FIXES = Set("619")).* }
+module fix631 { import presenters(FIXES = Set("631")).* }
+module fix632 { import presenters(FIXES = Set("632")).* }
+module fix634 { import presenters(FIXES = Set("634")).* }

@@ -6,3 +6,7 @@ current	okReplyDisplayed	violated	#629
 current	noHostedWhenIdle	holds
 current	boundedAttempts	holds
 fixed	allInvariants	holds
+fix629	noSupersededText	holds
+fix630	rowsSingleTurn	holds
+fix630	noOpenRowWhenIdle	holds
+fix630	okReplyDisplayed	violated	#629
