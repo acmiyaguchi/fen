@@ -1,0 +1,12 @@
+# main	invariant	expect (holds|violated)
+current	registryMatchesFreshStart	violated
+current	reloadVisitsEveryOwner	violated
+current	attemptedOwnerListed	violated
+current	reloadCommandAvailable	violated
+current	loadedStatusTruthful	violated
+current	noRegistrySwapDuringTurn	violated
+current	turnToolsLive	violated
+current	turnMessagesPersisted	violated
+current	registeredCallablesPresent	violated
+current	busDeliversOncePerLiveSubscriber	holds
+fixed	allInvariants	holds
