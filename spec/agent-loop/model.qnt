@@ -124,8 +124,8 @@ module agentloop {
 
   // Synthetic results for calls[from..]; the first one already emitted its
   // :tool-call event when `emittedFirst`.
-  pure def pairFrom(s: S, from: int, kind: str, emittedFirst: bool): S =
-    val ids = slice2(s.calls, from, s.calls.length())
+  pure def pairFrom(s: S, start: int, kind: str, emittedFirst: bool): S =
+    val ids = slice2(s.calls, start, s.calls.length())
     val evIds = if (emittedFirst and ids.length() > 0) ids.tail() else ids
     { ...s,
       history: ids.foldl(s.history, (h, id) => h.append(mkResult(id, kind))),

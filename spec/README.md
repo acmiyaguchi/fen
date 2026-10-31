@@ -50,7 +50,8 @@ A fix therefore changes both sides in one PR: e.g. the network streaming-row fix
 - A bug counts when the model finds it **and** it is confirmed against the real code (a throwaway Busted probe, a REPL run, or a line-by-line trace through the source).
   Model-only suspicions go under "Open questions" in `FINDINGS.md`.
 - Invariants are named for the property (`noOpenRowWhenIdle`), not the bug.
-- Quint 0.33 gotchas: parameterised actions need a return type (`action a(x: int): bool = ...`); strings do not concatenate; ITF trace keys are namespaced (`<main>::<module>::<var>`).
+- Models must run on the quint in `nix develop` (0.25.x today) as well as current releases: `from` is a keyword there, so don't use it as a field name.
+- Quint gotchas: parameterised actions need a return type (`action a(x: int): bool = ...`); strings do not concatenate; ITF trace keys are namespaced (`<main>::<module>::<var>`).
 - Shortest counterexample: rerun `quint run --main=M --invariant=I --max-steps=N --out-itf=t.json model.qnt` with increasing `N`.
 
 ## Domains

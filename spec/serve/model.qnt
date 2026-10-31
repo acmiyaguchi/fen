@@ -89,7 +89,7 @@ module serve {
     verSeen: int -> int,      // choice-list version shown per request
   }
 
-  type Steer = { seen: int, from: int }
+  type Steer = { seen: int, src: int }
   type CancelRec = { seen: int, hit: int }
   type SteerRec = { seen: int, into: int }
   type Applied = { aimed: int, target: int, inScope: bool, fresh: bool, verOk: bool }
@@ -201,7 +201,7 @@ module serve {
                "sendStaleStartsTurn")
     } else if (seen == s.turnNo or not(TARGETED))
       // on-submit sees busy? = true: queued as steering (untagged string)
-      commit({ ...s, queue: s.queue.append({ seen: seen, from: c }) }, "sendQueued")
+      commit({ ...s, queue: s.queue.append({ seen: seen, src: c }) }, "sendQueued")
     else
       commit(s, "sendRejectedNotCurrent")
   }
