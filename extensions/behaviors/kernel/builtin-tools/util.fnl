@@ -66,6 +66,25 @@
           (pipe:close)
           (= out "y")))))
 
+;; Search tools keep the head of their output; a larger head than any inline
+;; cap leaves truncate-head room to cut on line boundaries.
+(local PIPELINE-HEAD-BYTES (* 1024 1024))
+
+;; @doc fen.extensions.builtin_tools.util.run-pipeline
+;; kind: function
+;; signature: (run-pipeline cmd yield-fn?) -> string
+;; summary: Run a POSIX shell pipeline as a process job (own process group, cooperative reads) and return the head of its output; a cancel raised at a yield SIGKILLs the group instead of waiting for it.
+;; tags: tools shell process util
+(fn run-pipeline [cmd ?yield-fn]
+  ;; Resolved at call time so tests and hosts can swap fen.util.process.
+  (let [process (require :fen.util.process)
+        r (process.run-captured {: cmd
+                                 :keep :head
+                                 :max-bytes PIPELINE-HEAD-BYTES
+                                 :max-lines 0}
+                                ?yield-fn)]
+    (or r.output "")))
+
 {: agent-result
  : text-result
  : ok
@@ -73,4 +92,5 @@
  : shellquote
  : int-arg
  : result-text
- : dir-exists?}
+ : dir-exists?
+ : run-pipeline}

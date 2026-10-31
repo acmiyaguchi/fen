@@ -1,35 +1,12 @@
 // Deterministic witnesses for the file-commit proof model.
 module witnesses {
-  import fileCommit(FIXES = Set()) as C from "./model"
+  import fileCommit(FIXES = Set("654", "655", "656", "657")) as C from "./model"
   import fileCommit(FIXES = Set("654", "655", "656", "657")) as F from "./model"
 
-  // #654: the first chunk truncates the target in place.
-  run w654FirstChunkTearsTargetTest =
-    C::init.then(C::startWith(false)).then(C::chunk1)
-      .expect(not(C::noTornTarget) and C::result == "none")
 
-  // #655: a failed chunk is ignored; ok with a torn file.
-  run w655FailedWriteReportsOkTest =
-    C::init.then(C::startWith(true)).then(C::chunk1).then(C::chunk2)
-      .then(C::close).then(C::commit).then(C::ret)
-      .expect(not(C::okMeansWritten) and C::disk == "part")
 
-  // #656: the yield after the commit turns a completed write into
-  // "cancelled".
-  run w656CancelAfterCommitTest =
-    C::init.then(C::startWith(false)).then(C::chunk1).then(C::chunk2)
-      .then(C::close).then(C::commit).then(C::cancel)
-      .expect(not(C::cancelledMeansUnchanged) and C::disk == "new")
 
-  // #657: an outside write after the read is reverted.
-  run w657OutsideWriteRevertedTest =
-    C::init.then(C::startWith(false)).then(C::outsideWrite).then(C::chunk1)
-      .expect(not(C::outsideLossOnlyInWindow) and C::noLostFenUpdate)
 
-  // #657: so is a sibling fen process's commit.
-  run w657FenWriteRevertedTest =
-    C::init.then(C::startWith(false)).then(C::fenWrite).then(C::chunk1)
-      .expect(not(C::noLostFenUpdate))
 
   // #657 (residual in the target design): an outside write between the check
   // and the rename is lost, and the call reports ok.

@@ -80,5 +80,5 @@ module outputEnvelope {
     (ran and sizeOf(body) + TRAILER <= LIMIT) implies kept == body.append("T")
 }
 
-module current { import outputEnvelope(FIXES = Set()).* }
+module current { import outputEnvelope(FIXES = Set("652")).* }
 module fixed { import outputEnvelope(FIXES = Set("652")).* }

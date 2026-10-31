@@ -108,5 +108,5 @@ module multiFileCommit {
   }
 }
 
-module current { import multiFileCommit(FIXES = Set()).* }
+module current { import multiFileCommit(FIXES = Set("656")).* }
 module fixed { import multiFileCommit(FIXES = Set("656")).* }

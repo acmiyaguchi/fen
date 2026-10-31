@@ -1,7 +1,6 @@
 (local util (require :fen.extensions.builtin_tools.util))
 (local file-mutex (require :fen.util.file_mutex))
-
-(local WRITE-CHUNK-SIZE 16384)
+(local commit (require :fen.extensions.builtin_tools.commit))
 
 ;; @doc fen.extensions.builtin_tools.write.name
 ;; kind: data
@@ -42,53 +41,42 @@
 ;; @doc fen.extensions.builtin_tools.write.execute
 ;; kind: function
 ;; signature: (execute args ctx? yield-fn?) -> AgentToolResult
-;; summary: Write tool executor that creates missing parent directories, yields during large content writes, and reports byte counts.
+;; summary: Write tool executor that creates missing parent directories, stages content to a temp file (yielding between chunks), renames it over the target under the cross-process path lock, and reports byte counts or the write error.
 ;; tags: builtin tools write execution
 
 (fn maybe-yield [?yield-fn]
   (when ?yield-fn (?yield-fn)))
 
-(fn write-content [f content ?yield-fn]
-  (let [s (or content "")
-        total (length s)]
-    (if (= total 0)
-        (f:write "")
-        (do
-          (var i 1)
-          (while (<= i total)
-            (let [j (math.min total (+ i WRITE-CHUNK-SIZE -1))]
-              (f:write (string.sub s i j))
-              (set i (+ j 1))
-              (maybe-yield ?yield-fn)))))))
-
-(fn run-write-unlocked [path content ?yield-fn]
-  (maybe-yield ?yield-fn)
-  (let [parent (string.match path "^(.*)/[^/]+$")]
-    (when parent
-      (os.execute (.. "mkdir -p " (util.shellquote parent)))
-      (maybe-yield ?yield-fn)))
-  (let [(f open-err) (io.open path :w)]
-    (if (not f) (util.err open-err)
-        (let [(ok? err) (xpcall #(write-content f content ?yield-fn)
-                                debug.traceback)]
-          (f:close)
-          (if ok?
-              (do
-                (maybe-yield ?yield-fn)
-                (util.ok (.. "wrote " (tostring (length (or content "")))
-                             " bytes to " path)))
-              (error err))))))
+(fn run-write-locked [path content ?yield-fn]
+  ;; Stage to a temp beside the target (yields), then rename it over the
+  ;; target and return with no yield in between (#654, #655, #656).
+  (let [real (file-mutex.canonical-path path)
+        (ok? target-err) (commit.check-target real)]
+    (if (not ok?) (util.err target-err)
+        (let [(tmp stage-err) (commit.stage! real content ?yield-fn)]
+          (if (not tmp) (util.err stage-err)
+              (let [(committed? commit-err) (commit.commit! tmp real)]
+                (if committed?
+                    (util.ok (.. "wrote " (tostring (length (or content "")))
+                                 " bytes to " path))
+                    (util.err commit-err))))))))
 
 (fn run-write [{: path : content} _ctx ?yield-fn]
   (if (or (not path) (= path ""))
       (util.err "missing 'path'")
-      (file-mutex.with-file path ?yield-fn
-        #(run-write-unlocked path content ?yield-fn))))
+      (do
+        (maybe-yield ?yield-fn)
+        (let [parent (string.match path "^(.*)/[^/]+$")]
+          (when (and parent (not= parent ""))
+            (os.execute (.. "mkdir -p " (util.shellquote parent)))
+            (maybe-yield ?yield-fn)))
+        (file-mutex.with-files [path] ?yield-fn
+          #(run-write-locked path content ?yield-fn)))))
 
 {:name :write
  :label "Write"
  :snippet "Create or overwrite a file"
- :description "Write content to a file (overwrites). Creates the parent directory if missing."
+ :description "Write content to a file (overwrites). Creates the parent directory if missing. The file is replaced atomically: readers see the old or the new content, and a failed or cancelled write leaves the file unchanged."
  :parameters {:type :object
               :properties {:path {:type :string :description "File path"}
                            :content {:type :string

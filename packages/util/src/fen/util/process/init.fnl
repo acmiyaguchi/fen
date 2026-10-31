@@ -2,6 +2,8 @@
 ;; Subprocess surface routes through the injectable fen.util.process.backend seam (#472); clock lives in fen.util.clock.
 ;; Containment: children run in their own session and timeouts signal the process group; a descendant that calls
 ;; setsid() itself escapes and can outlive the advertised timeout (whole-tree kill needs the sandbox, #19).
+;; A timeout or cancel SIGKILLs the whole group exactly once, even after the leader is reaped (#651), and the
+;; job then waits a bounded time for the leader before it finishes anyway.
 
 (local backend (require :fen.util.process.backend))
 (local clock (require :fen.util.clock))
@@ -15,6 +17,11 @@
 (local DEFAULT-KILL-GRACE-MS 200)
 (local DEFAULT-POST-EXIT-DRAIN-MS 150)
 (local MAX-READS-BEFORE-YIELD 16)
+;; After SIGKILL, give up waiting for the leader (e.g. stuck in uninterruptible I/O) after this long.
+(local REAP-BOUND-MS 1000)
+;; A tail cut may land inside a UTF-8 character: drop its continuation bytes (#653).
+(local LEADING-CONTINUATION (.. "^[" (string.char 128) "-" (string.char 191)
+                                "]+"))
 
 (fn set-nonblock! [fd]
   (backend.set_nonblock fd))
@@ -106,10 +113,47 @@
         (f err) (io.open path :w)]
     (if f (values f path) (values nil nil err))))
 
+(fn utf8-safe-end [s]
+  "Drop a trailing UTF-8 sequence that a byte cut left incomplete."
+  (let [n (length s)]
+    (var i n)
+    (while (and (> i 0) (> i (- n 4))
+                (let [b (string.byte s i)] (and (>= b 128) (<= b 191))))
+      (set i (- i 1)))
+    (if (= i 0) s
+        (let [b (string.byte s i)
+              need (if (and (>= b 194) (<= b 223)) 2
+                       (and (>= b 224) (<= b 239)) 3
+                       (and (>= b 240) (<= b 244)) 4
+                       1)]
+          (if (> (+ i need -1) n) (string.sub s 1 (- i 1)) s)))))
+
+(fn trim-head [s max-bytes max-lines]
+  (var out (or s ""))
+  (when (and max-bytes (> max-bytes 0) (> (length out) max-bytes))
+    (set out (utf8-safe-end (string.sub out 1 max-bytes))))
+  (when (and max-lines (> max-lines 0))
+    (var newlines 0)
+    (var cut nil)
+    (var i 1)
+    (while (and (not cut) i)
+      (let [nl (string.find out "\n" i true)]
+        (if nl
+            (do
+              (set newlines (+ newlines 1))
+              (when (>= newlines max-lines) (set cut nl))
+              (set i (+ nl 1)))
+            (set i nil))))
+    (when (and cut (< cut (length out)))
+      (set out (string.sub out 1 (- cut 1)))))
+  out)
+
 (fn trim-tail [s max-bytes max-lines]
   (var out (or s ""))
   (when (and max-bytes (> max-bytes 0) (> (length out) max-bytes))
-    (set out (string.sub out (- max-bytes))))
+    (set out (pick-values 1
+                          (string.gsub (string.sub out (- max-bytes))
+                                       LEADING-CONTINUATION ""))))
   (when (and max-lines (> max-lines 0))
     (let [lines []]
       (each [line (string.gmatch (.. out "\n") "([^\n]*)\n")]
@@ -128,12 +172,16 @@
 (fn start-captured [opts]
   "Start a child described by :cmd or :argv. job:resume() performs one
    bounded drain/poll/state-machine tick without waiting for child progress
-   and returns done?, result. job:abort() is idempotent and signals the
-   child's process group to stop; keep resuming it to reap and finish
-   capture. Descendants that leave that group (for example by calling
+   and returns done?, result. job:abort() is idempotent and SIGKILLs the
+   child's process group; keep resuming it to reap and finish capture (a
+   timeout or cancel kills the group once more if needed, and the job
+   finishes within REAP-BOUND-MS of the kill even if the leader cannot be
+   reaped). :max-bytes/:max-lines keep the output's tail, starting on a UTF-8
+   boundary; :keep :head keeps its head instead. Descendants that leave that group (for example by calling
    setsid()) are not contained -- see the containment contract at the top of
    this module."
   (let [opts (or opts {})
+        keep-head? (= (?. opts :keep) :head)
         cmd (?. opts :cmd)
         argv (?. opts :argv)
         cwd (?. opts :cwd)
@@ -178,6 +226,7 @@
         (var cancelled? false)
         (var term-sent? false)
         (var kill-sent? false)
+        (var kill-sent-ms nil)
         (var kill-deadline-ms nil)
         (var post-exit-deadline nil)
         (var total-bytes 0)
@@ -185,6 +234,7 @@
         (var chunks 0)
         (var last-char nil)
         (var tail "")
+        (var head "")
         (var finished-result nil)
 
         (fn close-fd! []
@@ -206,9 +256,14 @@
               (and full-before-spill (not spill-disabled?)) (set full-before-spill
                                                                  (.. full-before-spill
                                                                      chunk)))
-          (set tail (.. tail chunk))
-          (when (> (length tail) tail-soft-cap)
-            (set tail (string.sub tail (- tail-soft-cap))))
+          (if keep-head?
+              (when (< (length head) max-bytes)
+                (set head
+                     (.. head (string.sub chunk 1 (- max-bytes (length head))))))
+              (do
+                (set tail (.. tail chunk))
+                (when (> (length tail) tail-soft-cap)
+                  (set tail (string.sub tail (- tail-soft-cap))))))
           (let [total-lines (count-lines-final total-bytes total-newlines
                                                last-char)]
             (when (and spill-requested? (not spill-open?) (not spill-disabled?)
@@ -258,9 +313,12 @@
                         (set exit-code value)))))))
 
         (fn send-kill! []
-          (when (and (not reaped?) (not kill-sent?))
+          ;; Exactly once, reaped or not (#651): the group id cannot be reused while any member lives.
+          ;; Once the leader is reaped its bare pid may name another process, so signal the group only.
+          (when (not kill-sent?)
             (set kill-sent? true)
-            (backend.kill_process_group pid backend.SIGKILL)))
+            (set kill-sent-ms (clock.monotonic-ms))
+            (backend.kill_process_group pid backend.SIGKILL reaped?)))
 
         (fn abort! []
           (when (not finished-result)
@@ -271,7 +329,9 @@
         (fn finish-output []
           (let [total-lines (count-lines-final total-bytes total-newlines
                                                last-char)
-                output (trim-tail tail max-bytes max-lines)
+                output (if keep-head?
+                           (trim-head head max-bytes max-lines)
+                           (trim-tail tail max-bytes max-lines))
                 output-lines (count-lines-final (length output)
                                                 (count-newlines output)
                                                 (and (> (length output) 0)
@@ -305,13 +365,17 @@
               (set term-sent? true)
               (set kill-deadline-ms (+ now kill-grace-ms))
               (backend.kill_process_group pid backend.SIGTERM))
-            (when (and term-sent? (not reaped?) (not kill-sent?)
-                       (>= now kill-deadline-ms))
+            (when (and term-sent? (not kill-sent?) (>= now kill-deadline-ms))
               (send-kill!))
             (when (and reaped? (not post-exit-deadline))
               (set post-exit-deadline (+ now post-exit-drain-ms)))
             (when (or (and reaped? eof?)
-                      (and post-exit-deadline (>= now post-exit-deadline)))
+                      (and post-exit-deadline (>= now post-exit-deadline))
+                      (and kill-sent? (not reaped?)
+                           (>= now (+ kill-sent-ms REAP-BOUND-MS))))
+              ;; An abnormal end kills what is left of the group before the pipe closes (#651).
+              (when (or timed-out? cancelled?)
+                (send-kill!))
               (drain!)
               (close-fd!)
               (close-spill!)
@@ -368,6 +432,6 @@
             (let [(tick-done?) (job:resume)]
               (set done? tick-done?))
             (when (not done?) (clock.sleep-ms DEFAULT-IDLE-MS)))
-          (error result-or-err)))))
+          (error result-or-err 0)))))
 
 {: read-pipe-coop : read-pipe-close : start-captured : run-captured : setenv!}

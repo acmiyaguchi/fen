@@ -74,5 +74,5 @@ module utf8Tail {
                                      else TAIL_BYTES) - 2
 }
 
-module current { import utf8Tail(FIXES = Set()).* }
+module current { import utf8Tail(FIXES = Set("653")).* }
 module fixed { import utf8Tail(FIXES = Set("653")).* }

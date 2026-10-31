@@ -158,5 +158,5 @@ module processGroup {
   }
 }
 
-module current { import processGroup(FIXES = Set()).* }
+module current { import processGroup(FIXES = Set("651")).* }
 module fixed { import processGroup(FIXES = Set("651")).* }

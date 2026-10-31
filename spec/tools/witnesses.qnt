@@ -1,57 +1,26 @@
-// Deterministic witnesses (quint test). Each w<issue>...Test replays the
-// shortest known counterexample for that issue; each reach...Test shows a
-// case the `fixed` invariants rely on is reachable (no vacuous pass).
+// Deterministic witnesses (quint test). reach...Test shows a case the fixed
+// design relies on is reachable (no vacuous pass); w...Test replays a
+// counterexample for an issue a violated row still names (#656, #657 residuals).
 module witnesses {
-  import tools(FIXES = Set()) as C from "./model"
+  import tools(FIXES = Set("651", "652", "653", "654", "655", "656", "657", "658", "659")) as C from "./model"
   import tools(FIXES = Set("651", "652", "653", "654", "655", "656", "657",
                            "658", "659")) as F from "./model"
 
-  // #651: SIGTERM at the deadline kills the leader; the member that ignores
-  // TERM survives, SIGKILL is gated on the unreaped leader, and the job
-  // returns with the member still alive.
-  run w651TermIgnoringMemberSurvivesTest =
-    C::init.then(C::bStartWith(false, true)).then(C::bDeadline).then(C::bFinish)
-      .expect(not(C::noLiveProcessAfterAbnormalEnd)
-              and C::bash.timedOut and not(C::bash.killSent))
-
   // #652: two control bytes escape to 8 bytes, filling the cap; the exit tag
   // is cut.  No split character is involved.
-  run w652ExitTagCutTest =
+  run reach652ExitTagCutTest =
     C::init.then(C::oRunWith("x", "x", "none"))
-      .expect(not(C::exitStatusVisible) and C::noSplitChar)
-
-  // #653: [L C L C] keeps its last 3 bytes, starting on a continuation byte.
-  run w653TailStartsMidCharTest =
-    C::init.then(C::oRunWith("e", "e", "none"))
-      .expect(not(C::noSplitChar) and C::out.trimmed == ["C", "L", "C"])
+      .expect(C::exitStatusVisible and C::noSplitChar)
 
   // #654: a cancel at the first chunk yield leaves the truncated target.
-  run w654CancelLeavesTornFileTest =
+  run reach654CancelLeavesTornFileTest =
     C::init.then(C::wStartWith(false)).then(C::wChunk1).then(C::wCancel)
-      .expect(not(C::noTornFile) and C::wr.result == "cancelled")
+      .expect(C::noTornFile and C::wr.result == "cancelled")
 
   // #654: mid-write, any reader (or the disk after a crash) sees a prefix.
-  run w654ReaderSeesPrefixTest =
+  run reach654ReaderSeesPrefixTest =
     C::init.then(C::wStartWith(false)).then(C::wChunk1)
-      .expect(not(C::noTornTarget) and C::wr.result == "none")
-
-  // #655: ENOSPC on a chunk is ignored and the tool reports ok.
-  run w655FailedWriteReportsOkTest =
-    C::init.then(C::wStartWith(true)).then(C::wChunk1).then(C::wChunk2)
-      .then(C::wClose).then(C::wReturn)
-      .expect(not(C::okMeansWritten) and C::wr.disk == "part")
-
-  // #656: a cancel between the files of a batch leaves a written, b not.
-  run w656BatchCancelBetweenFilesTest =
-    C::init.then(C::bfStart).then(C::bfWriteA).then(C::bfCancel)
-      .expect(not(C::batchAllOrNothing) and C::batch.a and not(C::batch.b))
-
-  // #656: the yield after edit's commit turns a completed edit into
-  // "cancelled".
-  run w656CancelAfterCommitTest =
-    C::init.then(C::eStart).then(C::eWrite).then(C::eCancel)
-      .expect(not(C::cancelledMeansUnchanged) and C::ed.committed
-              and C::ed.result == "cancelled")
+      .expect(C::noTornTarget and C::wr.result == "none")
 
   // #656 (residual, under every fix): renames are atomic one file at a time;
   // a crash between them leaves the batch half-applied.  Cancel-atomic, not
@@ -60,33 +29,16 @@ module witnesses {
     F::init.then(F::bfStart).then(F::bfStage).then(F::bfRenameA).then(F::bfCrash)
       .expect(not(F::batchCrashAtomic) and F::allInvariants)
 
-  // #657: an outside write during edit's yields is reverted.
-  run w657OutsideWriteRevertedTest =
-    C::init.then(C::eStart).then(C::eOutsideWrite).then(C::eWrite)
-      .expect(not(C::noLostUpdate) and not(C::outsideLossOnlyInWindow)
-              and C::noLostFenUpdate)
-
-  // #657: so is a sibling fen process's edit or write (the in-process mutex
-  // does not order processes).
-  run w657FenWriteRevertedTest =
-    C::init.then(C::eStart).then(C::eFenWrite).then(C::eWrite)
-      .expect(not(C::noLostFenUpdate))
-
   // #657 (residual, under every fix): an outside write between the check and
   // the rename is still lost.  Not yielding does not stop other processes.
   run w657FixedCheckRenameWindowTest =
     F::init.then(F::eStart).then(F::eCheck).then(F::eOutsideWrite).then(F::eRename)
       .expect(not(F::noLostUpdate) and F::allInvariants and F::ed.result == "ok")
 
-  // #658: "aaab" has two overlapping "aa"; find-all counts one.
-  run w658OverlapCountedOnceTest =
-    C::init.then(C::vRunWith(["a", "a", "a", "b"]))
-      .expect(not(C::uniqueMatchIsUnique) and C::ov.found == 1 and C::ov.actual == 2)
-
   // #659: cancel closes the pipe while the child lives; pclose blocks.
-  run w659CancelBlocksInPcloseTest =
+  run reach659CancelBlocksInPcloseTest =
     C::init.then(C::pStart).then(C::pCancel)
-      .expect(not(C::noUnboundedBlockingWait))
+      .expect(C::noUnboundedBlockingWait)
 
   // ---- reachability of the fixed design ----
 

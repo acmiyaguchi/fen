@@ -1,17 +1,17 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-current	noLiveProcessAfterAbnormalEnd	violated	#651
-current	noUnboundedBlockingWait	violated	#659
-current	noTornFile	violated	#654
-current	noTornTarget	violated	#654
-current	okMeansWritten	violated	#655
-current	cancelledMeansUnchanged	violated	#656
+current	noLiveProcessAfterAbnormalEnd	holds
+current	noUnboundedBlockingWait	holds
+current	noTornFile	holds
+current	noTornTarget	holds
+current	okMeansWritten	holds
+current	cancelledMeansUnchanged	holds
 current	noLostUpdate	violated	#657
-current	noLostFenUpdate	violated	#657
-current	outsideLossOnlyInWindow	violated	#657
-current	batchAllOrNothing	violated	#656
-current	exitStatusVisible	violated	#652
-current	noSplitChar	violated	#653
-current	uniqueMatchIsUnique	violated	#658
+current	noLostFenUpdate	holds
+current	outsideLossOnlyInWindow	holds
+current	batchAllOrNothing	holds
+current	exitStatusVisible	holds
+current	noSplitChar	holds
+current	uniqueMatchIsUnique	holds
 current	killOnlyOnAbnormalEnd	holds
 current	deniedUnreachable	holds
 current	hookVetoFinal	holds

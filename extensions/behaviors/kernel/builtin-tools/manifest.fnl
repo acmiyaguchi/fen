@@ -3,6 +3,7 @@
  :entry-module :fen.extensions.builtin_tools
  :reload-modules [:fen.extensions.builtin_tools.util
                   :fen.extensions.builtin_tools.truncate
+                  :fen.extensions.builtin_tools.commit
                   :fen.extensions.builtin_tools.bash
                   :fen.extensions.builtin_tools.read
                   :fen.extensions.builtin_tools.write

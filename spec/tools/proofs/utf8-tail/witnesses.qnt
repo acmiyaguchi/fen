@@ -1,17 +1,9 @@
 // Deterministic witnesses for the utf8-tail proof model.
 module witnesses {
-  import utf8Tail(FIXES = Set()) as C from "./model"
+  import utf8Tail(FIXES = Set("653")) as C from "./model"
   import utf8Tail(FIXES = Set("653")) as F from "./model"
 
-  // #653: [L C L C a] cut to its last 4 bytes starts on a continuation byte.
-  run w653TailStartsMidCharTest =
-    C::init.then(C::cutWith("e", "e", "a"))
-      .expect(not(C::noSplitChar) and C::trimmed == ["C", "L", "C", "a"])
 
-  // #653 with a 3-byte character: two orphaned continuation bytes.
-  run w653TwoOrphansTest =
-    C::init.then(C::cutWith("f", "a", "a"))
-      .expect(not(C::noSplitChar) and C::trimmed == ["C", "C", "a", "a"])
 
   run reachSkipOneTest =
     F::init.then(F::cutWith("e", "e", "a"))

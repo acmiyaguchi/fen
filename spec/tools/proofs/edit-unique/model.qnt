@@ -80,5 +80,5 @@ module editUnique {
   val countNeverOver = ran implies found <= actual
 }
 
-module current { import editUnique(FIXES = Set()).* }
+module current { import editUnique(FIXES = Set("658")).* }
 module fixed { import editUnique(FIXES = Set("658")).* }

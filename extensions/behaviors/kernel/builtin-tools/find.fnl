@@ -1,6 +1,5 @@
 (local util (require :fen.extensions.builtin_tools.util))
 (local truncate (require :fen.extensions.builtin_tools.truncate))
-(local process (require :fen.util.process))
 
 ;; @doc fen.extensions.builtin_tools.find.name
 ;; kind: data
@@ -41,11 +40,8 @@
 ;; @doc fen.extensions.builtin_tools.find.execute
 ;; kind: function
 ;; signature: (execute args ctx? yield-fn?) -> AgentToolResult
-;; summary: Find tool executor that shells out to POSIX find, limits result lines, and cooperatively drains output when a yield-fn is provided.
+;; summary: Find tool executor that runs POSIX find as a process job (cooperative reads; cancel SIGKILLs it) and limits result lines.
 ;; tags: builtin tools find execution
-
-(fn read-pipe [pipe ?yield-fn]
-  (process.read-pipe-close pipe ?yield-fn))
 
 (fn run-find [{: pattern : path : limit} _ctx ?yield-fn]
   (if (or (not pattern) (= pattern ""))
@@ -55,11 +51,9 @@
             cmd (.. "find " (util.shellquote target) " -name "
                     (util.shellquote pattern) " -print 2>&1 | head -n "
                     (tostring cap))
-            pipe (io.popen cmd :r)]
-        (if (not pipe) (util.err "io.popen failed")
-            (let [out (read-pipe pipe ?yield-fn)
-                  (capped _) (truncate.truncate-head out nil ?yield-fn)]
-              (util.ok capped))))))
+            out (util.run-pipeline cmd ?yield-fn)
+            (capped _) (truncate.truncate-head out nil ?yield-fn)]
+        (util.ok capped))))
 
 {:name :find
  :label "Find"

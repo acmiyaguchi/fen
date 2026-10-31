@@ -1,6 +1,6 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-current	batchAllOrNothing	violated	#656
-current	cancelledMeansUnchanged	violated	#656
+current	batchAllOrNothing	holds
+current	cancelledMeansUnchanged	holds
 current	okMeansAll	holds
 current	batchCrashAtomic	violated	#656
 fixed	batchAllOrNothing	holds

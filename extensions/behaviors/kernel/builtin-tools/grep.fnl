@@ -1,6 +1,5 @@
 (local util (require :fen.extensions.builtin_tools.util))
 (local truncate (require :fen.extensions.builtin_tools.truncate))
-(local process (require :fen.util.process))
 
 ;; @doc fen.extensions.builtin_tools.grep.name
 ;; kind: data
@@ -41,11 +40,8 @@
 ;; @doc fen.extensions.builtin_tools.grep.execute
 ;; kind: function
 ;; signature: (execute args ctx? yield-fn?) -> AgentToolResult
-;; summary: Grep tool executor that builds a POSIX grep pipeline, enforces an output limit, and cooperatively drains matches when a yield-fn is provided.
+;; summary: Grep tool executor that runs a POSIX grep pipeline as a process job (cooperative reads; cancel SIGKILLs it) and enforces an output limit.
 ;; tags: builtin tools grep execution
-
-(fn read-pipe [pipe ?yield-fn]
-  (process.read-pipe-close pipe ?yield-fn))
 
 (fn run-grep [{: pattern
                : path
@@ -71,11 +67,9 @@
         (let [cmd (.. "grep " (table.concat opts " ") " -- "
                       (util.shellquote pattern) " " (util.shellquote target)
                       " 2>&1 | head -n " (tostring cap))
-              pipe (io.popen cmd :r)]
-          (if (not pipe) (util.err "io.popen failed")
-              (let [out (read-pipe pipe ?yield-fn)
-                    (capped _) (truncate.truncate-head out nil ?yield-fn)]
-                (util.ok capped)))))))
+              out (util.run-pipeline cmd ?yield-fn)
+              (capped _) (truncate.truncate-head out nil ?yield-fn)]
+          (util.ok capped)))))
 
 {:name :grep
  :label "Grep"

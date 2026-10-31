@@ -16,16 +16,14 @@
   (let [old-process (. package.loaded :fen.util.process)
         old-mod (. package.loaded mod-name)
         stub-called? {:value false}
-        stub {:read-pipe-coop (fn [pipe yield-fn]
-                                (set stub-called?.value true)
-                                (when yield-fn (yield-fn))
-                                (or (pipe:read :*a) ""))
-              :read-pipe-close (fn [pipe yield-fn]
-                                 (set stub-called?.value true)
-                                 (when yield-fn (yield-fn))
-                                 (let [out (or (pipe:read :*a) "")]
-                                   (pipe:close)
-                                   out))}]
+        stub {:run-captured (fn [opts yield-fn]
+                              (set stub-called?.value true)
+                              (assert (= opts.keep :head))
+                              (when yield-fn (yield-fn))
+                              (let [pipe (assert (io.popen opts.cmd :r))
+                                    out (or (pipe:read :*a) "")]
+                                (pipe:close)
+                                {:output out :exit-code 0}))}]
     (tset package.loaded :fen.util.process stub)
     (tset package.loaded mod-name nil)
     (let [(ok? result) (xpcall #(f (require mod-name)
@@ -52,7 +50,7 @@
                 (fn []
                   (let [r (execute registry :ls {})]
                     (assert.is_false r.is-error?))))
-            (it "uses cooperative pipe drain when a yield-fn is provided"
+            (it "runs through the process job and yields when a yield-fn is provided"
                 (fn []
                   (with-tmpdir [dir]
                     (h.write-file (.. dir "/alpha") "")

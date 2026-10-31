@@ -1,5 +1,6 @@
 (local util (require :fen.extensions.builtin_tools.util))
 (local file-mutex (require :fen.util.file_mutex))
+(local commit (require :fen.extensions.builtin_tools.commit))
 (local text (require :fen.util.text))
 
 (local LINES-BEFORE-YIELD 512)
@@ -52,9 +53,9 @@
   (when ?yield-fn (?yield-fn)))
 
 (fn find-all [s sub ?yield-fn]
-  "All 1-based start indices where literal sub occurs in s."
-  (let [out []
-        sub-len (length sub)]
+  "All 1-based start indices where literal sub occurs in s, overlapping
+   occurrences included (#658): \"}\\n}\" occurs twice in \"}\\n}\\n}\"."
+  (let [out []]
     (var i 1)
     (var done? false)
     (while (not done?)
@@ -62,7 +63,7 @@
         (if pos
             (do
               (table.insert out pos)
-              (set i (+ pos sub-len))
+              (set i (+ pos 1))
               (when (and ?yield-fn (= (% (length out) LINES-BEFORE-YIELD) 0))
                 (?yield-fn)))
             (set done? true))))
@@ -171,84 +172,135 @@
                              :content content
                              :matches matches} nil))))))))
 
-(fn write-edit-file [validated ?yield-fn]
-  (maybe-yield ?yield-fn)
-  (let [result (apply-edits validated.content validated.matches)
-        (wf werr) (io.open validated.path :w)]
-    (if (not wf)
-        (values nil werr)
-        (do
-          (wf:write result)
-          (wf:close)
-          (maybe-yield ?yield-fn)
-          (values true nil)))))
+(fn commit-staged! [staged]
+  "Re-check every target against its snapshot, then rename every temp over
+   its target. No yield from here to the caller's return, so a cancel cannot
+   land between files or after the commit (#656). Returns summaries or nil,
+   error; on error nothing was renamed unless a rename itself failed."
+  (var changed nil)
+  (each [_ st (ipairs staged)]
+    (when (and (not changed) (commit.changed? st.real st.content))
+      (set changed st)))
+  (if changed
+      (do
+        (commit.discard! (icollect [_ st (ipairs staged)] st.tmp))
+        (values nil
+                (.. changed.path
+                    ": file changed since it was read; re-read it and retry")))
+      (let [applied []]
+        (var rename-err nil)
+        (each [i st (ipairs staged)]
+          (if rename-err
+              (commit.discard! [st.tmp])
+              (let [(ok? err) (commit.commit! st.tmp st.real)]
+                (if ok?
+                    (table.insert applied st)
+                    (set rename-err
+                         (.. err (if (> i 1)
+                                     (.. "; already applied: "
+                                         (table.concat (icollect [_ a (ipairs applied)]
+                                                         a.path)
+                                                       ", "))
+                                     "")))))))
+        (if rename-err
+            (values nil rename-err)
+            (icollect [_ st (ipairs staged)]
+              (.. "applied " (tostring (length st.edits)) " edit(s) to "
+                  st.path))))))
 
-(fn run-edit-one-unlocked [path edits ?yield-fn]
-  (let [(validated verr) (validate-edit-file path edits ?yield-fn)]
-    (if verr
-        (util.err verr)
-        (let [(_ werr) (write-edit-file validated ?yield-fn)]
-          (if werr
-              (util.err werr)
-              (util.ok (.. "applied " (tostring (length edits)) " edit(s) to "
-                           path)))))))
+(fn stage-all! [validated ?yield-fn]
+  "Stage every validated file's result to a temp beside it (yields allowed:
+   targets are untouched). A failure or a raise removes every temp."
+  (let [staged []
+        (ok? err) (pcall (fn []
+                           (var stage-err nil)
+                           (each [_ v (ipairs validated)]
+                             (when (not stage-err)
+                               (let [real (file-mutex.canonical-path v.path)
+                                     (target-ok? target-err) (commit.check-target real)
+                                     (tmp terr) (if target-ok?
+                                                    (commit.stage! real
+                                                                   (apply-edits v.content
+                                                                                v.matches)
+                                                                   ?yield-fn)
+                                                    (values nil target-err))]
+                                 (if tmp
+                                     (table.insert staged
+                                                   {:path v.path
+                                                    : real
+                                                    : tmp
+                                                    :content v.content
+                                                    :edits v.edits})
+                                     (set stage-err terr)))))
+                           stage-err))]
+    (if (not ok?)
+        (do
+          (commit.discard! (icollect [_ st (ipairs staged)] st.tmp))
+          (error err 0))
+        err
+        (do
+          (commit.discard! (icollect [_ st (ipairs staged)] st.tmp))
+          (values nil err))
+        staged)))
+
+(fn edit-files-locked [entries ?yield-fn]
+  "Validate every entry against a fresh read, stage all results, then commit
+   them together. Runs under with-files for every path."
+  (let [validated []]
+    (var error-msg nil)
+    (each [i f (ipairs entries)]
+      (when (not error-msg)
+        (let [(v verr) (validate-edit-file f.path f.edits ?yield-fn)]
+          (if verr
+              (set error-msg (if f.label?
+                                 (.. (or f.path (.. "file " (tostring i))) ": "
+                                     verr)
+                                 verr))
+              (table.insert validated v)))))
+    (if error-msg
+        (util.err error-msg)
+        (let [(staged stage-err) (stage-all! validated ?yield-fn)]
+          (if (not staged)
+              (util.err stage-err)
+              (let [(summaries commit-err) (commit-staged! staged)]
+                (if summaries
+                    (util.ok (table.concat summaries "\n"))
+                    (util.err commit-err))))))))
 
 (fn run-edit-one [{: path : edits} ?yield-fn]
   (if (or (not path) (= path ""))
       (util.err "missing 'path'")
-      (file-mutex.with-file path ?yield-fn
-        #(run-edit-one-unlocked path edits ?yield-fn))))
+      (file-mutex.with-files [path]
+        ?yield-fn
+        #(edit-files-locked [{: path : edits}] ?yield-fn))))
 
 (fn run-edit-batch [files ?yield-fn]
   (if (or (not files) (= (length files) 0))
       (util.err "missing 'files'")
-      ;; Preflight every file before changing any of them. Each file is then
-      ;; re-read and re-validated while holding its own lock before writing.
-      (let [validated []
+      (let [entries []
             seen {}]
         (var error-msg nil)
         (each [i f (ipairs files)]
           (when (not error-msg)
             (let [path (?. f :path)
                   key (and path (not= path "") (file-mutex.canonical-path path))]
-              (if (and key (. seen key))
+              (if (not key)
+                  (set error-msg (.. "file " (tostring i) ": missing 'path'"))
+                  (. seen key)
                   (set error-msg
                        (.. path
                            ": duplicate path in files batch; combine edits for the same file in one entry"))
                   (do
-                    (when key (tset seen key true))
-                    (let [(v verr) (validate-edit-file path (?. f :edits)
-                                                       ?yield-fn)]
-                      (if verr
-                          (set error-msg
-                               (.. (or path (.. "file " (tostring i))) ": "
-                                   verr))
-                          (table.insert validated v)))))))
-          (maybe-yield ?yield-fn))
+                    (tset seen key true)
+                    (table.insert entries
+                                  {: path :edits (?. f :edits) :label? true}))))))
         (if error-msg
             (util.err error-msg)
-            (let [summaries []]
-              (var write-err nil)
-              (each [_ v (ipairs validated)]
-                (when (not write-err)
-                  ;; Hold only this path's lock, from the fresh read through
-                  ;; validation and write; never hold multiple batch locks.
-                  (file-mutex.with-file v.path
-                    ?yield-fn
-                    #(let [(locked-v verr) (validate-edit-file v.path v.edits
-                                                               ?yield-fn)]
-                       (if verr
-                           (set write-err (.. v.path ": " verr))
-                           (let [(_ werr) (write-edit-file locked-v ?yield-fn)]
-                             (if werr
-                                 (set write-err (.. v.path ": " werr))
-                                 (table.insert summaries
-                                               (.. "applied "
-                                                   (tostring (length v.edits))
-                                                   " edit(s) to " v.path)))))))))
-              (if write-err
-                  (util.err write-err)
-                  (util.ok (table.concat summaries "\n"))))))))
+            ;; Hold every path's lock from the first read to the return: all
+            ;; files are validated and staged, then renamed with no yield.
+            (file-mutex.with-files (icollect [_ e (ipairs entries)] e.path)
+              ?yield-fn
+              #(edit-files-locked entries ?yield-fn))))))
 
 (fn run-edit [args _ctx ?yield-fn]
   (let [has-single? (or (and args.path (not= args.path ""))
@@ -263,7 +315,7 @@
 {:name :edit
  :label "Edit"
  :snippet "Make exact-text replacements in one or more files"
- :description "Make exact-text replacements. Batch all known non-overlapping edits into one call: use one `edits` array for multiple changes in the same file, and use `files` for changes across multiple files. Do not emit separate edit calls for independent changes unless a later edit depends on seeing an earlier result. Single-file shape: {path, edits}. Batch shape: {files:[{path, edits}, ...]}, e.g. {files:[{path:\"a.fnl\", edits:[...]}, {path:\"b.fnl\", edits:[...]}]}. Each old_string must match uniquely in the original; multiple disjoint edits per file are applied to the original snapshot, not sequentially. Batch validation is all-or-nothing: if any file fails validation, no file is mutated. After validation succeeds, files are written sequentially; a rare write failure can leave earlier files already written."
+ :description "Make exact-text replacements. Batch all known non-overlapping edits into one call: use one `edits` array for multiple changes in the same file, and use `files` for changes across multiple files. Do not emit separate edit calls for independent changes unless a later edit depends on seeing an earlier result. Single-file shape: {path, edits}. Batch shape: {files:[{path, edits}, ...]}, e.g. {files:[{path:\"a.fnl\", edits:[...]}, {path:\"b.fnl\", edits:[...]}]}. Each old_string must match uniquely in the original; multiple disjoint edits per file are applied to the original snapshot, not sequentially. Batch validation is all-or-nothing: if any file fails validation, no file is mutated. Every file is staged first and then replaced together, so a cancelled or failed edit leaves every file unchanged (a crash mid-commit can still leave a batch partly applied). If a file changed since it was read, the edit fails; re-read it and retry."
  :parameters {:type :object
               :properties {:path {:type :string
                                   :description "File path for single-file edits; mutually exclusive with files"}

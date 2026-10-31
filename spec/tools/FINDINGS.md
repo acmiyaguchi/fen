@@ -81,6 +81,8 @@ Evidence: sampled in the integration model, and bounded-safe over every input in
 
 ### #651: A timed-out bash call leaves a live process in its own process group
 
+**Fixed in #605: `process.run` signals the whole process group once on timeout or cancel, then reaps with a bounded wait (`fen_process.c` gained the group signal; `util/process/init.fnl`).**
+
 Evidence: counterexample (`w651TermIgnoringMemberSurvivesTest`; in `proofs/process-group` also `w651CancelAfterReapMissesMemberTest`); confirmed by `issue_651_group_member_survives_test.fnl` (both the timeout and the cancel-after-reap paths, with a 0.2 s process timeout).
 
 Counterexample (`noLiveProcessAfterAbnormalEnd`): `bStart(memberIgnoresTerm) → bDeadline → bFinish`.
@@ -101,6 +103,8 @@ K1 timed-out?= true signal= 15 ms= 1174 member pid= 245166 alive after return= t
 
 ### #652: The provider-side cap drops bash's exit/timeout tag
 
+**Fixed in #605: bash keeps the exit/timeout tag when the cap cuts the output (`bash.fnl`, `util.fnl`).**
+
 Evidence: counterexample (`w652ExitTagCutTest`, here and in `proofs/output-envelope`); confirmed by `issue_652_exit_tag_cut_test.fnl`.
 
 Counterexample (`exitStatusVisible`): `oRun` with raw `[L C x a]`.
@@ -120,6 +124,8 @@ K2 details.exit-code= 7 is-error?= true content bytes= 65661 has [exit 7]= false
 
 ### #653: Bash's tail cap starts the output inside a UTF-8 character
 
+**Fixed in #605: the tail cap skips every leading continuation byte (`util/process`, truncation).**
+
 Evidence: counterexample (`w653TailStartsMidCharTest`; `proofs/utf8-tail` adds `w653TwoOrphansTest` for 3-byte characters); confirmed by `issue_653_tail_splits_char_test.fnl`.
 
 Counterexample (`noSplitChar`): raw `[L C L C]` trims to `[C L C]`.
@@ -132,6 +138,8 @@ K3 head of body= \xA9éééé sanitized note= true
 ```
 
 ### #654: Cancelling `write` mid-file leaves a torn file, and the original is lost
+
+**Fixed in #605: `write` stages into a temp file in the same directory and renames (`commit.fnl`, `write.fnl`).**
 
 Evidence: counterexample (`w654CancelLeavesTornFileTest`, `w654ReaderSeesPrefixTest`; `proofs/file-commit` `w654FirstChunkTearsTargetTest`); confirmed by `issue_654_cancel_tears_write_test.fnl`.
 
@@ -146,6 +154,8 @@ K4 ok?= false err= …file_mutex… file bytes= 32768 original kept= false
 
 ### #655: `write` (and `edit`) report success when the write fails
 
+**Fixed in #605: the write is checked and a failure is reported as an error, and the temp file is removed.**
+
 Evidence: counterexample (`w655FailedWriteReportsOkTest`, here and in `proofs/file-commit`); confirmed by `issue_655_write_error_reported_ok_test.fnl` (Linux `/dev/full`). The `edit` half is confirmed by line trace only: `edit` must read the file first, and `/dev/full` reads as endless zeros.
 
 Counterexample (`okMeansWritten`): `wStart(ioErr) → wChunk1 → wChunk2 → wClose → wReturn`.
@@ -159,6 +169,8 @@ K5 is-error?= false text= wrote 100 bytes to /dev/full
 ```
 
 ### #656: A cancelled multi-file `edit` applies some files and reports "cancelled"
+
+**Fixed in #605: `edit` stages every file and renames with no yield between files or between commit and return (cancel-atomic, not crash-atomic: `batchCrashAtomic` stays violated).**
 
 Evidence: counterexample (`w656BatchCancelBetweenFilesTest`, `w656CancelAfterCommitTest`; `proofs/multi-file-commit` `w656CancelBetweenFilesTest`; `proofs/file-commit` `w656CancelAfterCommitTest`); confirmed by `issue_656_cancel_after_commit_test.fnl` (both the batch and the single-file case).
 
@@ -179,6 +191,8 @@ K6 ok?= false err= CANCEL a= bar  b= foo
 
 ### #657: `edit` overwrites changes made while it yielded (lost update)
 
+**Fixed in #605 (mitigated): a per-path `file_mutex` across fen processes plus a re-check before the rename; `noLostUpdate` stays violated for an outside writer in the check/rename window.**
+
 Evidence: counterexample (`w657OutsideWriteRevertedTest`, `w657FenWriteRevertedTest`, here and in `proofs/file-commit`); confirmed by `issue_657_edit_lost_update_test.fnl`, which writes the file from the edit's first yield. A second OS process racing the edit is the real-world shape; the yield-time write is the closest deterministic stand-in and exercises the same code path (no re-read before the write).
 
 Counterexamples: `noLostUpdate` and `outsideLossOnlyInWindow` by `eStart → eOutsideWrite → eWrite`, and `noLostFenUpdate` by `eStart → eFenWrite → eWrite`.
@@ -196,6 +210,8 @@ K7 is-error?= false text= applied 1 edit(s) to …/f final= "x = 10\ny = 2\n"
 
 ### #658: `edit` accepts an `old_string` that occurs twice when the occurrences overlap
 
+**Fixed in #605: `edit` counts overlapping matches (`edit.fnl`).**
+
 Evidence: counterexample (`w658OverlapCountedOnceTest`; `proofs/edit-unique` adds `w658OverlapLongerPatternTest`); confirmed by `issue_658_overlapping_match_test.fnl`.
 
 Counterexample (`uniqueMatchIsUnique`): content `aaab`, `old_string` `aa`. `find-all` finds 1 hit, but there are 2.
@@ -210,6 +226,8 @@ K8 is-error?= false text= applied 1 edit(s) to …/f final= "X\n}\n"
 ```
 
 ### #659: A cancelled `grep`/`find`/`ls` freezes the whole process until the child exits
+
+**Fixed in #605: cancelling `grep`/`find`/`ls` kills the child and does not block on `pclose` (`util/process`, `grep.fnl`, `find.fnl`, `ls.fnl`).**
 
 Evidence: counterexample (`w659CancelBlocksInPcloseTest`, here and in `proofs/popen-cancel`); confirmed by `issue_659_cancel_blocks_in_pclose_test.fnl` (a FIFO writer after 300 ms; the probe kills the writer afterwards).
 

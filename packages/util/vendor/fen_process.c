@@ -480,6 +480,10 @@ static int l_wait_pid(lua_State *L) {
 static int l_kill_process_group(lua_State *L) {
   pid_t pid = (pid_t)luaL_checkinteger(L, 1);
   int sig = (int)luaL_checkinteger(L, 2);
+  /* group_only: the leader may already be reaped, so its pid may now name an
+     unrelated process; signal the group (whose id cannot be reused while any
+     member lives) and never fall back to the bare pid. */
+  int group_only = lua_toboolean(L, 3);
   if (pid <= 0) {
     lua_pushnil(L);
     lua_pushliteral(L, "invalid pid");
@@ -491,6 +495,15 @@ static int l_kill_process_group(lua_State *L) {
     return 1;
   }
   int group_errno = errno;
+  if (group_only) {
+    if (group_errno == ESRCH) {
+      lua_pushboolean(L, 1);
+      return 1;
+    }
+    errno = group_errno;
+    push_errno(L);
+    return 3;
+  }
   if (kill(pid, sig) == 0) {
     lua_pushboolean(L, 1);
     return 1;

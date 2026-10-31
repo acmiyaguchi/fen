@@ -229,5 +229,5 @@ module fileCommit {
   }
 }
 
-module current { import fileCommit(FIXES = Set()).* }
+module current { import fileCommit(FIXES = Set("654", "655", "656", "657")).* }
 module fixed { import fileCommit(FIXES = Set("654", "655", "656", "657")).* }

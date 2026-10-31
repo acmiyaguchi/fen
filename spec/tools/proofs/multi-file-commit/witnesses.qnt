@@ -1,12 +1,8 @@
 // Deterministic witnesses for the multi-file-commit proof model.
 module witnesses {
-  import multiFileCommit(FIXES = Set()) as C from "./model"
+  import multiFileCommit(FIXES = Set("656")) as C from "./model"
   import multiFileCommit(FIXES = Set("656")) as F from "./model"
 
-  // #656: a cancel between the files leaves a written and reports cancelled.
-  run w656CancelBetweenFilesTest =
-    C::init.then(C::start).then(C::writeA).then(C::cancel)
-      .expect(not(C::batchAllOrNothing) and not(C::cancelledMeansUnchanged))
 
   // #656 (residual under the fix): a crash between the renames.
   run w656FixedCrashBetweenRenamesTest =

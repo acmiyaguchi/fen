@@ -1,4 +1,9 @@
 (local util (require :fen.extensions.builtin_tools.util))
+(local text (require :fen.util.text))
+
+;; A cut that lands inside a UTF-8 character drops its continuation bytes.
+(local LEADING-CONTINUATION (.. "^[" (string.char 128) "-" (string.char 191)
+                                "]+"))
 
 ;; @doc fen.extensions.builtin_tools.bash.name
 ;; kind: data
@@ -85,12 +90,37 @@
       (.. "[signal " (tostring r.signal) "]")
       "[exit unknown — process killed or subprocess error]"))
 
+(fn tail-within [s budget]
+  "Keep at most budget bytes of s's tail, starting on a UTF-8 boundary."
+  (if (<= (length s) budget) s (<= budget 0) ""
+      (pick-values 1 (string.gsub (string.sub s (- budget))
+                                  LEADING-CONTINUATION ""))))
+
 (fn result-text [r timeout-seconds]
-  (let [body (or r.output "")
-        shown (if r.truncated?
-                  (.. (truncation-tag r) "\n" body)
-                  body)]
-    (.. shown "\n" (exit-tag r timeout-seconds))))
+  "Sanitize the body here and budget it in sanitized bytes so the whole text
+   fits the provider-side cap (FEN_TOOL_RESULT_MAX_BYTES): scrub-result then
+   has nothing to cut, and the exit/timeout trailer stays last (#652)."
+  (let [limit (text.default-tool-result-max-bytes)
+        trailer (exit-tag r timeout-seconds)
+        cleaned (text.sanitize (or r.output ""))
+        escaped (+ cleaned.unsafe-count cleaned.invalid-count)
+        note (when (> escaped 0)
+               (.. "[fen: tool output sanitized: " escaped
+                   " unsafe bytes escaped]"))
+        full-body cleaned.text
+        ;; Tag length never grows as the body shrinks, so size it on the full body.
+        tag-for (fn [body]
+                  (truncation-tag {:stats r.stats
+                                   :output body
+                                   :full-output-path r.full-output-path}))
+        overhead (+ (length trailer) 1 (if note (+ (length note) 1) 0))
+        fits? (and (not r.truncated?)
+                   (<= (+ (length full-body) overhead) limit))
+        body (if fits? full-body
+                 (tail-within full-body
+                              (- limit overhead (length (tag-for full-body)) 1)))
+        shown (if fits? body (.. (tag-for body) "\n" body))]
+    (.. shown "\n" (if note (.. note "\n") "") trailer)))
 
 (fn process-details [r]
   {:exit-code r.exit-code :signal r.signal :timed-out? (or r.timed-out? false)})

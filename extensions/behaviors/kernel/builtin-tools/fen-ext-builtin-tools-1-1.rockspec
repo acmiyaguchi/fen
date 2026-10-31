@@ -34,6 +34,7 @@ set -eu
    install = {
       lua = {
          ["fen.extensions.builtin_tools.bash"] = ".lrbuild/extensions/builtin_tools/bash.lua",
+         ["fen.extensions.builtin_tools.commit"] = ".lrbuild/extensions/builtin_tools/commit.lua",
          ["fen.extensions.builtin_tools.edit"] = ".lrbuild/extensions/builtin_tools/edit.lua",
          ["fen.extensions.builtin_tools.find"] = ".lrbuild/extensions/builtin_tools/find.lua",
          ["fen.extensions.builtin_tools.grep"] = ".lrbuild/extensions/builtin_tools/grep.lua",

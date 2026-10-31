@@ -86,5 +86,5 @@ module popenCancel {
   }
 }
 
-module current { import popenCancel(FIXES = Set()).* }
+module current { import popenCancel(FIXES = Set("659")).* }
 module fixed { import popenCancel(FIXES = Set("659")).* }
