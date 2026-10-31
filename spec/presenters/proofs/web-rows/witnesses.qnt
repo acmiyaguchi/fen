@@ -1,11 +1,11 @@
 module witnesses {
-  import webrows(FIXES = Set()) as C from "./model"
+  import webrows(FIXES = Set("631")) as C from "./model"
   import webrows(FIXES = Set("631")) as F from "./model"
 
-  run w631RetryJoinsAttemptsTest =
+  run reach631RetryDropsAttemptTest =
     C::init.then(C::startStep(true)).then(C::streamToken).then(C::retry)
       .then(C::streamToken).then(C::streamToken).then(C::endStop)
-      .expect(not(C::webRowsSingleAttempt) and not(C::webOkReplyShown) and C::webRowsSingleStep)
+      .expect(C::webRowsSingleAttempt and C::webOkReplyShown and C::webRowsSingleStep)
 
   // latent #630 in web: an error leaves the row reachable, but the typed
   // next step's :user row stops the join

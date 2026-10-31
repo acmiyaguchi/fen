@@ -103,6 +103,18 @@
                       :stop-reason :error
                       : error-message}))
 
+(local OUTCOME-STATUSES {:ok true :error true :cancelled true})
+
+;; @doc fen.core.types.outcome
+;; kind: function
+;; signature: (outcome status text ?error) -> Outcome
+;; summary: Build a step Outcome {:status :text :error}: how one agent.step ended, decided once at its close-turn boundary. status is :ok, :error, or :cancelled; text is what step returned; error is the one-line reason on :error.
+;; tags: types agent loop outcome
+(fn outcome [status text ?error]
+  (when (not (. OUTCOME-STATUSES status))
+    (error (.. "types.outcome: unknown status " (tostring status))))
+  {: status : text :error ?error})
+
 ;; @doc fen.core.types.INCOMPLETE-STREAM-MSG
 ;; kind: data
 ;; signature: string
@@ -152,6 +164,7 @@
  : assistant-message
  : tool-result-message
  : assistant-error
+ : outcome
  : INCOMPLETE-STREAM-MSG
  : assistant-text
  : assistant-tool-calls

@@ -421,7 +421,10 @@ module presenters {
   }
 }
 
-module current { import presenters(FIXES = Set()).* }
+// Today's code carries #631 (web drops a retried attempt), #633 (a failed goal
+// iteration has no final text) and #634 (the lifecycle reports the step's own
+// Outcome); #619 and #632 are still open.
+module current { import presenters(FIXES = Set("631", "633", "634")).* }
 module fixed { import presenters(FIXES = Set("619", "631", "632", "633", "634")).* }
 module fix619 { import presenters(FIXES = Set("619")).* }
 module fix631 { import presenters(FIXES = Set("631")).* }

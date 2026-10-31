@@ -127,6 +127,7 @@
   (set state.iteration-count 0)
   (set state.max-iterations DEFAULT_MAX_ITERATIONS)
   (set state.last-result nil)
+  (set state.final-text nil)
   (set state.last-error nil)
   (set state.last-reason nil)
   (set state.last-marker nil)
@@ -404,6 +405,7 @@
           (set state.max-iterations opts.max-iterations)
           (set state.iteration-count 1)
           (set state.last-result nil)
+          (set state.final-text nil)
           (set state.last-error nil)
           (set state.last-reason nil)
           (set state.last-marker nil)
@@ -618,6 +620,7 @@
   (let [result (or ev.result "")
         marker (marker-status result)]
     (set state.last-result result)
+    (set state.final-text result)
     (set state.last-marker marker)
     (if state.compaction-required?
         (do
@@ -643,6 +646,10 @@
 
 (fn on-turn-complete [api ev]
   (when (and (active-running?) (matching-agent? ev) (matching-turn? ev))
+    ;; A failed or cancelled iteration has no final text (#633). last-result
+    ;; keeps the last good iteration's text for `/goal resume`'s prompt.
+    (when (not= ev.status :ok)
+      (set state.final-text nil))
     (if (= ev.status :cancelled)
         (finish-with! api :stopped "turn cancelled")
         (= ev.status :error)

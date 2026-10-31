@@ -4,7 +4,8 @@
 // the step's result and reported status. Every step is checked against the
 // abstract close-turn spec (spec/core/turn/abstract.qnt) through a ghost copy
 // of the previous abstract state, so Apalache can prove refinement for the
-// fixed design (verify.tsv) and find the #606-#610 counterexamples in today's.
+// loop (verify.tsv). Before the close-turn fix (#668) the loop failed it in
+// five ways, #606-#610; the mutants in mutants.tsv bring those failures back.
 //
 // Mirrors agent.fnl step / step-loop / run-tool-calls like the integration
 // model (spec/agent-loop/model.qnt), but folds serial and parallel tool runs
@@ -179,5 +180,6 @@ module loopProof {
   val inheritsTurnInvariants = absInv(absOf(l))
 }
 
-module current { import loopProof(FIXES = Set()).* }
+// Today's loop: #606-#610 are fixed in the code (the close-turn boundary, #668).
+module current { import loopProof(FIXES = Set("606", "607", "608", "609", "610")).* }
 module fixed { import loopProof(FIXES = Set("606", "607", "608", "609", "610")).* }

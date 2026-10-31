@@ -1,6 +1,6 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-current	webRowsSingleAttempt	violated	#631
-current	webOkReplyShown	violated	#631
+current	webRowsSingleAttempt	holds
+current	webOkReplyShown	holds
 current	webRowsSingleStep	holds
 current	stepInv	holds
 fixed	allInvariants	holds

@@ -1,10 +1,10 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-current	providerValidRequests	violated	#606,#607
-current	historyValidWhenIdle	violated	#606,#607
-current	requestsEndOnUserSide	violated	#608
-current	refusalCountsSinceInput	violated	#608
-current	errorSignalled	violated	#610
-current	statusMatchesResult	violated	#609
+current	providerValidRequests	holds
+current	historyValidWhenIdle	holds
+current	requestsEndOnUserSide	holds
+current	refusalCountsSinceInput	holds
+current	errorSignalled	holds
+current	statusMatchesResult	holds
 current	abortedOncePerCancel	holds
 current	eventsMatchHistory	holds
 current	noneNeverExecutes	holds
@@ -12,14 +12,14 @@ current	queuedLinesDeliveredOnce	holds
 current	boundedIterations	holds
 wellFormed	providerValidRequests	holds
 wellFormed	historyValidWhenIdle	holds
-wellFormed	requestsEndOnUserSide	violated	#608
-wellFormed	errorSignalled	violated	#610
-wellFormed	statusMatchesResult	violated	#609
-lengthOnly	historyValidWhenIdle	violated	#606
-badArgsOnly	historyValidWhenIdle	violated	#607
+wellFormed	requestsEndOnUserSide	holds
+wellFormed	errorSignalled	holds
+wellFormed	statusMatchesResult	holds
+lengthOnly	historyValidWhenIdle	holds
+badArgsOnly	historyValidWhenIdle	holds
 fixed	allInvariants	holds
-currentRefines	refinesTurn	violated	#606,#607,#608,#609,#610
-currentRefines	inheritsTurnInvariants	violated	#606,#607
+currentRefines	refinesTurn	holds
+currentRefines	inheritsTurnInvariants	holds
 fixedRefines	refinesTurn	holds
 fixedRefines	inheritsTurnInvariants	holds
 fix606	historyValidWhenIdle	holds

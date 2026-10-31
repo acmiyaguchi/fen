@@ -92,10 +92,10 @@
         json-path (or (?. ctx :state :opts :json-output-file)
                       (os.getenv :FEN_JSON_OUTPUT_PATH))
         wrote? (if (and json-path (not= json-path ""))
-                   (write-json-outcome! json-path goal-state.last-result value
+                   (write-json-outcome! json-path goal-state.final-text value
                                         (?. ctx :state :agent :messages))
                    (do
-                     (write-plain-outcome! goal-state.last-result value)
+                     (write-plain-outcome! goal-state.final-text value)
                      true))]
     (if (and ok? wrote?)
         (or code-or-error 1)

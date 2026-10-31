@@ -1,56 +1,53 @@
-// Deterministic witnesses (quint test). Each w<issue>...Test replays the
-// shortest known counterexample for that issue against `current`; each
-// reach...Test shows a `fixed` behaviour the invariants rely on is reachable.
+// Deterministic witnesses (quint test). Today's loop (`current`) carries the
+// #606-#610 fixes, so each reach<issue>...Test replays the trace that once
+// broke the invariant and expects it to hold now; the other reach...Tests show
+// the behaviours the invariants rely on are reachable.
 module witnesses {
-  import agentloop(FIXES = Set(),
-    OUTCOMES = Set("text", "tool1", "tool2", "error", "lengthCall", "badArgs")) as C from "./model"
   import agentloop(FIXES = Set("606", "607", "608", "609", "610"),
     OUTCOMES = Set("text", "tool1", "tool2", "error", "lengthCall", "badArgs")) as F from "./model"
-  import currentRefines as CR from "./model"
   import fixedRefines as FR from "./model"
 
   // #606: a :length reply carrying a tool call takes the natural-stop path,
   // leaving the call unanswered in history.
-  run w606LengthCallUnpairedTest =
-    C::init.then(C::startStep(false)).then(C::loopTop)
-      .then(C::provider("lengthCall", false, false)).then(C::afterLlm)
-      .expect(not(C::historyValidWhenIdle))
+  run reach606LengthCallPairedTest =
+    F::init.then(F::startStep(false)).then(F::loopTop)
+      .then(F::provider("lengthCall", false, false)).then(F::afterLlm)
+      .expect(F::s.pc == "tools" and F::historyValidWhenIdle)
 
   // #607: malformed edit arguments crash the step after the assistant is
   // appended; nothing pairs the call.
-  run w607BadArgsCrashUnpairedTest =
-    C::init.then(C::startStep(false)).then(C::loopTop)
-      .then(C::provider("badArgs", false, false)).then(C::afterLlm)
-      .expect(C::s.result == "crash" and not(C::historyValidWhenIdle))
+  run reach607BadArgsCrashPairedTest =
+    F::init.then(F::startStep(false)).then(F::loopTop)
+      .then(F::provider("badArgs", false, false)).then(F::afterLlm)
+      .expect(F::s.result == "crash" and F::historyValidWhenIdle)
 
-  // #608: an empty queued follow-up makes the loop continue, so the next
-  // request ends on the assistant's own reply.
-  run w608EmptyFollowUpContinuesTest =
-    C::init.then(C::startStep(false)).then(C::enqueue(false, true)).then(C::loopTop)
-      .then(C::provider("text", false, false)).then(C::afterLlm)
-      .then(C::loopTop).then(C::provider("text", false, false))
-      .expect(not(C::requestsEndOnUserSide))
+  // #608: an empty queued follow-up appends nothing, so the step ends instead
+  // of asking again on the assistant's own reply.
+  run reach608EmptyFollowUpEndsStepTest =
+    F::init.then(F::startStep(false)).then(F::enqueue(false, true)).then(F::loopTop)
+      .then(F::provider("text", false, false)).then(F::afterLlm)
+      .expect(F::s.pc == "idle" and F::s.result == "ok" and F::requestsEndOnUserSide)
 
   // #609: two refused tool turns end the step with an error, but the
   // lifecycle status, inferred from the last message, is ok.
-  run w609RefusedTwiceReportsOkTest =
-    C::init.then(C::startStep(true)).then(C::loopTop)
-      .then(C::provider("tool1", false, false)).then(C::afterLlm)
-      .then(C::loopTop).then(C::provider("tool1", false, false)).then(C::afterLlm)
-      .expect(C::s.result == "error" and not(C::statusMatchesResult))
+  run reach609RefusedTwiceReportsErrorTest =
+    F::init.then(F::startStep(true)).then(F::loopTop)
+      .then(F::provider("tool1", false, false)).then(F::afterLlm)
+      .then(F::loopTop).then(F::provider("tool1", false, false)).then(F::afterLlm)
+      .expect(F::s.result == "error" and F::statusMatchesResult)
 
 
   // #610: the safety cap ends the step with an error but emits no :error.
-  run w610SafetyCapSilentTest =
-    C::init.then(C::startStep(false))
-      .then(C::loopTop).then(C::provider("tool1", false, false)).then(C::afterLlm)
-      .then(C::toolStart).then(C::toolExec(true)).then(C::toolNext)
-      .then(C::loopTop).then(C::provider("tool1", false, false)).then(C::afterLlm)
-      .then(C::toolStart).then(C::toolExec(true)).then(C::toolNext)
-      .then(C::loopTop).then(C::provider("tool1", false, false)).then(C::afterLlm)
-      .then(C::toolStart).then(C::toolExec(true)).then(C::toolNext)
-      .then(C::loopTop)
-      .expect(C::s.result == "error" and not(C::errorSignalled))
+  run reach610SafetyCapAnnouncedTest =
+    F::init.then(F::startStep(false))
+      .then(F::loopTop).then(F::provider("tool1", false, false)).then(F::afterLlm)
+      .then(F::toolStart).then(F::toolExec(true)).then(F::toolNext)
+      .then(F::loopTop).then(F::provider("tool1", false, false)).then(F::afterLlm)
+      .then(F::toolStart).then(F::toolExec(true)).then(F::toolNext)
+      .then(F::loopTop).then(F::provider("tool1", false, false)).then(F::afterLlm)
+      .then(F::toolStart).then(F::toolExec(true)).then(F::toolNext)
+      .then(F::loopTop)
+      .expect(F::s.result == "error" and F::errorSignalled)
 
   // ---- reachability of the fixed design ----
 
@@ -83,42 +80,41 @@ module witnesses {
   // step of the abstract close-turn spec ----
 
   // #606: the turn closes with a call still open.
-  run w606RefinementTest =
-    CR::init.then(CR::mStartStep(false)).then(CR::mLoopTop)
-      .then(CR::mProvider("lengthCall")).then(CR::mAfterLlm)
-      .expect(not(CR::refinesTurn) and not(CR::inheritsTurnInvariants))
+  run reach606RefinementTest =
+    FR::init.then(FR::mStartStep(false)).then(FR::mLoopTop)
+      .then(FR::mProvider("lengthCall")).then(FR::mAfterLlm)
+      .expect(FR::refinesTurn and FR::inheritsTurnInvariants)
 
   // #607: a crash closes the turn with a call still open.
-  run w607RefinementTest =
-    CR::init.then(CR::mStartStep(false)).then(CR::mLoopTop)
-      .then(CR::mProvider("badArgs")).then(CR::mAfterLlm)
-      .expect(not(CR::refinesTurn))
+  run reach607RefinementTest =
+    FR::init.then(FR::mStartStep(false)).then(FR::mLoopTop)
+      .then(FR::mProvider("badArgs")).then(FR::mAfterLlm)
+      .expect(FR::refinesTurn)
 
-  // #608: the model is asked for a reply it is not owed.
-  run w608RefinementTest =
-    CR::init.then(CR::mStartStep(false)).then(CR::mEnqueue(false, true)).then(CR::mLoopTop)
-      .then(CR::mProvider("text")).then(CR::mAfterLlm)
-      .then(CR::mLoopTop).then(CR::mProvider("text"))
-      .expect(not(CR::refinesTurn))
+  // #608: the model is not asked for a reply it is not owed.
+  run reach608RefinementTest =
+    FR::init.then(FR::mStartStep(false)).then(FR::mEnqueue(false, true)).then(FR::mLoopTop)
+      .then(FR::mProvider("text")).then(FR::mAfterLlm)
+      .expect(FR::refinesTurn and FR::stepResult == "ok")
 
   // #609: a refused turn closes "ok" while the model is still owed a reply.
-  run w609RefinementTest =
-    CR::init.then(CR::mStartStep(true)).then(CR::mLoopTop)
-      .then(CR::mProvider("tool1")).then(CR::mAfterLlm)
-      .then(CR::mLoopTop).then(CR::mProvider("tool1")).then(CR::mAfterLlm)
-      .expect(not(CR::refinesTurn))
+  run reach609RefinementTest =
+    FR::init.then(FR::mStartStep(true)).then(FR::mLoopTop)
+      .then(FR::mProvider("tool1")).then(FR::mAfterLlm)
+      .then(FR::mLoopTop).then(FR::mProvider("tool1")).then(FR::mAfterLlm)
+      .expect(FR::refinesTurn)
 
   // #610: the safety cap closes "ok" after tool results.
-  run w610RefinementTest =
-    CR::init.then(CR::mStartStep(false))
-      .then(CR::mLoopTop).then(CR::mProvider("tool1")).then(CR::mAfterLlm)
-      .then(CR::mToolStart).then(CR::mToolExec).then(CR::mToolNext)
-      .then(CR::mLoopTop).then(CR::mProvider("tool1")).then(CR::mAfterLlm)
-      .then(CR::mToolStart).then(CR::mToolExec).then(CR::mToolNext)
-      .then(CR::mLoopTop).then(CR::mProvider("tool1")).then(CR::mAfterLlm)
-      .then(CR::mToolStart).then(CR::mToolExec).then(CR::mToolNext)
-      .then(CR::mLoopTop)
-      .expect(not(CR::refinesTurn))
+  run reach610RefinementTest =
+    FR::init.then(FR::mStartStep(false))
+      .then(FR::mLoopTop).then(FR::mProvider("tool1")).then(FR::mAfterLlm)
+      .then(FR::mToolStart).then(FR::mToolExec).then(FR::mToolNext)
+      .then(FR::mLoopTop).then(FR::mProvider("tool1")).then(FR::mAfterLlm)
+      .then(FR::mToolStart).then(FR::mToolExec).then(FR::mToolNext)
+      .then(FR::mLoopTop).then(FR::mProvider("tool1")).then(FR::mAfterLlm)
+      .then(FR::mToolStart).then(FR::mToolExec).then(FR::mToolNext)
+      .then(FR::mLoopTop)
+      .expect(FR::refinesTurn)
 
   // The fixed loop refines the spec through a tool round, a cancel, a crash.
   run reachRefinesToolRoundTest =
@@ -139,18 +135,19 @@ module witnesses {
       .then(FR::mProvider("badArgs")).then(FR::mAfterLlm)
       .expect(FR::refinesTurn and FR::stepResult == "crash")
 
-  // #606 again: the next request carries the unanswered call.
-  run w606NextRequestInvalidTest =
-    C::init.then(C::startStep(false)).then(C::loopTop)
-      .then(C::provider("lengthCall", false, false)).then(C::afterLlm)
-      .then(C::startStep(false)).then(C::loopTop).then(C::provider("text", false, false))
-      .expect(not(C::providerValidRequests))
+  // #606 again: the :length reply's call is answered before the next request.
+  run reach606NextRequestValidTest =
+    F::init.then(F::startStep(false)).then(F::loopTop)
+      .then(F::provider("lengthCall", false, false)).then(F::afterLlm)
+      .then(F::toolStart).then(F::toolExec(true)).then(F::toolNext)
+      .then(F::loopTop).then(F::provider("text", false, false))
+      .expect(F::providerValidRequests)
 
   // #608 again: an empty follow-up resets the refusal allowance.
-  run w608EmptyLineResetsRefusalsTest =
-    C::init.then(C::startStep(true)).then(C::loopTop)
-      .then(C::provider("tool1", false, false)).then(C::afterLlm)
-      .then(C::loopTop).then(C::provider("text", false, false))
-      .then(C::enqueue(false, true)).then(C::afterLlm)
-      .expect(not(C::refusalCountsSinceInput))
+  run reach608EmptyLineKeepsRefusalsTest =
+    F::init.then(F::startStep(true)).then(F::loopTop)
+      .then(F::provider("tool1", false, false)).then(F::afterLlm)
+      .then(F::loopTop).then(F::provider("text", false, false))
+      .then(F::enqueue(false, true)).then(F::afterLlm)
+      .expect(F::refusalCountsSinceInput)
 }

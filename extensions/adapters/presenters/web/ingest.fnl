@@ -72,6 +72,14 @@
       (set row.streaming? nil)
       (set row.final? final?))))
 
+(fn drop-superseded-attempt! []
+  "A provider retry discards the failed attempt (#631): history never holds its
+   text, so the open streaming rows are cleared and the next attempt's deltas
+   start them over instead of joining onto them."
+  (each [_ row (ipairs state.transcript)]
+    (when row.streaming?
+      (set row.text ""))))
+
 ;; @doc fen.extensions.web.ingest.append-event
 ;; kind: function
 ;; signature: (append-event ev) -> nil
@@ -114,6 +122,8 @@
           (table.insert state.transcript (copy-event ev)))
         (= ev.type :cancelled)
         (do
+          ;; A dead turn's open row must not take the next turn's text.
+          (finish-streaming-assistant! false)
           (set s.thinking? false)
           (set s.running-label nil)
           (set s.cancelling? false)
@@ -137,8 +147,13 @@
             (set s.thinking? false)
             (set s.running-label nil)
             (set s.turn-start 0)))
+        (= ev.type :provider-retry)
+        (do
+          (drop-superseded-attempt!)
+          (table.insert state.transcript (copy-event ev)))
         (= ev.type :error)
         (do
+          (finish-streaming-assistant! false)
           (set s.thinking? false)
           (set s.running-label nil)
           (set s.turn-start 0)

@@ -1,9 +1,8 @@
-;; Probe for #609 (spec/agent-loop/FINDINGS.md): A step that ends with the second refused tool turn returns an `[error]`, but `:agent-turn-complete` infers status `:ok` from the last message.
-;; Passes while the bug reproduces against the real agent loop; the fix turns
-;; it into a regular test of the correct behaviour.
+;; Regression test for #606 (spec/agent-loop/FINDINGS.md): the loop dispatches on
+;; content, so a :length (or other non-:tool-use) reply that carries tool calls
+;; runs them and history stays provider-valid.
 
 (local types (require :fen.core.types))
-(local {: known-bug} (require :fen.testing))
 
 ;; A fake dispatcher stands in for fen.core.llm (installed before
 ;; fen.core.agent is required, which binds it at load). It records the
@@ -63,27 +62,36 @@
                            [])))))
   (and ok (= 0 (length pending))))
 
-(local lifecycle (require :fen.turn_lifecycle))
-
-(describe "#609 refused-twice turn"
+(describe "a reply that carries tool calls takes the tool path whatever its stop label (#606)"
           (fn []
-            (it "is reported as :ok by the turn lifecycle"
+            (it "runs the tool calls of a :length reply and keeps history paired"
                 (fn []
-                  (known-bug 609
-                             (fn []
-                               (set fake.calls [])
-                               (set fake.responses
-                                    [(reply [(types.tool-call-block :r1 :noop
-                                                                    {})]
-                                            :tool-use)
-                                     (reply [(types.tool-call-block :r2 :noop
-                                                                    {})]
-                                            :tool-use)])
-                               (let [agent (make-agent)
-                                     result (agent-mod.step agent "go" nil
-                                                            {:tool-choice :none})
-                                     ev (lifecycle.complete-event {: agent}
-                                                                  true result)]
-                                 (and (= 1
-                                         (string.find result "[error]" 1 true))
-                                      (= :ok ev.status)))))))))
+                  (set fake.calls [])
+                  (set fake.responses
+                       [(reply [(types.text-block "partial")
+                                (types.tool-call-block :c1 :noop {})]
+                               :length)
+                        (reply [(types.text-block "done")] :stop)])
+                  (let [agent (make-agent)
+                        (result outcome) (agent-mod.step agent "one")]
+                    (assert.are.equal "done" result)
+                    (assert.are.equal :ok outcome.status)
+                    (assert.are.equal 2 (length fake.calls))
+                    (assert.is_true (pairing-ok? (. fake.calls 2)))
+                    (assert.are.equal :c1 (. agent.messages 3 :tool-call-id))
+                    (assert.is_false (. agent.messages 3 :is-error?))
+                    (agent-mod.step agent "two")
+                    (assert.is_true (pairing-ok? (. fake.calls 3))))))
+            (it "ends on an :error reply without running its tool calls"
+                (fn []
+                  (set fake.calls [])
+                  (set fake.responses
+                       [(reply [(types.tool-call-block :c1 :noop {})] :error)])
+                  (let [agent (make-agent)
+                        (result outcome) (agent-mod.step agent "one")]
+                    (assert.are.equal 1 (string.find result "[error]" 1 true))
+                    (assert.are.equal :error outcome.status)
+                    (assert.are.equal 1 (length fake.calls))
+                    (assert.are.equal :assistant
+                                      (. agent.messages (length agent.messages)
+                                         :role)))))))

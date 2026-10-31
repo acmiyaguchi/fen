@@ -4,7 +4,7 @@
 
 (fn reset! []
   (set goal-state.status :idle)
-  (set goal-state.last-result nil)
+  (set goal-state.final-text nil)
   (set goal-state.last-reason nil)
   (set goal-state.iteration-count 0))
 
@@ -32,7 +32,7 @@
            :is-busy? (fn [] busy.value)
            :on-tick (fn []
                       (set ticks.value (+ ticks.value 1))
-                      (set goal-state.last-result terminal.result)
+                      (set goal-state.final-text terminal.result)
                       (set goal-state.last-reason terminal.reason)
                       (set goal-state.iteration-count
                            (or terminal.iterations 1))

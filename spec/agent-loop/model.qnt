@@ -1,39 +1,52 @@
-// Model of fen's agent step loop (agent.step / step-loop), as it works today.
+// Model of fen's agent step loop (agent.step / step-loop). With FIXES empty it
+// is the loop as it was before the close-turn fix (#668); with every fix it is
+// today's code (packages/core/src/fen/core/agent.fnl).
 //
 //   step            -> append UserMessage, run step-loop under xpcall; on
 //                      CANCEL-MARKER append ONE empty :aborted assistant and
 //                      emit :cancelled; any other error re-raises (the TUI's
 //                      on-tick turns it into an "agent task:" :error event)
-//   step-loop top   -> safety cap check; drain steering (inject non-empty
-//                      lines, reset refused-turns if any were injected);
-//                      emit :llm-start; yield
+//                      ("607": close-turn! first pairs every call the newest
+//                      assistant left open, on any unwind)
+//   step-loop top   -> safety cap check (an ordinary :error exit, "610");
+//                      drain steering (inject non-empty lines, reset
+//                      refused-turns if any were injected); emit :llm-start;
+//                      yield
 //   provider        -> one nondeterministic outcome (network domain covers
 //                      retries): text / tool-use with 1-2 calls / error /
 //                      :length that still carries a tool call / tool-use
 //                      whose edit arguments are malformed
-//   after llm-end   -> append assistant; yield (cancel pairs calls only if
-//                      stop-reason is :tool-use)
+//   after llm-end   -> append assistant; yield (before "607" a cancel paired
+//                      calls only if stop-reason was :tool-use)
 //   dispatch        -> :error -> :error event, stop
-//                      :tool-use -> :none ? refuse (2nd refusal = error)
-//                                         : run-tool-calls
+//                      tool calls ("606": any non-error reply carrying calls;
+//                      before, only :tool-use) -> :none ? refuse (2nd refusal
+//                      = error) : run-tool-calls
 //                      anything else -> natural stop: poll steering, then
-//                                       follow-up; continue if the drained
-//                                       list was non-empty
+//                                       follow-up; continue only if a line
+//                                       was appended ("608"; before, if the
+//                                       drained list was non-empty)
 //   run-tool-calls  -> same-turn-edit-conflicts over raw arguments, then
 //                      serial calls (emit :tool-call, yield, execute, append,
 //                      yield) and consecutive parallel-safe batches (launch
 //                      all, children yield, results appended in order at the
-//                      end); a cancel at any yield pairs every unreturned call
+//                      end); before "607" a cancel at any yield paired every
+//                      unreturned call, now it only unwinds to the boundary
+//
+// The code no longer crashes on malformed edit arguments (edit-call-paths is
+// type-tolerant); the "badArgs" outcome stays as the model's stand-in for any
+// crash after the assistant is appended (e.g. a raising tool-context).
 //
 // Queues mirror extensions/behaviors/kernel/steering/service.fnl: steering
 // and follow-up lines are appended while the agent is busy and drained
 // one-at-a-time; a line may be "" (`>` alone strips to "").
 //
-// The lifecycle status mirrors packages/fen/src/fen/turn_lifecycle.fnl,
-// which infers status from the last message rather than the step result.
+// The lifecycle status mirrors packages/fen/src/fen/turn_lifecycle.fnl: it
+// reads the step's own Outcome ("609"); before, it inferred status from the
+// last message.
 //
-// FIXES names the candidate fixes (by issue) so the same invariants can be checked
-// against both.
+// FIXES names the fixes (by issue) so the same invariants can be checked with
+// and without each.
 module agentloop {
   // The pairing rule and the step outcome come from the close-turn core (#668).
   import turn.* from "../core/turn/turn"
@@ -443,23 +456,25 @@ module agentloop {
   }
 }
 
-// Every outcome a real provider can produce.
+// Today's loop, over every outcome a real provider can produce. The code
+// carries #606-#610 (the close-turn boundary, #668), so current == fixed;
+// the fix<issue> instances and mutants.tsv keep each bug reachable.
 module current {
-  import agentloop(FIXES = Set(),
+  import agentloop(FIXES = Set("606", "607", "608", "609", "610"),
     OUTCOMES = Set("text", "tool1", "tool2", "error", "lengthCall", "badArgs")).*
 }
 // Only well-formed replies: tool calls arrive with stop-reason :tool-use and
 // parseable arguments. Isolates the cancel/refusal/queue machinery.
 module wellFormed {
-  import agentloop(FIXES = Set(), OUTCOMES = Set("text", "tool1", "tool2", "error")).*
+  import agentloop(FIXES = Set("606", "607", "608", "609", "610"), OUTCOMES = Set("text", "tool1", "tool2", "error")).*
 }
 // Isolate #606 (:length carrying a tool call).
 module lengthOnly {
-  import agentloop(FIXES = Set(), OUTCOMES = Set("text", "tool1", "tool2", "error", "lengthCall")).*
+  import agentloop(FIXES = Set("606", "607", "608", "609", "610"), OUTCOMES = Set("text", "tool1", "tool2", "error", "lengthCall")).*
 }
 // Isolate #607 (malformed edit arguments).
 module badArgsOnly {
-  import agentloop(FIXES = Set(), OUTCOMES = Set("text", "tool1", "tool2", "error", "badArgs")).*
+  import agentloop(FIXES = Set("606", "607", "608", "609", "610"), OUTCOMES = Set("text", "tool1", "tool2", "error", "badArgs")).*
 }
 module fixed {
   import agentloop(FIXES = Set("606", "607", "608", "609", "610"),
@@ -481,7 +496,7 @@ module fix610 { import agentloop(FIXES = Set("610"), OUTCOMES = Set("text", "too
 // parameterised module: quint test mixes up two instances of one module that
 // share an inner alias.
 module currentRefines {
-  import agentloop(FIXES = Set(),
+  import agentloop(FIXES = Set("606", "607", "608", "609", "610"),
     OUTCOMES = Set("text", "tool1", "tool2", "error", "lengthCall", "badArgs")) as LC
   import turnAbstract as TA from "../core/turn/abstract"
 

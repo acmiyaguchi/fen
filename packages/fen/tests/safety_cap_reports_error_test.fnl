@@ -1,9 +1,8 @@
-;; Probe for #608 (spec/agent-loop/FINDINGS.md): An empty queued follow-up makes the loop call the provider again on its own reply.
-;; Passes while the bug reproduces against the real agent loop; the fix turns
-;; it into a regular test of the correct behaviour.
+;; Regression test for #610 (spec/agent-loop/FINDINGS.md): hitting the safety
+;; cap emits :error and ends the step with an :error Outcome (runs the real
+;; 1000-turn cap against a fake dispatcher).
 
 (local types (require :fen.core.types))
-(local {: known-bug} (require :fen.testing))
 
 ;; A fake dispatcher stands in for fen.core.llm (installed before
 ;; fen.core.agent is required, which binds it at load). It records the
@@ -63,26 +62,34 @@
                            [])))))
   (and ok (= 0 (length pending))))
 
-(describe "#608 empty queued follow-up"
+(local lifecycle (require :fen.turn_lifecycle))
+
+(describe "the safety cap is an ordinary error exit (#610)"
           (fn []
-            (it "sends a request that ends on the assistant's own reply"
+            (it "emits :error and reports an :error Outcome"
                 (fn []
-                  (known-bug 608
-                             (fn []
-                               (set fake.calls [])
-                               (set fake.responses
-                                    [(reply [(types.text-block "answer")] :stop)
-                                     (reply [(types.text-block "again")] :stop)])
-                               (var served? false)
-                               (let [agent (make-agent {:get-follow-up (fn []
-                                                                         (if served?
-                                                                             []
-                                                                             (do
-                                                                               (set served?
-                                                                                    true)
-                                                                               [""])))})]
-                                 (agent-mod.step agent "hi")
-                                 (let [second (. fake.calls 2)]
-                                   (and second
-                                        (= :assistant
-                                           (. second (length second) :role)))))))))))
+                  (set fake.calls [])
+                  (set fake.responses [])
+                  (set fake.default
+                       (reply [(types.tool-call-block :loop :noop {})]
+                              :tool-use))
+                  (let [log []
+                        agent (make-agent {:on-event (fn [ev]
+                                                       (table.insert log ev))})
+                        (result outcome) (agent-mod.step agent "go")
+                        errors (icollect [_ ev (ipairs log)]
+                                 (when (= ev.type :error) ev))
+                        ev (lifecycle.emit-complete! {: agent} true result)]
+                    (set fake.default nil)
+                    (assert.are.equal agent-mod.SAFETY-CAP (length fake.calls))
+                    (assert.are.equal "[error] tool-call loop exceeded safety cap"
+                                      result)
+                    (assert.are.equal :error outcome.status)
+                    (assert.are.equal 1 (length errors))
+                    (assert.are.equal "tool-call loop exceeded safety cap"
+                                      (. errors 1 :error))
+                    (assert.are.equal :error ev.status)
+                    (assert.are.equal "tool-call loop exceeded safety cap"
+                                      ev.error)
+                    ;; emit-complete! consumes the Outcome.
+                    (assert.is_nil agent.outcome))))))

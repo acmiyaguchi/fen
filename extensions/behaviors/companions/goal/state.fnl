@@ -7,6 +7,8 @@
  :iteration-count 0
  :max-iterations 10
  :last-result nil
+ ;; Text of the iteration that ended the run; nil after an error or cancel (not durable)
+ :final-text nil
  :last-error nil
  :last-reason nil
  :last-marker nil

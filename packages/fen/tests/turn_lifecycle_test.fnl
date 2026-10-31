@@ -1,6 +1,7 @@
 (local test-api (require :fen.core.extensions.test_api))
 (local events (require :fen.core.extensions.events))
 (local turn-lifecycle (require :fen.turn_lifecycle))
+(local types (require :fen.core.types))
 
 (describe "turn lifecycle events"
           (fn []
@@ -41,17 +42,38 @@
                     (assert.are.equal "boom" ev.error)
                     (assert.is_nil ev.result)
                     (assert.are.equal 0 ev.message-count))))
-            (it "marks provider error messages as error completions"
+            (it "reports the Outcome agent.step recorded"
                 (fn []
                   (let [agent {:messages [{:role :assistant
                                            :stop-reason :error
-                                           :error-message "context overflow\nextra"}]}
+                                           :error-message "context overflow\nextra"}]
+                               :outcome (types.outcome :error
+                                                       "[error] context overflow"
+                                                       "context overflow\nextra")}
                         ev (turn-lifecycle.complete-event {:agent agent} true
                                                           "[error] context overflow")]
                     (assert.are.equal :error ev.status)
+                    (assert.are.equal agent.outcome ev.outcome)
                     (assert.are.equal "context overflow" ev.error)
                     (assert.is_nil ev.result)
                     (assert.are.equal 1 ev.message-count))))
+            (it "does not infer the status from the last message (#609)"
+                (fn []
+                  (let [agent {:messages [{:role :tool-result
+                                           :tool-call-id :c1}]
+                               :outcome (types.outcome :error "[error] capped"
+                                                       "capped")}
+                        ev (turn-lifecycle.complete-event {:agent agent} true
+                                                          "[error] capped")]
+                    (assert.are.equal :error ev.status)
+                    (assert.are.equal "capped" ev.error))
+                  (let [agent {:messages [{:role :assistant
+                                           :stop-reason :error}]
+                               :outcome (types.outcome :ok "fine")}
+                        ev (turn-lifecycle.complete-event {:agent agent} true
+                                                          "fine")]
+                    (assert.are.equal :ok ev.status)
+                    (assert.are.equal "fine" ev.result))))
             (it "emits the completion event through the bus"
                 (fn []
                   (let [seen []
@@ -63,4 +85,18 @@
                                                           "ok")]
                     (assert.are.equal 1 (length seen))
                     (assert.are.equal ev (. seen 1))
-                    (assert.are.equal :ok (. seen 1 :status)))))))
+                    (assert.are.equal :ok (. seen 1 :status)))))
+            (it "consumes the Outcome so a later non-step turn cannot read it"
+                (fn []
+                  (let [agent {:messages []
+                               :outcome (types.outcome :error nil "x")}]
+                    (assert.are.equal :error
+                                      (. (turn-lifecycle.emit-complete! {: agent}
+                                                                        true nil)
+                                         :status))
+                    (assert.is_nil agent.outcome)
+                    (assert.are.equal :ok
+                                      (. (turn-lifecycle.emit-complete! {: agent}
+                                                                        true
+                                                                        "done")
+                                         :status)))))))

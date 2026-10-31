@@ -172,5 +172,6 @@ module webrows {
   }
 }
 
-module current { import webrows(FIXES = Set()).* }
+// Today's code carries #631.
+module current { import webrows(FIXES = Set("631")).* }
 module fixed { import webrows(FIXES = Set("631")).* }

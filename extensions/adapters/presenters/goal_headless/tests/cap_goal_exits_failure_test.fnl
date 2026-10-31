@@ -1,9 +1,7 @@
-;; Known-bug probe for #634 (downstream of agent-loop #609): when a goal
-;; iteration hits the tool-call safety cap, turn_lifecycle reports :ok because
-;; the last message is a tool result, so the goal runs handle-success! on the
-;; "[error] tool-call loop exceeded safety cap" text, ends blocked ("missing
-;; GOAL_STATUS marker") and exits 2 instead of failing with 1.
-;; See spec/presenters/FINDINGS.md (#634).
+;; Regression test for #634 (spec/presenters/FINDINGS.md, downstream of
+;; agent-loop #609/#610): a goal iteration that hits the tool-call safety cap
+;; fails (exit 1) with no final text. turn_lifecycle reports the step's own
+;; :error Outcome, though the last message is a tool result.
 
 (local test-api (require :fen.core.extensions.test_api))
 (local events (require :fen.core.extensions.events))
@@ -11,7 +9,6 @@
 (local types (require :fen.core.types))
 (local turn-lifecycle (require :fen.turn_lifecycle))
 (local json (require :fen.util.json))
-(local {: known-bug} (require :fen.testing))
 
 ;; Drive the real goal companion and the real goal_headless presenter. Each
 ;; on-tick delivers the next scripted :agent-turn-complete for the turn the
@@ -57,11 +54,12 @@
       (test-api.reset!)
       {: code : blob :goal goal-state})))
 
-(local CAP-TEXT "[error] tool-call loop exceeded safety cap")
+(local CAP-ERROR "tool-call loop exceeded safety cap")
+(local CAP-TEXT (.. "[error] " CAP-ERROR))
 
 (fn cap-event []
   "The real lifecycle event for what agent.step leaves after the cap: the
-   last message is a tool result and the step returned CAP-TEXT."
+   last message is a tool result, and step recorded an :error Outcome."
   (let [agent {:messages [(types.user-message "go")
                           (types.assistant-message {:content [(types.tool-call-block "c1"
                                                                                      :read
@@ -69,20 +67,19 @@
                                                     :stop-reason :tool-use})
                           (types.tool-result-message {:tool-call-id "c1"
                                                       :tool-name :read
-                                                      :content [(types.text-block "ok")]})]}
+                                                      :content [(types.text-block "ok")]})]
+               :outcome (types.outcome :error CAP-TEXT CAP-ERROR)}
         ev (turn-lifecycle.complete-event {: agent} true CAP-TEXT)]
     {:status ev.status :result ev.result :error ev.error}))
 
-(describe "#634 goal outcome after the safety cap"
+(describe "goal outcome after the safety cap (#634)"
           (fn []
-            (it "exits 2 (blocked) with the cap error as final-text"
+            (it "exits 1 (failure) with no final text"
                 (fn []
-                  (known-bug 634
-                             (fn []
-                               (let [ev (cap-event)
-                                     r (run-goal [ev])]
-                                 (and (= :ok ev.status) (= 2 r.code)
-                                      (= "blocked" r.blob.goal.status)
-                                      (= "missing GOAL_STATUS marker"
-                                         r.blob.goal.reason)
-                                      (= CAP-TEXT r.blob.final-text)))))))))
+                  (let [ev (cap-event)
+                        r (run-goal [ev])]
+                    (assert.are.equal :error ev.status)
+                    (assert.are.equal CAP-ERROR ev.error)
+                    (assert.are.equal 1 r.code)
+                    (assert.are.equal "failure" r.blob.goal.status)
+                    (assert.is_nil r.blob.final-text))))))

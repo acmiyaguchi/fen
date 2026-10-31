@@ -1,9 +1,10 @@
 // Deterministic witnesses (quint test). Each w<issue>...Test replays the
-// shortest known counterexample for that issue against `current` (or the
+// shortest known counterexample for an issue `current` still has (or the
 // named-fix instance that shows the issue is independent); each reach...Test
-// shows that a case the `fixed` invariants rely on is reachable.
+// shows that a case the invariants rely on is reachable, including the traces
+// that once broke #631, #633 and #634 and now hold in `current`.
 module witnesses {
-  import presenters(FIXES = Set()) as C from "./model"
+  import presenters(FIXES = Set("631", "633", "634")) as C from "./model"
   import presenters(FIXES = Set("634")) as F634 from "./model"
   import presenters(FIXES = Set("619", "631", "632", "633", "634")) as F from "./model"
 
@@ -13,11 +14,12 @@ module witnesses {
       .expect(not(C::headlessUsageIsTurnUsage) and C::jsonUsage == 5
               and C::refUsage == 0 and C::headlessExitMatchesStatus)
 
-  // #631: web joins attempt 2's text onto attempt 1's row; stdio does not.
-  run w631WebRetryJoinsAttemptsTest =
+  // #631: web drops attempt 1's text on a retry instead of joining attempt 2
+  // onto it.
+  run reach631WebRetryDropsAttemptTest =
     C::initWith(false).then(C::startStep).then(C::streamToken).then(C::retry)
       .then(C::streamToken).then(C::streamToken).then(C::endStop)
-      .expect(not(C::webRowsSingleAttempt) and not(C::webOkReplyShown)
+      .expect(C::webRowsSingleAttempt and C::webOkReplyShown
               and C::stdioLinesSingleAttempt and C::webRowsSingleStep)
 
   // #632: a provider error ends the rpc run with exit 0 and an "[error]"
@@ -36,13 +38,13 @@ module witnesses {
               and not(C::rpcFinalTextMatches))
 
   // #633: iteration 1 succeeds and continues; iteration 2 is cancelled; the
-  // goal reports iteration 1's text as its final text.
-  run w633CancelKeepsStaleResultTest =
+  // goal has no final text rather than iteration 1's.
+  run reach633CancelClearsResultTest =
     C::initWith(false).then(C::startStep).then(C::streamToken).then(C::streamToken)
       .then(C::endStop).then(C::finishStep("continue"))
       .then(C::startStep).then(C::cancel).then(C::finishStep("continue"))
-      .expect(not(C::goalFinalTextMatches) and C::goal.status == "stopped"
-              and C::goal.result.has and C::goalExitMatches)
+      .expect(C::goalFinalTextMatches and C::goal.status == "stopped"
+              and not(C::goal.result.has) and C::goalExitMatches)
 
   // #633 is not fixed by #634's lifecycle fix: the error path keeps the
   // stale text too.
@@ -52,20 +54,20 @@ module witnesses {
       .then(F634::startStep).then(F634::endError(true)).then(F634::finishStep("continue"))
       .expect(not(F634::goalFinalTextMatches) and F634::goal.status == "error")
 
-  // #634: the safety cap ends the step, the lifecycle says ok.
-  run w634CapLifecycleOkTest =
+  // #634: the safety cap ends the step, the lifecycle says error.
+  run reach634CapLifecycleErrorTest =
     C::initWith(false).then(C::startStep).then(C::streamToken).then(C::streamToken)
       .then(C::endToolUse(false)).then(C::streamToken).then(C::streamToken)
       .then(C::endToolUse(false))
-      .expect(C::stepEnd == "cap" and C::lifecycleStatus == "ok"
-              and not(C::lifecycleStatusMatchesOutcome))
+      .expect(C::stepEnd == "cap" and C::lifecycleStatus == "error"
+              and C::lifecycleStatusMatchesOutcome)
 
-  // #634: so the goal ends blocked (exit 2) instead of error (exit 1).
-  run w634CapGoalBlockedTest =
+  // #634: so the goal ends error (exit 1), not blocked (exit 2).
+  run reach634CapGoalErrorTest =
     C::initWith(false).then(C::startStep).then(C::streamToken).then(C::streamToken)
       .then(C::endToolUse(false)).then(C::streamToken).then(C::streamToken)
       .then(C::endToolUse(false)).then(C::finishStep("continue"))
-      .expect(C::goal.status == "blocked" and not(C::goalExitMatches))
+      .expect(C::goal.status == "error" and C::goalExitMatches)
 
   // ---- reachability of the fixed design ----
 

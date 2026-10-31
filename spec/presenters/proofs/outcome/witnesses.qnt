@@ -1,6 +1,7 @@
-// One input per issue: the outcome that breaks it in today's design.
+// One input per issue: the outcome that breaks it in today's design (the
+// reach6xx tests are the inputs that broke #633 and #634 before their fixes).
 module witnesses {
-  import outcome(FIXES = Set()) as C from "./model"
+  import outcome(FIXES = Set("633", "634")) as C from "./model"
   import outcome(FIXES = Set("634")) as F634 from "./model"
   import outcome(FIXES = Set("619", "632", "633", "634")) as F from "./model"
 
@@ -17,23 +18,23 @@ module witnesses {
     C::initWith("cap", false, 1, "none")
       .expect(not(C::rpcFinalTextMatches) and C::rpcFinal == "toolText")
 
-  run w633CancelKeepsPrevTextTest =
+  run reach633CancelClearsTextTest =
     C::initWith("cancelled", false, 2, "none")
-      .expect(not(C::goalFinalTextMatches) and C::goalResult == "prev"
+      .expect(C::goalFinalTextMatches and C::goalResult == "none"
               and C::goalExitMatches)
 
   run w633ErrorKeepsPrevTextWith634Test =
     F634::initWith("error", false, 2, "none")
       .expect(not(F634::goalFinalTextMatches) and F634::goalStatus == "error")
 
-  run w634CapGoalBlockedTest =
+  run reach634CapGoalErrorTest =
     C::initWith("cap", false, 1, "none")
-      .expect(C::lifecycleStatus == "ok" and C::goalStatus == "blocked"
-              and not(C::goalExitMatches) and not(C::lifecycleStatusMatchesOutcome))
+      .expect(C::lifecycleStatus == "error" and C::goalStatus == "error"
+              and C::goalExitMatches and C::lifecycleStatusMatchesOutcome)
 
-  run w634RefusedGoalBlockedTest =
+  run reach634RefusedGoalErrorTest =
     C::initWith("refused", false, 2, "none")
-      .expect(not(C::goalExitMatches))
+      .expect(C::goalExitMatches)
 
   run reachOkDoneTest =
     F::initWith("ok", true, 2, "done")

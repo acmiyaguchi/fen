@@ -70,8 +70,10 @@ WEB-CANCEL-NEXT-NO-USER user=q | assistant-text=Partial ansFresh | cancelled=   
 STDIO>> ai> Hello wor\ninfo> provider retry 1/3: 500\nai> Hello world.\nai> Partial\nerr> boom\nai> Fresh\n
 ```
 
-Witnesses: `w631WebRetryJoinsAttemptsTest` (`witnesses.qnt`), `w631RetryJoinsAttemptsTest` (`proofs/web-rows`).
-Probe (reproduces): `extensions/adapters/presenters/web/tests/issue_631_retry_joins_attempt_rows_test.fnl`, the retry sequence through the real web ingest.
+Witnesses: `reach631WebRetryDropsAttemptTest` (`witnesses.qnt`), `reach631RetryDropsAttemptTest` (`proofs/web-rows`).
+Was reproduced by `issue_631_retry_joins_attempt_rows_test.fnl` (now the regression test below), the retry sequence through the real web ingest.
+
+Fixed in #605: web's `ingest` clears the open streaming rows on `:provider-retry` (`drop-superseded-attempt!`) and closes them on `:error` and `:cancelled` (`extensions/adapters/presenters/web/tests/retry_drops_superseded_attempt_test.fnl`).
 
 ### #632: The rpc child exits `done` with code 0 and an `[error] …` final-text after a failed turn
 
@@ -114,8 +116,10 @@ iter2 {:status :cancelled}
 GOAL-CANCEL code= 2  goal.status= blocked  final-text= Iter one text.\nGOAL_STATUS: continue
 ```
 
-Witnesses: `w633CancelKeepsStaleResultTest`, `w633ErrorKeepsStaleResultWith634Test` (`witnesses.qnt`), `w633CancelKeepsPrevTextTest`, `w633ErrorKeepsPrevTextWith634Test` (`proofs/outcome`).
-Probe (reproduces, both paths): `extensions/adapters/presenters/goal_headless/tests/issue_633_failed_goal_reports_stale_text_test.fnl`, the real goal companion and `goal_headless.run` with scripted `:agent-turn-complete` events.
+Witnesses: `reach633CancelClearsResultTest`, `w633ErrorKeepsStaleResultWith634Test` (`witnesses.qnt`), `reach633CancelClearsTextTest`, `w633ErrorKeepsPrevTextWith634Test` (`proofs/outcome`; the `With634` tests replay #633 alone on `fix634`).
+Was reproduced, both paths, by `issue_633_failed_goal_reports_stale_text_test.fnl` (now the regression test below), the real goal companion and `goal_headless.run` with scripted `:agent-turn-complete` events.
+
+Fixed in #605: the goal companion keeps `state.final-text`, set from a finished iteration and cleared when the iteration errors or is cancelled; `goal_headless` reports it, not `last-result` (`extensions/adapters/presenters/goal_headless/tests/failed_goal_has_no_final_text_test.fnl`).
 
 ### #619: The JSON presenter's `usage` and `messages` include `--continue` history
 
@@ -158,12 +162,14 @@ This domain's goal probe fed that event to the real goal companion and `goal_hea
 GOAL-CAP code= 2  goal.status= blocked  reason= missing GOAL_STATUS marker  final-text= [error] tool-call loop exceeded safety cap
 ```
 
-Witnesses: `w634CapLifecycleOkTest`, `w634CapGoalBlockedTest` (`witnesses.qnt`), `w634CapGoalBlockedTest`, `w634RefusedGoalBlockedTest` (`proofs/outcome`).
-Probe (reproduces): `extensions/adapters/presenters/goal_headless/tests/issue_634_cap_goal_exits_blocked_test.fnl`: the real `turn_lifecycle.complete-event` over what the cap leaves (last message a tool result) says `:ok`, and the real goal companion and `goal_headless` then exit 2, `blocked`, "missing GOAL_STATUS marker", with the cap error as `final-text`. The cap itself is not run (1000 provider calls); agent-loop's #610 probe covers it.
+Witnesses: `reach634CapLifecycleErrorTest`, `reach634CapGoalErrorTest` (`witnesses.qnt`), `reach634CapGoalErrorTest`, `reach634RefusedGoalErrorTest` (`proofs/outcome`).
+Was reproduced by `issue_634_cap_goal_exits_blocked_test.fnl` (now the regression test below): the real `turn_lifecycle.complete-event` over what the cap leaves (last message a tool result) says `:ok`, and the real goal companion and `goal_headless` then exit 2, `blocked`, "missing GOAL_STATUS marker", with the cap error as `final-text`. The cap itself is not run (1000 provider calls); agent-loop's #610 probe covers it.
+
+Fixed in #605: `turn_lifecycle` reads the step's own `Outcome`, so a cap or refused turn is `:error` and the goal exits 1 (`extensions/adapters/presenters/goal_headless/tests/cap_goal_exits_failure_test.fnl`).
 
 ## Candidate fixes (named, `FIXES`)
 
-Each fix is guarded by its issue number; instances `fix619`, `fix631`, `fix632`, `fix634` enable one fix each, and their rows show that fix makes its own issue's invariants hold.
+Today's code carries #631, #633 and #634 (`current` has them; #619 and #632 are still open). Each fix is guarded by its issue number; instances `fix619`, `fix631`, `fix632`, `fix634` enable one fix each, and their rows show that fix makes its own issue's invariants hold.
 #633's fix is not independent: on the cap path the wrong lifecycle status (#634) also puts the error text in `last-result`, so `goalFinalTextMatches` needs both; `fix634.goalFinalTextMatches` stays violated, which shows #633 is a separate bug.
 `"631"` also closes web's open row on `:error` and `:cancelled` (the web twin of network #630, latent here).
 

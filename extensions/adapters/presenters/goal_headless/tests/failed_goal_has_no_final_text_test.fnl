@@ -1,13 +1,11 @@
-;; Known-bug probe for #633: the goal companion sets last-result only in
-;; handle-success!, so when an iteration fails or is cancelled the headless
-;; outcome reports the previous successful iteration's text as final-text.
-;; See spec/presenters/FINDINGS.md (#633).
+;; Regression test for #633 (spec/presenters/FINDINGS.md): a goal whose last
+;; iteration fails or is cancelled reports no final text, not the previous
+;; iteration's; last-result still keeps that text for `/goal resume`.
 
 (local test-api (require :fen.core.extensions.test_api))
 (local events (require :fen.core.extensions.events))
 (local command-registry (require :fen.core.extensions.register.command))
 (local json (require :fen.util.json))
-(local {: known-bug} (require :fen.testing))
 
 ;; Drive the real goal companion and the real goal_headless presenter. Each
 ;; on-tick delivers the next scripted :agent-turn-complete for the turn the
@@ -55,24 +53,30 @@
 
 (local ITER-1 "Iter one text.\nGOAL_STATUS: continue")
 
-(describe "#633 goal final-text after a failed iteration"
+(describe "goal final-text after a failed iteration (#633)"
           (fn []
-            (it "reports iteration 1's text when iteration 2 errors"
+            (it "is absent when iteration 2 errors"
                 (fn []
-                  (known-bug 633
-                             (fn []
-                               (let [r (run-goal [{:status :ok :result ITER-1}
-                                                  {:status :error
-                                                   :error "usage_limit_reached: quota"}])]
-                                 (and (= 1 r.code)
-                                      (= "failure" r.blob.goal.status)
-                                      (= ITER-1 r.blob.final-text)))))))
-            (it "reports iteration 1's text when iteration 2 is cancelled"
+                  (let [r (run-goal [{:status :ok :result ITER-1}
+                                     {:status :error
+                                      :error "usage_limit_reached: quota"}])]
+                    (assert.are.equal 1 r.code)
+                    (assert.are.equal "failure" r.blob.goal.status)
+                    (assert.is_nil r.blob.final-text)
+                    (assert.are.equal ITER-1 r.goal.last-result))))
+            (it "is absent when iteration 2 is cancelled"
                 (fn []
-                  (known-bug 633
-                             (fn []
-                               (let [r (run-goal [{:status :ok :result ITER-1}
-                                                  {:status :cancelled}])]
-                                 (and (= 2 r.code)
-                                      (= "blocked" r.blob.goal.status)
-                                      (= ITER-1 r.blob.final-text)))))))))
+                  (let [r (run-goal [{:status :ok :result ITER-1}
+                                     {:status :cancelled}])]
+                    (assert.are.equal 2 r.code)
+                    (assert.are.equal "blocked" r.blob.goal.status)
+                    (assert.is_nil r.blob.final-text))))
+            (it "is the last iteration's text when the goal finishes"
+                (fn []
+                  (let [r (run-goal [{:status :ok :result ITER-1}
+                                     {:status :ok
+                                      :result "Shipped.\nGOAL_STATUS: done"}])]
+                    (assert.are.equal 0 r.code)
+                    (assert.are.equal "done" r.blob.goal.status)
+                    (assert.are.equal "Shipped.\nGOAL_STATUS: done"
+                                      r.blob.final-text))))))

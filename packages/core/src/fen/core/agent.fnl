@@ -165,17 +165,12 @@
 (fn inject-after-natural-stop! [agent]
   "Poll queues when the agent would otherwise stop. Steering wins over
    follow-up, matching pi-mono: a steering message typed while the assistant is
-   responding should run before any follow-up messages. Returns true when a
-   queued message was injected and the loop should continue."
-  (let [steering (agent.get-steering)]
-    (if (> (length (or steering [])) 0)
-        (do
-          (inject-user-lines! agent steering :steering-injected)
-          true)
-        (let [followups (agent.get-follow-up)]
-          (when (> (length (or followups [])) 0)
-            (inject-user-lines! agent followups :follow-up-injected)
-            true)))))
+   responding should run before any follow-up messages. Returns true only when
+   a line was actually appended (#608): a drained list of empty lines appends
+   nothing, so continuing would send a request that ends on the assistant's
+   own reply. Follow-ups are polled when steering appended nothing."
+  (or (> (inject-user-lines! agent (agent.get-steering) :steering-injected) 0)
+      (> (inject-user-lines! agent (agent.get-follow-up) :follow-up-injected) 0)))
 
 (fn visible-assistant-block? [block]
   (or (and (= block.type :text) (= (type block.text) :string)
@@ -231,12 +226,19 @@
                               :is-error? true
                               :details ?details}))
 
+(fn emit-tool-call! [agent tc]
+  "Emit the :tool-call event for `tc` and record it in the newest assistant's
+   emitted set, so the close-turn boundary never announces a call twice."
+  (when agent.emitted-tool-calls
+    (tset agent.emitted-tool-calls tc true))
+  (emit agent {:type :tool-call
+               :name tc.name
+               :arguments tc.arguments
+               :id tc.id}))
+
 (fn append-synthetic-tool-result! [agent tc message ?emit-call?]
   (when ?emit-call?
-    (emit agent {:type :tool-call
-                 :name tc.name
-                 :arguments tc.arguments
-                 :id tc.id}))
+    (emit-tool-call! agent tc))
   (let [msg (synthetic-tool-result tc message {:synthetic? true})
         result {:content msg.content :is-error? true :details msg.details}]
     (append-message! agent msg)
@@ -247,38 +249,72 @@
                  :result result})
     msg))
 
-(fn append-cancelled-tool-results! [agent
-                                    tool-calls
-                                    start-index
-                                    current-emitted?]
-  "Satisfy every unreturned tool call after a cancellation. `start-index` is
-   the current/pending tool call; the current call may already have emitted a
-   :tool-call event, while later calls have not."
-  (for [i start-index (length tool-calls)]
-    (let [tc (. tool-calls i)]
-      (append-synthetic-tool-result! agent tc
-                                     "[cancelled] tool call cancelled before completion"
-                                     (not (and current-emitted?
-                                               (= i start-index)))))))
+(local CANCELLED-RESULT "[cancelled] tool call cancelled before completion")
+
+(fn open-tool-calls [agent]
+  "Tool calls of the newest provider-visible assistant that no later
+   tool-result answers, in call order. Matching is by call id, counted, so a
+   result answers one call however the results were ordered. Only the
+   assistant of the current exchange counts: a user message after it means
+   its calls were settled (or belong to history the boundary must not touch)."
+  (let [msgs (or agent.messages [])
+        answered {}]
+    (var asst nil)
+    (var stop? false)
+    (for [i (length msgs) 1 -1 &until (or asst stop?)]
+      (let [m (. msgs i)]
+        (if (= m.role :tool-result)
+            (let [key (tostring m.tool-call-id)]
+              (tset answered key (+ 1 (or (. answered key) 0))))
+            (= m.role :user)
+            (set stop? true)
+            (and (= m.role :assistant) (context-message? m))
+            (set asst m))))
+    (let [open []]
+      (when asst
+        (each [_ tc (ipairs (assistant-tool-calls asst))]
+          (let [key (tostring tc.id)
+                n (or (. answered key) 0)]
+            (if (> n 0)
+                (tset answered key (- n 1))
+                (table.insert open tc)))))
+      open)))
+
+(fn close-open-calls! [agent message]
+  "The close-turn boundary's pairing (#668): answer every call the newest
+   assistant left open with a synthetic error result, in call order. A call
+   whose :tool-call event never went out gets one first, so tool events keep
+   mirroring the result messages. Returns the number of calls paired."
+  (let [open (open-tool-calls agent)
+        emitted (or agent.emitted-tool-calls {})]
+    (each [_ tc (ipairs open)]
+      (append-synthetic-tool-result! agent tc message (not (. emitted tc))))
+    (length open)))
 
 (fn edit-tool-call? [tc]
   (= (tostring tc.name) "edit"))
 
 (fn append-unique! [xs seen v]
   (let [key (tostring v)]
-    (when (and v (not= key "") (not (. seen key)))
+    (when (and (or (= (type v) :string) (= (type v) :number)) (not= key "")
+               (not (. seen key)))
       (tset seen key true)
       (table.insert xs key))))
 
 (fn edit-call-paths [tc]
-  "Return every file path targeted by an edit tool call, deduped per call."
-  (let [args (or tc.arguments {})
+  "Return every file path targeted by an edit tool call, deduped per call.
+   Reads raw model arguments before schema validation, so any shape is
+   tolerated (#607): malformed arguments yield no paths here and fail in the
+   edit tool's own validation as an ordinary tool error."
+  (let [args (if (= (type tc.arguments) :table) tc.arguments {})
+        files (if (= (type args.files) :table) args.files [])
         paths []
         seen {}]
     (when (edit-tool-call? tc)
       (append-unique! paths seen args.path)
-      (each [_ f (ipairs (or args.files []))]
-        (append-unique! paths seen (?. f :path))))
+      (each [_ f (ipairs files)]
+        (when (= (type f) :table)
+          (append-unique! paths seen f.path))))
     paths))
 
 (fn same-turn-edit-conflicts [tool-calls]
@@ -349,41 +385,23 @@
                                      " failed: " (tostring err))
                                  (not emitted?)))
 
-(fn run-serial-tool-call [agent tool-calls i edit-conflicts ?yield!]
-  (let [tc (. tool-calls i)]
-    (emit agent {:type :tool-call
-                 :name tc.name
-                 :arguments tc.arguments
-                 :id tc.id})
-    (when ?yield!
-      (let [(ok? thrown) (pcall ?yield!)]
-        (when (not ok?)
-          (if (= thrown CANCEL-MARKER)
-              (do
-                (append-cancelled-tool-results! agent tool-calls i true)
-                (error CANCEL-MARKER))
-              (error thrown)))))
-    (if (. edit-conflicts i)
-        (append-synthetic-tool-result! agent tc (. edit-conflicts i) false)
-        (let [(ok? out-or-err) (pcall tools-mod.execute-call agent.tools tc
-                                      (tool-context agent) ?yield!)]
-          (if ok?
-              (do
-                (append-tool-output! agent tc out-or-err)
-                (when ?yield!
-                  (let [(yield-ok? thrown) (pcall ?yield!)]
-                    (when (not yield-ok?)
-                      (if (= thrown CANCEL-MARKER)
-                          (do
-                            (append-cancelled-tool-results! agent tool-calls
-                                                            (+ i 1) false)
-                            (error CANCEL-MARKER))
-                          (error thrown))))))
-              (= out-or-err CANCEL-MARKER)
-              (do
-                (append-cancelled-tool-results! agent tool-calls i true)
-                (error CANCEL-MARKER))
-              (append-tool-failure! agent tc out-or-err true))))))
+(fn run-serial-tool-call [agent tc edit-conflict ?yield!]
+  "Run one serial tool call and append its result. A cancel at a yield, or
+   inside the tool, just unwinds: `step`'s close-turn boundary pairs every
+   call still open. A tool's own error is an ordinary error result."
+  (emit-tool-call! agent tc)
+  (when ?yield! (?yield!))
+  (if edit-conflict
+      (append-synthetic-tool-result! agent tc edit-conflict false)
+      (let [(ok? out-or-err) (pcall tools-mod.execute-call agent.tools tc
+                                    (tool-context agent) ?yield!)]
+        (if ok?
+            (do
+              (append-tool-output! agent tc out-or-err)
+              (when ?yield! (?yield!)))
+            (= out-or-err CANCEL-MARKER)
+            (error CANCEL-MARKER)
+            (append-tool-failure! agent tc out-or-err true)))))
 
 (fn batch-parallel-cap [agent tasks]
   ;; Mixed batches use the most conservative cap so no tool exceeds its own resource limit.
@@ -396,7 +414,9 @@
 
 (fn run-parallel-tool-batch [agent tasks ?yield!]
   "Run a consecutive batch of explicitly parallel-safe tool calls. Results are
-   appended after the batch in original order, regardless of completion order."
+   appended after the batch in original order, regardless of completion order;
+   on cancel, finished children keep their results and the rest of the batch
+   is answered as cancelled, still in call order. Returns false when cancelled."
   (let [ctx (tool-context agent)
         cap (batch-parallel-cap agent tasks)
         n (length tasks)]
@@ -431,10 +451,7 @@
 
     (fn launch-task! [task]
       (set task.emitted? true)
-      (emit agent {:type :tool-call
-                   :name task.tc.name
-                   :arguments task.tc.arguments
-                   :id task.tc.id})
+      (emit-tool-call! agent task.tc)
       (set task.co
            (coroutines.create (fn []
                                 (tools-mod.execute-call agent.tools task.tc ctx
@@ -475,8 +492,7 @@
       (if task.out
           (append-tool-output! agent task.tc task.out)
           (or cancelled? task.cancelled?)
-          (append-synthetic-tool-result! agent task.tc
-                                         "[cancelled] tool call cancelled before completion"
+          (append-synthetic-tool-result! agent task.tc CANCELLED-RESULT
                                          (not task.emitted?))
           task.error
           (append-tool-failure! agent task.tc task.error task.emitted?)
@@ -489,9 +505,9 @@
    yields between each tool and forwards yield-fn into the tool's
    `:execute` so a coop-aware tool can yield while waiting on its own I/O.
    Explicitly parallel-safe tools may run concurrently in capped batches;
-   all other tools remain serial. Tool failures and cancellations always
-   append matching tool-result messages before the loop unwinds, so resumed
-   history remains provider-valid."
+   all other tools remain serial. A tool's failure appends an error result; a
+   cancel (or any other unwind) just stops here, and `step`'s close-turn
+   boundary pairs every call still open, so history stays provider-valid."
   (let [edit-conflicts (same-turn-edit-conflicts tool-calls)]
     (var i 1)
     (while (<= i (length tool-calls))
@@ -504,13 +520,11 @@
                                                     edit-conflicts j ?yield!))
                 (table.insert tasks {:tc (. tool-calls j)})
                 (set j (+ j 1)))
-              (let [completed? (run-parallel-tool-batch agent tasks ?yield!)]
-                (when (not completed?)
-                  (append-cancelled-tool-results! agent tool-calls j false)
-                  (error CANCEL-MARKER)))
+              (when (not (run-parallel-tool-batch agent tasks ?yield!))
+                (error CANCEL-MARKER))
               (set i j))
             (do
-              (run-serial-tool-call agent tool-calls i edit-conflicts ?yield!)
+              (run-serial-tool-call agent tc (. edit-conflicts i) ?yield!)
               (set i (+ i 1))))))))
 
 (local TOOL-CHOICE-NONE-RESULT
@@ -576,6 +590,18 @@
     (llm.complete agent.provider-name (or ?model agent.model) context opts
                   ?on-event ?yield-fn)))
 
+(fn tool-turn? [asst]
+  "Dispatch on content, not on the stop label (#606, pi-mono's rule): a reply
+   that is neither an error nor aborted and carries tool calls takes the tool
+   path, even when it stopped on `:length` or an incomplete status."
+  (and (not= asst.stop-reason :error) (not= asst.stop-reason :aborted)
+       (> (length (assistant-tool-calls asst)) 0)))
+
+(fn fail-step [agent err-text]
+  "Announce an error exit on the bus; returns the step's `[error] ...` text."
+  (emit agent {:type :error :error err-text})
+  (.. "[error] " err-text))
+
 (fn step-loop [agent ?yield! ?tool-choice]
   "Shared body of `step`. ?yield! nil = blocking mode (no yields, plain
    llm.complete, blocking tool execute). ?yield! present = cooperative
@@ -584,19 +610,31 @@
    forwards yield-fn into each tool's :execute so coop-aware tools can
    yield).
 
-   `step` always wraps this in a pcall so the cooperative cancel path can
-   catch CANCEL-MARKER cleanly; non-coop callers see identical error
-   semantics because pcall re-raises everything else.
+   `step` always wraps this in an xpcall and owns the close-turn boundary:
+   any unwind (cancel or crash) leaves pairing to it, so no path here pairs
+   calls on the way out.
 
    `?tool-choice :none` keeps tool definitions in the request but tells the
    provider not to call tools; tool calls that arrive anyway are refused with
    paired error results. The model gets one more turn to answer in text; a
    second refused turn ends the step with an error. Injected steering or
-   follow-up input starts a fresh allowance."
+   follow-up input starts a fresh allowance.
+
+   Returns (values text status ?error): status is :ok or :error. Every
+   error exit (provider error, second refusal, safety cap) emits `:error`."
   (var done? false)
   (var refused-turns 0)
   (var final nil)
+  (var status :ok)
+  (var err nil)
   (var safety SAFETY-CAP)
+
+  (fn stop-with-error! [err-text]
+    (set err err-text)
+    (set status :error)
+    (set final (fail-step agent err-text))
+    (set done? true))
+
   (while (and (not done?) (> safety 0))
     (set safety (- safety 1))
     (when (> (inject-user-lines! agent (agent.get-steering) :steering-injected)
@@ -615,21 +653,13 @@
       (when asst.usage
         (set asst.usage.latency-ms (- (clock.monotonic-ms) t0)))
       (emit agent {:type :llm-end :usage asst.usage})
+      ;; A fresh emitted set per assistant: the boundary pairs this reply's calls.
+      (set agent.emitted-tool-calls {})
       (append-message! agent asst)
-      (when ?yield!
-        (let [(ok? thrown) (pcall ?yield!)]
-          (when (not ok?)
-            ;; Cancelled before any tool ran: pair every call so history stays provider-valid.
-            (when (and (= thrown CANCEL-MARKER) (= asst.stop-reason :tool-use))
-              (append-cancelled-tool-results! agent (assistant-tool-calls asst)
-                                              1 false))
-            (error thrown))))
+      (when ?yield! (?yield!))
       (if (= asst.stop-reason :error)
-          (let [err-text (tostring (or asst.error-message "unknown"))]
-            (emit agent {:type :error :error err-text})
-            (set final (.. "[error] " err-text))
-            (set done? true))
-          (= asst.stop-reason :tool-use)
+          (stop-with-error! (tostring (or asst.error-message "unknown")))
+          (tool-turn? asst)
           (do
             (if streamed?
                 (finish-stream-display agent stream-state false)
@@ -639,10 +669,7 @@
                   (refuse-tool-calls! agent (assistant-tool-calls asst))
                   (set refused-turns (+ refused-turns 1))
                   (when (> refused-turns 1)
-                    (let [err-text "model called tools while tool-choice is none"]
-                      (emit agent {:type :error :error err-text})
-                      (set final (.. "[error] " err-text))
-                      (set done? true))))
+                    (stop-with-error! "model called tools while tool-choice is none")))
                 (run-tool-calls agent (assistant-tool-calls asst) ?yield!)))
           (let [text (types.assistant-text asst)]
             (if streamed?
@@ -654,10 +681,11 @@
             (when (inject-after-natural-stop! agent)
               (set refused-turns 0)
               (set done? false))))))
-  (when (and (not done?) (<= safety 0))
+  (when (not done?)
+    ;; The safety cap is an ordinary error exit (#610): announced like the others.
     (log.warn (.. "agent: hit step safety cap (" SAFETY-CAP " turns)"))
-    (set final "[error] tool-call loop exceeded safety cap"))
-  final)
+    (stop-with-error! "tool-call loop exceeded safety cap"))
+  (values final status err))
 
 (fn append-aborted-assistant! [agent]
   (append-message! agent
@@ -667,10 +695,38 @@
                                              :content []
                                              :stop-reason :aborted})))
 
+(fn close-turn! [agent ok? result status err]
+  "The close-turn boundary (#668), run once on every exit from `step-loop`.
+   Pairs every call the newest assistant left open (a cancel, a crash, or a
+   reply that never reached its tools), appends one `:aborted` assistant and
+   emits `:cancelled` on cancel, and records the step's one Outcome in
+   `agent.outcome`. Returns the Outcome; a crash re-raises after closing."
+  (let [cancelled? (and (not ok?) (= result CANCEL-MARKER))
+        crash-text (when (and (not ok?) (not cancelled?))
+                     (text-util.first-line (tostring result)))]
+    (close-open-calls! agent
+                       (if cancelled? CANCELLED-RESULT crash-text
+                           (.. "error: tool call interrupted: " crash-text)
+                           "error: tool call was not run before the turn ended"))
+    (if cancelled?
+        (do
+          (append-aborted-assistant! agent)
+          (emit agent {:type :cancelled})
+          (set agent.outcome (types.outcome :cancelled "[cancelled]")))
+        crash-text
+        (do
+          (set agent.outcome (types.outcome :error nil crash-text))
+          (error result))
+        (set agent.outcome (types.outcome status result err)))
+    agent.outcome))
+
 (fn step [agent user-msg ?cancel-fn ?step-opts]
   "Run one user turn through the loop. Appends a UserMessage, then iterates
-   provider call → tool execution until the assistant returns a non-tool
-   stop reason or we hit the safety cap. Returns the final visible text.
+   provider call → tool execution until the assistant stops without tool
+   calls or we hit the safety cap. Returns (values text outcome): the final
+   visible text (or \"[error] ...\" / \"[cancelled]\") and the step's
+   Outcome `{:status :ok|:error|:cancelled :text :error}`, also kept in
+   `agent.outcome` for `turn_lifecycle`.
 
    Cooperative mode auto-detects: if called inside a coroutine the loop
    yields between phases (so the TUI can interleave redraws, resize
@@ -680,13 +736,15 @@
    and forwards yield-fn into each tool's `:execute`. Called on the main
    thread, the loop runs straight through and tools run blocking.
 
+   Every exit goes through one close-turn boundary: whatever tool calls the
+   last assistant left open are answered (by call id) with synthetic error
+   results, so history stays provider-valid however the step ended.
    `?cancel-fn` is only meaningful in cooperative mode: every yield checks
    it after resuming. A truthy return preserves messages appended so far,
-   appends an assistant message with `:stop-reason :aborted`, emits
-   `:cancelled`, and returns \"[cancelled]\". Non-cancel errors propagate.
-   Always pcalls the loop body so the cooperative cancel path is uniform;
-   non-coop callers see identical error semantics because pcall re-raises
-   anything that isn't CANCEL-MARKER.
+   pairs open calls as cancelled, appends an assistant message with
+   `:stop-reason :aborted`, emits `:cancelled`, and returns \"[cancelled]\".
+   Any other error is re-raised after open calls are paired, with
+   `agent.outcome` set to `:error`.
 
    `?step-opts` is `{:tool-choice :auto|:none}` (nil means :auto). With
    `:none` the provider request keeps its tool definitions but forbids tool
@@ -699,18 +757,14 @@
         tool-choice (when (= tool-choice :none) :none)
         coop? (in-coroutine?)
         yield! (when coop? (make-yield ?cancel-fn))]
+    (set agent.outcome nil)
+    (set agent.emitted-tool-calls {})
     (append-message! agent (types.user-message user-msg))
-    (let [(ok? result) (xpcall #(step-loop agent yield! tool-choice)
-                               #(if (= $1 CANCEL-MARKER)
-                                    $1
-                                    (debug.traceback (tostring $1) 2)))]
-      (if (and coop? (not ok?) (= result CANCEL-MARKER))
-          (do
-            (append-aborted-assistant! agent)
-            (emit agent {:type :cancelled})
-            "[cancelled]")
-          (not ok?)
-          (error result)
-          result))))
+    (let [(ok? result status err) (xpcall #(step-loop agent yield! tool-choice)
+                                          #(if (= $1 CANCEL-MARKER)
+                                               $1
+                                               (debug.traceback (tostring $1) 2)))
+          outcome (close-turn! agent ok? result status err)]
+      (values outcome.text outcome))))
 
 {: make-agent : step : SAFETY-CAP : complete-messages}

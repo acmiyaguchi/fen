@@ -673,12 +673,14 @@
                                                                                        (tool-spec "loop"
                                                                                                   :noop))
                                                                         :mock-record rec}})]
-                    (let [final (agent-mod.step agent "loop forever")]
+                    (let [(final outcome) (agent-mod.step agent "loop forever")]
                       (assert.is_truthy (string.find final
                                                      "tool%-call loop exceeded safety cap"))
+                      (assert.are.equal :error outcome.status)
                       (assert.is_true (<= (length rec) agent-mod.SAFETY-CAP))
                       (assert.is_true (>= (length rec) agent-mod.SAFETY-CAP))
-                      (assert.is_false (any? #(= $1 :error) (event-types log)))))))
+                      ;; The cap is an ordinary error exit, announced on the bus (#610).
+                      (assert.is_true (any? #(= $1 :error) (event-types log)))))))
             (it "surfaces an error stop-reason and stops the loop"
                 (fn []
                   (let [(log on-event) (record-events)

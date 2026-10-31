@@ -1,5 +1,5 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-current	refinesTurn	violated	#606,#607,#608,#609,#610
-current	inheritsTurnInvariants	violated	#606,#607
+current	refinesTurn	holds
+current	inheritsTurnInvariants	holds
 fixed	refinesTurn	holds
 fixed	inheritsTurnInvariants	holds

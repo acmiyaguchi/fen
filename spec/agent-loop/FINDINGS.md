@@ -10,6 +10,8 @@ Each provider call is one nondeterministic outcome; retries belong to the networ
 
 Code: `packages/core/src/fen/core/agent.fnl` (`step`, `step-loop`, `run-tool-calls`, `run-serial-tool-call`, `run-parallel-tool-batch`, `append-cancelled-tool-results!`, `refuse-tool-calls!`, `inject-user-lines!`, `inject-after-natural-stop!`, `same-turn-edit-conflicts`, `context-message?`), `packages/core/src/fen/core/tools.fnl`, `extensions/behaviors/kernel/steering/service.fnl`, `packages/fen/src/fen/{interactive,turn_submit,turn_lifecycle}.fnl`, `extensions/adapters/providers/shared/streaming.fnl` (`finalize-stream-state`), `extensions/adapters/providers/anthropic/anthropic_messages.fnl`.
 
+Today's code carries the #606-#610 fixes (the close-turn boundary, #668), so `current`, `wellFormed`, `lengthOnly`, `badArgsOnly` and `fixed` all model it; the bugs live on in the `fix<issue>` instances and `mutants.tsv`.
+
 Main modules: `current` (every outcome), `wellFormed` (tool calls only ever arrive with `:tool-use` and parseable arguments), `lengthOnly` / `badArgsOnly` (each isolates one malformed-reply bug), and `fixed`.
 
 ## Input assumptions
@@ -59,6 +61,8 @@ B1b stop-reason= length  tool-calls= 1  anthropic wire tool_use= 1  tool_result=
 The OpenAI converters patch orphans at the wire with a synthetic "missing tool output" result.
 The Anthropic converter sends the bare `tool_use`, so this probably wedges every later request in the session: Anthropic should reject a `tool_use` that has no matching `tool_result` (rejection not run against the real API).
 
+Fixed in #605: Dispatch is on content: `tool-turn?` sends any non-error, non-aborted reply with tool calls down the tool path, including `:length` and incomplete replies (`packages/core/tests/length_reply_tool_calls_run_test.fnl`).
+
 ### #607: Malformed `edit` arguments crash the loop after the assistant is appended, before any result
 
 Counterexample (`badArgsOnly.historyValidWhenIdle`): `startStep → loopTop → badArgs → crash`.
@@ -79,6 +83,8 @@ B2 next request valid= false  unanswered-before@3
 More generally, no part of the loop restores pairing on a non-cancel unwind.
 `run-tool-calls` only promises it for errors inside `execute-call` and for cancels.
 
+Fixed in #605: `edit-call-paths` tolerates any argument shape, so malformed `edit` arguments are an ordinary tool error; and any unwind (cancel or crash) goes through `close-turn!` in `step`, which pairs every call the newest assistant left open by call id (`packages/core/tests/step_unwind_pairs_open_calls_test.fnl`).
+
 ### #608: An empty queued line makes the loop call the provider again on its own reply
 
 Counterexample (`wellFormed.requestsEndOnUserSide`): `startStep → enqueue("") → enqueue → loopTop → text → inject → loopTop → …`.
@@ -98,6 +104,8 @@ B3 provider calls= 2  follow-up-injected events= 0  last request ends with role=
 B3 submit '>' while busy -> queued follow-up text=[]  follow-up queue len= 1
 ```
 
+Fixed in #605: `inject-after-natural-stop!` continues only when `inject-user-lines!` appended a line (`packages/core/tests/empty_queued_line_ends_step_test.fnl`).
+
 ### #609: A refused-twice turn and a safety-cap turn report `:agent-turn-complete` status `:ok`
 
 Counterexample (`wellFormed.statusMatchesResult`): `startStep → loopTop → tool2 → refused → loopTop → tool2 → refusedTwice`.
@@ -112,6 +120,8 @@ Confirmed with a probe:
 B4 refusal result= [error] model called tools while tool-choice is none  :error events= 1  last role= tool-result
 B4 refusal lifecycle status= ok
 ```
+
+Fixed in #605: `step` returns an `Outcome` (`types.outcome`, also left in `agent.outcome`) and `turn_lifecycle.complete-event` reads it instead of inferring from the last message (`packages/fen/tests/refused_turn_reports_error_test.fnl`).
 
 ### #610: Hitting the safety cap is silent on the bus
 
@@ -128,14 +138,15 @@ Confirmed with a probe (a fake provider that always returns a tool call):
 B4 cap result= [error] tool-call loop exceeded safety cap  :error events= 0  lifecycle status= ok
 ```
 
+Fixed in #605: The safety cap is an ordinary error exit that emits `:error` (`packages/fen/tests/safety_cap_reports_error_test.fnl`).
+
 ## Candidate fix (modelled as `fixed`)
 
 - #606: dispatch on content, not on the stop label.
   A non-error assistant with tool calls takes the tool path, in both dispatch and the cancel guard after llm-end (pi-mono's rule).
   An alternative is to pair such calls with synthetic `[truncated]` results instead of running them.
 - #607: let `step`'s error handler pair every unanswered call of the last assistant for *any* unwind, not just CANCEL-MARKER (the close-turn core, #668).
-  `fixed` models exactly that: the malformed arguments still crash the step, and the boundary closes the turn.
-  Making `edit-call-paths` type-tolerant is still worth doing so the crash becomes an ordinary tool error.
+  The boundary closes the turn on a crash, and `edit-call-paths` is now type-tolerant so malformed arguments no longer crash at all; the model's `badArgs` outcome stays as a stand-in for any crash after the assistant is appended.
 - Cancel pairing: in `fixed`, the per-yield pairing at each exit is replaced by the same boundary, which pairs whatever `spec/core/turn` `openCalls` finds in the history (the batch runner still appends finished children in call order).
 - #608: continue only when `inject-user-lines!` actually appended something.
   Separately, reject a blank follow-up in `service.submit`.
@@ -172,16 +183,16 @@ Fixes are named by issue (`FIXES`): `fix606` dispatches on content, `fix607` clo
 
 The loop is checked against the abstract close-turn spec (`spec/core/turn/abstract.qnt`, proved inductively there):
 
-- `currentRefines` / `fixedRefines` (integration model): a ghost previous abstract state and `refinesTurn`, checked on every concrete step. `fixedRefines` holds (sampled); `currentRefines` fails for each of #606-#610.
-- `proofs/loop` (proof model, no transcript): the same monitor over the loop's control decisions. `fixed` is **bounded-safe to 12 steps** with Apalache (19 s); `current` fails refinement for each bug, each with a witness.
+- `currentRefines` / `fixedRefines` (integration model): a ghost previous abstract state and `refinesTurn`, checked on every concrete step. `fixedRefines` holds (sampled); `currentRefines` now holds too (the code is the fixed design); the `w6xx` counterexamples became `reach6xx` regression witnesses.
+- `proofs/loop` (proof model, no transcript): the same monitor over the loop's control decisions. `fixed` is **bounded-safe to 12 steps** with Apalache (19 s); `current` is the same design and is proved to the same depth; the old counterexamples are `reach6xx` witnesses.
 
-| Issue | Witnesses | Probe (`known-bug`, real code) |
+| Issue | Witnesses | Regression test (real code) |
 | --- | --- | --- |
-| #606 | `w606LengthCallUnpairedTest`, `w606NextRequestInvalidTest`, `w606RefinementTest`, proofs/loop `w606LengthReplyClosesOpenTest` | `packages/core/tests/issue_606_length_reply_tool_call_unpaired_test.fnl` |
-| #607 | `w607BadArgsCrashUnpairedTest`, `w607RefinementTest`, proofs/loop `w607CrashClosesOpenTest` | `packages/core/tests/issue_607_malformed_edit_args_crash_unpaired_test.fnl` |
-| #608 | `w608EmptyFollowUpContinuesTest`, `w608EmptyLineResetsRefusalsTest`, `w608RefinementTest`, proofs/loop `w608UnowedReplyTest` | `packages/core/tests/issue_608_empty_follow_up_continues_loop_test.fnl` |
-| #609 | `w609RefusedTwiceReportsOkTest`, `w609RefinementTest`, proofs/loop `w609RefusedTwiceClosesOkTest` | `packages/fen/tests/issue_609_refused_turn_reports_ok_test.fnl` |
-| #610 | `w610SafetyCapSilentTest`, `w610RefinementTest`, proofs/loop `w610CapClosesOkTest` | `packages/fen/tests/issue_610_safety_cap_silent_test.fnl` (runs the real 1000-turn cap) |
+| #606 | `reach606LengthCallPairedTest`, `reach606NextRequestValidTest`, `reach606RefinementTest`, proofs/loop `reach606LengthReplyRunsToolTest` | `packages/core/tests/length_reply_tool_calls_run_test.fnl` |
+| #607 | `reach607BadArgsCrashPairedTest`, `reach607RefinementTest`, proofs/loop `reachCrashClosedTest` | `packages/core/tests/step_unwind_pairs_open_calls_test.fnl` |
+| #608 | `reach608EmptyFollowUpEndsStepTest`, `reach608EmptyLineKeepsRefusalsTest`, `reach608RefinementTest`, proofs/loop `reach608EmptyLineEndsStepTest` | `packages/core/tests/empty_queued_line_ends_step_test.fnl` |
+| #609 | `reach609RefusedTwiceReportsErrorTest`, `reach609RefinementTest`, proofs/loop `reach609RefusedTwiceErrorTest` | `packages/fen/tests/refused_turn_reports_error_test.fnl` |
+| #610 | `reach610SafetyCapAnnouncedTest`, `reach610RefinementTest`, proofs/loop `reachCapErrorTest` | `packages/fen/tests/safety_cap_reports_error_test.fnl`  |
 
 Mutants remove the boundary on cancel or on crash, dispatch on the stop label, and drop the cap's error event; each is caught (`mutants.tsv`, `proofs/loop/mutants.tsv`).
 
