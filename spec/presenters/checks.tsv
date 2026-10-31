@@ -1,0 +1,18 @@
+# main	invariant	expect (holds|violated)
+current	headlessExitMatchesStatus	holds
+current	headlessFinalTextMatches	holds
+current	headlessErrorDetailsMatch	holds
+current	headlessUsageIsTurnUsage	violated
+current	sendStatusMatchesOutcome	holds
+current	lifecycleStatusMatchesOutcome	violated
+current	rpcExitMatchesStatus	violated
+current	rpcFinalTextMatches	violated
+current	goalFinalTextMatches	violated
+current	goalExitMatches	violated
+current	webRowsSingleAttempt	violated
+current	webOkReplyShown	violated
+current	webRowsSingleStep	holds
+current	stdioLinesSingleAttempt	holds
+current	stdioOkReplyShown	holds
+current	boundedCalls	holds
+fixed	allInvariants	holds
