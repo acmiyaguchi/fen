@@ -1,0 +1,19 @@
+# main	invariant	expect (holds|violated)
+current	providerContextValid	violated
+current	replayMatchesMemory	violated
+current	ackedPersisted	violated
+current	noDuplicateEntries	holds
+current	compactionResolves	violated
+current	compactionCutKeepsPairs	violated
+current	doctorCleanMeansReplayable	violated
+current	doctorRepairReplayable	violated
+currentSolo	providerContextValid	violated
+currentSolo	replayMatchesMemory	violated
+currentSolo	ackedPersisted	violated
+currentSolo	compactionResolves	violated
+currentSolo	compactionCutKeepsPairs	holds
+currentSolo	doctorCleanMeansReplayable	holds
+currentSolo	doctorRepairReplayable	holds
+fixed	allInvariants	holds
+lockCurrent	lockMutex	violated
+lockFixed	lockMutex	holds
