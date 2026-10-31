@@ -26,6 +26,10 @@
 // Entry ids are message ids (`mid`); one tool call per assistant is enough.
 // FIXED selects the candidate fixes so the same invariants can be checked.
 module sessions {
+  // Replay repair, the provider rule, and the doctor's pairing check come from
+  // the close-turn core (#668): one rule for memory and disk.
+  import turn.* from "../core/turn/turn"
+
   const FIXED: bool
   // Whether a second process (`fen session send`) may touch the session.
   const OTHER_WRITER: bool
@@ -76,33 +80,32 @@ module sessions {
     val k = compactionIndex(disk)
     if (k >= 0) [SUMMARY].concat(ms.slice(k, ms.length())) else ms
 
-  // Candidate fix: provider-neutral repair at replay time (what the OpenAI
-  // converters already do privately): a call not immediately answered gets a
-  // synthetic interrupted result.
-  pure def repairDangling(ms: List[Msg]): List[Msg] =
-    val r = ms.foldl({ out: NOMSGS, open: -1 }, (st, m) =>
-      val answered = m.role == "result" and m.call == st.open
-      val out1 = if (st.open >= 0 and not(answered)) st.out.append(synth(st.open)) else st.out
-      { out: out1.append(m), open: if (m.role == "call") m.call else -1 })
-    if (r.open >= 0) r.out.append(synth(r.open)) else r.out
+  // The core's view of a message. An :aborted marker is a turn boundary for
+  // replay, but build-context drops it before any provider sees it.
+  pure def planEntry(m: Msg): Entry =
+    if (m.role == "call") eAsst([m.call])
+    else if (m.role == "result") eResult(m.call)
+    else if (m.role == "asst") eAsst(NOCALLS)
+    else eUser                                    // user, summary, aborted
+
+  pure def planEntries(ms: List[Msg]): List[Entry] =
+    ms.foldl(NOENTRIES, (acc, m) => acc.append(planEntry(m)))
+
+  // Candidate fix: replay closes every interrupted call with a synthetic
+  // result (core `replayPlan`, the same rule as close-turn in memory), for
+  // every provider, instead of the OpenAI converters' private repair.
+  pure def closeReplay(ms: List[Msg]): List[Msg] =
+    replayPlan(planEntries(ms)).foldl(NOMSGS, (acc, st) =>
+      acc.append(if (st.src >= 0) ms[st.src] else synth(st.call)))
 
   pure def replay(disk: List[Line]): List[Msg] =
-    if (FIXED) repairDangling(replayRaw(disk)) else replayRaw(disk)
+    if (FIXED) closeReplay(replayRaw(disk)) else replayRaw(disk)
 
   // Anthropic-shaped validity (no converter-side repair): every tool call is
   // immediately followed by its result and every result immediately follows
-  // its call. :aborted markers are dropped by build-context.
+  // its call (core rule). :aborted markers are dropped by build-context.
   pure def contextValid(ms: List[Msg]): bool =
-    val c = ms.select(m => m.role != "aborted")
-    c.indices().forall(i =>
-      (if (c[i].role == "call")
-         (if (i + 1 < c.length()) c[i + 1].role == "result" and c[i + 1].call == c[i].call
-          else false)
-       else true)
-      and
-      (if (c[i].role == "result")
-         (if (i > 0) c[i - 1].role == "call" and c[i - 1].call == c[i].call else false)
-       else true))
+    turnValid(planEntries(ms.select(m => m.role != "aborted")))
 
   // ---- session doctor ----
   // Today: pending set keyed by call id; order between call and result ignored.
@@ -132,33 +135,34 @@ module sessions {
         acc.append(l).append(msgLine(synth(l.msg.call)))
       else acc.append(l))
 
-  // Candidate fix: adjacency over message entries (compaction entries skipped).
-  pure def doctorIssuesAdj(disk: List[Line]): int =
-    val st = disk.foldl({ issues: 0, open: -1 }, (s, l) =>
-      if (l.kind == "garbage") { ...s, issues: s.issues + 1 }
-      else if (l.kind != "msg") s
-      else
-        val answered = l.msg.role == "result" and l.msg.call == s.open
-        val i1 = if (s.open >= 0 and not(answered)) s.issues + 1 else s.issues
-        val i2 = if (l.msg.role == "result" and not(answered)) i1 + 1 else i1
-        { issues: i2, open: if (l.msg.role == "call") l.msg.call else -1 })
-    st.issues + (if (st.open >= 0) 1 else 0)
+  // Candidate fix: the doctor reports and repairs exactly what replay would
+  // change (core `replayRepairs` / `replayPlan` over the message entries);
+  // compaction entries are kept in order, malformed lines dropped.
+  pure def msgLineIdx(disk: List[Line]): List[int] =
+    range(0, disk.length()).select(i => disk[i].kind == "msg")
 
-  pure def doctorRepairAdj(disk: List[Line]): List[Line] =
-    val st = disk.foldl({ out: NOLINES, open: -1 }, (s, l) =>
-      if (l.kind == "garbage") s
-      else if (l.kind != "msg") { ...s, out: s.out.append(l) }
-      else
-        val answered = l.msg.role == "result" and l.msg.call == s.open
-        val out1 = if (s.open >= 0 and not(answered)) s.out.append(msgLine(synth(s.open))) else s.out
-        if (l.msg.role == "result" and not(answered)) { out: out1, open: -1 }
-        else { out: out1.append(l), open: if (l.msg.role == "call") l.msg.call else -1 })
-    if (st.open >= 0) st.out.append(msgLine(synth(st.open))) else st.out
+  pure def lineEntries(disk: List[Line], mi: List[int]): List[Entry] =
+    mi.foldl(NOENTRIES, (acc, i) => acc.append(planEntry(disk[i].msg)))
+
+  pure def doctorIssuesCore(disk: List[Line]): int =
+    disk.select(l => l.kind == "garbage").length()
+      + replayRepairs(lineEntries(disk, msgLineIdx(disk)))
+
+  pure def keepCompactions(out: List[Line], disk: List[Line], lo: int, hi: int): List[Line] =
+    range(lo, hi).foldl(out, (o, j) => if (disk[j].kind == "compaction") o.append(disk[j]) else o)
+
+  pure def doctorRepairCore(disk: List[Line]): List[Line] =
+    val mi = msgLineIdx(disk)
+    val r = replayPlan(lineEntries(disk, mi)).foldl({ out: NOLINES, ptr: 0 }, (st, p) =>
+      if (p.src < 0) { out: st.out.append(msgLine(synth(p.call))), ptr: st.ptr }
+      else { out: keepCompactions(st.out, disk, st.ptr, mi[p.src]).append(disk[mi[p.src]]),
+             ptr: mi[p.src] + 1 })
+    keepCompactions(r.out, disk, r.ptr, disk.length())
 
   pure def doctorIssues(disk: List[Line]): int =
-    if (FIXED) doctorIssuesAdj(disk) else doctorIssuesById(disk)
+    if (FIXED) doctorIssuesCore(disk) else doctorIssuesById(disk)
   pure def doctorRepair(disk: List[Line]): List[Line] =
-    if (FIXED) doctorRepairAdj(disk) else doctorRepairById(disk)
+    if (FIXED) doctorRepairCore(disk) else doctorRepairById(disk)
 
   // ---- writer: append-entry + flush closure ----
   type FS = { disk: List[Line], torn: bool, saved: int, persisted: Set[int],
@@ -359,7 +363,7 @@ module sessions {
   // exactly the context the live process holds.
   val replayMatchesMemory =
     (up and assistantPresent(mem) and saved == mem.length()) implies
-      replay(disk) == (if (FIXED) repairDangling(mem) else mem)
+      replay(disk) == (if (FIXED) closeReplay(mem) else mem)
 
   // A message a writer counted as saved is in the log.
   val ackedPersisted = acked.forall(x => midsOf(disk).contains(x))

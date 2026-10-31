@@ -29,7 +29,7 @@ The sweep found 0 violations of provider-valid history, of exactly one `:aborted
 
 ## Bugs
 
-### L1. A `:length` (or other non-`:tool-use`) reply that carries tool calls leaves them unanswered
+### #606: A `:length` (or other non-`:tool-use`) reply that carries tool calls leaves them unanswered
 
 Counterexample (`lengthOnly.historyValidWhenIdle`): `startStep → loopTop → lengthCall → naturalStop`.
 `current.providerValidRequests` violates it after one more step, or immediately when steering is injected: `… lengthCall → inject → loopTop → tool2`.
@@ -53,7 +53,7 @@ B1b stop-reason= length  tool-calls= 1  anthropic wire tool_use= 1  tool_result=
 The OpenAI converters patch orphans at the wire with a synthetic "missing tool output" result.
 The Anthropic converter sends the bare `tool_use`, so this probably wedges every later request in the session: Anthropic should reject a `tool_use` that has no matching `tool_result` (rejection not run against the real API).
 
-### L2. Malformed `edit` arguments crash the loop after the assistant is appended, before any result
+### #607: Malformed `edit` arguments crash the loop after the assistant is appended, before any result
 
 Counterexample (`badArgsOnly.historyValidWhenIdle`): `startStep → loopTop → badArgs → crash`.
 `same-turn-edit-conflicts` walks raw model arguments before schema validation: `(ipairs (or args.files []))` and `(?. f :path)`.
@@ -73,7 +73,7 @@ B2 next request valid= false  unanswered-before@3
 More generally, no part of the loop restores pairing on a non-cancel unwind.
 `run-tool-calls` only promises it for errors inside `execute-call` and for cancels.
 
-### L3. An empty queued line makes the loop call the provider again on its own reply
+### #608: An empty queued line makes the loop call the provider again on its own reply
 
 Counterexample (`wellFormed.requestsEndOnUserSide`): `startStep → enqueue("") → enqueue → loopTop → text → inject → loopTop → …`.
 `service.submit` queues `>` (or `>   `) while busy as the follow-up `""`, because `strip-follow-up-prefix` returns `""`.
@@ -92,7 +92,7 @@ B3 provider calls= 2  follow-up-injected events= 0  last request ends with role=
 B3 submit '>' while busy -> queued follow-up text=[]  follow-up queue len= 1
 ```
 
-### L4. A refused-twice turn and a safety-cap turn report `:agent-turn-complete` status `:ok`
+### #609: A refused-twice turn and a safety-cap turn report `:agent-turn-complete` status `:ok`
 
 Counterexample (`wellFormed.statusMatchesResult`): `startStep → loopTop → tool2 → refused → loopTop → tool2 → refusedTwice`.
 `turn_lifecycle.complete-event` infers status from the last message: `:aborted` gives `:cancelled`, an assistant with `:error` gives `:error`, and anything else gives `:ok`.
@@ -107,13 +107,13 @@ B4 refusal result= [error] model called tools while tool-choice is none  :error 
 B4 refusal lifecycle status= ok
 ```
 
-### L5. Hitting the safety cap is silent on the bus
+### #610: Hitting the safety cap is silent on the bus
 
 Counterexample (`wellFormed.errorSignalled`): it takes three loop iterations that keep continuing; the shortest found is `… refused → loopTop → text → inject → loopTop → tool2 → refused → safetyCap`.
 The cap path only calls `log.warn` and returns `"[error] tool-call loop exceeded safety cap"`.
 It emits no `:error` event.
 The TUI never renders the step's return value, so an interactive user sees the turn just stop.
-`:agent-turn-complete` says `:ok` (L4).
+`:agent-turn-complete` says `:ok` (#609).
 
 Confirmed with a probe (a fake provider that always returns a tool call):
 
@@ -124,15 +124,16 @@ B4 cap result= [error] tool-call loop exceeded safety cap  :error events= 0  lif
 
 ## Candidate fix (modelled as `fixed`)
 
-- L1: dispatch on content, not on the stop label.
+- #606: dispatch on content, not on the stop label.
   A non-error assistant with tool calls takes the tool path, in both dispatch and the cancel guard after llm-end (pi-mono's rule).
   An alternative is to pair such calls with synthetic `[truncated]` results instead of running them.
-- L2: make `edit-call-paths` type-tolerant, and run `same-turn-edit-conflicts` inside the guarded region.
-  Sturdier: let `step`'s error handler pair every unanswered call of the last assistant for *any* unwind, not just CANCEL-MARKER.
-  `fixed` models the outcome, where malformed arguments no longer crash.
-- L3: continue only when `inject-user-lines!` actually appended something.
+- #607: let `step`'s error handler pair every unanswered call of the last assistant for *any* unwind, not just CANCEL-MARKER (the close-turn core, #668).
+  `fixed` models exactly that: the malformed arguments still crash the step, and the boundary closes the turn.
+  Making `edit-call-paths` type-tolerant is still worth doing so the crash becomes an ordinary tool error.
+- Cancel pairing: in `fixed`, the per-yield pairing at each exit is replaced by the same boundary, which pairs whatever `spec/core/turn` `openCalls` finds in the history (the batch runner still appends finished children in call order).
+- #608: continue only when `inject-user-lines!` actually appended something.
   Separately, reject a blank follow-up in `service.submit`.
-- L4/L5: carry the step outcome explicitly.
+- #609/#610: carry the step outcome explicitly.
   `step` returns or emits a status (`ok | error | cancelled`) that `turn_lifecycle` uses instead of guessing from the last message.
   The cap path emits `:error` like the other error exits.
 
@@ -149,12 +150,12 @@ All invariants hold under `fixed` (`fixed.allInvariants`).
   A whitespace-only steering line such as `"  "` becomes a user message.
   Anthropic is believed to reject whitespace-only text blocks (not run against the real API).
 - A non-cancel error from `?yield!` inside `run-parallel-tool-batch` or `run-serial-tool-call` re-raises without pairing (`(error thrown)`).
-  With today's `make-yield` that branch looks unreachable, but it is the same missing guard as L2.
+  With today's `make-yield` that branch looks unreachable, but it is the same missing guard as #607.
 
 ## Core
 
 The loop's essential contract is one rule: *every tool call in history is answered exactly once, in order, before the next request, however the step ends*.
 Today that rule is enforced locally at each of about six exit points: the cancel after llm-end, the serial pre and post yields, a cancel inside a tool, the batch cancel, and refusal.
-Each exit point carries its own `append-cancelled-tool-results!` call, keyed on `stop-reason`, which is why the two holes (L1, L2) are on paths that were not enumerated.
-A smaller core is a single "close the turn" step at the `step` boundary: pair whatever calls the last assistant left open (cancelled, truncated, or crashed), append `:aborted` if cancelled, and emit one terminal status event that `turn_lifecycle` and presenters read directly (L4, L5).
+Each exit point carries its own `append-cancelled-tool-results!` call, keyed on `stop-reason`, which is why the two holes (#606, #607) are on paths that were not enumerated.
+A smaller core is a single "close the turn" step at the `step` boundary: pair whatever calls the last assistant left open (cancelled, truncated, or crashed), append `:aborted` if cancelled, and emit one terminal status event that `turn_lifecycle` and presenters read directly (#609, #610).
 Once that boundary owns pairing, the per-yield pairing code in the serial and parallel tool paths shrinks to "stop and unwind".

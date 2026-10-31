@@ -1,19 +1,19 @@
-# main	invariant	expect (holds|violated)
-current	providerContextValid	violated
-current	replayMatchesMemory	violated
-current	ackedPersisted	violated
+# main	invariant	expect (holds|violated)	issues (violated rows)
+current	providerContextValid	violated	#639,#642
+current	replayMatchesMemory	violated	#641,#642
+current	ackedPersisted	violated	#641
 current	noDuplicateEntries	holds
-current	compactionResolves	violated
-current	compactionCutKeepsPairs	violated
-current	doctorCleanMeansReplayable	violated
-current	doctorRepairReplayable	violated
-currentSolo	providerContextValid	violated
-currentSolo	replayMatchesMemory	violated
-currentSolo	ackedPersisted	violated
-currentSolo	compactionResolves	violated
+current	compactionResolves	violated	#640
+current	compactionCutKeepsPairs	violated	#642
+current	doctorCleanMeansReplayable	violated	#643
+current	doctorRepairReplayable	violated	#643
+currentSolo	providerContextValid	violated	#639
+currentSolo	replayMatchesMemory	violated	#641
+currentSolo	ackedPersisted	violated	#641
+currentSolo	compactionResolves	violated	#640
 currentSolo	compactionCutKeepsPairs	holds
 currentSolo	doctorCleanMeansReplayable	holds
 currentSolo	doctorRepairReplayable	holds
 fixed	allInvariants	holds
-lockCurrent	lockMutex	violated
+lockCurrent	lockMutex	violated	#644
 lockFixed	lockMutex	holds

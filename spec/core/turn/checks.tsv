@@ -1,0 +1,8 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+turnModel	closeTurnValid	holds
+turnModel	closeTurnIdempotent	holds
+turnModel	replayEqualsClose	holds
+turnModel	replayValid	holds
+turnModel	replayKeepsValid	holds
+turnModel	replayIdempotent	holds
+turnModel	doctorCleanIffValid	holds

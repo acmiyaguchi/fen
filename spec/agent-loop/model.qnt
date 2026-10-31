@@ -35,6 +35,9 @@
 // FIXED selects the candidate fixes so the same invariants can be checked
 // against both.
 module agentloop {
+  // The pairing rule and the step outcome come from the close-turn core (#668).
+  import turn.* from "../core/turn/turn"
+
   const FIXED: bool
   // provider outcomes the environment may produce
   const OUTCOMES: Set[str]
@@ -94,18 +97,16 @@ module agentloop {
 
   pure def ctx(h: List[Msg]): List[Msg] = h.select(m => inContext(m))
 
+  // The provider's view of the history, in the core's terms.
+  pure def entries(h: List[Msg]): List[Entry] =
+    ctx(h).foldl(NOENTRIES, (acc, m) =>
+      acc.append(if (m.role == "asst") eAsst(m.calls)
+                 else if (m.role == "result") eResult(m.cid)
+                 else eUser))
+
   // Provider-valid: each assistant's tool calls are answered right after it,
-  // in order, exactly once; no result without a pending call.
-  pure def validCtx(h: List[Msg]): bool =
-    val r = ctx(h).foldl({ pending: List(-1).tail(), ok: true }, (acc, m) =>
-      if (m.role == "result")
-        if (acc.pending.length() > 0 and acc.pending[0] == m.cid)
-          { pending: acc.pending.tail(), ok: acc.ok }
-        else { pending: acc.pending, ok: false }
-      else
-        { pending: if (m.role == "asst") m.calls else List(-1).tail(),
-          ok: acc.ok and acc.pending.length() == 0 })
-    r.ok and r.pending.length() == 0
+  // in order, exactly once; no result without a pending call (core rule).
+  pure def validCtx(h: List[Msg]): bool = turnValid(entries(h))
 
   pure def lastCtxRole(h: List[Msg]): str =
     val c = ctx(h)
@@ -132,6 +133,18 @@ module agentloop {
       tcEv: s.tcEv.concat(evIds),
       trEv: s.trEv.concat(ids) }
 
+  // FIXED: the step boundary pairs whatever the last assistant left open,
+  // keyed by what is in the history (core `openCalls`), whatever the unwind
+  // was. A call that never emitted :tool-call gets one with its result, as
+  // append-synthetic-tool-result! does today.
+  pure def closeOpen(s: S, kind: str): S =
+    val ids = openCalls(entries(s.history))
+    { ...s,
+      history: ids.foldl(s.history, (h, id) => h.append(mkResult(id, kind))),
+      tcEv: ids.foldl(s.tcEv, (t, id) =>
+        if (t.foldl(false, (f, x) => f or x == id)) t else t.append(id)),
+      trEv: s.trEv.concat(ids) }
+
   // Batch children's results, appended in original order after the batch.
   pure def batchResults(s: S): S =
     val ks = range(s.idx, s.batchEnd)
@@ -143,8 +156,8 @@ module agentloop {
 
   // turn_lifecycle.complete-event (current) vs step result (fixed).
   pure def lifecycle(s: S, res: str): str =
-    if (res == "crash") "error"
-    else if (FIXED) res
+    if (FIXED) outcomeOf(res)
+    else if (res == "crash") "error"
     else
       val last = lastMsg(s)
       if (res == "cancelled" or last.stop == "aborted") "cancelled"
@@ -244,7 +257,11 @@ module agentloop {
       or (s.pc == "tools" and (s.sub == "pre" or s.sub == "post"
             or (s.sub == "batch" and s.batchOut.keys().size() < s.batchEnd - s.idx))),
     val paired =
-      if (s.pc == "post")
+      // FIXED: the batch runner still appends finished children in call
+      // order; everything else is the boundary's job.
+      if (FIXED)
+        closeOpen(if (s.pc == "tools" and s.sub == "batch") batchResults(s) else s, "cancel")
+      else if (s.pc == "post")
         if (toolTurn(lastMsg(s))) pairFrom(s, 0, "cancel", false) else s
       else if (s.pc == "tools" and s.sub == "pre") pairFrom(s, s.idx, "cancel", true)
       else if (s.pc == "tools" and s.sub == "post") pairFrom(s, s.idx + 1, "cancel", false)
@@ -271,9 +288,12 @@ module agentloop {
         else
           s' = { ...r, refused: s.refused + 1, consecRefused: s.consecRefused + 1,
                  pc: "top", lastAction: "refused" }
-      else if (s.badArgs and not(FIXED))
-        // same-turn-edit-conflicts indexes a number -> Lua error -> re-raised
-        s' = finish({ ...s, stepErr: true }, "crash", "crash")
+      else if (s.badArgs)
+        // same-turn-edit-conflicts indexes a number -> Lua error -> re-raised.
+        // FIXED: the crash still happens, but the step boundary closes the
+        // turn on any unwind, not just CANCEL-MARKER.
+        s' = finish(if (FIXED) closeOpen({ ...s, stepErr: true }, "fail")
+                    else { ...s, stepErr: true }, "crash", "crash")
       else
         s' = { ...s, pc: "tools", sub: "start", idx: 0, lastAction: "runTools" }
     else
@@ -415,11 +435,11 @@ module current {
 module wellFormed {
   import agentloop(FIXED = false, OUTCOMES = Set("text", "tool1", "tool2", "error")).*
 }
-// Isolate L1 (:length carrying a tool call).
+// Isolate #606 (:length carrying a tool call).
 module lengthOnly {
   import agentloop(FIXED = false, OUTCOMES = Set("text", "tool1", "tool2", "error", "lengthCall")).*
 }
-// Isolate L2 (malformed edit arguments).
+// Isolate #607 (malformed edit arguments).
 module badArgsOnly {
   import agentloop(FIXED = false, OUTCOMES = Set("text", "tool1", "tool2", "error", "badArgs")).*
 }
