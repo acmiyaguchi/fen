@@ -1,0 +1,3 @@
+# main	invariants	mode	steps	seconds	why
+turnSpec	inductiveInv	inductive	1	300	Induction: the abstract invariants hold at any depth, so every refining owner inherits them without a bound.
+turnSpec	movesAreAbsSteps closedPairedInv outcomeWhenClosedInv errorAnnouncedInv notAwaitingWithOpenInv	bounded	10	300	Two full turns with two calls each, a cancel, and an error take at most 10 abstract steps.

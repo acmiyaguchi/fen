@@ -46,6 +46,20 @@ module turn {
       else if (e.role == "asst") e.calls
       else NOCALLS)
 
+  // h is a prefix of a valid history: results answer the pending calls in
+  // order, and nothing else arrives while a call is pending; calls may still
+  // be open at the end. This is every history an agent can leave behind when
+  // a step stops at any point.
+  pure def prefixValid(h: List[Entry]): bool =
+    h.foldl({ pending: NOCALLS, ok: true }, (acc, e) =>
+      if (e.role == "result")
+        if (acc.pending.length() > 0 and acc.pending[0] == e.cid)
+          { pending: acc.pending.tail(), ok: acc.ok }
+        else { pending: acc.pending, ok: false }
+      else
+        { pending: if (e.role == "asst") e.calls else NOCALLS,
+          ok: acc.ok and acc.pending.length() == 0 }).ok
+
   // close-turn: whatever way a step ends (done, cancelled, crashed, truncated),
   // pair every open call with a synthetic result before the history is used.
   pure def closeTurn(h: List[Entry]): List[Entry] =

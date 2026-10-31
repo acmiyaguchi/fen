@@ -32,13 +32,16 @@
 // The lifecycle status mirrors packages/fen/src/fen/turn_lifecycle.fnl,
 // which infers status from the last message rather than the step result.
 //
-// FIXED selects the candidate fixes so the same invariants can be checked
+// FIXES names the candidate fixes (by issue) so the same invariants can be checked
 // against both.
 module agentloop {
   // The pairing rule and the step outcome come from the close-turn core (#668).
   import turn.* from "../core/turn/turn"
+  // The abstract spec the loop must refine (see module `refinement` below).
+  import turnAbstract as TA from "../core/turn/abstract"
 
-  const FIXED: bool
+  const FIXES: Set[str]
+  pure def fix(issue: str): bool = FIXES.contains(issue)
   // provider outcomes the environment may produce
   const OUTCOMES: Set[str]
 
@@ -133,7 +136,7 @@ module agentloop {
       tcEv: s.tcEv.concat(evIds),
       trEv: s.trEv.concat(ids) }
 
-  // FIXED: the step boundary pairs whatever the last assistant left open,
+  // Fix #607: the step boundary pairs whatever the last assistant left open,
   // keyed by what is in the history (core `openCalls`), whatever the unwind
   // was. A call that never emitted :tool-call gets one with its result, as
   // append-synthetic-tool-result! does today.
@@ -156,7 +159,7 @@ module agentloop {
 
   // turn_lifecycle.complete-event (current) vs step result (fixed).
   pure def lifecycle(s: S, res: str): str =
-    if (FIXED) outcomeOf(res)
+    if (fix("609")) outcomeOf(res)
     else if (res == "crash") "error"
     else
       val last = lastMsg(s)
@@ -181,12 +184,27 @@ module agentloop {
         { s: { ...s2, injected: s2.injected.append(line.id) }, appended: true, drained: true }
 
   pure def toolTurn(m: Msg): bool =
-    m.stop == "tool" or (FIXED and m.calls.length() > 0 and m.stop != "error")
+    m.stop == "tool" or (fix("606") and m.calls.length() > 0 and m.stop != "error")
 
   // first index >= i whose call is not parallel-safe
   pure def batchEndFrom(par: List[bool], i: int): int =
     range(i, par.length()).foldl({ end: par.length(), open: true }, (acc, k) =>
       if (acc.open and not(par[k])) { end: k, open: false } else acc).end
+
+  // Refinement mapping onto the abstract close-turn spec. Open calls come
+  // from what is actually in the history (core `openCalls`); in-flight
+  // history is never closed first, so a missing close shows up as an
+  // abstract step that does not exist.
+  pure def absOf(st: S): TA::Abs =
+    val op = openCalls(entries(st.history))
+    {
+      open: op,
+      turnOpen: st.pc != "idle",
+      awaiting: op == NOCALLS and st.history.length() > 0 and lastCtxRole(st.history) != "asst",
+      outcome: if (st.pc == "idle" and st.result != "none") st.status else "none",
+      errSignalled: st.stepErr,
+      replies: ctx(st.history).select(m => m.role == "asst").length() % 2 == 1,
+    }
 
   // ---- state ----
   var s: S
@@ -224,7 +242,7 @@ module agentloop {
     s.pc == "top",
     if (s.iters >= CAP)
       // safety cap: log.warn + "[error] ..." return, no :error event today
-      s' = finish({ ...s, stepErr: s.stepErr or FIXED }, "error", "safetyCap")
+      s' = finish({ ...s, stepErr: s.stepErr or fix("610") }, "error", "safetyCap")
     else
       val d = drain(s, true)
       s' = { ...d.s, pc: "llm", iters: s.iters + 1,
@@ -257,9 +275,9 @@ module agentloop {
       or (s.pc == "tools" and (s.sub == "pre" or s.sub == "post"
             or (s.sub == "batch" and s.batchOut.keys().size() < s.batchEnd - s.idx))),
     val paired =
-      // FIXED: the batch runner still appends finished children in call
+      // Fix #607: the batch runner still appends finished children in call
       // order; everything else is the boundary's job.
-      if (FIXED)
+      if (fix("607"))
         closeOpen(if (s.pc == "tools" and s.sub == "batch") batchResults(s) else s, "cancel")
       else if (s.pc == "post")
         if (toolTurn(lastMsg(s))) pairFrom(s, 0, "cancel", false) else s
@@ -290,17 +308,17 @@ module agentloop {
                  pc: "top", lastAction: "refused" }
       else if (s.badArgs)
         // same-turn-edit-conflicts indexes a number -> Lua error -> re-raised.
-        // FIXED: the crash still happens, but the step boundary closes the
+        // Fix #607: the crash still happens, but the step boundary closes the
         // turn on any unwind, not just CANCEL-MARKER.
-        s' = finish(if (FIXED) closeOpen({ ...s, stepErr: true }, "fail")
+        s' = finish(if (fix("607")) closeOpen({ ...s, stepErr: true }, "fail")
                     else { ...s, stepErr: true }, "crash", "crash")
       else
         s' = { ...s, pc: "tools", sub: "start", idx: 0, lastAction: "runTools" }
     else
       // natural stop: inject-after-natural-stop!
       val st = drain(s, true)
-      val fu = if (st.drained and (st.appended or not(FIXED))) st else drain(st.s, false)
-      val cont = if (FIXED) st.appended or fu.appended else st.drained or fu.drained
+      val fu = if (st.drained and (st.appended or not(fix("608")))) st else drain(st.s, false)
+      val cont = if (fix("608")) st.appended or fu.appended else st.drained or fu.drained
       if (cont)
         s' = { ...fu.s, pc: "top", refused: 0, lastAction: "inject" }
       else
@@ -427,23 +445,97 @@ module agentloop {
 
 // Every outcome a real provider can produce.
 module current {
-  import agentloop(FIXED = false,
+  import agentloop(FIXES = Set(),
     OUTCOMES = Set("text", "tool1", "tool2", "error", "lengthCall", "badArgs")).*
 }
 // Only well-formed replies: tool calls arrive with stop-reason :tool-use and
 // parseable arguments. Isolates the cancel/refusal/queue machinery.
 module wellFormed {
-  import agentloop(FIXED = false, OUTCOMES = Set("text", "tool1", "tool2", "error")).*
+  import agentloop(FIXES = Set(), OUTCOMES = Set("text", "tool1", "tool2", "error")).*
 }
 // Isolate #606 (:length carrying a tool call).
 module lengthOnly {
-  import agentloop(FIXED = false, OUTCOMES = Set("text", "tool1", "tool2", "error", "lengthCall")).*
+  import agentloop(FIXES = Set(), OUTCOMES = Set("text", "tool1", "tool2", "error", "lengthCall")).*
 }
 // Isolate #607 (malformed edit arguments).
 module badArgsOnly {
-  import agentloop(FIXED = false, OUTCOMES = Set("text", "tool1", "tool2", "error", "badArgs")).*
+  import agentloop(FIXES = Set(), OUTCOMES = Set("text", "tool1", "tool2", "error", "badArgs")).*
 }
 module fixed {
-  import agentloop(FIXED = true,
+  import agentloop(FIXES = Set("606", "607", "608", "609", "610"),
     OUTCOMES = Set("text", "tool1", "tool2", "error", "lengthCall", "badArgs")).*
+}
+
+// One fix at a time, each over the provider outcomes that isolate its bug.
+module fix606 { import agentloop(FIXES = Set("606"), OUTCOMES = Set("text", "tool1", "tool2", "error", "lengthCall")).* }
+module fix607 { import agentloop(FIXES = Set("607"), OUTCOMES = Set("text", "tool1", "tool2", "error", "badArgs")).* }
+module fix608 { import agentloop(FIXES = Set("608"), OUTCOMES = Set("text", "tool1", "tool2", "error")).* }
+module fix609 { import agentloop(FIXES = Set("609"), OUTCOMES = Set("text", "tool1", "tool2", "error")).* }
+module fix610 { import agentloop(FIXES = Set("610"), OUTCOMES = Set("text", "tool1", "tool2", "error")).* }
+
+// Refinement monitor: every step of the loop must be a step (or stutter) of
+// the abstract close-turn spec (spec/core/turn/abstract.qnt), checked on the
+// concrete transition itself through a ghost copy of the previous abstract
+// state. The abstract invariants (proved inductively in spec/core/turn) then
+// hold for the loop too. The two monitors are spelled out rather than one
+// parameterised module: quint test mixes up two instances of one module that
+// share an inner alias.
+module currentRefines {
+  import agentloop(FIXES = Set(),
+    OUTCOMES = Set("text", "tool1", "tool2", "error", "lengthCall", "badArgs")) as LC
+  import turnAbstract as TA from "../core/turn/abstract"
+
+  var prevAbs: TA::Abs
+
+  action init = all { LC::init, prevAbs' = TA::absInit }
+  action step = all { LC::step, prevAbs' = LC::absOf(LC::s) }
+
+  // Deterministic wrappers for witnesses.
+  action mStartStep(none: bool): bool = all { LC::startStep(none), prevAbs' = LC::absOf(LC::s) }
+  action mEnqueue(steer: bool, empty: bool): bool = all { LC::enqueue(steer, empty), prevAbs' = LC::absOf(LC::s) }
+  action mLoopTop = all { LC::loopTop, prevAbs' = LC::absOf(LC::s) }
+  action mProvider(o: str): bool = all { LC::provider(o, false, false), prevAbs' = LC::absOf(LC::s) }
+  action mAfterLlm = all { LC::afterLlm, prevAbs' = LC::absOf(LC::s) }
+  action mToolStart = all { LC::toolStart, prevAbs' = LC::absOf(LC::s) }
+  action mToolExec = all { LC::toolExec(true), prevAbs' = LC::absOf(LC::s) }
+  action mToolNext = all { LC::toolNext, prevAbs' = LC::absOf(LC::s) }
+  action mCancel = all { LC::cancel, prevAbs' = LC::absOf(LC::s) }
+
+  // What the step returned (for witnesses).
+  val stepResult = LC::s.result
+
+  // The last step was an abstract step or a stutter.
+  val refinesTurn = TA::absNext(prevAbs, LC::absOf(LC::s))
+  // The abstract invariants, read through the mapping.
+  val inheritsTurnInvariants = TA::absInv(LC::absOf(LC::s))
+}
+
+module fixedRefines {
+  import agentloop(FIXES = Set("606", "607", "608", "609", "610"),
+    OUTCOMES = Set("text", "tool1", "tool2", "error", "lengthCall", "badArgs")) as LF
+  import turnAbstract as TA from "../core/turn/abstract"
+
+  var prevAbs: TA::Abs
+
+  action init = all { LF::init, prevAbs' = TA::absInit }
+  action step = all { LF::step, prevAbs' = LF::absOf(LF::s) }
+
+  // Deterministic wrappers for witnesses.
+  action mStartStep(none: bool): bool = all { LF::startStep(none), prevAbs' = LF::absOf(LF::s) }
+  action mEnqueue(steer: bool, empty: bool): bool = all { LF::enqueue(steer, empty), prevAbs' = LF::absOf(LF::s) }
+  action mLoopTop = all { LF::loopTop, prevAbs' = LF::absOf(LF::s) }
+  action mProvider(o: str): bool = all { LF::provider(o, false, false), prevAbs' = LF::absOf(LF::s) }
+  action mAfterLlm = all { LF::afterLlm, prevAbs' = LF::absOf(LF::s) }
+  action mToolStart = all { LF::toolStart, prevAbs' = LF::absOf(LF::s) }
+  action mToolExec = all { LF::toolExec(true), prevAbs' = LF::absOf(LF::s) }
+  action mToolNext = all { LF::toolNext, prevAbs' = LF::absOf(LF::s) }
+  action mCancel = all { LF::cancel, prevAbs' = LF::absOf(LF::s) }
+
+  // What the step returned (for witnesses).
+  val stepResult = LF::s.result
+
+  // The last step was an abstract step or a stutter.
+  val refinesTurn = TA::absNext(prevAbs, LF::absOf(LF::s))
+  // The abstract invariants, read through the mapping.
+  val inheritsTurnInvariants = TA::absInv(LF::absOf(LF::s))
 }

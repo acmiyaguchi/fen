@@ -1,0 +1,7 @@
+# main	invariants	mode	steps	seconds	why
+replayLaws	replayValid	bounded	0	300	One log chosen in init: zero steps covers every log over the input alphabet.
+replayLaws	replayKeepsValid	bounded	0	300	One log chosen in init: zero steps covers every log over the input alphabet.
+replayLaws	doctorCleanIffValid	bounded	0	300	One log chosen in init: zero steps covers every log over the input alphabet.
+replayLaws	closeTurnValid	bounded	0	300	One log chosen in init: zero steps covers every log over the input alphabet.
+replayLaws	closeTurnIdempotent	bounded	0	300	One log chosen in init: zero steps covers every log over the input alphabet.
+replayLaws	replayEqualsClose	bounded	0	300	One log chosen in init: zero steps covers every log over the input alphabet.

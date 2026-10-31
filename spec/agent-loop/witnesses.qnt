@@ -2,10 +2,12 @@
 // shortest known counterexample for that issue against `current`; each
 // reach...Test shows a `fixed` behaviour the invariants rely on is reachable.
 module witnesses {
-  import agentloop(FIXED = false,
+  import agentloop(FIXES = Set(),
     OUTCOMES = Set("text", "tool1", "tool2", "error", "lengthCall", "badArgs")) as C from "./model"
-  import agentloop(FIXED = true,
+  import agentloop(FIXES = Set("606", "607", "608", "609", "610"),
     OUTCOMES = Set("text", "tool1", "tool2", "error", "lengthCall", "badArgs")) as F from "./model"
+  import currentRefines as CR from "./model"
+  import fixedRefines as FR from "./model"
 
   // #606: a :length reply carrying a tool call takes the natural-stop path,
   // leaving the call unanswered in history.
@@ -76,4 +78,64 @@ module witnesses {
     F::init.then(F::startStep(false)).then(F::loopTop)
       .then(F::provider("lengthCall", false, false)).then(F::afterLlm)
       .expect(F::s.pc == "tools" and F::allInvariants)
+
+  // ---- the same bugs as refinement failures: a concrete step that is no
+  // step of the abstract close-turn spec ----
+
+  // #606: the turn closes with a call still open.
+  run w606RefinementTest =
+    CR::init.then(CR::mStartStep(false)).then(CR::mLoopTop)
+      .then(CR::mProvider("lengthCall")).then(CR::mAfterLlm)
+      .expect(not(CR::refinesTurn))
+
+  // #607: a crash closes the turn with a call still open.
+  run w607RefinementTest =
+    CR::init.then(CR::mStartStep(false)).then(CR::mLoopTop)
+      .then(CR::mProvider("badArgs")).then(CR::mAfterLlm)
+      .expect(not(CR::refinesTurn))
+
+  // #608: the model is asked for a reply it is not owed.
+  run w608RefinementTest =
+    CR::init.then(CR::mStartStep(false)).then(CR::mEnqueue(false, true)).then(CR::mLoopTop)
+      .then(CR::mProvider("text")).then(CR::mAfterLlm)
+      .then(CR::mLoopTop).then(CR::mProvider("text"))
+      .expect(not(CR::refinesTurn))
+
+  // #609: a refused turn closes "ok" while the model is still owed a reply.
+  run w609RefinementTest =
+    CR::init.then(CR::mStartStep(true)).then(CR::mLoopTop)
+      .then(CR::mProvider("tool1")).then(CR::mAfterLlm)
+      .then(CR::mLoopTop).then(CR::mProvider("tool1")).then(CR::mAfterLlm)
+      .expect(not(CR::refinesTurn))
+
+  // #610: the safety cap closes "ok" after tool results.
+  run w610RefinementTest =
+    CR::init.then(CR::mStartStep(false))
+      .then(CR::mLoopTop).then(CR::mProvider("tool1")).then(CR::mAfterLlm)
+      .then(CR::mToolStart).then(CR::mToolExec).then(CR::mToolNext)
+      .then(CR::mLoopTop).then(CR::mProvider("tool1")).then(CR::mAfterLlm)
+      .then(CR::mToolStart).then(CR::mToolExec).then(CR::mToolNext)
+      .then(CR::mLoopTop).then(CR::mProvider("tool1")).then(CR::mAfterLlm)
+      .then(CR::mToolStart).then(CR::mToolExec).then(CR::mToolNext)
+      .then(CR::mLoopTop)
+      .expect(not(CR::refinesTurn))
+
+  // The fixed loop refines the spec through a tool round, a cancel, a crash.
+  run reachRefinesToolRoundTest =
+    FR::init.then(FR::mStartStep(false)).then(FR::mLoopTop)
+      .then(FR::mProvider("tool1")).then(FR::mAfterLlm)
+      .then(FR::mToolStart).then(FR::mToolExec).then(FR::mToolNext)
+      .then(FR::mLoopTop).then(FR::mProvider("text")).then(FR::mAfterLlm)
+      .expect(FR::refinesTurn and FR::inheritsTurnInvariants and FR::stepResult == "ok")
+
+  run reachRefinesCancelTest =
+    FR::init.then(FR::mStartStep(false)).then(FR::mLoopTop)
+      .then(FR::mProvider("tool2")).then(FR::mAfterLlm)
+      .then(FR::mToolStart).then(FR::mCancel)
+      .expect(FR::refinesTurn and FR::stepResult == "cancelled")
+
+  run reachRefinesCrashTest =
+    FR::init.then(FR::mStartStep(false)).then(FR::mLoopTop)
+      .then(FR::mProvider("badArgs")).then(FR::mAfterLlm)
+      .expect(FR::refinesTurn and FR::stepResult == "crash")
 }

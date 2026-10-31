@@ -1,0 +1,8 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+replayLaws	replayValid	holds
+replayLaws	replayKeepsValid	holds
+replayLaws	replayIdempotent	holds
+replayLaws	doctorCleanIffValid	holds
+replayLaws	closeTurnValid	holds
+replayLaws	closeTurnIdempotent	holds
+replayLaws	replayEqualsClose	holds

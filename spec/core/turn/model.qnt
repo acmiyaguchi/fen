@@ -1,105 +1,95 @@
-// Properties of the close-turn primitive (#668) on its own, before any domain
-// uses it. Two histories evolve side by side:
-//
-//   agentH  built only by moves the agent loop makes (user text, an assistant
-//           with 0-2 calls, the next pending result), and cut at any point by
-//           an unwind (cancel, crash, :length truncation, process kill), which
-//           applies closeTurn.
-//   logH    any sequence at all: what a session log can hold after crashes,
-//           torn writes, or a second writer interleaving its turns.
-//
-// The invariants say: closing a turn at any point gives a provider-valid
-// history; loading a log cut at that point gives the same history; and replay
-// turns any log into a valid one, leaves valid logs alone, and reports zero
-// repairs exactly when the log is already valid (what `session doctor` needs).
-module turnModel {
-  import turn.* from "./turn"
+// The abstract close-turn machine (#668), checked on its own: every move a
+// turn owner can make, with no transcript. Its invariants hold at any depth
+// (verify.tsv: inductive), so every concrete model that refines absNext
+// inherits them. The replay laws live in spec/core/replay.
+module turnSpec {
+  import turnAbstract.* from "./abstract"
 
-  pure val MAX_LEN = 7
   pure val MAX_CALLS = 2
+  // Call ids only need to be told apart within one reply; none of the
+  // invariants depends on them being fresh, so they come from a small set
+  // (which keeps every state in a finite set, as induction needs).
+  pure val IDS = Set(0, 1, 2)
+  pure val CALL_LISTS: Set[List[int]] =
+    Set(NONE).union(IDS.map(x => [x]))
+      .union(tuples(IDS, IDS).filter(p => p._1 != p._2).map(p => [p._1, p._2]))
+  pure val ABS_STATES: Set[Abs] =
+    CALL_LISTS.map(o => Bool.map(t => Bool.map(w =>
+      Set("none", "ok", "error", "cancelled").map(oc => Bool.map(e => Bool.map(r =>
+        { open: o, turnOpen: t, awaiting: w, outcome: oc, errSignalled: e, replies: r }
+      )).flatten()).flatten()).flatten()).flatten()).flatten()
 
-  var agentH: List[Entry]
-  var logH: List[Entry]
-  var nextCall: int
+  var a: Abs
+  var prev: Abs        // ghost: the state before the last step
 
-  action init = all { agentH' = [], logH' = [], nextCall' = 0 }
+  action init = all { a' = absInit, prev' = absInit }
 
-  // n consecutive call ids (n <= MAX_CALLS), spelled out for Apalache.
-  pure def callsFrom(start: int, n: int): List[int] =
-    if (n == 0) NOCALLS else if (n == 1) [start] else [start, start + 1]
+  action move(b: Abs): bool = all { a' = b, prev' = a }
 
-  // ---- agent moves ----
-  action agentUser = all {
-    agentH.length() < MAX_LEN, openCalls(agentH) == NOCALLS,
-    agentH' = agentH.append(eUser), logH' = logH, nextCall' = nextCall,
+  action doUserInput = all {
+    a.open == NONE,
+    move({ ...a, open: NONE, turnOpen: true, awaiting: true, outcome: "none",
+           errSignalled: a.turnOpen and a.errSignalled }),
   }
 
-  action agentAsst(n: int): bool = all {
-    agentH.length() < MAX_LEN, openCalls(agentH) == NOCALLS,
-    agentH' = agentH.append(eAsst(callsFrom(nextCall, n))),
-    nextCall' = nextCall + n, logH' = logH,
+  action doReply(cs: List[int]): bool = all {
+    a.turnOpen, a.awaiting, a.open == NONE,
+    move({ ...a, open: cs, awaiting: false, replies: not(a.replies) }),
   }
 
-  action agentResult = all {
-    agentH.length() < MAX_LEN, openCalls(agentH) != NOCALLS,
-    agentH' = agentH.append(eResult(openCalls(agentH)[0])),
-    logH' = logH, nextCall' = nextCall,
+  action doAnswer(k: int): bool = all {
+    a.turnOpen, 1 <= k, k <= a.open.length(),
+    val rest = a.open.slice(k, a.open.length())
+    move({ ...a, open: rest, awaiting: rest == NONE }),
   }
 
-  action agentUnwind = all {
-    openCalls(agentH) != NOCALLS,
-    agentH' = closeTurn(agentH), logH' = logH, nextCall' = nextCall,
+  action doSignalError = all {
+    a.turnOpen,
+    move({ ...a, errSignalled: true }),
   }
 
-  // ---- arbitrary log ----
-  action logAppend(kind: str, n: int, c: int): bool = all {
-    logH.length() < MAX_LEN,
-    logH' = logH.append(
-      if (kind == "user") eUser
-      else if (kind == "asst") eAsst(callsFrom(nextCall, n))
-      else eResult(c)),
-    nextCall' = if (kind == "asst") nextCall + n else nextCall,
-    agentH' = agentH,
+  action doClose(o: str): bool = all {
+    a.turnOpen,
+    o != "ok" or (a.open == NONE and not(a.awaiting)),
+    move({ ...a, open: NONE, turnOpen: false, outcome: o,
+           awaiting: a.awaiting or a.open != NONE,
+           errSignalled: a.errSignalled or o == "error" }),
   }
 
   action step = any {
-    agentUser,
-    nondet n = 0.to(MAX_CALLS).oneOf()
-    agentAsst(n),
-    agentResult,
-    agentUnwind,
-    nondet kind = Set("user", "asst", "result").oneOf()
-    nondet n2 = 0.to(MAX_CALLS).oneOf()
-    nondet c = 0.to(3).oneOf()
-    logAppend(kind, n2, c),
+    doUserInput,
+    nondet cs = CALL_LISTS.oneOf()
+    doReply(cs),
+    nondet k = 1.to(MAX_CALLS).oneOf()
+    doAnswer(k),
+    doSignalError,
+    nondet o = OUTCOMES.oneOf()
+    doClose(o),
   }
 
   // ---- properties ----
 
-  // Wherever a step stops, closing the turn yields a provider-valid history.
-  val closeTurnValid = turnValid(closeTurn(agentH))
+  // The moves above are exactly abstract steps (the relation concrete models
+  // are checked against is not stricter than this machine, or looser).
+  val movesAreAbsSteps = absNext(prev, a)
 
-  // Closing twice is closing once.
-  val closeTurnIdempotent = closeTurn(closeTurn(agentH)) == closeTurn(agentH)
+  // What every refining owner inherits.
+  val closedPairedInv = closedPaired(a)
+  val outcomeWhenClosedInv = outcomeWhenClosed(a)
+  val errorAnnouncedInv = errorAnnounced(a)
+  val notAwaitingWithOpenInv = notAwaitingWithOpen(a)
 
-  // A log cut at any point replays to exactly what close-turn gives in
-  // memory: one rule for --continue and for an unwinding step.
-  val replayEqualsClose = replayEntries(agentH) == closeTurn(agentH)
-
-  // Replay makes any log provider-valid ...
-  val replayValid = turnValid(replayEntries(logH))
-
-  // ... leaves a valid log untouched ...
-  val replayKeepsValid = turnValid(logH) implies replayEntries(logH) == logH
-
-  // ... is idempotent ...
-  val replayIdempotent = replayEntries(replayEntries(logH)) == replayEntries(logH)
-
-  // ... and the doctor is clean exactly when the log needs no repair.
-  val doctorCleanIffValid = (replayRepairs(logH) == 0) == turnValid(logH)
+  // Inductive invariant: every state is in the finite state space (which
+  // Apalache needs to start from an arbitrary state) and satisfies the
+  // abstract invariants. It holds initially and every step preserves it.
+  val inductiveInv = and {
+    a.in(ABS_STATES),
+    prev.in(ABS_STATES),
+    absInv(a),
+  }
 
   val allInvariants = and {
-    closeTurnValid, closeTurnIdempotent, replayEqualsClose,
-    replayValid, replayKeepsValid, replayIdempotent, doctorCleanIffValid,
+    movesAreAbsSteps, closedPairedInv, outcomeWhenClosedInv, errorAnnouncedInv,
+    notAwaitingWithOpenInv, inductiveInv,
   }
 }

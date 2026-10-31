@@ -18,3 +18,13 @@ wellFormed	statusMatchesResult	violated	#609
 lengthOnly	historyValidWhenIdle	violated	#606
 badArgsOnly	historyValidWhenIdle	violated	#607
 fixed	allInvariants	holds
+currentRefines	refinesTurn	violated	#606,#607,#608,#609,#610
+currentRefines	inheritsTurnInvariants	violated	#606,#607
+fixedRefines	refinesTurn	holds
+fixedRefines	inheritsTurnInvariants	holds
+fix606	historyValidWhenIdle	holds
+fix607	historyValidWhenIdle	holds
+fix608	requestsEndOnUserSide	holds
+fix608	refusalCountsSinceInput	holds
+fix609	statusMatchesResult	holds
+fix610	errorSignalled	holds

@@ -1,8 +1,7 @@
 # main	invariant	expect (holds|violated)	issues (violated rows)
-turnModel	closeTurnValid	holds
-turnModel	closeTurnIdempotent	holds
-turnModel	replayEqualsClose	holds
-turnModel	replayValid	holds
-turnModel	replayKeepsValid	holds
-turnModel	replayIdempotent	holds
-turnModel	doctorCleanIffValid	holds
+turnSpec	movesAreAbsSteps	holds
+turnSpec	closedPairedInv	holds
+turnSpec	outcomeWhenClosedInv	holds
+turnSpec	errorAnnouncedInv	holds
+turnSpec	notAwaitingWithOpenInv	holds
+turnSpec	inductiveInv	holds

@@ -1,0 +1,4 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    move({ ...a, open: NONE, turnOpen: false, outcome: o,|    move({ ...a, open: a.open, turnOpen: false, outcome: o,|	turnSpec	closedPairedInv	close leaves open calls unpaired
+model.qnt	s|    o != "ok" or (a.open == NONE and not(a.awaiting)),|    true,|	turnSpec	movesAreAbsSteps	a turn closes ok while the model is still owed a reply
+model.qnt	s|    move({ ...a, open: rest, awaiting: rest == NONE }),|    move({ ...a, open: rest, awaiting: true }),|	turnSpec	notAwaitingWithOpenInv	a reply is requested while calls are still open
