@@ -25,9 +25,25 @@
 //
 // The OAuth server rotates refresh tokens: using generation k issues k' and
 // invalidates k. Reusing an invalidated token fails (invalid_grant).
-// FIXED selects the candidate fix so the same invariants can be checked.
+// FIXES names the candidate fixes (by issue number) so the same invariants can
+// be checked with each fix on its own and with all of them:
+//   611  refresh under a cross-process auth lock, re-read the record inside
+//        the lock, and re-read it after a failed POST
+//   612  the write-back is conditional on the record still being the one
+//        refreshed (compare-and-rename); login/logout take the auth lock
+//   613  the refresh POST is shielded from cooperative cancellation
+//   614  provider requests resolve credentials per request (no pinning)
+//   615  the tmp file is created 0600
+//   616  a GET result does not overwrite a 429 recorded while it was in flight
 module auth {
-  const FIXED: bool
+  const FIXES: Set[str]
+
+  val F611 = FIXES.contains("611")
+  val F612 = FIXES.contains("612")
+  val F613 = FIXES.contains("613")
+  val F614 = FIXES.contains("614")
+  val F615 = FIXES.contains("615")
+  val F616 = FIXES.contains("616")
 
   pure val PROCS = Set(1, 2)
   pure val NONE = -1
@@ -49,12 +65,19 @@ module auth {
     resetSinceGet: bool,  // reset-at passed after the in-flight GET was sent
     obsNewer: bool,       // ghost: the shown value predates a recorded 429
   }
-  type Ghost = { loggedOut: bool, spurious: bool, inherentLoss: bool }
+  // rejectedUsable: a refresh failed (invalid_grant) while the store held a
+  //   valid credential. staleRequest: a provider request carried an expired
+  //   access token while a valid credential was obtainable. lost: refresh
+  //   generations whose rotation was lost to something no client can prevent
+  //   (transport loss or a crash after the server committed); it excuses
+  //   storeRefreshable only while the store still holds that generation, and
+  //   login (recovery) clears it.
+  type Ghost = { loggedOut: bool, rejectedUsable: bool, staleRequest: bool, lost: Set[int] }
 
   var srv: Srv
   var store: Store
   var leakedTmp: bool          // a crashed writer left a token-bearing tmp file behind
-  var authLock: int            // FIXED only: cross-process auth lock holder (0 free)
+  var authLock: int            // fix 611 only: cross-process auth lock holder (0 free)
   var procs: int -> Proc
   var cacheHolder: int -> bool // codex-usage.json.lock (fcntl + process mutex)
   var q: Quota
@@ -72,7 +95,7 @@ module auth {
     cacheHolder' = PROCS.mapBy(_ => false),
     q' = { server: false, shown: "none", fresh: false, get: "none",
            obsSinceGet: false, resetSinceGet: false, obsNewer: false },
-    g' = { loggedOut: false, spurious: false, inherentLoss: false },
+    g' = { loggedOut: false, rejectedUsable: false, staleRequest: false, lost: Set() },
     lastAction' = "init",
   }
 
@@ -95,8 +118,9 @@ module auth {
         srv' = srv, store' = store, authLock' = authLock, g' = g,
       }
     else all {
-      not(FIXED) or authLock == 0,
-      authLock' = if (FIXED) p else authLock,
+      // fix 611: the check above and this read happen inside the lock
+      not(F611) or authLock == 0,
+      authLock' = if (F611) p else authLock,
       procs' = procs.set(p, { ...pr, phase: "posting", used: store.gen, wantPin: pin }),
       srv' = srv, store' = store, g' = g,
     },
@@ -118,12 +142,14 @@ module auth {
           lastAction' = "refreshOk",
         }
       else
-        // invalid_grant: get-fresh-creds! raises; the caller fails.
+        // invalid_grant: get-fresh-creds! raises; the caller fails. Fix 611
+        // re-reads the store after a failed POST and uses a valid record
+        // another process wrote (pi-mono's refreshOAuthTokenWithLock).
         all {
           srv' = srv,
           procs' = procs.set(p, { ...pr, phase: "idle" }),
-          authLock' = if (FIXED) 0 else authLock,
-          g' = { ...g, spurious: g.spurious or usable },
+          authLock' = if (F611) 0 else authLock,
+          g' = { ...g, rejectedUsable: g.rejectedUsable or (usable and not(F611)) },
           lastAction' = "refreshRejected",
         },
       store' = store, keepQ, keepRest,
@@ -132,18 +158,18 @@ module auth {
 
   // Ctrl-C / deadline at the http yield. Before the server processed the POST
   // nothing is lost; after it did, the rotation is committed server-side and
-  // the new tokens are dropped. FIXED shields the POST from cancellation.
+  // the new tokens are dropped. Fix 613 shields the POST from cancellation.
   action cancel(p: int, afterCommit: bool): bool = all {
     val pr = procs.get(p)
     all {
       pr.phase == "posting",
-      not(afterCommit and FIXED),
+      not(afterCommit and F613),
       srv' = if (afterCommit and srv.valid.contains(pr.used))
                { ...srv, valid: srv.valid.exclude(Set(pr.used)).union(Set(srv.next)),
                          live: srv.live.union(Set(srv.next)), next: srv.next + 1 }
              else srv,
       procs' = procs.set(p, { ...pr, phase: "idle" }),
-      authLock' = if (FIXED) 0 else authLock,
+      authLock' = if (F611) 0 else authLock,
       store' = store, g' = g, keepQ, keepRest,
       lastAction' = if (afterCommit) "cancelAfterCommit" else "cancelBeforeCommit",
     }
@@ -158,8 +184,8 @@ module auth {
       srv' = { valid: srv.valid.exclude(Set(pr.used)).union(Set(srv.next)),
                live: srv.live.union(Set(srv.next)), next: srv.next + 1 },
       procs' = procs.set(p, { ...pr, phase: "idle" }),
-      authLock' = if (FIXED) 0 else authLock,
-      g' = { ...g, inherentLoss: true },
+      authLock' = if (F611) 0 else authLock,
+      g' = { ...g, lost: g.lost.union(Set(pr.used)) },
       store' = store, keepQ, keepRest,
       lastAction' = "responseLost",
     }
@@ -179,34 +205,42 @@ module auth {
   // keychain.save step 2: chmod 600 tmp, rename over auth.json. storage.set
   // re-loads the file first, so this write ignores whatever happened to the
   // record since the refresh began (logout, login, another refresh).
+  // Fix 612 renames only if the stored record still carries the refresh
+  // token that was used; otherwise the result is dropped.
   action rename(p: int): bool = all {
     val pr = procs.get(p)
+    val writes = not(F612) or (store.present and store.gen == pr.used)
     all {
       pr.phase == "tmp",
-      store' = { present: true, gen: pr.got },
+      store' = if (writes) { present: true, gen: pr.got } else store,
       procs' = procs.set(p, { ...pr, phase: "idle",
-                              pinned: if (pr.wantPin) pr.got else pr.pinned }),
+                              pinned: if (pr.wantPin and writes) pr.got else pr.pinned }),
       leakedTmp' = leakedTmp,
-      authLock' = if (FIXED) 0 else authLock,
+      authLock' = if (F611) 0 else authLock,
       g' = g,
       srv' = srv, cacheHolder' = cacheHolder, keepQ,
       lastAction' = "rename",
     }
   }
 
-  // A provider request with the pinned access token. Today a stale pinned
-  // token yields a 401 that is terminal for the turn. FIXED resolves creds
-  // per request (begin), so a request only goes out with a live token.
+  // A provider request. Today it carries the pinned access token, and a
+  // stale one yields a 401 that is terminal for the turn. Fix 614 resolves
+  // creds per request: the request carries the stored token and goes out only
+  // while that token is live; an expired one must first be refreshed (begin).
+  // This is a safety guard: it rules out sending an expired token, it does
+  // not show that the refresh happens (no fairness is modelled).
   action request(p: int): bool = all {
     val pr = procs.get(p)
+    val tok = if (F614) store.gen else pr.pinned
     all {
-      pr.phase == "idle", pr.pinned != NONE,
-      not(FIXED) or srv.live.contains(pr.pinned),
-      g' = if (srv.live.contains(pr.pinned)) g
-           else { ...g, spurious: g.spurious or usable },
+      pr.phase == "idle",
+      if (F614) store.present else pr.pinned != NONE,
+      not(F614) or srv.live.contains(tok),
+      g' = if (srv.live.contains(tok)) g
+           else { ...g, staleRequest: g.staleRequest or usable },
       srv' = srv, store' = store, authLock' = authLock, procs' = procs,
       keepQ, keepRest,
-      lastAction' = if (srv.live.contains(pr.pinned)) "requestOk" else "request401",
+      lastAction' = if (srv.live.contains(tok)) "requestOk" else "request401",
     }
   }
 
@@ -219,11 +253,11 @@ module auth {
       procs' = procs.set(p, idleProc),
       authLock' = if (authLock == p) 0 else authLock,
       cacheHolder' = cacheHolder.set(p, false),
-      g' = { ...g, inherentLoss: g.inherentLoss
-                                  or ((pr.phase == "committed" or pr.phase == "tmp")
-                                      and srv.valid.contains(pr.got)) },
-      // tmp files are created 0600 under FIXED; a leftover one is harmless
-      leakedTmp' = (leakedTmp or (pr.phase == "tmp" and not(FIXED))),
+      g' = if ((pr.phase == "committed" or pr.phase == "tmp") and srv.valid.contains(pr.got))
+             { ...g, lost: g.lost.union(Set(pr.used)) }
+           else g,
+      // tmp files are created 0600 under fix 615; a leftover one is harmless
+      leakedTmp' = (leakedTmp or (pr.phase == "tmp" and not(F615))),
       srv' = srv, store' = store, keepQ,
       lastAction' = "crash",
     }
@@ -239,20 +273,21 @@ module auth {
   // fen --logout openai-codex (local only: the server keeps the tokens valid).
   action logout = all {
     store.present,
-    not(FIXED) or authLock == 0,
+    not(F612) or authLock == 0,
     store' = { present: false, gen: NONE },
     g' = { ...g, loggedOut: true },
     srv' = srv, authLock' = authLock, procs' = procs, keepQ, keepRest,
     lastAction' = "logout",
   }
 
-  // fen --login openai-codex: a new token family.
+  // fen --login openai-codex: a new token family. It is the recovery from a
+  // lost rotation, so it clears the inherent-loss excuse.
   action login = all {
-    not(FIXED) or authLock == 0,
+    not(F612) or authLock == 0,
     srv' = { valid: srv.valid.union(Set(srv.next)), live: srv.live.union(Set(srv.next)),
              next: srv.next + 1 },
     store' = { present: true, gen: srv.next },
-    g' = { ...g, loggedOut: false },
+    g' = { ...g, loggedOut: false, lost: Set() },
     authLock' = authLock, procs' = procs, keepQ, keepRest,
     lastAction' = "login",
   }
@@ -304,7 +339,7 @@ module auth {
   action qReturn = all {
     q.get != "none",
     val sample = if (q.get == "exhausted" and q.resetSinceGet) "avail" else q.get
-    val keepObs = FIXED and q.obsSinceGet
+    val keepObs = F616 and q.obsSinceGet
     q' = { ...q, get: "none",
                  shown: if (keepObs) q.shown else sample,
                  fresh: if (keepObs) q.fresh else true,
@@ -341,17 +376,24 @@ module auth {
 
   // The store never holds only a revoked refresh token, unless the new one
   // was lost to something no client can prevent (crash or transport loss
-  // after the server committed).
+  // after the server committed) and the store still holds the generation
+  // whose rotation was lost.
   val storeRefreshable =
-    g.inherentLoss or not(store.present) or srv.valid.contains(store.gen)
+    g.lost.contains(store.gen) or not(store.present) or srv.valid.contains(store.gen)
       or PROCS.exists(p => (procs.get(p).phase == "committed" or procs.get(p).phase == "tmp")
                            and srv.valid.contains(procs.get(p).got))
 
   // After logout, nothing writes credentials back until the next login.
   val noResurrection = g.loggedOut implies not(store.present)
 
-  // An auth failure only happens when no valid credential is obtainable.
-  val noSpuriousAuthFailure = not(g.spurious)
+  // A refresh is reported failed (invalid_grant) only when the store holds no
+  // valid credential.
+  val noRefreshRejectedWhileUsable = not(g.rejectedUsable)
+
+  // Safety only: no provider request carries an expired access token while a
+  // valid credential is obtainable. It does not say that an expired token is
+  // refreshed and the request then goes out (that is progress; see FINDINGS).
+  val noExpiredTokenRequest = not(g.staleRequest)
 
   // At most one refresh per credential is in flight across processes.
   val singleRefreshInFlight =
@@ -360,7 +402,7 @@ module auth {
   // Tokens never sit in a file other local users can read: today every
   // tmp file is umask-readable until its chmod, and a crash leaves it so.
   val secretsPrivate =
-    not(leakedTmp) and (FIXED or PROCS.forall(p => procs.get(p).phase != "tmp"))
+    not(leakedTmp) and (F615 or PROCS.forall(p => procs.get(p).phase != "tmp"))
 
   // auth.json only ever holds a whole record the server issued: the store
   // changes only at rename, so a crash at any step leaves the old record.
@@ -377,11 +419,18 @@ module auth {
   val quotaFreshNotContradicted = not(q.fresh and q.shown == "avail" and q.obsNewer)
 
   val allInvariants = and {
-    storeRefreshable, noResurrection, noSpuriousAuthFailure, singleRefreshInFlight,
+    storeRefreshable, noResurrection, noRefreshRejectedWhileUsable, noExpiredTokenRequest,
+    singleRefreshInFlight,
     secretsPrivate, storeWholeRecord, cacheLockExclusive, quotaNoStaleExhausted,
     quotaFreshNotContradicted,
   }
 }
 
-module current { import auth(FIXED = false).* }
-module fixed { import auth(FIXED = true).* }
+module current { import auth(FIXES = Set()).* }
+module fixed { import auth(FIXES = Set("611", "612", "613", "614", "615", "616")).* }
+module fix611 { import auth(FIXES = Set("611")).* }
+module fix612 { import auth(FIXES = Set("612")).* }
+module fix613 { import auth(FIXES = Set("613")).* }
+module fix614 { import auth(FIXES = Set("614")).* }
+module fix615 { import auth(FIXES = Set("615")).* }
+module fix616 { import auth(FIXES = Set("616")).* }

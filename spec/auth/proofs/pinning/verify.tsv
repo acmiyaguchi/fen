@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+fixed	pinningInductive	inductive	1	300	per-request resolution: every request step checks the token it sends; induction covers every depth

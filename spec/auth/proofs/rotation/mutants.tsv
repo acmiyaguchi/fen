@@ -1,0 +1,5 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    not(F611) or lock == 0,|    true,|	fixed	singleRefreshInFlight	refresh does not wait for the auth lock
+model.qnt	s|(rejectedUsable or (usable and not(F611)))|(rejectedUsable or usable)|	fix611	noRefreshRejectedWhileUsable	no re-read of auth.json after a failed POST (lock only)
+model.qnt	s|    val writes = not(F612) or (present and gen == used.get(p))|    val writes = true|	fix612	noResurrection	the write-back is unconditional
+model.qnt	s|(phase.get(p) == "srv" and not(F613))|phase.get(p) == "srv"|	fixed	storeRefreshable	the POST is not shielded from cancellation

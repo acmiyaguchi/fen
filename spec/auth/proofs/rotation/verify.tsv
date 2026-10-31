@@ -1,0 +1,5 @@
+# main	invariants	mode	steps	seconds	why
+fixed	rotationInductive	inductive	1	600	two-client lock/ownership machine: the lock owns the in-flight refresh, issued-token bookkeeping, and a committed client's successor is valid and unspendable; induction covers every depth
+fix612	resurrectionInductive	inductive	1	300	the compare-and-rename alone keeps logout final: persist needs the record present
+fix611	lockInductive	inductive	1	300	the lock alone: whoever holds it is the only client between POST and persist
+fix613	storeRefreshable	bounded	8	600	without the lock and compare-and-rename the strengthening is not inductive; 8 steps cover the #613 counterexample (3 steps) and its after-recovery variant (7 steps)

@@ -1,0 +1,3 @@
+# main	invariants	mode	steps	seconds	why
+current	noStaleExhaustedInductive	inductive	1	300	finite-state cache: a sampled exhaustion stays true until a reset, which the sample records; induction covers every depth
+fixed	quotaInductive	inductive	1	300	with fix 616 a GET result never replaces a 429 recorded after it was sent, so obsNewer stays false; induction covers every depth

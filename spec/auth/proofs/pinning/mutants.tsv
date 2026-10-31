@@ -1,0 +1,3 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|  val reqToken = if (F614) gen else pinned|  val reqToken = if (F614 and pinned == NONE) gen else pinned|	fixed	requestReadyWhenStoreLive	once the agent is built, requests carry the pinned token (refused once it expires, never refreshed)
+model.qnt	s|      not(F614) or live.get(tok),|      true,|	fixed	noExpiredTokenRequest	per-request resolution does not check that the stored token is live

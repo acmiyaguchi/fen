@@ -1,0 +1,6 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|      not(F611) or authLock == 0,|      true,|	fixed	singleRefreshInFlight	refresh does not wait for the auth lock
+model.qnt	s|    val writes = not(F612) or (store.present and store.gen == pr.used)|    val writes = true|	fix612	noResurrection	the write-back is unconditional (no compare-and-rename)
+model.qnt	s|      not(afterCommit and F613),|      true,|	fixed	storeRefreshable	the refresh POST is not shielded from cancellation
+model.qnt	s|      not(F614) or srv.live.contains(tok),|      true,|	fixed	noExpiredTokenRequest	a per-request resolve does not check the token is live
+model.qnt	s|    val keepObs = F616 and q.obsSinceGet|    val keepObs = false|	fixed	quotaFreshNotContradicted	the GET result replaces a 429 recorded while it was in flight

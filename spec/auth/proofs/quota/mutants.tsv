@@ -1,0 +1,3 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    val keepObs = F616 and obsSinceGet|    val keepObs = false|	fixed	quotaFreshNotContradicted	the GET result replaces a 429 recorded while it was in flight
+model.qnt	s|    val sample = if (sampled == "exhausted" and resetSinceGet) "avail" else sampled|    val sample = sampled|	fixed	quotaNoStaleExhausted	a GET sampled before reset-at is shown exhausted after it
