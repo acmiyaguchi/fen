@@ -2,12 +2,11 @@
 (local tool-registry (require :fen.core.extensions.register.tool))
 (local tools (require :fen.core.tools))
 (local steering (require :fen.extensions.steering.service))
-(local steering-state (require :fen.extensions.steering.state))
+(local tasks (require :fen.core.tasks))
 
 (fn reset-queues! []
-  (steering.clear-queues!)
-  (set steering-state.steering-mode :one-at-a-time)
-  (set steering-state.follow-up-mode :one-at-a-time))
+  (tasks.reset!)
+  (tasks.turn-start!))
 
 (fn fresh-tool []
   (test-api.reset!)

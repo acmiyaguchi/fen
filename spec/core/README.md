@@ -28,7 +28,7 @@ That is why the replay rule also has its own laws (`replay/`), checked independe
 | [replay](replay/model.qnt): replay of a log cut anywhere | #668 | six laws bounded-safe over every log of up to 5 entries (2–13 s each) | sessions (`fixed` replay, provider check, doctor; `proofs/replay` checks the sessions projection against the same laws) |
 | [store](store/abstract.qnt): kernel lock plus atomic replace | #669 | abstract spec proved inductively (~5 s) and to 10 steps | sessions (`proofs/lock`, `proofs/persistence`), auth (`proofs/rotation`), tools (`proofs/file-commit`) |
 | [job](job/abstract.qnt): process group and output capture | #670 | abstract spec proved inductively (~8 s) and to 10 steps | tools (`proofs/process-group`, `proofs/popen-cancel`, `proofs/output-envelope`), subagents (`proofs/lifecycle`) |
-| [tasks](tasks/abstract.qnt): one task table with turn-keyed ownership, async request table, and countdown budgets | #671 | `tasksSpec` proved inductively (~16 s) and to 10 steps; `requestsSpec` proved inductively (~39 s) | scheduler (`proofs/cancel-arm`, `proofs/pump`), tui-turns (`proofs/ctrl-c`, `proofs/side-ownership`), serve (`issueRefines`/`proposedRefines`/`proposedTuiRefines`, `proofs/requests`) |
+| [tasks](tasks/abstract.qnt): one task table with turn-keyed ownership, async request table, and countdown budgets | #671 | `tasksSpec` proved inductively (~16 s) and to 10 steps; `requestsSpec` proved inductively (~70 s), including the turn mailbox (`steeringConservedInv`, `followUpsConservedInv`, `followUpOrderInv`, `queueLenConsistentInv`); `conform.sh` replays traces through `fen.core.tasks.step` | scheduler (`proofs/cancel-arm`, `proofs/pump`), tui-turns (`proofs/ctrl-c`, `proofs/side-ownership`), serve (`issueRefines`/`proposedRefines`/`proposedTuiRefines`, `proofs/requests`) |
 | [ledger](ledger/abstract.qnt): usage as a fold over one log | #672 | abstract spec proved inductively (~11 s) and to 10 steps | context (`proofs/ledger`), presenters (`proofs/outcome`) |
 | [contrib](contrib/abstract.qnt): per-owner extension contribution map | #673 | abstract spec proved inductively (~6 s) and to 10 steps | extensions (`proofs/contrib`, `proofs/turn-identity`), context |
 | [runs](runs/abstract.qnt): subagent run table and mailbox | #674 | abstract spec proved inductively (~2 s) and to 10 steps | subagents (`proofs/lifecycle`), wire (`proofs/acks`) |
@@ -61,13 +61,16 @@ Laws, each checked on one log chosen in `init` (one Apalache step, every log of 
 
 `tasks/abstract.qnt` defines two pure abstract contracts for `#671`:
 - `tasksAbstract` (`tasksSpec`): cooperative task slots (`t1Status`, `t2Status`), owner turns (`t1Owner`, `t2Owner`), cancel requests and arms (`t1Cancel`, `t1Armed`), active poll cadence (`anyRunnable == pollActive`), and `xpcall` fault isolation (`faultCaught`).
-- `requestsAbstract` (`requestsSpec`): whether a turn is open (`running`), its id (`turnNo`), which request it is parked on (`parkedOn`), the `/reload` generation (`gen`), whether any resolver is attached (`hasResolver`), the set of turn tags in the steering queue (`queue`), and the pending-request table (`rScope`, `rGen`, `rVer`, `rStatus`, `rRes`, `rRem`).
+- `requestsAbstract` (`requestsSpec`): whether a turn is open (`running`), its id (`turnNo`), which request it is parked on (`parkedOn`), the `/reload` generation (`gen`), whether any resolver is attached (`hasResolver`), the turn mailbox (`queue`, the set of turn tags of queued steering; `sLen` and `fLen`, the steering and follow-up line counts; `idleStart`, a pending idle follow-up start), and the pending-request table (`rScope`, `rGen`, `rVer`, `rStatus`, `rRes`, `rRem`).
 
 | Abstract step (`requestsAbstract`) | Allowed when |
 | --- | --- |
 | start turn (`absStartTurn`) | idle (`not(running)`) |
-| end/cancel turn (`absEndTurn`) | running; resolves every pending request with `rScope == turnNo` to `"ended"` and clears `queue` |
-| queue / inject steer (`absQueueSteer`, `absInjectSteer`) | running; queued lines carry `turnNo` |
+| end/cancel turn (`absEndTurn`) | running; resolves every pending request with `rScope == turnNo` to `"ended"` and hands back the turn's leftover steering (`queue := {}`, `sLen := 0`) |
+| queue / inject steer (`absQueueSteer`, `absInjectSteer`) | running; queued lines carry `turnNo`; inject takes one line or all (drain mode) |
+| queue / inject follow-up (`absQueueFollowUp`, `absInjectFollowUp`) | queue any time (an idle `start-if-idle?` sets `idleStart`); inject only while running, unparked, and with no steering queued (steering wins) |
+| idle start (`absIdleStart`) | idle with `idleStart`; starts at most one follow-up |
+| clear (`absClearSteering`, `absClearFollowUps`) | any time (`/new`, `/resume`, `/queue clear`) |
 | open request `i` (`absOpenReq`, `bgt >= 1`) | `scope == turnNo` (running, unparked) or `scope == 0` (idle, no other idle picker open); if `hasResolver`, enters `"pending"` with countdown `rRem = bgt`; otherwise resolves immediately to `"timeout"` (`rRes = 1`, `rRem = 0`) without parking |
 | update choices (`absUpdateChoices`) | pending idle picker (`rScope == 0`); increments `rVer` |
 | answer request `i` (`absAnswer`) | pending and `hasResolver`; resumes turn if `rScope == turnNo`, applies if `rScope == 0` and idle, or aborts (`"aborted"`) if a turn started underneath (#638) |
@@ -76,3 +79,37 @@ Laws, each checked on one log chosen in `init` (one Apalache step, every log of 
 | set resolver (`absSetResolver`) | remote connects or disconnects; if `not(hasRes)`, pending requests either keep their countdown or resolve immediately to `"timeout"` |
 
 Inherited invariants (`absInv` and `reqAbsInv`): cancel arms and requests are isolated to their owning task (`ownershipIsolated`, `cancelRequiresRegistered`), poll cadence matches runnable work (`cadenceMatchesRunnable`), every request resolves at most once (`resolvedOnce`), no request outlives its turn (`noOrphanTurnReq`), `parkedOn` and pending turn-scoped requests agree (`parkConsistent`), no pending request belongs to a prior reload generation (`pendingCurrentGen`), every queued steering line belongs to the running turn (`queueOwnedByRunningTurn`), and every pending request has a strictly positive remaining tick budget (`pendingBoundedBudget`, `boundedWaitTicksInv`).
+
+### proofs/holder (proposed design)
+
+`tasks/proofs/holder/model.qnt` models the session **holder** and its mailbox in the vocabulary of the target `fen.core.tasks` API, revised after design review (gpt-6.1-sol, Fable).
+
+| Term | Meaning |
+| --- | --- |
+| holder | who has the session: nobody, `{kind: turn, n}`, or `{kind: exclusive}` (`/reload`, `/handoff`) |
+| n | the current (or last) turn's number; only turns consume one, so wire `turn` numbers stay consecutive |
+| steer / follow-up | a line for the running turn / for a natural stop or a later turn |
+| seq | the mailbox's own admission number: FIFO order and identity |
+| tag | the caller's opaque id (a wire `seq`): carried through, never used for order or lookup, may repeat |
+| offer / take | queue input (never starts a turn) / the agent drains lines at a boundary |
+| returned | a line leaving unread, with its reason (`started`, `released`, `refused`, `cleared`) and the turn it was for |
+
+API: `(with-holder kind f)` is the only way to hold the session; it releases on every exit (return, error, cancel) under `xpcall`, so a holder can never leak and is never replaced.
+`(next-start!)` is the single start path: the driver's idle tick takes the head follow-up an idle offer asked for and runs `(with-holder :turn ...)` with it.
+`(offer! text {:tag :turn :follow-up?})` routes: no `:turn` steers the running turn, waits behind an exclusive holder, or asks for a start when idle; `:turn 0` means start only if idle; `:turn t` steers only turn `t`.
+`(cancel! n)` is fenced the same way.
+Dispositions (`why`, `whyN` per seq) are part of the abstract `Session`, so a refinement (serve) must preserve exactly-once, correctly attributed returns.
+
+| Invariant | Meaning |
+| --- | --- |
+| `holderHasBodyInv` | a holder exists exactly while its body runs: no crash or cancel path can wedge the session |
+| `eachSeqOnceInv` | every admitted line is queued or has exactly one disposition (keyed by seq, not tag or text) |
+| `steerForHolderInv` | queued steer lines belong to the turn they were offered for; taken and returned ones are attributed to it |
+| `startedOpensItsTurnInv` | a started line opened a real turn number |
+| `localOfferNeverRefusedInv` | an offer without `:turn` is never refused (it waits behind an exclusive holder) |
+| `followUpOrderInv` | follow-ups are taken only after the turn's steer lines |
+| `cancelFencedInv` | a cancel never arms a turn other than its target |
+
+`holderSpec.inductiveInv` is proved inductively (~8 s); ten mutants are each caught (leaked holder on crash, unfenced offer, unfenced cancel, refused offer behind an exclusive holder, dropped/misattributed/leaked returns, follow-up ahead of steering, unreported start, unreported refusal).
+The model is finite (3 turn numbers, 4 seqs): induction covers any depth within those bounds.
+When the code adopts this design, `holderAbstract` replaces the mailbox half of `requestsAbstract`, and serve re-proves its refinement against it, composing request cleanup with `release`.

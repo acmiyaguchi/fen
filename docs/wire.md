@@ -79,6 +79,7 @@ Every control line gets exactly one `control-ack`, sent before any event the con
 - `accepted` — the control is legal in the current state and the child acted on it; its effect shows up in later events (`turn-started`, `steering-injected`, `follow-up-injected`, `result`, `exit`).
   A queued `steer` or `follow-up` is applied when the agent injects it; the injected event's `ref` names it.
   Queued lines not yet injected are dropped when `finalize` is accepted or the run exits, and one `info` event lists the dropped controls' `seq` values in its `refs` array.
+  Steering accepted for a turn that ends before reading it is handed back the same way: one `info` event ("returned N unread steering line(s)") lists those controls' `refs`, and a steer the child cannot queue is reported in an `info` with its `ref`.
 - `applied` — the control asks for what the run is already doing (a repeated `finalize`, or `close` while closing or finalizing), so nothing changes.
 - `rejected` — the control is illegal in the current state, is for another `run`, or failed validation; `reason` says why.
   Invalid lines are answered with `fen.util.wire.rejection-ack`.

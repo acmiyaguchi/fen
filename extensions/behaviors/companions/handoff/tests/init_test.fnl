@@ -2,16 +2,14 @@
 (local events (require :fen.core.extensions.events))
 (local command-registry (require :fen.core.extensions.register.command))
 (local types (require :fen.core.types))
-(local steering-state (require :fen.extensions.steering.state))
+(local tasks (require :fen.core.tasks))
 (local session-registry (require :fen.core.extensions.register.session_backend))
 
 (fn seed-queues! []
-  (while (> (length steering-state.steering-queue) 0)
-    (table.remove steering-state.steering-queue))
-  (while (> (length steering-state.follow-up-queue) 0)
-    (table.remove steering-state.follow-up-queue))
-  (table.insert steering-state.steering-queue "queued steering")
-  (table.insert steering-state.follow-up-queue "queued follow-up"))
+  (tasks.reset!)
+  (tasks.turn-start!)
+  (tasks.queue! :steering "queued steering")
+  (tasks.queue! :follow-up "queued follow-up"))
 
 (local original-agent-mod (. package.loaded :fen.core.agent))
 
@@ -139,8 +137,9 @@
                     (assert.is_not_nil (string.find (. state.agent.messages 1
                                                        :content)
                                                     "summary text" 1 true))
-                    (assert.are.equal 0 (length steering-state.steering-queue))
-                    (assert.are.equal 0 (length steering-state.follow-up-queue))
+                    (assert.are.equal 0 (length (. (tasks.snapshot) :steering)))
+                    (assert.are.equal 0
+                                      (length (. (tasks.snapshot) :follow-up)))
                     (assert.are.equal 1 (length state._test.closed))
                     (assert.are.equal :old (. state._test.closed 1 :id))
                     (assert.are.equal 1 (length state._test.appended))

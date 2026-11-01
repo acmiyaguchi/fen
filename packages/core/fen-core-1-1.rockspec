@@ -79,6 +79,8 @@ set -eu
          ["fen.core.storage"] = ".lrbuild/core/storage/init.lua",
          ["fen.core.storage.backend"] = ".lrbuild/core/storage/backend.lua",
          ["fen.core.storage.backends.default"] = ".lrbuild/core/storage/backends/default.lua",
+         ["fen.core.tasks"] = ".lrbuild/core/tasks.lua",
+         ["fen.core.tasks.state"] = ".lrbuild/core/tasks/state.lua",
          ["fen.core.thinking"] = ".lrbuild/core/thinking.lua",
          ["fen.core.tool_policy"] = ".lrbuild/core/tool_policy.lua",
          ["fen.core.tools"] = ".lrbuild/core/tools.lua",

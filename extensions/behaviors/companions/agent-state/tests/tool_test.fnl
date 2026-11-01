@@ -228,17 +228,15 @@
                     (assert.is_nil (string.find text "secret" 1 true)))))
             (it "exposes runtime, run, session, model, and message summaries"
                 (fn []
-                  (let [steering-state (require :fen.extensions.steering.state)
+                  (let [tasks (require :fen.core.tasks)
                         reg (agent-state-registry)
                         ctx {:agent (agent reg)
                              :state {:busy? true :cancel-requested? false}}]
-                    (while (> (length steering-state.steering-queue) 0)
-                      (table.remove steering-state.steering-queue))
-                    (while (> (length steering-state.follow-up-queue) 0)
-                      (table.remove steering-state.follow-up-queue))
-                    (table.insert steering-state.steering-queue "a")
-                    (table.insert steering-state.steering-queue "b")
-                    (table.insert steering-state.follow-up-queue "c")
+                    (tasks.reset!)
+                    (tasks.turn-start!)
+                    (tasks.queue! :steering "a")
+                    (tasks.queue! :steering "b")
+                    (tasks.queue! :follow-up "c")
                     (let [r (execute reg :agent_state {:query "(:get :run)"}
                                      ctx)
                           decoded (json.decode (first-text r.content))]
@@ -255,10 +253,8 @@
                       (assert.is_true (contains? decoded "session"))
                       (assert.is_true (contains? decoded "model-info"))
                       (assert.is_true (contains? decoded "message-summary")))
-                    (while (> (length steering-state.steering-queue) 0)
-                      (table.remove steering-state.steering-queue))
-                    (while (> (length steering-state.follow-up-queue) 0)
-                      (table.remove steering-state.follow-up-queue)))))
+                    (tasks.clear! :steering)
+                    (tasks.clear! :follow-up))))
             (it "exposes a bounded error log tail"
                 (fn []
                   (let [reg (agent-state-registry)]

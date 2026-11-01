@@ -16,6 +16,7 @@
 (local session-lifecycle (require :fen.session_lifecycle))
 (local turn-lifecycle (require :fen.turn_lifecycle))
 (local turn-submit (require :fen.turn_submit))
+(local tasks (require :fen.core.tasks))
 (local tool-policy (require :fen.core.tool_policy))
 (local reload-request (require :fen.core.reload_request))
 
@@ -159,19 +160,17 @@
         _state-box {:state nil}
         make-agent (fn [o oe ex]
                      (M.make-agent-from-opts resolve-provider-config o oe ex))
-        ;; Callbacks resolve through the steering module table at call time, so they stay reload-safe.
-        steering (require :fen.extensions.steering.service)
         update-queue-status! (fn []
                                (let [st _state-box.state]
                                  (when st
-                                   (let [info (steering.queue-info)]
+                                   (let [info (tasks.info)]
                                      (each [k v (pairs (context-status-info st.agent))]
                                        (tset info k v))
                                      (events.emit {:type :set-status-info
                                                    :info info})))))
-        agent-extra {:get-steering (fn [] (steering.get-steering))
-                     :clear-steering (fn [] (steering.clear-queues! :steering))
-                     :get-follow-up (fn [] (steering.get-follow-up))
+        ;; Resolved through the tasks module table at call time, so they stay reload-safe.
+        agent-extra {:get-steering (fn [] (tasks.take! :steering))
+                     :get-follow-up (fn [] (tasks.take! :follow-up))
                      :tool-context (fn [_agent]
                                      {:state _state-box.state})}
         backend (session-lifecycle.resolve-backend opts)
@@ -195,12 +194,9 @@
                                :update-queue-status update-queue-status!
                                :submit-agent-turn! submit-agent-turn!
                                :submit-user-turn! submit-user-turn!})
-        _steering-runtime (steering.install-runtime! {:is-idle? (fn []
-                                                                  (and (not state.busy?)
-                                                                       (not state.turn)))
-                                                      :start-follow-up! (fn [text]
-                                                                          (submit-user-turn! state
-                                                                                             text))})
+        _mailbox (do
+                   (set state.mailbox? true)
+                   (tasks.attach! true))
         is-busy? (fn [] state.busy?)
         request-cancel (fn []
                          (when state.busy?
@@ -256,7 +252,8 @@
                                              (command-registry.dispatch (reload-request.command-line request)
                                                                         state)))
                     ;; Idle follow-ups start only after active-turn and reload work reach this boundary.
-                    (steering.start-idle-follow-up!)))]
+                    (let [text (tasks.idle-tick!)]
+                      (when text (submit-user-turn! state text)))))]
     (session-lifecycle.install! state)
     (when (> replayed 0) (state.flush))
     (let [(init-ok? init-err) (presenter-registry.init-active-presenter {:state state})]
@@ -298,7 +295,7 @@
             (pcall (fn [] (termbox2.shutdown)))
             (set tui-state.tb-initialized? false)
             (when ok-sink? (pcall log-sink.close!)))))
-      (steering.install-runtime! nil)
+      (tasks.attach! false)
       (session-lifecycle.close! state.session-backend state.session)
       (emit-agent-shutdown state.agent (if ok? :normal :crashed)
                            (when (not ok?) run-result))

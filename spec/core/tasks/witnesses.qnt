@@ -65,4 +65,35 @@ module witnesses {
   run reachReloadCancelsIdlePickerTest =
     R::init.then(R::doOpenReq(1, false, 2)).then(R::doReload)
       .expect(R::rStatus.get(1) == "cancelled" and R::gen == 1 and R::allInvariants)
+
+  // Turn mailbox (`fen.core.tasks`, #662): steering accepted for a turn that
+  // ends before reading it is handed back, not carried into the next turn.
+  run reachSteeringReturnedAtTurnEndTest =
+    R::init.then(R::doStartTurn).then(R::doQueueSteer).then(R::doEndTurn)
+      .then(R::doStartTurn)
+      .expect(R::g.sRet == 1 and R::sLen == 0 and R::queue == Set() and R::allInvariants)
+
+  // Steering wins: the running turn's line is injected before a queued follow-up.
+  run reachSteeringBeforeFollowUpTest =
+    R::init.then(R::doStartTurn).then(R::doQueueSteer).then(R::doQueueFollowUp(false))
+      .then(R::doInjectSteer(false)).then(R::doInjectFollowUp(false))
+      .expect(R::g.sInj == 1 and R::g.fInj == 1 and R::g.orderOk and R::allInvariants)
+
+  // :all drains every queued line of the running turn in one injection.
+  run reachSteeringDrainAllTest =
+    R::init.then(R::doStartTurn).then(R::doQueueSteer).then(R::doQueueSteer)
+      .then(R::doInjectSteer(true))
+      .expect(R::g.sInj == 2 and R::sLen == 0 and R::allInvariants)
+
+  // An idle enqueue asks the idle tick to start exactly one follow-up.
+  run reachIdleFollowUpStartTest =
+    R::init.then(R::doQueueFollowUp(true)).then(R::doQueueFollowUp(false))
+      .then(R::doIdleStart)
+      .expect(R::g.fStart == 1 and R::fLen == 1 and not(R::idleStart) and R::allInvariants)
+
+  // Follow-ups survive turn end; an explicit clear accounts for what it drops.
+  run reachFollowUpSurvivesTurnEndThenClearedTest =
+    R::init.then(R::doStartTurn).then(R::doQueueFollowUp(false)).then(R::doEndTurn)
+      .then(R::doClearFollowUps)
+      .expect(R::g.fDrop == 1 and R::fLen == 0 and R::allInvariants)
 }

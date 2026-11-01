@@ -99,7 +99,7 @@ for tool in "$QUINT" "$APALACHE"; do
 done
 
 if [ $# -eq 0 ]; then
-  set -- spec/core/*/ spec/*/ spec/*/proofs/*/
+  set -- spec/core/*/ spec/core/*/proofs/*/ spec/*/ spec/*/proofs/*/
 fi
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/fen-spec-verify.XXXXXX")

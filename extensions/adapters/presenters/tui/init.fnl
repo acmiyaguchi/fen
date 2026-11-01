@@ -578,6 +578,7 @@
           :set-status-info true
           :set-thinking-blocks true
           :hint true
+          :steering-returned true
           :dismiss true})
   (api.on :*
           (fn [ev]
@@ -625,6 +626,13 @@
                        (paint.invalidate!))))
   ;; Contextual suggestions from extensions land in the empty-input placeholder, never the transcript.
   (api.on :hint (fn [ev] (input.show-hint! ev)))
+  ;; Steering the turn ended before reading goes back into the main draft (#662).
+  (api.on :steering-returned
+          (fn [ev]
+            (workspaces.with-main! #(do
+                                      (input.restore-returned! ev)
+                                      (ingest.append-event {:type :info
+                                                            :text "steering returned to the input: the turn ended before reading it"})))))
   ;; First-party status blocks. These use the same :status kind third-party
   ;; extensions will use; paint.fnl composes them at draw time.
 

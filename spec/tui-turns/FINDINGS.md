@@ -85,7 +85,7 @@ The line then sits in the queue until the next prompt.
 Nothing is lost (`noSteeringLost` holds); it is delivered to the wrong turn, in the wrong order.
 
 Witnesses: `reachSteeringHandedBackTest`, `reachSteeringDeliveredTest` ([`witnesses.qnt`](witnesses.qnt)); `reachHandedBackTest`, `reachDeliveredMidTurnTest` ([`steering`](proofs/steering/) proof model).
-Regression test: `extensions/behaviors/kernel/steering/tests/failed_turn_steering_discarded_test.fnl` (on the error and the cancel path).
+Regression test: `extensions/behaviors/kernel/steering/tests/failed_turn_steering_returned_test.fnl` (on the error and the cancel path).
 
 Confirmed with a probe driving real `agent.step` (mock provider) with the real `steering.service` queue; the correction is typed at the first `:llm-start`:
 
@@ -151,7 +151,7 @@ The counterexample witnesses became `reach...Test` traces on the fixed design.
 
 - Ctrl-C on non-main tabs (#660): `input.fnl` restricts the main session's cancel/force-quit ladder to the main tab; other tabs cancel their own turn or clear local drafts / run the two-press quit without touching the main turn.
 - Mouse switch disarms quit arm (#661): `workspaces.activate!` disarms `state.pending-quit?`, so mouse switches match keyboard switches.
-- Steering discarded on turn error/cancel (#662): `agent.close-turn!` in `packages/core/src/fen/core/agent.fnl` clears steering on error or cancel via `:clear-steering`.
+- Steering handed back at turn end (#662): steering lives in the core turn mailbox (`fen.core.tasks`), tagged with its turn; `turn_submit` closes the turn inside its coroutine and every turn end (ok, error, or cancel) returns the unread lines as `:steering-returned`, which the TUI puts back in the main draft (spec/core/tasks `requestsSpec`).
 - Reopened `/btw` isolated from reaped turn (#663): `side_chat.fnl` removes parked entries from `live` into `reap`, captures `ws` in event callbacks and drops events for closed tabs, and reflects `reap` in `busy?`.
 
 ## Candidate fixes (named: `FIXES`)
@@ -192,7 +192,7 @@ A pure TUI core `(state, event) -> (state', effects)` needs very little:
 - a tab table where each tab holds `{kind, view, turn: {id, status, cancel-armed?}}`, plus `focus`;
 - events tagged with `turn-id` and folded only into the tab that owns that turn (unknown or retired ids are dropped);
 - Ctrl-C defined as `f(focused tab's turn)`, returning one effect (`cancel(turn-id)`, `clear-draft`, `arm-quit`, or `quit`); the busy hint is the same function shown as text;
-- a steering queue keyed by `turn-id`, so a turn that ends hands its own queue back.
+- a steering queue keyed by `turn-id`, so a turn that ends hands its own queue back (done: `fen.core.tasks`).
 
 Then main, side, and subagent differ only in kind policy, meaning which effects their turn accepts.
 The model suggests moving the main session's `cancel-pressed?` and `status-info` into the main tab's turn record.

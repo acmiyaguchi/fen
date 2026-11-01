@@ -44,7 +44,7 @@
                                                       (steering.get-follow-up))
                                      :provider-options {:mock-script script
                                                         :mock-record record}})]
-    {:agent agent :opts {}}))
+    {:agent agent :opts {} :mailbox? true}))
 
 (fn make-on-tick [state]
   "Mirror of the interactive runtime tick: one resume per tick."

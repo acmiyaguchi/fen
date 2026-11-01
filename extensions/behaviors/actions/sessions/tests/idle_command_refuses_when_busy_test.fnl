@@ -10,7 +10,7 @@
 
 (fn reset! []
   (steering.clear-queues!)
-  (steering.install-runtime! nil)
+  ((. (require :fen.core.tasks) :reset!))
   (test-api.reset!))
 
 (describe "idle-only command refuses after turn starts (#638)"
@@ -42,23 +42,22 @@
                                :make-agent-from-opts (fn [] {:messages []})
                                :make-flush (fn [] (fn [] nil))}]
                     (mod.register api)
-                    ;; The interactive runtime's bridge; starting a follow-up marks the turn running.
-                    (steering.install-runtime! {:is-idle? (fn []
-                                                            (and (not state.busy?)
-                                                                 (not state.turn)))
-                                                :start-follow-up! (fn [_text]
-                                                                    (set state.busy?
-                                                                         true)
-                                                                    (set state.turn
-                                                                         :follow-up)
-                                                                    (set state.turn-id
-                                                                         1))})
+                    ;; The interactive runtime: attached, and its idle tick starts the follow-up.
+                    ((. (require :fen.core.tasks) :attach!) true)
+
+                    (fn idle-tick! []
+                      (let [text ((. (require :fen.core.tasks) :idle-tick!))]
+                        (when text
+                          (set state.busy? true)
+                          (set state.turn :follow-up)
+                          (set state.turn-id (+ (or state.turn-id 0) 1)))))
+
                     ;; The picker: while it is open, a turn starts.
                     (set extension-state.ui.slot
                          {:select (fn [opts]
                                     (api.enqueue :follow-up "queued prompt"
                                                  {:start-if-idle? true})
-                                    (steering.start-idle-follow-up!)
+                                    (idle-tick!)
                                     (set during-select.busy? state.busy?)
                                     (. opts.choices 1))})
                     (command-registry.dispatch "/resume" state)

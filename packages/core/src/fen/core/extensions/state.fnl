@@ -132,12 +132,6 @@
 ;; summary: Persistent baseline search paths and active trusted development worktree roots used by the repo-local reload-from command.
 ;; tags: extensions state development reload
 
-;; @doc fen.core.extensions.state.enqueue!
-;; kind: data
-;; signature: function|nil
-;; summary: Interactive extension-installed enqueue bridge, available only while an interactive runtime is live.
-;; tags: extensions state runtime queue
-
 ;; @doc fen.core.extensions.state.runtime-info
 ;; kind: data
 ;; signature: table|nil
@@ -210,7 +204,6 @@
  :reload-core-failures {}
  :reload-fingerprints {}
  :dev-overlay nil
- :enqueue! nil
  :runtime-info nil
  :errors []
  :error-log-path nil

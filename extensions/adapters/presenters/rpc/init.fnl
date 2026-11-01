@@ -62,9 +62,29 @@
       (table.remove fifo 1)
       head.ref)))
 
+(fn returned! [ch texts]
+  "The turn mailbox handed back steering the turn ended without reading: drop
+   those lines' refs (oldest matching first) and name them in one `info`, so
+   accepted controls are always accounted for and later refs stay aligned."
+  (let [fifo ch.pending.steering
+        refs []]
+    (each [_ t (ipairs (or texts []))]
+      (var hit nil)
+      (each [i item (ipairs fifo) &until hit]
+        (when (= item.text t) (set hit i)))
+      (when hit
+        (table.insert refs (. (table.remove fifo hit) :ref))))
+    (when (> (length (or texts [])) 0)
+      (send! ch :info
+             {:summary (.. "returned " (length texts)
+                           " unread steering line(s): the turn ended")
+              :refs (when (> (length refs) 0) refs)}))))
+
 (fn M.forward! [ch ev]
   "Forward a bus event when it is a wire display event type."
   (let [typ (?. ev :type)]
+    (when (and (not ch.exited?) (= typ :steering-returned))
+      (returned! ch ev.texts))
     (when (and (not ch.exited?) (wire.event-type? typ)
                (not (wire-session.lifecycle-event? typ)))
       (let [out (wire.normalize ev)]
@@ -210,9 +230,15 @@
     (set ch.state.cancel-requested? true)))
 
 (fn queue! [ch kind msg]
-  (table.insert (. ch.pending kind)
-                {:ref (math.tointeger msg.seq) :text msg.text})
-  ((. (steering) :queue!) kind msg.text))
+  (let [ref (math.tointeger msg.seq)
+        result ((. (steering) :queue!) kind msg.text)]
+    (if result.ok
+        (table.insert (. ch.pending kind) {: ref :text msg.text})
+        ;; The mailbox refused it (no turn open, or empty): account for the ref
+        ;; now instead of leaving it to be matched against a later line.
+        (send! ch :info {:summary (.. "dropped " (tostring kind) ": "
+                                      (tostring result.error))
+                         :refs [ref]}))))
 
 (fn defer-exit! [ch f]
   "Run F now, or at the end of the current poll batch so every control line

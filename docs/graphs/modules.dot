@@ -54,6 +54,8 @@ digraph fen_modules {
   "fen.core.storage" [fillcolor="lightyellow", label="fen.core.storage", style="filled", tooltip="packages/core/src/fen/core/storage/init.fnl persistent"];
   "fen.core.storage.backend" [fillcolor="lightyellow", label="fen.core.storage.backend", style="filled", tooltip="packages/core/src/fen/core/storage/backend.fnl persistent"];
   "fen.core.storage.backends.default" [fillcolor="lightyellow", label="fen.core.storage.backends.default", style="filled", tooltip="packages/core/src/fen/core/storage/backends/default.fnl persistent"];
+  "fen.core.tasks" [fillcolor="lightyellow", label="fen.core.tasks", style="filled", tooltip="packages/core/src/fen/core/tasks.fnl persistent"];
+  "fen.core.tasks.state" [fillcolor="lightyellow", label="fen.core.tasks.state", style="filled", tooltip="packages/core/src/fen/core/tasks/state.fnl persistent"];
   "fen.core.thinking" [fillcolor="lightyellow", label="fen.core.thinking", style="filled", tooltip="packages/core/src/fen/core/thinking.fnl persistent"];
   "fen.core.tool_policy" [fillcolor="lightyellow", label="fen.core.tool_policy", style="filled", tooltip="packages/core/src/fen/core/tool_policy.fnl persistent"];
   "fen.core.tools" [fillcolor="lightyellow", label="fen.core.tools", style="filled", tooltip="packages/core/src/fen/core/tools.fnl persistent"];
@@ -161,7 +163,6 @@ digraph fen_modules {
   "fen.extensions.stdio" [fillcolor="lightyellow", label="fen.extensions.stdio", style="filled", tooltip="extensions/adapters/presenters/stdio/init.fnl persistent"];
   "fen.extensions.steering" [fillcolor="lightyellow", label="fen.extensions.steering", style="filled", tooltip="extensions/behaviors/kernel/steering/init.fnl persistent"];
   "fen.extensions.steering.service" [fillcolor="lightyellow", label="fen.extensions.steering.service", style="filled", tooltip="extensions/behaviors/kernel/steering/service.fnl persistent"];
-  "fen.extensions.steering.state" [fillcolor="lightyellow", label="fen.extensions.steering.state", style="filled", tooltip="extensions/behaviors/kernel/steering/state.fnl persistent"];
   "fen.extensions.subagent" [fillcolor="lightyellow", label="fen.extensions.subagent", style="filled", tooltip="extensions/behaviors/companions/subagent/init.fnl persistent"];
   "fen.extensions.subagent.bundled" [fillcolor="lightyellow", label="fen.extensions.subagent.bundled", style="filled", tooltip="extensions/behaviors/companions/subagent/bundled.fnl persistent"];
   "fen.extensions.subagent.channel" [fillcolor="lightyellow", label="fen.extensions.subagent.channel", style="filled", tooltip="extensions/behaviors/companions/subagent/channel.fnl persistent"];
@@ -344,6 +345,8 @@ digraph fen_modules {
   "fen.core.extensions.loader.api" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions.loader.api" -> "fen.core.llm.models" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.loader.api" -> "fen.core.settings" [color="gray50", label="late", style="dashed"];
+  "fen.core.extensions.loader.api" -> "fen.core.tasks" [color="gray50", label="late", style="dashed"];
+  "fen.core.extensions.loader.api" -> "fen.core.tasks.state" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.loader.compiler" -> "fen.util.clock" [label="require"];
   "fen.core.extensions.loader.compiler" -> "fen.util.process" [label="require"];
   "fen.core.extensions.loader.compiler" -> "fen.util.runtime" [label="require"];
@@ -464,6 +467,8 @@ digraph fen_modules {
   "fen.core.storage" -> "fen.core.storage.backend" [label="require"];
   "fen.core.storage.backend" -> "fen.core.storage.backends.default" [label="require"];
   "fen.core.storage.backends.default" -> "fen.util.path" [label="require"];
+  "fen.core.tasks" -> "fen.core.extensions.events" [label="require"];
+  "fen.core.tasks" -> "fen.core.tasks.state" [label="require"];
   "fen.core.tools" -> "fen.core.extensions.register.hook" [label="require"];
   "fen.core.tools" -> "fen.core.types" [label="require"];
   "fen.core.tools" -> "fen.util.json_schema" [label="require"];
@@ -782,9 +787,7 @@ digraph fen_modules {
   "fen.extensions.status.util" -> "fen.version" [color="gray50", label="optional", style="dotted"];
   "fen.extensions.stdio" -> "fen.util.tokens" [label="require"];
   "fen.extensions.steering" -> "fen.extensions.steering.service" [label="require"];
-  "fen.extensions.steering.service" -> "fen.core.extensions.events" [label="require"];
-  "fen.extensions.steering.service" -> "fen.core.extensions.state" [label="require"];
-  "fen.extensions.steering.service" -> "fen.extensions.steering.state" [label="require"];
+  "fen.extensions.steering.service" -> "fen.core.tasks" [label="require"];
   "fen.extensions.subagent" -> "fen.core.extensions.register.presenter" [label="require"];
   "fen.extensions.subagent" -> "fen.core.extensions.register.provider" [label="require"];
   "fen.extensions.subagent" -> "fen.core.llm.models" [label="require"];
@@ -936,9 +939,9 @@ digraph fen_modules {
   "fen.interactive" -> "fen.core.llm.models" [label="require"];
   "fen.interactive" -> "fen.core.prompt" [label="require"];
   "fen.interactive" -> "fen.core.reload_request" [label="require"];
+  "fen.interactive" -> "fen.core.tasks" [label="require"];
   "fen.interactive" -> "fen.core.thinking" [label="require"];
   "fen.interactive" -> "fen.core.tool_policy" [label="require"];
-  "fen.interactive" -> "fen.extensions.steering.service" [color="gray50", label="late", style="dashed"];
   "fen.interactive" -> "fen.extensions.tui.state" [color="gray50", label="optional", style="dotted"];
   "fen.interactive" -> "fen.run_state" [label="require"];
   "fen.interactive" -> "fen.session_lifecycle" [label="require"];
@@ -1007,7 +1010,7 @@ digraph fen_modules {
   "fen.testing.tui_latency" -> "fen.util.clock" [label="require"];
   "fen.turn_lifecycle" -> "fen.core.extensions.events" [label="require"];
   "fen.turn_lifecycle" -> "fen.util.text" [label="require"];
-  "fen.turn_submit" -> "fen.extensions.steering.service" [color="gray50", label="late", style="dashed"];
+  "fen.turn_submit" -> "fen.core.tasks" [label="require"];
   "fen.turn_submit" -> "fen.extensions.subagent.runs" [color="gray50", label="optional", style="dotted"];
   "fen.turn_submit" -> "fen.util.coroutines" [label="require"];
   "fen.update" -> "fen.util.http" [label="require"];

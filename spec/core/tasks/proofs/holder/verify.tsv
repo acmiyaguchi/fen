@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+holderSpec	inductiveInv	inductive	1	300	Induction over the finite holder/seq state: release on every body exit, exactly-once dispositions, fencing of steer and cancel, and follow-up order hold at any depth.

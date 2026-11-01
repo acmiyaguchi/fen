@@ -99,10 +99,10 @@
                               (= text "")
                               {:ok false
                                :error "cannot enqueue an empty message"}
-                              ;; Resolve the runtime bridge at call time so retained APIs follow reloads.
-                              (let [enqueue state.enqueue!]
-                                (if (= (type enqueue) :function)
-                                    (enqueue kind text ?opts)
+                              (let [tasks (require :fen.core.tasks)
+                                    tasks-state (require :fen.core.tasks.state)]
+                                (if tasks-state.attached?
+                                    (tasks.queue! kind text ?opts)
                                     {:ok false :error "no interactive runtime"}))))
                :auth {:find-backend (fn [name]
                                       (auth-backend-registry.find name))}

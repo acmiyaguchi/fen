@@ -1,186 +1,60 @@
-;; Steering / follow-up queue service.
+;; Steering / follow-up input shell over the core turn mailbox.
 ;;
-;; Owns the interactive input queues that used to live on main.fnl's run
-;; state: steering lines injected into the running turn at safe boundaries,
-;; and `>`-prefixed follow-up lines submitted as fresh turns after the
-;; current turn completes. main.fnl wires the agent's get-steering /
-;; get-follow-up callbacks through this module; /queue, /cancel-all,
-;; /new, /resume, and /handoff mutate queues through the service API
-;; instead of reaching into run state.
+;; The queues, their turn tags, and the drain rules live in `fen.core.tasks`
+;; (a pure Mealy step over non-reloadable `fen.core.tasks.state`). This module
+;; keeps only the user-facing policy: `>`-prefixed lines are follow-ups, other
+;; busy-time input steers the running turn, and the status/introspect views.
 ;;
 ;; Cross-extension consumers require this module, not the
-;; `fen.extensions.steering` entry: the loader cache-busts entry modules on
-;; a fresh load!, which would orphan earlier captures, while non-entry
-;; modules keep one table identity that /reload mutates in place.
-;;
-;; Queue state lives in the non-reloadable sibling
-;; `fen.extensions.steering.state`; this module is behavior only.
+;; `fen.extensions.steering` entry: the loader cache-busts entry modules on a
+;; fresh load!, which would orphan earlier captures.
 
-(local state (require :fen.extensions.steering.state))
-(local extension-state (require :fen.core.extensions.state))
-(local events (require :fen.core.extensions.events))
+(local tasks (require :fen.core.tasks))
 
 (local M {})
-
-(fn queue-of [kind]
-  (if (or (= kind :follow-up) (= kind :followup)) state.follow-up-queue
-      (= kind :steering) state.steering-queue
-      nil))
-
-(fn canonical-kind [kind]
-  (if (or (= kind :follow-up) (= kind :followup)) :follow-up
-      (= kind :steering) :steering
-      nil))
-
-(fn drain! [q mode]
-  (if (= mode :all)
-      (let [out []]
-        (while (> (length q) 0)
-          (table.insert out (table.remove q 1)))
-        out)
-      (if (> (length q) 0)
-          [(table.remove q 1)]
-          [])))
-
-(fn copy-list [xs]
-  (let [out []]
-    (each [_ v (ipairs (or xs []))]
-      (table.insert out v))
-    out))
 
 ;; @doc fen.extensions.steering.service.queue-info
 ;; kind: function
 ;; signature: (queue-info) -> {:steering-queued n :follow-up-queued n :steering-mode mode :follow-up-mode mode}
 ;; summary: Current queue depths and drain modes, in the field names the status line consumes.
 ;; tags: steering queue status
-(fn M.queue-info []
-  {:steering-queued (length state.steering-queue)
-   :follow-up-queued (length state.follow-up-queue)
-   :steering-mode state.steering-mode
-   :follow-up-mode state.follow-up-mode})
-
-(fn emit-counts! []
-  ;; Presenters merge :set-status-info per-field, so emitting counts alone
-  ;; leaves provider/model/approx-context untouched.
-  (events.emit {:type :set-status-info :info (M.queue-info)}))
+(fn M.queue-info [] (tasks.info))
 
 ;; @doc fen.extensions.steering.service.queue-snapshot
 ;; kind: function
 ;; signature: (queue-snapshot) -> {:steering [line] :follow-up [line] :steering-mode mode :follow-up-mode mode}
 ;; summary: Copied queue contents plus modes for UI rendering such as the /queue panel.
 ;; tags: steering queue introspect
-(fn M.queue-snapshot []
-  {:steering (copy-list state.steering-queue)
-   :follow-up (copy-list state.follow-up-queue)
-   :steering-mode state.steering-mode
-   :follow-up-mode state.follow-up-mode})
+(fn M.queue-snapshot [] (tasks.snapshot))
+
+(fn canonical-kind [kind]
+  (if (= kind :follow-up) :follow-up
+      (= kind :steering) :steering
+      nil))
 
 ;; @doc fen.extensions.steering.service.queue!
 ;; kind: function
-;; signature: (queue! kind text) -> {:ok true :queued true :queue kind}|{:ok false :error msg}
-;; summary: Append a line to the steering or follow-up queue, emitting the :queued event and refreshed status counts.
+;; signature: (queue! kind text ?opts) -> {:ok true :queued true :queue kind}|{:ok false :error msg}
+;; summary: Offer a line to the running turn's steering mailbox or the follow-up queue; steering is rejected when no turn runs or opts.turn is stale.
 ;; tags: steering queue
-(fn M.queue! [kind text]
-  (let [requested-kind kind
-        kind (canonical-kind kind)
-        q (queue-of kind)]
-    (if (not q)
-        {:ok false :error (.. "unknown queue: " (tostring requested-kind))}
-        (do
-          (table.insert q text)
-          (emit-counts!)
-          (events.emit {:type :queued :queue kind :text text})
-          {:ok true :queued true :queue kind}))))
-
-(fn last-index [q text]
-  (var found nil)
-  (each [i v (ipairs q)]
-    (when (= v text) (set found i)))
-  found)
+(fn M.queue! [kind text ?opts]
+  (if (canonical-kind kind)
+      (tasks.queue! kind text ?opts)
+      {:ok false :error (.. "unknown queue: " (tostring kind))}))
 
 ;; @doc fen.extensions.steering.service.requeue!
 ;; kind: function
 ;; signature: (requeue! text from to) -> {:ok true :queued true :queue kind}|{:ok false :error msg}
-;; summary: Move the most recent still-pending copy of a line from one queue to the end of the other, emitting :queued and refreshed status counts like queue!; fails when no copy is pending.
+;; summary: Move the most recent still-pending copy of a line from one queue to the end of the other; fails when no copy is pending or steering has no running turn.
 ;; tags: steering queue
-(fn M.requeue! [text from to]
-  (let [src (queue-of from)
-        to-kind (canonical-kind to)]
-    (if (or (not src) (not to-kind) (= (canonical-kind from) to-kind))
-        {:ok false
-         :error (.. "cannot move a line from " (tostring from) " to "
-                    (tostring to))}
-        (let [i (last-index src text)]
-          (if (not i)
-              {:ok false
-               :error (.. "line is no longer pending in " (tostring from))}
-              (do
-                (table.remove src i)
-                (M.queue! to-kind text)))))))
-
-;; The interactive runtime installs only the two callbacks needed to defer an
-;; idle follow-up until the presenter reaches its safe tick boundary. This is
-;; intentionally state-local rather than an extension-registry dependency.
-(fn M.install-runtime! [runtime]
-  (set state.runtime runtime)
-  ;; The core API resolves this bridge without importing an extension module.
-  ;; Keep the closure table-relative so its behavior follows /reload.
-  (set extension-state.enqueue!
-       (when runtime
-         (fn [kind text ?opts] (M.enqueue! kind text ?opts))))
-  (when (not runtime)
-    (set state.idle-follow-up-start? false)))
-
-(fn M.enqueue! [kind text ?opts]
-  "Public-runtime implementation behind api.enqueue. Follow-up idle-start is
-   requested only when the caller observes an idle runtime; a later safe tick
-   consumes one queued item through the normal turn-submit path."
-  (let [opts (or ?opts {})
-        result (M.queue! kind text)
-        runtime state.runtime]
-    (when (and result.ok (= result.queue :follow-up) opts.start-if-idle?
-               runtime runtime.is-idle? (runtime.is-idle?))
-      (set state.idle-follow-up-start? true)
-      (set result.start-pending? true))
-    result))
-
-;; @doc fen.extensions.steering.service.start-idle-follow-up!
-;; kind: function
-;; signature: (start-idle-follow-up!) -> boolean
-;; summary: At an interactive safe tick, start one requested idle follow-up through the runtime's normal user-turn submitter.
-;; tags: steering queue extensions runtime
-(fn M.start-idle-follow-up! []
-  (let [runtime state.runtime]
-    (if (and state.idle-follow-up-start? runtime runtime.is-idle?
-             runtime.start-follow-up! (runtime.is-idle?))
-        (do
-          (set state.idle-follow-up-start? false)
-          ;; Take exactly one regardless of drain mode; once its normal turn
-          ;; runs, the agent callback applies the configured queue mode to the
-          ;; remaining messages as it always has.
-          (if (> (length state.follow-up-queue) 0)
-              (let [text (table.remove state.follow-up-queue 1)]
-                (emit-counts!)
-                (runtime.start-follow-up! text)
-                true)
-              false))
-        false)))
+(fn M.requeue! [text from to] (tasks.requeue! text from to))
 
 ;; @doc fen.extensions.steering.service.clear-queues!
 ;; kind: function
 ;; signature: (clear-queues! ?kind) -> nil
 ;; summary: Empty the named queue, or both when kind is nil or :all, and refresh status counts.
 ;; tags: steering queue
-(fn M.clear-queues! [?kind]
-  (when (or (= ?kind nil) (= ?kind :all) (= (canonical-kind ?kind) :follow-up))
-    (set state.idle-follow-up-start? false))
-  (when (or (= ?kind nil) (= ?kind :all) (= (canonical-kind ?kind) :steering))
-    (while (> (length state.steering-queue) 0)
-      (table.remove state.steering-queue)))
-  (when (or (= ?kind nil) (= ?kind :all) (= (canonical-kind ?kind) :follow-up))
-    (while (> (length state.follow-up-queue) 0)
-      (table.remove state.follow-up-queue)))
-  (emit-counts!))
+(fn M.clear-queues! [?kind] (tasks.clear! ?kind))
 
 ;; @doc fen.extensions.steering.service.set-queue-mode!
 ;; kind: function
@@ -188,34 +62,37 @@
 ;; summary: Set a queue's drain mode to :one-at-a-time or :all, rejecting unknown kinds and modes.
 ;; tags: steering queue
 (fn M.set-queue-mode! [kind mode]
-  (let [kind (canonical-kind kind)]
-    (if (or (not kind) (not (or (= mode :one-at-a-time) (= mode :all))))
-        false
-        (do
-          (if (= kind :steering)
-              (set state.steering-mode mode)
-              (set state.follow-up-mode mode))
-          true))))
+  (if (canonical-kind kind) (tasks.set-mode! kind mode) false))
 
 ;; @doc fen.extensions.steering.service.get-steering
 ;; kind: function
 ;; signature: (get-steering) -> [line]
-;; summary: Drain the steering queue by its mode for injection at the agent's next safe boundary.
+;; summary: Drain the running turn's steering lines by mode for injection at the agent's next safe boundary.
 ;; tags: steering queue agent
-(fn M.get-steering []
-  (let [out (drain! state.steering-queue state.steering-mode)]
-    (emit-counts!)
-    out))
+(fn M.get-steering [] (tasks.take! :steering))
 
 ;; @doc fen.extensions.steering.service.get-follow-up
 ;; kind: function
 ;; signature: (get-follow-up) -> [line]
-;; summary: Drain the follow-up queue by its mode when the agent finishes a turn.
+;; summary: Drain the follow-up queue by its mode when the agent would otherwise stop.
 ;; tags: steering queue agent
-(fn M.get-follow-up []
-  (let [out (drain! state.follow-up-queue state.follow-up-mode)]
-    (emit-counts!)
-    out))
+(fn M.get-follow-up [] (tasks.take! :follow-up))
+
+;; Deprecated shims for a session started before the turn mailbox existed:
+;; its old `on-tick` and shutdown closures still call these after a /reload
+;; into this code. Steering in such a session falls back to follow-ups until
+;; fen restarts (the old run-state never opens mailbox turns).
+(fn M.install-runtime! [runtime]
+  (set M.legacy-runtime runtime)
+  (tasks.attach! (not= runtime nil)))
+
+(fn M.start-idle-follow-up! []
+  (let [text (tasks.idle-tick!)]
+    (if (and text M.legacy-runtime M.legacy-runtime.start-follow-up!)
+        (do
+          (M.legacy-runtime.start-follow-up! text)
+          true)
+        false)))
 
 (fn follow-up-line? [line]
   (= (string.sub (or line "") 1 1) ">"))
@@ -229,13 +106,15 @@
    it acts on :start; :queued has already been applied here."
   (if (not (?. ctx :busy?))
       {:action :start :text line}
-      (if (follow-up-line? line)
-          (let [text (strip-follow-up-prefix line)]
-            (M.queue! :follow-up text)
-            {:action :queued :queue :follow-up :text text})
-          (do
-            (M.queue! :steering line)
-            {:action :queued :queue :steering :text line}))))
+      (let [result (if (follow-up-line? line)
+                       (M.queue! :follow-up (strip-follow-up-prefix line))
+                       ;; Busy without a mailbox turn (/reload, /handoff): the
+                       ;; line becomes a follow-up rather than being rejected.
+                       (tasks.steer-or-follow-up! line))
+            text (if (follow-up-line? line) (strip-follow-up-prefix line) line)]
+        (if result.ok
+            {:action :queued :queue result.queue : text}
+            {:action :error :error result.error}))))
 
 (fn M.handle-input [input ctx]
   "Input-pipeline handler wrapping `submit`. `input` is

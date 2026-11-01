@@ -184,6 +184,7 @@ The loop dispatches on content, as pi-mono does: a reply that is not an error an
 Every error exit emits `:error`, and the step returns its text plus one `Outcome` (`types.outcome`: `{:status :ok|:error|:cancelled :text :error}`), also kept in `agent.outcome` until `turn_lifecycle` reports it.
 The tool paths do not pair calls themselves; they stop and unwind.
 After a natural stop the loop continues only when a queued steering or follow-up line was actually appended.
+Queued input lives in the core turn mailbox (`fen.core.tasks`, see [extensions.md](extensions.md#steering-queue-service)): steering is tagged with its turn, injected only into that turn, and handed back as `:steering-returned` when the turn ends; the agent itself only drains the `get-steering`/`get-follow-up` callbacks.
 
 ## Design principles
 

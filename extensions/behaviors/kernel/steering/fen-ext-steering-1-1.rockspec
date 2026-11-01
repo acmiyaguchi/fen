@@ -35,7 +35,6 @@ set -eu
          ["fen.extensions.steering"] = ".lrbuild/extensions/steering/init.lua",
          ["fen.extensions.steering.manifest"] = ".lrbuild/extensions/steering/manifest.lua",
          ["fen.extensions.steering.service"] = ".lrbuild/extensions/steering/service.lua",
-         ["fen.extensions.steering.state"] = ".lrbuild/extensions/steering/state.lua",
       },
    },
 }

@@ -1,7 +1,8 @@
 // Abstract specification of task table (#671):
 //   Part 1 (`tasksAbstract`): cooperative task table with turn-keyed ownership,
 //     cancel arms, active poll cadence, and xpcall fault isolation (#635–#637, #660–#663).
-//   Part 2 (`requestsAbstract`): turn-keyed steering, async request resolution,
+//   Part 2 (`requestsAbstract`): turn-keyed steering mailbox with hand-back and
+//     follow-ups (implemented by `fen.core.tasks`), async request resolution,
 //     reload generation, and bounded park countdown budgets (#638, #662, #397, #398).
 //
 // Pure definitions only, so concrete models (`spec/serve`, `spec/serve/proofs/*`)
@@ -264,6 +265,9 @@ module requestsAbstract {
     gen: int,               // /reload generation
     hasResolver: bool,      // at least one resolver (local UI or connected remote) is present
     queue: Set[int],        // turn tags of queued steering lines
+    sLen: int,              // steering lines queued (all tagged with the running turn)
+    fLen: int,              // follow-ups queued (untagged; survive turn end)
+    idleStart: bool,        // an idle enqueue asked the idle tick to start one follow-up
     rScope: int -> int,     // req -> 0 (idle slash-command picker) or turn t > 0
     rGen: int -> int,       // req -> /reload generation when issued
     rVer: int -> int,       // req -> choice-list version
@@ -285,6 +289,9 @@ module requestsAbstract {
     gen: 0,
     hasResolver: hasRes,
     queue: Set(),
+    sLen: 0,
+    fLen: 0,
+    idleStart: false,
     rScope: IDS.mapBy(_i => 0),
     rGen: IDS.mapBy(_i => 0),
     rVer: IDS.mapBy(_i => 0),
@@ -316,21 +323,55 @@ module requestsAbstract {
     val resolved = resolveSet(a, own, "ended")
     and {
       a.running,
-      b == { ...resolved, running: false, parkedOn: -1, queue: Set() },
+      // Leftover steering is handed back (:returned), never carried into the next turn.
+      b == { ...resolved, running: false, parkedOn: -1, queue: Set(), sLen: 0 },
     }
 
   pure def absQueueSteer(a: ReqAbs, b: ReqAbs): bool = and {
     a.running,
-    b == { ...a, queue: a.queue.union(Set(a.turnNo)) },
+    b == { ...a, queue: a.queue.union(Set(a.turnNo)), sLen: a.sLen + 1 },
   }
 
+  // Inject one line (:one-at-a-time) or several (:all) into the running turn.
   pure def absInjectSteer(a: ReqAbs, b: ReqAbs): bool = and {
     a.running,
     a.parkedOn < 0,
     a.queue.contains(a.turnNo),
+    0 <= b.sLen, b.sLen < a.sLen,
     b.queue.subseteq(a.queue),
-    b == { ...a, queue: b.queue },
+    (b.sLen == 0) == (b.queue == Set()),
+    b == { ...a, queue: b.queue, sLen: b.sLen },
   }
+
+  // A follow-up may ask the idle tick to start it when no turn runs.
+  pure def absQueueFollowUp(a: ReqAbs, b: ReqAbs): bool = and {
+    b.idleStart == a.idleStart or (b.idleStart and not(a.running)),
+    b == { ...a, fLen: a.fLen + 1, idleStart: b.idleStart },
+  }
+
+  // At a natural stop, follow-ups are injected only once the running turn's
+  // steering is drained (steering wins).
+  pure def absInjectFollowUp(a: ReqAbs, b: ReqAbs): bool = and {
+    a.running,
+    a.parkedOn < 0,
+    a.sLen == 0,
+    0 <= b.fLen, b.fLen < a.fLen,
+    b == { ...a, fLen: b.fLen },
+  }
+
+  // The idle tick consumes the request and starts at most one follow-up.
+  pure def absIdleStart(a: ReqAbs, b: ReqAbs): bool = and {
+    not(a.running),
+    a.idleStart,
+    b == { ...a, idleStart: false, fLen: if (a.fLen > 0) a.fLen - 1 else 0 },
+  }
+
+  // Explicit clears (/new, /resume, /queue clear).
+  pure def absClearSteering(a: ReqAbs, b: ReqAbs): bool =
+    b == { ...a, sLen: 0, queue: Set() }
+
+  pure def absClearFollowUps(a: ReqAbs, b: ReqAbs): bool =
+    b == { ...a, fLen: 0, idleStart: false }
 
   pure def absOpenReq(a: ReqAbs, b: ReqAbs, i: int, scope: int, bgt: int): bool = and {
     IDS.contains(i),
@@ -420,6 +461,11 @@ module requestsAbstract {
     absEndTurn(a, b),
     absQueueSteer(a, b),
     absInjectSteer(a, b),
+    absQueueFollowUp(a, b),
+    absInjectFollowUp(a, b),
+    absIdleStart(a, b),
+    absClearSteering(a, b),
+    absClearFollowUps(a, b),
     absReload(a, b),
     absSetResolver(a, b, b.hasResolver),
     IDS.exists(i => or {
@@ -458,6 +504,14 @@ module requestsAbstract {
   pure def queueOwnedByRunningTurn(a: ReqAbs): bool =
     a.queue.forall(t => a.running and t == a.turnNo)
 
+  // Steering lines are queued exactly when the running turn's tag is: with
+  // queueOwnedByRunningTurn, nothing stays queued once a turn ends.
+  pure def queueLenConsistent(a: ReqAbs): bool = and {
+    a.sLen >= 0,
+    a.fLen >= 0,
+    (a.sLen > 0) == (a.queue != Set()),
+  }
+
   pure def pendingBoundedBudget(a: ReqAbs): bool =
     IDS.forall(i =>
       if (a.rStatus.get(i) == "pending") a.rRem.get(i) >= 1 else a.rRem.get(i) == 0)
@@ -468,6 +522,7 @@ module requestsAbstract {
     parkConsistent(a),
     pendingCurrentGen(a),
     queueOwnedByRunningTurn(a),
+    queueLenConsistent(a),
     pendingBoundedBudget(a),
   }
 }

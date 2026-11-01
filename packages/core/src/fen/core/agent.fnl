@@ -56,7 +56,6 @@
         convert-to-llm (. opts :convert-to-llm)
         provider-options (. opts :provider-options)
         get-steering (. opts :get-steering)
-        clear-steering (. opts :clear-steering)
         get-follow-up (. opts :get-follow-up)
         tool-context (. opts :tool-context)
         thinking-status (. opts :thinking-status)
@@ -77,7 +76,6 @@
      :convert-to-llm (or convert-to-llm (fn [msgs] msgs))
      ;; Queue callbacks return raw user lines; wrapped as UserMessages at safe injection boundaries.
      :get-steering (or get-steering (fn [] []))
-     :clear-steering clear-steering
      :get-follow-up (or get-follow-up (fn [] []))
      :tool-context (or tool-context (fn [_agent] {}))
      ;; Passed verbatim into provider complete options; :api-key/:max-tokens injected automatically.
@@ -721,13 +719,7 @@
    `agent.outcome`. Returns the Outcome; a crash re-raises after closing."
   (let [cancelled? (and (not ok?) (= result CANCEL-MARKER))
         crash-text (when (and (not ok?) (not cancelled?))
-                     (text-util.first-line (tostring result)))
-        failed? (or cancelled? crash-text (= status :error)
-                    (= status :cancelled))]
-    (when failed?
-      (if agent.clear-steering (agent.clear-steering)
-          agent.get-steering (while (> (length (agent.get-steering)) 0)
-                               nil)))
+                     (text-util.first-line (tostring result)))]
     (close-open-calls! agent
                        (if cancelled? CANCELLED-RESULT crash-text
                            (.. "error: tool call interrupted: " crash-text)
