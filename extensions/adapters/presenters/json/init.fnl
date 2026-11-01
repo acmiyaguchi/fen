@@ -62,14 +62,15 @@
     (when (not prompt)
       (error "json presenter requires a prompt"))
     (let [marker (usage-ledger.mark!)
-          (ok? result) (xpcall #(agent-mod.step state.agent prompt)
-                               debug.traceback)]
+          (ok? result outcome) (xpcall #(agent-mod.step state.agent prompt)
+                                       debug.traceback)
+          outcome (or outcome (?. state :agent :outcome))]
       (turn-lifecycle.emit-complete! state ok? result)
       (let [agent state.agent
             messages (or (?. agent :messages) [])
             asst (turn-result.last-assistant messages)
             ;; ok? alone is insufficient: failures surface as assistant stop-reason :error or a final :tool-use.
-            failed? (turn-result.failed? ok? messages)
+            failed? (turn-result.failed? ok? messages outcome)
             blob {:final-text (if failed? nil result)
                   :messages messages
                   :usage (usage-ledger.delta marker)

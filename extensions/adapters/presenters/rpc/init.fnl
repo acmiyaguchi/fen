@@ -146,14 +146,16 @@
     line))
 
 (fn run-failed? [ch asst]
-  "The run's last turn failed: the step's Outcome is :error, or the last
+  "The run's last turn failed: the step's Outcome is not :ok, or the last
    assistant ended in error, tool use, or an abort (#632)."
   (let [outcome ch.last-outcome]
-    (if (= (?. outcome :status) :error)
-        (values true (or outcome.error "turn failed"))
-        (and asst (turn-result.failed? true [asst]))
-        (values true (.. "turn ended with stop-reason "
-                         (tostring asst.stop-reason)))
+    (if (and (or outcome asst)
+             (turn-result.failed? true (when asst [asst]) outcome))
+        (values true (or (?. outcome :error)
+                         (and asst
+                              (.. "turn ended with stop-reason "
+                                  (tostring asst.stop-reason)))
+                         "turn failed"))
         false)))
 
 (fn finish! [ch]

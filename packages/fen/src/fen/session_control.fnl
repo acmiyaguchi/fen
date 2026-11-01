@@ -209,7 +209,8 @@
                                                                                  1))
                                                    assistant (turn-result.last-assistant turn-messages)
                                                    failed? (turn-result.failed? turn-ok?
-                                                                                turn-messages)]
+                                                                                turn-messages
+                                                                                complete.outcome)]
                                                (set result
                                                     {:ok (not failed?)
                                                      :session (session-info backend

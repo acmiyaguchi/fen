@@ -79,6 +79,7 @@ module agentloop {
     batchOut: int -> str,    // finished batch children: "real" | "fail"
     badArgs: bool,           // latest assistant has malformed edit arguments
     toolNone: bool,          // step-opts {:tool-choice :none}
+    hadToolNone: bool,       // ghost: any step had :tool-choice :none
     refused: int,            // refused-turns
     consecRefused: int,      // ghost: refusals since the last user-side message
     iters: int,              // CAP - safety
@@ -162,12 +163,12 @@ module agentloop {
       trEv: s.trEv.concat(ids) }
 
   // Batch children's results, appended in original order after the batch.
-  pure def batchResults(s: S): S =
+  pure def batchResults(s: S, kind: str): S =
     val ks = range(s.idx, s.batchEnd)
     { ...s,
       history: ks.foldl(s.history, (h, k) =>
         h.append(mkResult(s.calls[k],
-          if (s.batchOut.keys().contains(k)) s.batchOut.get(k) else "cancel"))),
+          if (s.batchOut.keys().contains(k)) s.batchOut.get(k) else kind))),
       trEv: ks.foldl(s.trEv, (t, k) => t.append(s.calls[k])) }
 
   // turn_lifecycle.complete-event (current) vs step result (fixed).
@@ -224,7 +225,7 @@ module agentloop {
 
   action init = s' = {
     pc: "idle", sub: "start", history: [], calls: [], par: [], idx: 0, batchEnd: 0,
-    batchOut: Map(), badArgs: false, toolNone: false, refused: 0, consecRefused: 0,
+    batchOut: Map(), badArgs: false, toolNone: false, hadToolNone: false, refused: 0, consecRefused: 0,
     iters: 0, steps: 0, nextCall: 0, nextLine: 0, steerQ: [], followQ: [],
     enqueued: [], injected: [], dropped: [], tcEv: [], trEv: [], stepErr: false,
     result: "none", status: "none", reqOk: true, reqNoTrailingAsst: true,
@@ -235,7 +236,8 @@ module agentloop {
   action startStep(none: bool): bool = all {
     s.pc == "idle", s.steps < MAX_STEPS,
     s' = { ...appendUser(s, "prompt"),
-           pc: "top", steps: s.steps + 1, toolNone: none, refused: 0, iters: 0,
+           pc: "top", steps: s.steps + 1, toolNone: none, hadToolNone: s.hadToolNone or none,
+           refused: 0, iters: 0,
            stepErr: false, badArgs: false, lastAction: "startStep" },
   }
 
@@ -291,17 +293,33 @@ module agentloop {
       // Fix #607: the batch runner still appends finished children in call
       // order; everything else is the boundary's job.
       if (fix("607"))
-        closeOpen(if (s.pc == "tools" and s.sub == "batch") batchResults(s) else s, "cancel")
+        closeOpen(if (s.pc == "tools" and s.sub == "batch") batchResults(s, "cancel") else s, "cancel")
       else if (s.pc == "post")
         if (toolTurn(lastMsg(s))) pairFrom(s, 0, "cancel", false) else s
       else if (s.pc == "tools" and s.sub == "pre") pairFrom(s, s.idx, "cancel", true)
       else if (s.pc == "tools" and s.sub == "post") pairFrom(s, s.idx + 1, "cancel", false)
       else if (s.pc == "tools" and s.sub == "batch")
-        pairFrom(batchResults(s), s.batchEnd, "cancel", false)
+        pairFrom(batchResults(s, "cancel"), s.batchEnd, "cancel", false)
       else s
     s' = finish({ ...paired,
                   history: paired.history.append(mkAsst("aborted", [])),
                   cancels: s.cancels + 1 }, "cancelled", "cancel"),
+  }
+
+  // A non-cancel error from ?yield! mid-tools (e.g. mid-batch after some
+  // child finished): finished batch children keep their results, and the
+  // rest of the batch + open calls are paired as "fail" ("interrupted"),
+  // never "cancel".
+  action toolCrash = all {
+    OUTCOMES.contains("badArgs"),
+    s.pc == "tools",
+    s.sub == "pre" or s.sub == "post"
+      or (s.sub == "batch" and s.batchOut.keys().size() < s.batchEnd - s.idx),
+    val paired =
+      if (fix("607"))
+        closeOpen(if (s.sub == "batch") batchResults(s, "fail") else s, "fail")
+      else s
+    s' = finish({ ...paired, stepErr: true }, "crash", "crash"),
   }
 
   // Dispatch on the appended assistant after the post-llm-end yield.
@@ -374,7 +392,7 @@ module agentloop {
   action batchDone = all {
     s.pc == "tools", s.sub == "batch",
     s.batchOut.keys().size() == s.batchEnd - s.idx,
-    val r = batchResults(s)
+    val r = batchResults(s, "fail")
     if (s.batchEnd >= s.calls.length())
       s' = { ...r, pc: "top", sub: "start", idx: s.batchEnd, lastAction: "batchDone" }
     else
@@ -393,6 +411,7 @@ module agentloop {
     nondet p1 = Bool.oneOf()
     provider(o, p0, p1),
     cancel,
+    toolCrash,
     afterLlm,
     toolStart,
     nondet ok = Bool.oneOf()
@@ -448,11 +467,19 @@ module agentloop {
     (s.pc == "idle" and s.result != "none") implies
       s.status == (if (s.result == "crash") "error" else s.result)
 
+  // Result kinds match the transition that produced them: "cancel" results
+  // only appear when a step was cancelled, and "refuse" only under :none.
+  val resultKindsMatchOutcome =
+    s.history.foldl(true, (ok, m) =>
+      ok and (m.role == "result" implies
+        ((m.kind == "cancel" implies s.cancels > 0)
+         and (m.kind == "refuse" implies s.hadToolNone))))
+
   val allInvariants = and {
     providerValidRequests, historyValidWhenIdle, requestsEndOnUserSide,
     abortedOncePerCancel, eventsMatchHistory, noneNeverExecutes,
     refusalCountsSinceInput, queuedLinesDeliveredOnce, boundedIterations,
-    errorSignalled, statusMatchesResult,
+    errorSignalled, statusMatchesResult, resultKindsMatchOutcome,
   }
 }
 
@@ -515,6 +542,7 @@ module currentRefines {
   action mToolExec = all { LC::toolExec(true), prevAbs' = LC::absOf(LC::s) }
   action mToolNext = all { LC::toolNext, prevAbs' = LC::absOf(LC::s) }
   action mCancel = all { LC::cancel, prevAbs' = LC::absOf(LC::s) }
+  action mToolCrash = all { LC::toolCrash, prevAbs' = LC::absOf(LC::s) }
 
   // What the step returned (for witnesses).
   val stepResult = LC::s.result
@@ -545,6 +573,7 @@ module fixedRefines {
   action mToolExec = all { LF::toolExec(true), prevAbs' = LF::absOf(LF::s) }
   action mToolNext = all { LF::toolNext, prevAbs' = LF::absOf(LF::s) }
   action mCancel = all { LF::cancel, prevAbs' = LF::absOf(LF::s) }
+  action mToolCrash = all { LF::toolCrash, prevAbs' = LF::absOf(LF::s) }
 
   // What the step returned (for witnesses).
   val stepResult = LF::s.result

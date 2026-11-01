@@ -1,6 +1,7 @@
 # file	sed edit	main	invariant	description
-model.qnt	s|        closeOpen(if (s.pc == "tools" and s.sub == "batch") batchResults(s) else s, "cancel")|        (if (s.pc == "tools" and s.sub == "batch") batchResults(s) else s)|	fixed	historyValidWhenIdle	the step boundary does not close open calls on cancel
+model.qnt	s|        closeOpen(if (s.pc == "tools" and s.sub == "batch") batchResults(s, "cancel") else s, "cancel")|        (if (s.pc == "tools" and s.sub == "batch") batchResults(s, "cancel") else s)|	fixed	historyValidWhenIdle	the step boundary does not close open calls on cancel
 model.qnt	s|        s' = finish(if (fix("607")) closeOpen({ ...s, stepErr: true }, "fail")|        s' = finish(if (fix("607")) { ...s, stepErr: true }|	fixed	historyValidWhenIdle	the step boundary closes calls on cancel but not on a crash
 model.qnt	s|    m.stop == "tool" or (fix("606") and m.calls.length() > 0 and m.stop != "error")|    m.stop == "tool"|	fixed	historyValidWhenIdle	dispatch on the stop label instead of the content
 model.qnt	s|        s' = finish(if (fix("607")) closeOpen({ ...s, stepErr: true }, "fail")|        s' = finish(if (fix("607")) { ...s, stepErr: true }|	fixedRefines	refinesTurn	(refinement) a crash ends the turn without closing it
 model.qnt	s|      s' = finish({ ...s, stepErr: s.stepErr or fix("610") }, "error", "safetyCap")|      s' = finish({ ...s, stepErr: s.stepErr }, "error", "safetyCap")|	fixedRefines	refinesTurn	(refinement) the safety cap ends with an error nobody announced
+model.qnt	s|closeOpen(if (s.sub == "batch") batchResults(s, "fail") else s, "fail")|closeOpen(if (s.sub == "batch") batchResults(s, "cancel") else s, "fail")|	fixed	resultKindsMatchOutcome	a mid-batch crash pairs unfinished calls as cancelled instead of failed

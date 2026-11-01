@@ -122,7 +122,7 @@
     :hosted-tool (if (= ev.phase :start) :HostedStart :HostedEnd)
     :provider-retry :ProviderRetry
     :llm-end :LlmEnd
-    :assistant-stream-end (if ev.final? :StreamEnd :StreamEndNotFinal)
+    :assistant-stream-end (when ev.final? :StreamEnd)
     :error :Error
     :cancelled :Cancelled
     _ nil))

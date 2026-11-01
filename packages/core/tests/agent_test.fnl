@@ -753,6 +753,347 @@
                                         :llm-end
                                         :assistant-text]
                                        types-seen)))))
+            (it "emits :assistant-stream-end with final? false before :error when provider errors mid-stream"
+                (fn []
+                  (let [(log on-event) (record-events)
+                        agent (agent-mod.make-agent {:model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "")
+                                                     :on-event on-event})]
+                    (set fake.complete-stream
+                         (fn [api model context options on-stream yield-fn]
+                           (when yield-fn (yield-fn))
+                           (on-stream {:type :text-delta
+                                       :content-index 1
+                                       :delta "partial"})
+                           (types.assistant-message {:api api
+                                                     :provider :test
+                                                     :model model
+                                                     :content []
+                                                     :stop-reason :error
+                                                     :error-message "provider boom"})))
+                    (let [(final _yields) (drain-coop agent "hi")]
+                      (assert.are.equal "[error] provider boom" final)
+                      (let [types-seen (event-types log)
+                            stream-end (accumulate [f nil _ ev (ipairs log)]
+                                         (if (= ev.type :assistant-stream-end)
+                                             ev
+                                             f))]
+                        (assert.are.same [:llm-start
+                                          :assistant-text-delta
+                                          :llm-end
+                                          :assistant-stream-end
+                                          :error]
+                                         types-seen)
+                        (assert.is_false stream-end.final?))))))
+            (it "emits :assistant-stream-end with final? false before :cancelled when stream is cancelled"
+                (fn []
+                  (let [(log on-event) (record-events)
+                        agent (agent-mod.make-agent {:model "mock"
+                                                     :api-key :test
+                                                     :tools (stub-registry "")
+                                                     :on-event on-event})
+                        cancel-state {:cancelling? false}
+                        cancel-fn (fn [] cancel-state.cancelling?)]
+                    (set fake.complete-stream
+                         (fn [api model context options on-stream yield-fn]
+                           (on-stream {:type :text-delta
+                                       :content-index 1
+                                       :delta "partial"})
+                           (set cancel-state.cancelling? true)
+                           (when yield-fn (yield-fn))
+                           (types.assistant-message {:api api
+                                                     :provider :test
+                                                     :model model
+                                                     :content []
+                                                     :stop-reason :stop})))
+                    (let [(final _yields) (drain-coop-with agent "hi" cancel-fn)]
+                      (assert.are.equal "[cancelled]" final)
+                      (let [types-seen (event-types log)
+                            stream-end (accumulate [f nil _ ev (ipairs log)]
+                                         (if (= ev.type :assistant-stream-end)
+                                             ev
+                                             f))]
+                        (assert.are.same [:llm-start
+                                          :assistant-text-delta
+                                          :assistant-stream-end
+                                          :cancelled]
+                                         types-seen)
+                        (assert.is_false stream-end.final?))))))
+            (it "preserves finished results and pairs open calls on crash during parallel tool execution"
+                (fn []
+                  (let [tools [{:name :fast1
+                                :label "Fast 1"
+                                :description "fast worker 1"
+                                :parameters {:type :object :properties {}}
+                                :parallel-safe? true
+                                :parallel-cap 4
+                                :execute (fn [_args _ctx _yield-fn]
+                                           {:content [(types.text-block "c1 output")]
+                                            :is-error? false})}
+                               {:name :fast3
+                                :label "Fast 3"
+                                :description "fast worker 3"
+                                :parameters {:type :object :properties {}}
+                                :parallel-safe? true
+                                :parallel-cap 4
+                                :execute (fn [_args _ctx _yield-fn]
+                                           {:content [(types.text-block "c3 output")]
+                                            :is-error? false})}
+                               {:name :slow
+                                :label "Slow"
+                                :description "slow worker"
+                                :parameters {:type :object :properties {}}
+                                :parallel-safe? true
+                                :parallel-cap 4
+                                :execute (fn [_args _ctx yield-fn]
+                                           (while true
+                                             (yield-fn)))}]
+                        agent (agent-mod.make-agent {:model "mock"
+                                                     :api-key :test
+                                                     :tools tools})
+                        calls-count {:n 0}
+                        cancel-fn (fn []
+                                    (set calls-count.n (+ calls-count.n 1))
+                                    (when (>= calls-count.n 3)
+                                      (error "boom in yield")))
+                        co (coroutine.create (fn []
+                                               (agent-mod.step agent "go"
+                                                               cancel-fn)))]
+                    (table.insert fake.responses
+                                  (tool-use-response [(types.tool-call-block "c1"
+                                                                             :fast1
+                                                                             {})
+                                                      (types.tool-call-block "c2"
+                                                                             :slow
+                                                                             {})
+                                                      (types.tool-call-block "c3"
+                                                                             :fast3
+                                                                             {})
+                                                      (types.tool-call-block "c4"
+                                                                             :slow
+                                                                             {})]))
+                    (var alive? true)
+                    (var step-err nil)
+                    (while alive?
+                      (let [(ok? r) (coroutine.resume co)]
+                        (if (not ok?)
+                            (do
+                              (set step-err r)
+                              (set alive? false))
+                            (= (coroutine.status co) :dead)
+                            (set alive? false))))
+                    (assert.is_truthy step-err)
+                    (assert.is_truthy (string.find (tostring step-err)
+                                                   "boom in yield" 1 true))
+                    (assert.are.equal :error agent.outcome.status)
+                    (assert.are.equal 6 (length agent.messages))
+                    (assert.are.same ["c1" "c2" "c3" "c4"]
+                                     (message-tool-call-ids agent.messages 3 6))
+                    ;; c1 finished
+                    (assert.is_false (. agent.messages 3 :is-error?))
+                    (assert.are.equal "c1 output"
+                                      (message-first-text (. agent.messages 3)))
+                    ;; c2 was live before last-finished (3), interrupted not cancelled
+                    (assert.is_true (. agent.messages 4 :is-error?))
+                    (assert.is_nil (string.find (message-first-text (. agent.messages
+                                                                       4))
+                                                "[cancelled]" 1 true))
+                    (assert.is_truthy (string.find (message-first-text (. agent.messages
+                                                                          4))
+                                                   "error: tool call interrupted:"
+                                                   1 true))
+                    (assert.is_truthy (string.find (message-first-text (. agent.messages
+                                                                          4))
+                                                   "boom in yield" 1 true))
+                    ;; c3 finished
+                    (assert.is_false (. agent.messages 5 :is-error?))
+                    (assert.are.equal "c3 output"
+                                      (message-first-text (. agent.messages 5)))
+                    ;; c4 was live after last-finished (3), paired by close-turn!
+                    (assert.is_true (. agent.messages 6 :is-error?))
+                    (assert.is_nil (string.find (message-first-text (. agent.messages
+                                                                       6))
+                                                "[cancelled]" 1 true))
+                    (assert.is_truthy (string.find (message-first-text (. agent.messages
+                                                                          6))
+                                                   "error: tool call interrupted:"
+                                                   1 true))
+                    (assert.is_truthy (string.find (message-first-text (. agent.messages
+                                                                          6))
+                                                   "boom in yield" 1 true)))))
+            (it "pairs parallel child returning nil as tool failure in normal completion and on unwind"
+                (fn []
+                  (let [tools-mod (require :fen.core.tools)
+                        orig-exec tools-mod.execute-call]
+                    (set tools-mod.execute-call
+                         (fn [reg tc ctx yield-fn]
+                           (if (= tc.name :ret-nil)
+                               nil
+                               (orig-exec reg tc ctx yield-fn))))
+                    (let [(ok? run-err) (pcall (fn []
+                                                 ;; 1. Normal completion
+                                                 (let [tools [{:name :ret-nil
+                                                               :label "Return nil"
+                                                               :description "returns nil"
+                                                               :parameters {:type :object
+                                                                            :properties {}}
+                                                               :parallel-safe? true
+                                                               :parallel-cap 4
+                                                               :execute (fn [_args
+                                                                             _ctx
+                                                                             _yield-fn]
+                                                                          nil)}
+                                                              {:name :fast
+                                                               :label "Fast"
+                                                               :description "fast worker"
+                                                               :parameters {:type :object
+                                                                            :properties {}}
+                                                               :parallel-safe? true
+                                                               :parallel-cap 4
+                                                               :execute (fn [_args
+                                                                             _ctx
+                                                                             _yield-fn]
+                                                                          {:content [(types.text-block "fast output")]
+                                                                           :is-error? false})}]
+                                                       agent (agent-mod.make-agent {:model "mock"
+                                                                                    :api-key :test
+                                                                                    :tools tools})]
+                                                   (table.insert fake.responses
+                                                                 (tool-use-response [(types.tool-call-block "c1"
+                                                                                                            :ret-nil
+                                                                                                            {})
+                                                                                     (types.tool-call-block "c2"
+                                                                                                            :fast
+                                                                                                            {})]))
+                                                   (table.insert fake.responses
+                                                                 (text-response "done"))
+                                                   (let [(final _yields) (drain-coop agent
+                                                                                     "go")]
+                                                     (assert.are.equal "done"
+                                                                       final)
+                                                     (assert.are.equal :ok
+                                                                       agent.outcome.status)
+                                                     (assert.is_true (. agent.messages
+                                                                        3
+                                                                        :is-error?))
+                                                     (assert.are.equal "error: tool ret-nil failed: tool returned nil"
+                                                                       (message-first-text (. agent.messages
+                                                                                              3)))
+                                                     (assert.is_false (. agent.messages
+                                                                         4
+                                                                         :is-error?))
+                                                     (assert.are.equal "fast output"
+                                                                       (message-first-text (. agent.messages
+                                                                                              4)))))
+                                                 ;; 2. When later sibling finishes before ?yield! unwind
+                                                 (let [tools [{:name :ret-nil
+                                                               :label "Return nil"
+                                                               :description "returns nil"
+                                                               :parameters {:type :object
+                                                                            :properties {}}
+                                                               :parallel-safe? true
+                                                               :parallel-cap 4
+                                                               :execute (fn [_args
+                                                                             _ctx
+                                                                             _yield-fn]
+                                                                          nil)}
+                                                              {:name :slow
+                                                               :label "Slow"
+                                                               :description "slow worker"
+                                                               :parameters {:type :object
+                                                                            :properties {}}
+                                                               :parallel-safe? true
+                                                               :parallel-cap 4
+                                                               :execute (fn [_args
+                                                                             _ctx
+                                                                             yield-fn]
+                                                                          (while true
+                                                                            (yield-fn)))}
+                                                              {:name :fast
+                                                               :label "Fast"
+                                                               :description "fast worker"
+                                                               :parameters {:type :object
+                                                                            :properties {}}
+                                                               :parallel-safe? true
+                                                               :parallel-cap 4
+                                                               :execute (fn [_args
+                                                                             _ctx
+                                                                             _yield-fn]
+                                                                          {:content [(types.text-block "fast output")]
+                                                                           :is-error? false})}]
+                                                       agent (agent-mod.make-agent {:model "mock"
+                                                                                    :api-key :test
+                                                                                    :tools tools})
+                                                       calls-count {:n 0}
+                                                       cancel-fn (fn []
+                                                                   (set calls-count.n
+                                                                        (+ calls-count.n
+                                                                           1))
+                                                                   (when (>= calls-count.n
+                                                                             3)
+                                                                     (error "boom in yield")))
+                                                       co (coroutine.create (fn []
+                                                                              (agent-mod.step agent
+                                                                                              "go"
+                                                                                              cancel-fn)))]
+                                                   (table.insert fake.responses
+                                                                 (tool-use-response [(types.tool-call-block "c1"
+                                                                                                            :ret-nil
+                                                                                                            {})
+                                                                                     (types.tool-call-block "c2"
+                                                                                                            :slow
+                                                                                                            {})
+                                                                                     (types.tool-call-block "c3"
+                                                                                                            :fast
+                                                                                                            {})]))
+                                                   (var alive? true)
+                                                   (var step-err nil)
+                                                   (while alive?
+                                                     (let [(ok? r) (coroutine.resume co)]
+                                                       (if (not ok?)
+                                                           (do
+                                                             (set step-err r)
+                                                             (set alive? false))
+                                                           (= (coroutine.status co)
+                                                              :dead)
+                                                           (set alive? false))))
+                                                   (assert.is_truthy step-err)
+                                                   (assert.are.equal :error
+                                                                     agent.outcome.status)
+                                                   (assert.are.equal 5
+                                                                     (length agent.messages))
+                                                   ;; c1 finished and returned nil: must be "tool returned nil", not interrupted!
+                                                   (assert.is_true (. agent.messages
+                                                                      3
+                                                                      :is-error?))
+                                                   (assert.are.equal "error: tool ret-nil failed: tool returned nil"
+                                                                     (message-first-text (. agent.messages
+                                                                                            3)))
+                                                   ;; c2 was interrupted
+                                                   (assert.is_true (. agent.messages
+                                                                      4
+                                                                      :is-error?))
+                                                   (assert.is_truthy (string.find (message-first-text (. agent.messages
+                                                                                                         4))
+                                                                                  "error: tool call interrupted:"
+                                                                                  1
+                                                                                  true))
+                                                   (assert.is_truthy (string.find (message-first-text (. agent.messages
+                                                                                                         4))
+                                                                                  "boom in yield"
+                                                                                  1
+                                                                                  true))
+                                                   ;; c3 finished with output
+                                                   (assert.is_false (. agent.messages
+                                                                       5
+                                                                       :is-error?))
+                                                   (assert.are.equal "fast output"
+                                                                     (message-first-text (. agent.messages
+                                                                                            5))))))]
+                      (set tools-mod.execute-call orig-exec)
+                      (when (not ok?)
+                        (error run-err))))))
             (it "sanitizes synthetic cancelled tool-result text"
                 (fn []
                   (let [(_log on-event) (record-events)

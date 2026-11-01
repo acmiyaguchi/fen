@@ -10,6 +10,7 @@ current	eventsMatchHistory	holds
 current	noneNeverExecutes	holds
 current	queuedLinesDeliveredOnce	holds
 current	boundedIterations	holds
+current	resultKindsMatchOutcome	holds
 wellFormed	providerValidRequests	holds
 wellFormed	historyValidWhenIdle	holds
 wellFormed	requestsEndOnUserSide	holds
@@ -18,6 +19,7 @@ wellFormed	statusMatchesResult	holds
 lengthOnly	historyValidWhenIdle	holds
 badArgsOnly	historyValidWhenIdle	holds
 fixed	allInvariants	holds
+fixed	resultKindsMatchOutcome	holds
 currentRefines	refinesTurn	holds
 currentRefines	inheritsTurnInvariants	holds
 fixedRefines	refinesTurn	holds

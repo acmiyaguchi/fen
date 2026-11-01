@@ -150,4 +150,14 @@ module witnesses {
       .then(F::loopTop).then(F::provider("text", false, false))
       .then(F::enqueue(false, true)).then(F::afterLlm)
       .expect(F::refusalCountsSinceInput)
+
+  // A mid-batch crash pairs finished children as real/fail and unfinished as fail, never cancel.
+  run reachBatchCrashPairsAsFailTest =
+    F::init.then(F::startStep(false)).then(F::loopTop)
+      .then(F::provider("tool2", true, true)).then(F::afterLlm)
+      .then(F::toolStart).then(F::childDone(0, true)).then(F::toolCrash)
+      .expect(F::s.result == "crash"
+              and F::resultKindsMatchOutcome
+              and F::s.history.foldl(true, (ok, m) =>
+                ok and (m.role == "result" implies (m.kind == "real" or m.kind == "fail"))))
 }

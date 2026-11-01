@@ -417,15 +417,15 @@
 (fn run-parallel-tool-batch [agent tasks ?yield!]
   "Run a consecutive batch of explicitly parallel-safe tool calls. Results are
    appended after the batch in original order, regardless of completion order;
-   on cancel, finished children keep their results and the rest of the batch
-   is answered as cancelled, still in call order. Returns false when cancelled."
+   on cancel or error, finished children keep their results and the rest of the
+   batch is answered, still in call order. Raises any error or cancel observed."
   (let [ctx (tool-context agent)
         cap (batch-parallel-cap agent tasks)
         n (length tasks)]
     (var next-index 1)
     (var active 0)
     (var completed 0)
-    (var cancelled? false)
+    (var unwound-err nil)
 
     (fn mark-done! [task]
       (when (not task.done?)
@@ -448,7 +448,7 @@
                 (= out-or-err CANCEL-MARKER)
                 (do
                   (set task.cancelled? true)
-                  (set cancelled? true))
+                  (set unwound-err (or unwound-err CANCEL-MARKER)))
                 (set task.error out-or-err))))))
 
     (fn launch-task! [task]
@@ -475,31 +475,42 @@
           (when (not task.done?)
             (set task.cancelled? true)))))
 
-    (while (and (< completed n) (not cancelled?))
-      (while (and (< active cap) (<= next-index n) (not cancelled?))
+    (while (and (< completed n) (not unwound-err))
+      (while (and (< active cap) (<= next-index n) (not unwound-err))
         (launch-task! (. tasks next-index))
         (set next-index (+ next-index 1)))
-      (when (and (< completed n) (not cancelled?))
+      (when (and (< completed n) (not unwound-err))
         (each [_ task (ipairs tasks)]
           (resume-task! task))
-        (when (and (< completed n) (not cancelled?))
+        (when (and (< completed n) (not unwound-err))
           (let [(ok? thrown) (pcall ?yield!)]
             (when (not ok?)
-              (if (= thrown CANCEL-MARKER)
-                  (set cancelled? true)
-                  (error thrown)))))))
-    (when cancelled?
+              (set unwound-err thrown))))))
+    (when unwound-err
       (cancel-active!))
-    (each [_ task (ipairs tasks)]
-      (if task.out
-          (append-tool-output! agent task.tc task.out)
-          (or cancelled? task.cancelled?)
-          (append-synthetic-tool-result! agent task.tc CANCELLED-RESULT
-                                         (not task.emitted?))
-          task.error
-          (append-tool-failure! agent task.tc task.error task.emitted?)
-          (append-tool-failure! agent task.tc "tool returned nil" task.emitted?)))
-    (not cancelled?)))
+    (var last-finished 0)
+    (for [i 1 n]
+      (let [task (. tasks i)]
+        (when (or task.out task.error (and task.done? (not task.cancelled?)))
+          (set last-finished i))))
+    (for [i 1 last-finished]
+      (let [task (. tasks i)]
+        (if task.out
+            (append-tool-output! agent task.tc task.out)
+            task.error
+            (append-tool-failure! agent task.tc task.error task.emitted?)
+            (and task.done? (not task.cancelled?))
+            (append-tool-failure! agent task.tc "tool returned nil"
+                                  task.emitted?)
+            (= unwound-err CANCEL-MARKER)
+            (append-synthetic-tool-result! agent task.tc CANCELLED-RESULT
+                                           (not task.emitted?))
+            (append-synthetic-tool-result! agent task.tc
+                                           (.. "error: tool call interrupted: "
+                                               (text-util.first-line (tostring unwound-err)))
+                                           (not task.emitted?)))))
+    (when unwound-err
+      (error unwound-err 0))))
 
 (fn run-tool-calls [agent tool-calls ?yield!]
   "Execute the tool-call blocks of the latest assistant turn; append a
@@ -522,8 +533,7 @@
                                                     edit-conflicts j ?yield!))
                 (table.insert tasks {:tc (. tool-calls j)})
                 (set j (+ j 1)))
-              (when (not (run-parallel-tool-batch agent tasks ?yield!))
-                (error CANCEL-MARKER))
+              (run-parallel-tool-batch agent tasks ?yield!)
               (set i j))
             (do
               (run-serial-tool-call agent tc (. edit-conflicts i) ?yield!)
@@ -561,7 +571,8 @@
         nil)))
 
 (fn finish-stream-display [agent state final?]
-  (when state.visible?
+  (when (and state state.visible? (not state.closed?))
+    (set state.closed? true)
     (emit agent {:type :assistant-stream-end :final? final?})))
 
 (fn complete-once [agent context opts ?yield!]
@@ -572,12 +583,15 @@
    stream-state lets step-loop tell whether visible content arrived through
    the stream so it can pick the right end-of-turn presentation."
   (if (not ?yield!)
-      (values (llm.complete agent.provider-name agent.model context opts) nil)
-      (let [stream-state {:visible? false}
-            on-stream (make-provider-stream-handler agent stream-state)
-            asst (llm.complete agent.provider-name agent.model context opts
-                               on-stream ?yield!)]
-        (values asst stream-state))))
+      (do
+        (set agent.stream-state nil)
+        (values (llm.complete agent.provider-name agent.model context opts) nil))
+      (let [stream-state {:visible? false :closed? false}
+            on-stream (make-provider-stream-handler agent stream-state)]
+        (set agent.stream-state stream-state)
+        (let [asst (llm.complete agent.provider-name agent.model context opts
+                                 on-stream ?yield!)]
+          (values asst stream-state)))))
 
 (fn complete-messages [agent messages ?model ?opts ?on-event ?yield-fn]
   "Run one provider completion against explicit canonical messages and no
@@ -660,7 +674,9 @@
       (append-message! agent asst)
       (when ?yield! (?yield!))
       (if (= asst.stop-reason :error)
-          (stop-with-error! (tostring (or asst.error-message "unknown")))
+          (do
+            (finish-stream-display agent stream-state false)
+            (stop-with-error! (tostring (or asst.error-message "unknown"))))
           (tool-turn? asst)
           (do
             (if streamed?
@@ -716,6 +732,8 @@
                        (if cancelled? CANCELLED-RESULT crash-text
                            (.. "error: tool call interrupted: " crash-text)
                            "error: tool call was not run before the turn ended"))
+    (finish-stream-display agent agent.stream-state false)
+    (set agent.stream-state nil)
     (if cancelled?
         (do
           (append-aborted-assistant! agent)
@@ -757,6 +775,7 @@
    `?step-opts` is `{:tool-choice :auto|:none}` (nil means :auto). With
    `:none` the provider request keeps its tool definitions but forbids tool
    calls for every model turn in this step, and the loop executes none."
+  (set agent.outcome nil)
   (let [tool-choice (?. ?step-opts :tool-choice)
         _ (when (and tool-choice (not= tool-choice :auto)
                      (not= tool-choice :none))
@@ -765,7 +784,6 @@
         tool-choice (when (= tool-choice :none) :none)
         coop? (in-coroutine?)
         yield! (when coop? (make-yield ?cancel-fn))]
-    (set agent.outcome nil)
     (set agent.emitted-tool-calls {})
     (append-message! agent (types.user-message user-msg))
     (let [(ok? result status err) (xpcall #(step-loop agent yield! tool-choice)

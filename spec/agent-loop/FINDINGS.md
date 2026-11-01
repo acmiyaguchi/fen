@@ -18,7 +18,7 @@ Main modules: `current` (every outcome), `wellFormed` (tool calls only ever arri
 
 - The provider returns one of: text, one or two tool calls (parallel-safe or not), an error, a `:length` reply carrying one tool call, or one call with malformed `edit` arguments. Thinking blocks and hosted tools are not modelled (network domain).
 - At most `MAX_STEPS = 2` user prompts, `CAP = 3` loop iterations, and `MAX_LINES = 2` queued lines, each a steering or follow-up line, empty or not.
-- A cancel may land at any cooperative yield; a crash only where malformed `edit` arguments raise (`same-turn-edit-conflicts`).
+- A cancel may land at any cooperative yield; a crash where malformed `edit` arguments raise (`same-turn-edit-conflicts`) or mid-tools (`toolCrash`).
 
 ## What holds
 
@@ -28,6 +28,7 @@ The sweep found 0 violations of provider-valid history, of exactly one `:aborted
 
 - `wellFormed.providerValidRequests`, `wellFormed.historyValidWhenIdle`: with well-formed replies, a cancel at any yield leaves every tool call answered once, in order, before the next request.
   This includes cancels after llm-end before tools, between serial tools, and mid parallel batch.
+- `resultKindsMatchOutcome`: result kinds match the transition that produced them (`"cancel"` only when cancelled, `"refuse"` only under `:tool-choice :none`).
 - `abortedOncePerCancel`: there is exactly one `:aborted` assistant per cancelled step, and it is filtered from the provider context.
 - `eventsMatchHistory`: tool events mirror the result messages one for one, in order.
 - `noneNeverExecutes`: `:tool-choice :none` never runs a tool.
@@ -189,7 +190,7 @@ The loop is checked against the abstract close-turn spec (`spec/core/turn/abstra
 | Issue | Witnesses | Regression test (real code) |
 | --- | --- | --- |
 | #606 | `reach606LengthCallPairedTest`, `reach606NextRequestValidTest`, `reach606RefinementTest`, proofs/loop `reach606LengthReplyRunsToolTest` | `packages/core/tests/length_reply_tool_calls_run_test.fnl` |
-| #607 | `reach607BadArgsCrashPairedTest`, `reach607RefinementTest`, proofs/loop `reachCrashClosedTest` | `packages/core/tests/step_unwind_pairs_open_calls_test.fnl` |
+| #607 | `reach607BadArgsCrashPairedTest`, `reachBatchCrashPairsAsFailTest`, `reach607RefinementTest`, proofs/loop `reachCrashClosedTest` | `packages/core/tests/step_unwind_pairs_open_calls_test.fnl` |
 | #608 | `reach608EmptyFollowUpEndsStepTest`, `reach608EmptyLineKeepsRefusalsTest`, `reach608RefinementTest`, proofs/loop `reach608EmptyLineEndsStepTest` | `packages/core/tests/empty_queued_line_ends_step_test.fnl` |
 | #609 | `reach609RefusedTwiceReportsErrorTest`, `reach609RefinementTest`, proofs/loop `reach609RefusedTwiceErrorTest` | `packages/fen/tests/refused_turn_reports_error_test.fnl` |
 | #610 | `reach610SafetyCapAnnouncedTest`, `reach610RefinementTest`, proofs/loop `reachCapErrorTest` | `packages/fen/tests/safety_cap_reports_error_test.fnl`  |

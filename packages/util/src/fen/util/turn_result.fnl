@@ -10,10 +10,13 @@
         (set found message))))
   found)
 
-(fn M.failed? [ok? messages]
-  (let [assistant (M.last-assistant messages)]
-    (or (not ok?) (not assistant) (= assistant.stop-reason :error)
-        (= assistant.stop-reason :tool-use) (= assistant.stop-reason :aborted))))
+(fn M.failed? [ok? messages ?outcome]
+  (if ?outcome
+      (or (not ok?) (not= ?outcome.status :ok))
+      (let [assistant (M.last-assistant messages)]
+        (or (not ok?) (not assistant) (= assistant.stop-reason :error)
+            (= assistant.stop-reason :tool-use)
+            (= assistant.stop-reason :aborted)))))
 
 (fn M.sum-usage [messages]
   (let [total {}]

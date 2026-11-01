@@ -830,6 +830,7 @@ digraph fen_modules_clustered {
   "fen.extensions.print" -> "fen.core.agent";
   "fen.extensions.print" -> "fen.turn_lifecycle";
   "fen.extensions.print" -> "fen.util.headless_progress";
+  "fen.extensions.print" -> "fen.util.turn_result";
   "fen.extensions.profiler" -> "fen.extensions.profiler.commands";
   "fen.extensions.profiler" -> "fen.extensions.profiler.state";
   "fen.extensions.profiler.activity" -> "fen.extensions.profiler.state";

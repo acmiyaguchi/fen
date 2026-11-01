@@ -595,6 +595,7 @@ digraph fen_modules {
   "fen.extensions.print" -> "fen.core.agent" [label="require"];
   "fen.extensions.print" -> "fen.turn_lifecycle" [label="require"];
   "fen.extensions.print" -> "fen.util.headless_progress" [label="require"];
+  "fen.extensions.print" -> "fen.util.turn_result" [label="require"];
   "fen.extensions.profiler" -> "fen.extensions.profiler.commands" [label="require"];
   "fen.extensions.profiler" -> "fen.extensions.profiler.state" [label="require"];
   "fen.extensions.profiler.activity" -> "fen.extensions.profiler.state" [label="require"];
