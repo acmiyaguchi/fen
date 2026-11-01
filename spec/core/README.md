@@ -110,6 +110,11 @@ Dispositions (`why`, `whyN` per seq) are part of the abstract `Session`, so a re
 | `followUpOrderInv` | follow-ups are taken only after the turn's steer lines |
 | `cancelFencedInv` | a cancel never arms a turn other than its target |
 
-`holderSpec.inductiveInv` is proved inductively (~8 s); ten mutants are each caught (leaked holder on crash, unfenced offer, unfenced cancel, refused offer behind an exclusive holder, dropped/misattributed/leaked returns, follow-up ahead of steering, unreported start, unreported refusal).
+**Drain modes.** `set-mode!` sets `:one` or `:all` per queue; `take!` drains exactly what the mode says (`takeByModeInv`), and modes persist across turns, releases, and clears until changed (`modesPersistInv`).
+
+**Liveness, bounded and encoded as safety.** Unbounded temporal checking (`quint verify --temporal` with `weakFair`) did not finish in 10 minutes even at depth 6, so the fairness assumptions are explicit in the step relation instead: every `with-holder` body exits within `MAX_BODY` steps (the agent's work terminates), and the driver's idle tick runs at least every `MAX_IDLE` steps. When a bound is reached the step is forced (exit, or start the requested turn, or record starvation). Then `releasedInTimeInv` (no holder outlives its body bound; a leaked holder violates it) and `startedInTimeInv` (a requested idle start happens within the bound, and the tick never finds it unstartable) are ordinary inductive invariants. Steer lines leave by their turn's release, so they inherit the body bound.
+Not bounded, by design and still open: a follow-up queued while idle without a start request (`reachUnrequestedFollowUpWaitsTest`) waits for the next turn however long that takes.
+
+`holderSpec.inductiveInv` is proved inductively (~13 s); fourteen mutants are each caught (leaked holder on crash, both as a wedge and as a liveness violation; starvation of a requested start; unfenced offer and cancel; refused offer behind an exclusive holder; dropped, misattributed, or leaked returns; follow-up ahead of steering; unreported start or refusal; take ignoring the mode; release resetting the mode).
 The model is finite (3 turn numbers, 4 seqs): induction covers any depth within those bounds.
 When the code adopts this design, `holderAbstract` replaces the mailbox half of `requestsAbstract`, and serve re-proves its refinement against it, composing request cleanup with `release`.

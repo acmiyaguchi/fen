@@ -33,6 +33,8 @@ module holderAbstract {
   pure val SEQS = 0.to(MAX_SEQ - 1)
   // Dispositions: "" (not yet), taken, started, released, refused, cleared.
   pure val WHYS = Set("", "taken", "started", "released", "refused", "cleared")
+  // Drain modes (set-mode!): take one line per boundary, or all of them.
+  pure val MODES = Set("one", "all")
 
   type Session = {
     kind: str,             // holder kind
@@ -41,12 +43,15 @@ module holderAbstract {
     followUp: Set[int],    // seqs of follow-ups
     start: bool,           // an idle offer asked next-start! to start a turn
     cancel: bool,          // cancel! n was accepted for the running turn
+    steerMode: str,        // drain mode for take! :steer ("one" | "all")
+    followMode: str,       // drain mode for take! :follow-up
     why: int -> str,       // seq -> disposition ("" while queued or unissued)
     whyN: int -> int,      // seq -> turn number at its disposition
   }
 
   pure def sessionInit: Session = {
     kind: "none", n: 0, steer: Set(), followUp: Set(), start: false, cancel: false,
+    steerMode: "one", followMode: "one",
     why: SEQS.mapBy(_s => ""), whyN: SEQS.mapBy(_s => 0),
   }
 
@@ -71,7 +76,7 @@ module holderAbstract {
               start: false, cancel: false }, Set(first), "started", a.n + 1)
 
   pure def canStartTurn(a: Session): bool =
-    a.kind == "none" and a.start and a.followUp != Set()
+    a.start and a.followUp != Set() and a.kind == "none"
 
   // (with-holder :exclusive f): /reload, /handoff. Consumes no turn number.
   pure def startExclusive(a: Session): Session = { ...a, kind: "exclusive", cancel: false }
@@ -96,18 +101,23 @@ module holderAbstract {
     else if (a.kind == "exclusive") { ...a, followUp: a.followUp.union(Set(s)) }
     else { ...a, followUp: a.followUp.union(Set(s)), start: true }
 
-  pure def takeSteer(a: Session, drainAll: bool): Session =
-    val taken = if (drainAll) a.steer else Set(minOf(a.steer))
+  // take! :steer drains by the session's steer mode.
+  pure def takeSteer(a: Session): Session =
+    val taken = if (a.steerMode == "all") a.steer else Set(minOf(a.steer))
     dispose({ ...a, steer: a.steer.exclude(taken) }, taken, "taken", a.n)
 
   // Steering wins: follow-ups only once the turn's steer lines are drained.
-  pure def takeFollowUp(a: Session, drainAll: bool): Session =
-    val taken = if (drainAll) a.followUp else Set(minOf(a.followUp))
+  pure def takeFollowUp(a: Session): Session =
+    val taken = if (a.followMode == "all") a.followUp else Set(minOf(a.followUp))
     dispose({ ...a, followUp: a.followUp.exclude(taken) }, taken, "taken", a.n)
 
   // cancel! m: only the running turn m.
   pure def cancelTurn(a: Session, m: int): Session =
     if (a.kind == "turn" and m == a.n) { ...a, cancel: true } else a
+
+  // set-mode! kind mode: persists across turns, releases, and clears.
+  pure def setMode(a: Session, which: str, mode: str): Session =
+    if (which == "steer") { ...a, steerMode: mode } else { ...a, followMode: mode }
 
   pure def clearSteer(a: Session): Session =
     dispose({ ...a, steer: Set() }, a.steer, "cleared", a.n)
@@ -124,6 +134,8 @@ module holderAbstract {
     a.n >= 0,
     a.kind == "turn" implies a.n >= 1,
     a.cancel implies a.kind == "turn",
+    MODES.contains(a.steerMode),
+    MODES.contains(a.followMode),
     steerOnlyForTurn(a),
     a.steer.intersect(a.followUp) == Set(),
     // A queued seq has no disposition yet.
@@ -138,6 +150,13 @@ module holderSpec {
   pure val NS = 0.to(MAX_N)
   // Caller tags are arbitrary and may repeat: 0 = absent, 1 and 2 collide.
   pure val TAGVALS = 0.to(2)
+  // Bounded liveness, encoded as safety. Fairness assumptions, made explicit:
+  // every with-holder body exits within MAX_BODY steps (the agent's work
+  // terminates), and the driver's idle tick runs at least every MAX_IDLE
+  // steps. The step relation forces those moves when a bound is reached; the
+  // invariants then say no holder and no requested start waits longer.
+  pure val MAX_BODY = 4
+  pure val MAX_IDLE = 2
 
   // The Session record, split into variables so Apalache can bound each one.
   var kind: str
@@ -148,10 +167,12 @@ module holderSpec {
   var cancel: bool
   var why: int -> str
   var whyN: int -> int
+  var steerMode: str
+  var followMode: str
 
   def s: Session = {
     kind: kind, n: n, steer: steer, followUp: followUp, start: start,
-    cancel: cancel, why: why, whyN: whyN,
+    cancel: cancel, why: why, whyN: whyN, steerMode: steerMode, followMode: followMode,
   }
   var body: bool               // a with-holder body is running
   var nextSeq: int
@@ -164,6 +185,12 @@ module holderSpec {
   var orderOk: bool            // no follow-up taken while steer lines waited
   var cancelOk: bool           // cancel! never armed a turn other than its target
   var leakFree: bool           // no holder outlived its body
+  var heldFor: int             // steps the current holder has held the session
+  var waitedFor: int           // steps a requested idle start has waited
+  var starved: bool            // the idle tick ran but could not start a requested turn
+  var takeOk: bool             // every take! drained exactly what its mode says
+  var setSteer: str            // the steer mode last set by set-mode!
+  var setFollow: str           // the follow-up mode last set by set-mode!
 
   action init = all {
     kind' = sessionInit.kind, n' = sessionInit.n, steer' = sessionInit.steer,
@@ -173,20 +200,36 @@ module holderSpec {
     tagOf' = SEQS.mapBy(_q => 0), forTurn' = SEQS.mapBy(_q => 0),
     isSteer' = SEQS.mapBy(_q => false), isLocal' = SEQS.mapBy(_q => false),
     orderOk' = true, cancelOk' = true, leakFree' = true,
+    steerMode' = "one", followMode' = "one",
+    heldFor' = 0, waitedFor' = 0, starved' = false, takeOk' = true,
+    setSteer' = "one", setFollow' = "one",
   }
+
+  // A start was asked for and is possible (the spec of "waiting", kept
+  // independent of `canStartTurn`, which is the implementation's guard).
+  pure def waiting(a: Session): bool =
+    a.kind == "none" and a.start and a.followUp != Set() and a.n < MAX_N
 
   // Boolean right-hand sides are parenthesized on purpose: a bare
   // `x' = a or b` inside an action is read as an action-level `or` and the
   // ghost never updates (mutants would survive).
   action go(gs: Session, gBody: bool, gSeq: int, gTag: int -> int,
             gFor: int -> int, gSteer: int -> bool, gOrder: bool, gCancel: bool): bool =
-    goL(gs, gBody, gSeq, gTag, gFor, gSteer, isLocal, gOrder, gCancel)
+    goL(gs, gBody, gSeq, gTag, gFor, gSteer, isLocal, gOrder, gCancel, true, false,
+        setSteer, setFollow)
 
   action goL(gs: Session, gBody: bool, gSeq: int, gTag: int -> int, gFor: int -> int,
-             gSteer: int -> bool, gLocal: int -> bool, gOrder: bool, gCancel: bool): bool = all {
+             gSteer: int -> bool, gLocal: int -> bool, gOrder: bool, gCancel: bool,
+             gTake: bool, gStarved: bool, gSetSteer: str, gSetFollow: str): bool = all {
     kind' = gs.kind, n' = gs.n, steer' = gs.steer, followUp' = gs.followUp,
     start' = gs.start, cancel' = gs.cancel, why' = gs.why, whyN' = gs.whyN,
+    steerMode' = gs.steerMode, followMode' = gs.followMode,
     body' = gBody, nextSeq' = gSeq,
+    heldFor' = if (gs.kind == "none" or kind == "none") 0 else heldFor + 1,
+    waitedFor' = if (waiting(gs) and waiting(s)) waitedFor + 1 else 0,
+    starved' = (starved or gStarved),
+    takeOk' = (takeOk and gTake),
+    setSteer' = gSetSteer, setFollow' = gSetFollow,
     tagOf' = gTag, forTurn' = gFor, isSteer' = gSteer, isLocal' = gLocal,
     orderOk' = (orderOk and gOrder),
     cancelOk' = (cancelOk and gCancel),
@@ -229,18 +272,42 @@ module holderSpec {
       goL(b, body, nextSeq + 1, tagOf.set(q, g),
           forTurn.set(q, if (not(b.steer.contains(q))) 0 else if (t > 0) t else s.n),
           isSteer.set(q, b.steer.contains(q)), isLocal.set(q, t == -1 and not(f)),
-          true, true),
+          true, true, true, false, setSteer, setFollow),
     }
 
-  action doTakeSteer(drainAll: bool): bool = all {
-    body, s.kind == "turn", s.steer != Set(),
-    plain(takeSteer(s, drainAll), body),
-  }
+  // Exactly what the mode says: one line, or every queued line.
+  pure def drainedByMode(mode: str, before: Set[int], after: Set[int]): bool =
+    if (mode == "all") after == Set()
+    else after.subseteq(before) and before.exclude(after).size() == 1
 
-  action doTakeFollowUp(drainAll: bool): bool = all {
-    body, s.kind == "turn", s.steer == Set(), s.followUp != Set(),
-    go(takeFollowUp(s, drainAll), body, nextSeq, tagOf, forTurn, isSteer,
-       s.steer == Set(), true),
+  action doTakeSteer: bool =
+    val b = takeSteer(s)
+    all {
+      body, s.kind == "turn", s.steer != Set(),
+      goL(b, body, nextSeq, tagOf, forTurn, isSteer, isLocal, true, true,
+          drainedByMode(setSteer, s.steer, b.steer), false, setSteer, setFollow),
+    }
+
+  action doTakeFollowUp: bool =
+    val b = takeFollowUp(s)
+    all {
+      body, s.kind == "turn", s.steer == Set(), s.followUp != Set(),
+      goL(b, body, nextSeq, tagOf, forTurn, isSteer, isLocal, s.steer == Set(), true,
+          drainedByMode(setFollow, s.followUp, b.followUp), false, setSteer, setFollow),
+    }
+
+  // set-mode! which mode
+  action doSetMode(which: str, mode: str): bool =
+    goL(setMode(s, which, mode), body, nextSeq, tagOf, forTurn, isSteer, isLocal,
+        true, true, true, false,
+        if (which == "steer") mode else setSteer,
+        if (which == "steer") setFollow else mode)
+
+  // The idle tick is due but cannot start a requested turn: a liveness failure.
+  action doStarved: bool = all {
+    not(canStartTurn(s)),
+    goL(s, body, nextSeq, tagOf, forTurn, isSteer, isLocal, true, true, true, true,
+        setSteer, setFollow),
   }
 
   // cancel! m, e.g. a remote control that saw turn m.
@@ -261,16 +328,23 @@ module holderSpec {
     nondet g = TAGVALS.oneOf()
     nondet f = Bool.oneOf()
     nondet m = NS.oneOf()
-    any {
+    nondet which = Set("steer", "followUp").oneOf()
+    nondet mode = MODES.oneOf()
+    // Fairness made explicit: an overdue body exits; an overdue idle tick
+    // starts the requested turn (or is recorded as starved).
+    if (body and heldFor >= MAX_BODY) doBodyExit(f)
+    else if (waiting(s) and waitedFor >= MAX_IDLE) any { doStartTurn, doStarved }
+    else any {
       doStartTurn,
       doStartExclusive,
       doBodyExit(f),
       doOffer(t, g, f),
-      doTakeSteer(f),
-      doTakeFollowUp(f),
+      doTakeSteer,
+      doTakeFollowUp,
       doCancel(m),
       doClearSteer,
       doClearFollowUp,
+      doSetMode(which, mode),
     }
   }
 
@@ -309,6 +383,18 @@ module holderSpec {
     s.why.get(q) == "refused" implies not(isLocal.get(q)))
 
   val followUpOrderInv = orderOk
+
+  // Liveness (bounded): no holder holds longer than its body may run, so a
+  // leaked holder shows up as a holder held past the bound.
+  val releasedInTimeInv = heldFor <= MAX_BODY
+
+  // Liveness (bounded): a requested idle start happens within MAX_IDLE ticks.
+  val startedInTimeInv = waitedFor <= MAX_IDLE and not(starved)
+
+  // Modes: every take! drains exactly what the mode says, and modes persist
+  // across turns, releases, and clears until set-mode! changes them.
+  val takeByModeInv = takeOk
+  val modesPersistInv = steerMode == setSteer and followMode == setFollow
   val cancelFencedInv = cancelOk
 
   val allInvariants = and {
@@ -320,6 +406,10 @@ module holderSpec {
     localOfferNeverRefusedInv,
     followUpOrderInv,
     cancelFencedInv,
+    releasedInTimeInv,
+    startedInTimeInv,
+    takeByModeInv,
+    modesPersistInv,
   }
 
   val inductiveInv = and {
@@ -340,6 +430,16 @@ module holderSpec {
     orderOk.in(Bool),
     cancelOk.in(Bool),
     leakFree.in(Bool),
+    steerMode.in(MODES),
+    followMode.in(MODES),
+    heldFor.in(0.to(MAX_BODY)),
+    waitedFor.in(0.to(MAX_IDLE)),
+    starved.in(Bool),
+    takeOk.in(Bool),
+    setSteer.in(MODES),
+    setFollow.in(MODES),
+    kind == "none" implies heldFor == 0,
+    not(waiting(s)) implies waitedFor == 0,
     SEQS.forall(q => isSteer.get(q) implies forTurn.get(q) >= 1),
     SEQS.forall(q => s.steer.contains(q) implies isSteer.get(q)),
     SEQS.forall(q => s.followUp.contains(q) implies not(isSteer.get(q))),

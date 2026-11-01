@@ -7,4 +7,8 @@ holderSpec	startedOpensItsTurnInv	holds
 holderSpec	localOfferNeverRefusedInv	holds
 holderSpec	followUpOrderInv	holds
 holderSpec	cancelFencedInv	holds
+holderSpec	releasedInTimeInv	holds
+holderSpec	startedInTimeInv	holds
+holderSpec	takeByModeInv	holds
+holderSpec	modesPersistInv	holds
 holderSpec	inductiveInv	holds
