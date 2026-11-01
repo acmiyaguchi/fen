@@ -18,7 +18,6 @@ dependencies = {
    "fen-core >= 1-1",
    "fen-util >= 1-1",
    "fen-ext-builtin-tools >= 1-1",
-   "fen-ext-tui >= 1-1",
 }
 
 test_dependencies = {

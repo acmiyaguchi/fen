@@ -3,7 +3,9 @@
 ;; Transitive: luarocks installs the closure, so only an undeclared path breaks.
 ;; A rockspec-less extension is a bundled-only pseudo-rock named "bundled:<dir>":
 ;; it ships inside the binary alongside everything else, so it may require any
-;; module, but no published rock can depend on it.
+;; module, but no published rock can depend on it. A file whose module is not
+;; in its rock's install list is source-only (never published) and is not
+;; checked as a requirer either.
 
 (local M {})
 
@@ -28,7 +30,7 @@
   (let [findings []
         reach {}]
     (each [_ f (ipairs facts.files)]
-      (when (and f.rock (not (bundled? f.rock)))
+      (when (and f.rock (not (bundled? f.rock)) (not f.source-only?))
         (when (not (. reach f.rock))
           (tset reach f.rock (closure facts.deps f.rock)))
         (each [_ d (ipairs f.dependencies)]
