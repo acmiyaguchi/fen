@@ -1,7 +1,7 @@
 #!/usr/bin/env fennel
 ;; Static lint for fen's layering and hot-reload invariants (#676).
 ;;
-;;   fennel scripts/lint/lint.fnl [--json] [--strict]
+;;   fennel scripts/lint/lint.fnl [--json] [--strict] [--quiet]
 ;;
 ;; Rules (scripts/lint/rules/*.fnl):
 ;;   layer/deps    cross-rock require not covered by rockspec dependencies
@@ -14,8 +14,8 @@
 ;; Waive a finding with a trailing comment on its line, or a comment-only line
 ;; directly above it:
 ;;   ;; lint-allow <rule>: <reason>
-;; Every waiver is reported. Report-only by default; --strict exits 1 on
-;; unwaived findings.
+;; Every waiver is reported (--quiet omits the list). Report-only by default;
+;; --strict exits 1 on unwaived findings.
 
 (local fennel (require :fennel))
 (set fennel.path
@@ -152,6 +152,7 @@
 (fn main [argv]
   (let [json? (accumulate [x false _ a (ipairs argv)] (or x (= a :--json)))
         strict? (accumulate [x false _ a (ipairs argv)] (or x (= a :--strict)))
+        quiet? (accumulate [x false _ a (ipairs argv)] (or x (= a :--quiet)))
         facts (gather)
         all []]
     (each [_ rule (ipairs RULES)]
@@ -180,7 +181,7 @@
             (each [_ f (ipairs open)]
               (print (string.format "%s:%d: %s %s: %s" f.path f.line f.rule
                                     f.severity f.message)))
-            (each [_ f (ipairs waived)]
+            (each [_ f (ipairs (if quiet? [] waived))]
               (print (string.format "%s:%d: %s waived: %s" f.path f.line f.rule
                                     f.waived)))
             (let [counts {}]

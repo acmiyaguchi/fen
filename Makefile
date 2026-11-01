@@ -1,4 +1,4 @@
-.PHONY: help fmt fmt-check test-fmt install-hooks dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-fast test-all test-list test-shuffle test-compile-cache-clear test-pty profile-tui-scroll check-tui-scroll-perf stall-check smoke smoke-mock check check-static check-fennel lint bench-tui bench-tui-latency docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-spec check-spec-full verify-spec check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean release-prepare release-tag
+.PHONY: help fmt fmt-check test-fmt install-hooks dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-fast test-all test-list test-shuffle test-compile-cache-clear test-pty profile-tui-scroll check-tui-scroll-perf stall-check smoke smoke-mock check check-static check-fennel check-lint lint bench-tui bench-tui-latency docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-spec check-spec-full verify-spec check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean release-prepare release-tag
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -26,8 +26,9 @@ help:
 	@echo '  stall-check         — resource-constrained TUI-stall harness (#167; FEN_DEBUG_CHUNK_DELAY_MS)'
 	@echo '  smoke               — live provider smoke test using FEN_BIN or fen on PATH'
 	@echo '  smoke-mock          — deterministic local mock-provider smoke test'
-	@echo '  check               — fennel-check, generated graph freshness, doc + link validation, and tests'
-	@echo '  lint                — report-only static lint: layering + hot-reload invariants (#676)'
+	@echo '  check               — fennel-check, strict lint, generated graph freshness, doc + link validation, and tests'
+	@echo '  lint                — static lint report (layering + hot-reload invariants), waivers included'
+	@echo '  check-lint          — lint self-test + strict lint; fails on any unwaived finding (part of check)'
 	@echo '  bench-tui           — run TUI transcript CPU microbenchmarks'
 	@echo '  bench-tui-latency   — scheduled production-loop logical and wall visibility latency'
 	@echo '  docs                — build all documentation: generated Markdown/JSON, graphs, static HTML site'
@@ -135,7 +136,7 @@ smoke-mock:
 # CI and release-quality local validation always retain slow-test coverage.
 check: check-static test-all
 
-check-static: check-fennel fmt-check test-fmt check-graphs check-docs check-links
+check-static: check-fennel check-lint fmt-check test-fmt check-graphs check-docs check-links
 
 check-fennel:
 	fennel scripts/test/fennel-check.fnl
@@ -143,6 +144,10 @@ check-fennel:
 lint:
 	@fennel scripts/lint/test.fnl
 	@fennel scripts/lint/lint.fnl $(LINT_ARGS)
+
+check-lint:
+	@fennel scripts/lint/test.fnl >/dev/null
+	@fennel scripts/lint/lint.fnl --strict --quiet
 
 bench-tui:
 	fennel scripts/test/tui-bench.fnl
