@@ -47,13 +47,16 @@
 ;; ----- Facts --------------------------------------------------------------
 
 (fn rockspec-of [dir]
-  "{:name :deps} from the single *.rockspec in `dir`, or nil."
+  "{:name :deps :installs} from the single *.rockspec in `dir`, or nil.
+   :installs is the set of modules its build.install.lua publishes."
   (let [path (. (command-lines (.. "ls " dir "/*.rockspec 2>/dev/null")) 1)
         text (and path (read-file path))]
     (when text
       (let [block (or (string.match text "\ndependencies%s*=%s*(%b{})") "")]
         {:name (string.match text "package%s*=%s*\"([^\"]+)\"")
-         :deps (icollect [dep (string.gmatch block "\"([%w_%-]+)")] dep)}))))
+         :deps (icollect [dep (string.gmatch block "\"([%w_%-]+)")] dep)
+         :installs (collect [m (string.gmatch text "%[\"([%w%._%-]+)\"%]%s*=")]
+                     (values m true))}))))
 
 (fn rock-dir [modinfo]
   (if (= modinfo.scope :package) (.. "packages/" modinfo.pkg) modinfo.pkg))
@@ -103,6 +106,12 @@
           (table.insert files
                         {:path f.path
                          : rock
+                         ;; In a real rock but not in its install list: compiled in
+                         ;; the workspace only, never published (e.g. test helpers).
+                         :source-only? (let [r (and dir (. rocks dir))]
+                                         (and r r.installs mi
+                                              (not (. r.installs mi.module))
+                                              true))
                          :module (?. mi :module)
                          :scope (?. mi :scope)
                          :ext-root (and mi (= mi.scope :extension) dir)

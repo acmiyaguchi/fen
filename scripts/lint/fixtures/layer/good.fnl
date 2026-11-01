@@ -1,5 +1,6 @@
 ;; Direct and transitive declared deps, own-rock, optional, and external
-;; requires; a bundled-only extension may require anything.
+;; requires; a bundled-only extension may require anything; a source-only
+;; (unpublished) module of a real rock is not checked.
 {:owners {:fen.util.x :fen-util
           :fen.core.y :fen-core
           :fen.app :fen
@@ -16,4 +17,8 @@
          {:path :ext/presenter.fnl
           :rock "bundled:ext/presenter"
           :dependencies [{:kind :require :module :fen.app :line 1}
-                         {:kind :require :module :fen.extensions.steer :line 2}]}]}
+                         {:kind :require :module :fen.extensions.steer :line 2}]}
+         {:path :testing/tui.fnl
+          :rock :fen-testing
+          :source-only? true
+          :dependencies [{:kind :require :module :fen.ext :line 1}]}]}
