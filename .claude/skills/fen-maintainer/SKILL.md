@@ -1,6 +1,6 @@
 ---
 name: fen-maintainer
-description: Route general fen repo maintenance to the right docs and checks. Use when editing fen's Fennel source, extensions, docs, build/Nix plumbing, or tests and no narrower skill fits; for a numbered GitHub issue use issue-implementation, for user-visible TUI/CLI tests use ux-testing, for releases use release.
+description: Route general fen repo maintenance to the right docs and checks. Use when editing fen's Fennel source, extensions, docs, build/Nix plumbing, or tests and no narrower skill fits; for a numbered GitHub issue use issue-implementation, for architectural/model-driven refactoring use refactoring, for user-visible TUI/CLI tests use ux-testing, for releases use release.
 user-invocable: true
 ---
 
@@ -13,7 +13,8 @@ This skill adds where to look next and the checks people forget.
 
 | Change | Read |
 |---|---|
-| Structure, new modules, cross-extension helpers | `docs/architecture.md#design-principles` |
+| Structure, new modules, cross-extension helpers | `docs/architecture.md#design-principles`, then the `refactoring` skill for seam cleanup |
+| Formal models, conformance harnesses, `spec/` | `spec/README.md`, `spec/core/README.md`, then the `refactoring` skill |
 | Test runner flags, smoke, graphs, profiling, reload rules | `docs/development.md` |
 | Extensions, manifests, register kinds, reload lists | `docs/extensions.md` |
 | Built-in tools | `docs/tools.md` |
