@@ -34,7 +34,7 @@ Every claim in a `FINDINGS.md` or README says which kind of evidence backs it:
 | inductive | holds initially and every step preserves it: any depth | an `inductive` obligation in `verify.tsv` |
 | refinement | every concrete step is a step (or stutter) of the abstract spec | a `refines...` invariant on a monitor (see `core/README.md`) |
 | liveness | something eventually happens | none yet: no model states fairness assumptions, so no invariant may claim it |
-| confirmed | the real code does it | a `known-bug` probe test, a conformance check, or a line trace in `FINDINGS.md` |
+| confirmed | the real code does it | a throwaway probe or REPL run, a line trace, or a conformance check, recorded in `FINDINGS.md` |
 
 Invariant names must not claim more than their kind: a per-iteration bound is not "no starvation".
 
@@ -58,8 +58,9 @@ When the code is fixed, update the model, flip the row to `holds`, drop its issu
 Candidate fixes are named: a model takes `const FIXES: Set[str]` and guards each fix with `FIXES.contains("<issue>")`.
 The `fixed` instance enables every fix and must satisfy every invariant the fixes claim; a `violated` row on `fixed` records what even the fixed design does not provide, and names its issue (tools: an outside writer between the check and the rename, #657, and a crash between two renames, #656). A `fix<issue>` instance enables one fix, so a row can say which fix it needs and fixes can be checked one at a time.
 
-Each confirmed bug also has a probe against the real code: a Busted test in the owning package or extension, `tests/issue_<n>_<slug>_test.fnl`, built on `fen.testing`'s `known-bug`.
-It passes while the bug reproduces and fails once it stops, so the fix PR turns it into a regular test of the correct behaviour in the same change that flips the rows.
+A confirmed bug needs no standing test against the real code: the witness carries the counterexample, and the `FINDINGS.md` confirmation says where the code does it.
+The fix PR adds a regular test of the correct behaviour in the same change that flips the rows.
+`fen.testing`'s `known-bug` stays available for a bug worth pinning before its fix, but it is optional.
 
 ## Conformance
 
@@ -115,7 +116,7 @@ The serve design findings (V1–V10) are recorded on the design issues they affe
 | [auth](auth/FINDINGS.md) | OAuth refresh rotation, credential store, quota cache | #611–#616 | 7 / 11 | rotation, pinning, quota |
 | [serve](serve/FINDINGS.md) | design-first: attachable fen (#394, #396, #397), async UI contract (#398) | #638, plus V1–V10 on #394, #396, #397, #398 | 17 / 12 (`proposed` protocol and refinement monitors hold) | controls, requests, replay, escalation |
 
-Totals: 62 bugs in today's code (#606–#667) and 9 design bug classes (V1–V2, V4–V10) in the serve designs. Every bug has a witness and a `known-bug` probe against the real code (the serve design findings, which have no code, have witnesses only). The whole tree is 59 models with about 720 `check-spec` checks (about 890 in `check-spec-full`) and 86 `verify-spec` obligations, most of them inductive.
+Totals: 62 bugs in today's code (#606–#667) and 9 design bug classes (V1–V2, V4–V10) in the serve designs. Every bug has a witness. The whole tree is 59 models with about 720 `check-spec` checks (about 890 in `check-spec-full`) and 86 `verify-spec` obligations, most of them inductive.
 
 Every bug listed was confirmed against the real code (a throwaway probe or a line trace, recorded in its `FINDINGS.md`); model-only suspicions sit under each domain's "Open questions".
 Related findings: the presenters model found #619 independently; #622 is the prompt-cache cost of #626; #634 follows from #609; #639 is #606's persistence twin; #631 is #629 in the web presenter.
