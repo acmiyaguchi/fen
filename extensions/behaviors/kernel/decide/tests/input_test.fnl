@@ -35,7 +35,7 @@
   (let [opts (or ?opts {})]
     (test-api.reset!)
     (tasks.reset!)
-    (tasks.spawn-held :turn #(coroutine.yield))
+    (tasks.spawn-holder :turn #(coroutine.yield))
     (set asks [])
     (set store.topic-pending nil)
     (tset package.loaded :fen.extensions.decide.service (mock-service opts))

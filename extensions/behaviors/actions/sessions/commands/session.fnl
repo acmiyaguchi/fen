@@ -489,18 +489,17 @@
   (api.emit {:type :assistant-text
              :text "reload> reloading core modules and extensions…"})
   ;; /reload holds the session exclusively; a queued turn start goes first.
-  (let [(co hid-or-why) (tasks.spawn-held :exclusive
-                                          (fn []
-                                            (let [(text _error?) (perform-reload! api
-                                                                                  state
-                                                                                  (fn [_progress]
-                                                                                    (coroutine.yield))
-                                                                                  opts)]
-                                              (api.emit {:type :assistant-text
-                                                         : text}))))]
+  (let [(co hid-or-why) (tasks.spawn-holder :exclusive
+                                            (fn []
+                                              (let [(text _error?) (perform-reload! api
+                                                                                    state
+                                                                                    (fn [_progress]
+                                                                                      (coroutine.yield))
+                                                                                    opts)]
+                                                (api.emit {:type :assistant-text
+                                                           : text}))))]
     (if co
         (do
-          (set state.cancel-requested? false)
           (set state.busy? true)
           (set state.holder-id hid-or-why)
           (set state.turn co))

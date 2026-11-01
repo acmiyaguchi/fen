@@ -39,6 +39,7 @@ module holderAbstract {
   type Session = {
     kind: str,             // holder kind
     n: int,                // current (or last) turn number
+    hid: int,              // holder id: every acquire takes a fresh one; cancel! is fenced on it
     steer: Set[int],       // seqs of steer lines for the running turn
     followUp: Set[int],    // seqs of follow-ups
     start: bool,           // an idle offer asked next-start! to start a turn
@@ -51,7 +52,7 @@ module holderAbstract {
   }
 
   pure def sessionInit: Session = {
-    kind: "none", n: 0, steer: Set(), followUp: Set(), start: false, firstUp: -1, cancel: false,
+    kind: "none", n: 0, hid: 0, steer: Set(), followUp: Set(), start: false, firstUp: -1, cancel: false,
     steerMode: "one", followMode: "one",
     why: SEQS.mapBy(_s => ""), whyN: SEQS.mapBy(_s => 0),
   }
@@ -75,14 +76,15 @@ module holderAbstract {
   // ahead of older follow-ups left by an earlier turn.
   pure def startTurn(a: Session): Session =
     val first = if (a.firstUp >= 0) a.firstUp else minOf(a.followUp)
-    dispose({ ...a, kind: "turn", n: a.n + 1, followUp: a.followUp.exclude(Set(first)),
+    dispose({ ...a, kind: "turn", n: a.n + 1, hid: a.hid + 1, followUp: a.followUp.exclude(Set(first)),
               start: false, firstUp: -1, cancel: false }, Set(first), "started", a.n + 1)
 
   pure def canStartTurn(a: Session): bool =
     a.start and a.followUp != Set() and a.kind == "none"
 
   // (with-holder :exclusive f): /reload, /handoff. Consumes no turn number.
-  pure def startExclusive(a: Session): Session = { ...a, kind: "exclusive", cancel: false }
+  pure def startExclusive(a: Session): Session =
+    { ...a, kind: "exclusive", hid: a.hid + 1, cancel: false }
 
   // The body exits (return, error, or cancel): release, and return the turn's
   // unread steer lines attributed to that turn.
@@ -117,8 +119,10 @@ module holderAbstract {
     dispose({ ...a, followUp: a.followUp.exclude(taken) }, taken, "taken", a.n)
 
   // cancel! m: only the running turn m.
-  pure def cancelTurn(a: Session, m: int): Session =
-    if (a.kind == "turn" and m == a.n) { ...a, cancel: true } else a
+  // cancel! h: only the current holder h, turn or exclusive (Ctrl-C reads
+  // the holder id at the keypress, so a late press cannot hit the next one).
+  pure def cancelHolder(a: Session, h: int): Session =
+    if (a.kind != "none" and h == a.hid) { ...a, cancel: true } else a
 
   // set-mode! kind mode: persists across turns, releases, and clears.
   pure def setMode(a: Session, which: str, mode: str): Session =
@@ -138,7 +142,7 @@ module holderAbstract {
     KINDS.contains(a.kind),
     a.n >= 0,
     a.kind == "turn" implies a.n >= 1,
-    a.cancel implies a.kind == "turn",
+    a.cancel implies a.kind != "none",
     MODES.contains(a.steerMode),
     MODES.contains(a.followMode),
     steerOnlyForTurn(a),
@@ -157,6 +161,8 @@ module holderSpec {
 
   pure val MAX_N = 3
   pure val NS = 0.to(MAX_N)
+  pure val MAX_H = 4
+  pure val HS = 0.to(MAX_H)
   // Caller tags are arbitrary and may repeat: 0 = absent, 1 and 2 collide.
   pure val TAGVALS = 0.to(2)
   // Bounded liveness, encoded as safety. Fairness assumptions, made explicit:
@@ -170,6 +176,7 @@ module holderSpec {
   // The Session record, split into variables so Apalache can bound each one.
   var kind: str
   var n: int
+  var hid: int
   var steer: Set[int]
   var followUp: Set[int]
   var start: bool
@@ -181,7 +188,7 @@ module holderSpec {
   var firstUp: int
 
   def s: Session = {
-    kind: kind, n: n, steer: steer, followUp: followUp, start: start, firstUp: firstUp,
+    kind: kind, n: n, hid: hid, steer: steer, followUp: followUp, start: start, firstUp: firstUp,
     cancel: cancel, why: why, whyN: whyN, steerMode: steerMode, followMode: followMode,
   }
   var body: bool               // a with-holder body is running
@@ -206,6 +213,7 @@ module holderSpec {
   // and the base proof stays cheap; only the refinement proofs pay for it.
   var pKind: str
   var pN: int
+  var pHid: int
   var pSteer: Set[int]
   var pFollowUp: Set[int]
   var pStart: bool
@@ -222,12 +230,12 @@ module holderSpec {
   var pFirstUp: int
 
   def ps: Session = {
-    kind: pKind, n: pN, steer: pSteer, followUp: pFollowUp, start: pStart, firstUp: pFirstUp,
+    kind: pKind, n: pN, hid: pHid, steer: pSteer, followUp: pFollowUp, start: pStart, firstUp: pFirstUp,
     cancel: pCancel, why: pWhy, whyN: pWhyN, steerMode: pSteerMode, followMode: pFollowMode,
   }
 
   action init = all {
-    kind' = sessionInit.kind, n' = sessionInit.n, steer' = sessionInit.steer,
+    kind' = sessionInit.kind, n' = sessionInit.n, hid' = 0, steer' = sessionInit.steer,
     followUp' = sessionInit.followUp, start' = sessionInit.start, firstUp' = -1,
     cancel' = sessionInit.cancel, why' = sessionInit.why, whyN' = sessionInit.whyN,
     body' = false, nextSeq' = 0,
@@ -237,7 +245,7 @@ module holderSpec {
     steerMode' = "one", followMode' = "one",
     heldFor' = 0, waitedFor' = 0, starved' = false, takeOk' = true,
     setSteer' = "one", setFollow' = "one",
-    pKind' = sessionInit.kind, pN' = sessionInit.n, pSteer' = sessionInit.steer,
+    pKind' = sessionInit.kind, pN' = sessionInit.n, pHid' = 0, pSteer' = sessionInit.steer,
     pFollowUp' = sessionInit.followUp, pStart' = sessionInit.start, pFirstUp' = -1,
     pCancel' = sessionInit.cancel, pWhy' = sessionInit.why, pWhyN' = sessionInit.whyN,
     pSteerMode' = sessionInit.steerMode, pFollowMode' = sessionInit.followMode,
@@ -247,13 +255,13 @@ module holderSpec {
 
   // ---- refinement mappings onto L0 (lease) and L1 (one line) ----
 
-  pure def leaseOf(a: Session, b: bool): { kind: str, n: int, body: bool, cancel: bool, startReq: bool } = {
-    kind: a.kind, n: a.n, body: b, cancel: a.cancel,
+  pure def leaseOf(a: Session, b: bool): { kind: str, n: int, hid: int, body: bool, cancel: bool, startReq: bool } = {
+    kind: a.kind, n: a.n, hid: a.hid, body: b, cancel: a.cancel,
     startReq: a.start and a.followUp != Set(),
   }
 
   pure def viewOf(a: Session, b: bool, ns: int, fT: int -> int, sT: int -> bool,
-                  lc: int -> bool, q: int): { lease: { kind: str, n: int, body: bool, cancel: bool, startReq: bool }, st: str, why: str, whyN: int, forTurn: int, wasSteer: bool, local: bool, steerAhead: bool, otherSteer: bool, followAhead: bool, steerMode: str, followMode: str } = {
+                  lc: int -> bool, q: int): { lease: { kind: str, n: int, hid: int, body: bool, cancel: bool, startReq: bool }, st: str, why: str, whyN: int, forTurn: int, wasSteer: bool, local: bool, steerAhead: bool, otherSteer: bool, followAhead: bool, steerMode: str, followMode: str } = {
     lease: leaseOf(a, b),
     st: if (q >= ns) "unissued" else if (a.steer.contains(q)) "steer"
         else if (a.followUp.contains(q)) "follow" else "done",
@@ -269,7 +277,7 @@ module holderSpec {
   // A start was asked for and is possible (the spec of "waiting", kept
   // independent of `canStartTurn`, which is the implementation's guard).
   pure def waiting(a: Session): bool =
-    a.kind == "none" and a.start and a.followUp != Set() and a.n < MAX_N
+    a.kind == "none" and a.start and a.followUp != Set() and a.n < MAX_N and a.hid < MAX_H
 
   // Boolean right-hand sides are parenthesized on purpose: a bare
   // `x' = a or b` inside an action is read as an action-level `or` and the
@@ -282,7 +290,7 @@ module holderSpec {
   action goL(gs: Session, gBody: bool, gSeq: int, gTag: int -> int, gFor: int -> int,
              gSteer: int -> bool, gLocal: int -> bool, gOrder: bool, gCancel: bool,
              gTake: bool, gStarved: bool, gSetSteer: str, gSetFollow: str): bool = all {
-    kind' = gs.kind, n' = gs.n, steer' = gs.steer, followUp' = gs.followUp,
+    kind' = gs.kind, n' = gs.n, hid' = gs.hid, steer' = gs.steer, followUp' = gs.followUp,
     start' = gs.start, firstUp' = gs.firstUp, cancel' = gs.cancel, why' = gs.why, whyN' = gs.whyN,
     steerMode' = gs.steerMode, followMode' = gs.followMode,
     body' = gBody, nextSeq' = gSeq,
@@ -291,7 +299,7 @@ module holderSpec {
     starved' = (starved or gStarved),
     takeOk' = (takeOk and gTake),
     setSteer' = gSetSteer, setFollow' = gSetFollow,
-    pKind' = kind, pN' = n, pSteer' = steer, pFollowUp' = followUp, pStart' = start,
+    pKind' = kind, pN' = n, pHid' = hid, pSteer' = steer, pFollowUp' = followUp, pStart' = start,
     pFirstUp' = firstUp, pCancel' = cancel, pWhy' = why, pWhyN' = whyN, pSteerMode' = steerMode,
     pFollowMode' = followMode, pBody' = body, pSeq' = nextSeq, pFor' = forTurn,
     pIsSteer' = isSteer, pIsLocal' = isLocal,
@@ -309,7 +317,7 @@ module holderSpec {
   // `doStartTurn` exactly when this holds and `doStarved` otherwise, so the
   // forced step is total and a guard bug shows up as `starved`, never as a
   // silent deadlock. Keep every start condition here, not in the action.
-  pure def startGuard(a: Session): bool = canStartTurn(a) and a.n < MAX_N
+  pure def startGuard(a: Session): bool = canStartTurn(a) and a.n < MAX_N and a.hid < MAX_H
 
   action doStartTurn: bool = all {
     startGuard(s),
@@ -321,6 +329,7 @@ module holderSpec {
     s.kind == "none",
     // a pending turn start has priority over an exclusive holder
     not(s.start and s.followUp != Set()),
+    s.hid < MAX_H,
     plain(startExclusive(s), true),
   }
 
@@ -383,11 +392,11 @@ module holderSpec {
         setSteer, setFollow),
   }
 
-  // cancel! m, e.g. a remote control that saw turn m.
+  // cancel! h, e.g. Ctrl-C that saw holder h, or a remote control.
   action doCancel(m: int): bool =
-    val b = cancelTurn(s, m)
+    val b = cancelHolder(s, m)
     go(b, body, nextSeq, tagOf, forTurn, isSteer, true,
-       (not(b.cancel and not(s.cancel)) or m == s.n))
+       (not(b.cancel and not(s.cancel)) or m == s.hid))
 
   action doClearSteer: bool = all { s.steer != Set(), plain(clearSteer(s), body) }
 
@@ -400,7 +409,7 @@ module holderSpec {
     nondet t = Set(-1, 0).union(1.to(MAX_N)).oneOf()
     nondet g = TAGVALS.oneOf()
     nondet f = Bool.oneOf()
-    nondet m = NS.oneOf()
+    nondet m = HS.oneOf()
     nondet which = Set("steer", "followUp").oneOf()
     nondet mode = MODES.oneOf()
     // Fairness made explicit: an overdue body exits; an overdue idle tick
@@ -499,7 +508,7 @@ module holderSpec {
 
   // Typing for the previous-state copy; nothing else is assumed about it.
   val prevTyped = and {
-    pKind.in(KINDS), pN.in(NS), pSteer.in(powerset(SEQS)), pFollowUp.in(powerset(SEQS)),
+    pKind.in(KINDS), pN.in(NS), pHid.in(HS), pSteer.in(powerset(SEQS)), pFollowUp.in(powerset(SEQS)),
     pStart.in(Bool), pCancel.in(Bool), pWhy.in(setOfMaps(SEQS, WHYS)),
     pWhyN.in(setOfMaps(SEQS, NS)), pSteerMode.in(MODES), pFollowMode.in(MODES),
     pBody.in(Bool), pFirstUp.in(Set(-1).union(SEQS)), pSeq.in(0.to(MAX_SEQ)), pFor.in(setOfMaps(SEQS, NS)),
@@ -509,6 +518,8 @@ module holderSpec {
     prevTyped,
     kind.in(KINDS),
     n.in(NS),
+    hid.in(HS),
+    n <= hid,
     steer.in(powerset(SEQS)),
     followUp.in(powerset(SEQS)),
     start.in(Bool),

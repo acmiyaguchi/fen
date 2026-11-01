@@ -91,10 +91,13 @@
 
 (fn make-yield [state]
   "Yield to the presenter loop while the handoff completion is in flight."
-  (fn []
-    (coroutine.yield)
-    (when state.cancel-requested?
-      (error CANCEL-MARKER))))
+  ;; Called inside the held body, so state.holder-id is this job's own hid;
+  ;; cancel is fenced on it (a stale Ctrl-C cannot reach a later holder).
+  (let [hid state.holder-id]
+    (fn []
+      (coroutine.yield)
+      (when (tasks.cancel-requested? hid state)
+        (error CANCEL-MARKER)))))
 
 (fn finish-handoff! [api state args]
   (api.emit {:type :llm-start})
@@ -115,24 +118,23 @@
 
 (fn start-handoff! [api state args]
   "Run /handoff as cooperative background work so the TUI can redraw and cancel."
-  (let [(co hid-or-why) (tasks.spawn-held :exclusive
-                                          (fn []
-                                            (let [(ok? err) (xpcall #(finish-handoff! api
-                                                                                      state
-                                                                                      args)
-                                                                    #(if (= $1
-                                                                            CANCEL-MARKER)
-                                                                         $1
-                                                                         (debug.traceback (tostring $1)
-                                                                                          2)))]
-                                              (when (not ok?)
-                                                (api.emit {:type :llm-end})
-                                                (if (= err CANCEL-MARKER)
-                                                    (api.emit {:type :cancelled})
-                                                    (error err))))))]
+  (let [(co hid-or-why) (tasks.spawn-holder :exclusive
+                                            (fn []
+                                              (let [(ok? err) (xpcall #(finish-handoff! api
+                                                                                        state
+                                                                                        args)
+                                                                      #(if (= $1
+                                                                              CANCEL-MARKER)
+                                                                           $1
+                                                                           (debug.traceback (tostring $1)
+                                                                                            2)))]
+                                                (when (not ok?)
+                                                  (api.emit {:type :llm-end})
+                                                  (if (= err CANCEL-MARKER)
+                                                      (api.emit {:type :cancelled})
+                                                      (error err))))))]
     (if co
         (do
-          (set state.cancel-requested? false)
           (set state.holder-id hid-or-why)
           (set state.turn co)
           (set state.busy? true))

@@ -3,6 +3,12 @@
 (local tasks (require :fen.core.tasks))
 (local events (require :fen.core.extensions.events))
 
+(fn hold-run [kind f]
+  "Hold the session with spawn-holder and run f to completion: true and f's
+   results, false and the error, or false and the refusal."
+  (let [(co why) (tasks.spawn-holder kind f)]
+    (if co (coroutine.resume co) (values false why))))
+
 (fn initial [] (tasks.initial-machine))
 
 (fn run [m inputs]
@@ -186,22 +192,30 @@
                     (assert.are.equal 2 m.n)
                     (assert.are.same ["keep"] (texts m.steer))
                     (assert.are.equal 1 (length (of-type outs :released))))))
-            (it "fences cancel on the running turn's number"
+            (it "fences cancel on the holder id, for turns and exclusive jobs"
                 (fn []
                   (let [(m outs) (run (initial)
-                                      [{:type :cancel :turn 0}
+                                      [{:type :cancel :hid 0}
                                        TURN
-                                       {:type :cancel :turn 2}])]
+                                       {:type :cancel :hid 2}])]
                     (assert.is_false m.cancel?)
                     (assert.are.same [false false]
                                      (icollect [_ o (ipairs (of-type outs
                                                                      :cancel))]
                                        o.accepted?)))
-                  (let [(m _) (run (initial) [TURN {:type :cancel :turn 1}])]
+                  (let [(m _) (run (initial) [TURN {:type :cancel :hid 1}])]
                     (assert.is_true m.cancel?)
                     (let [(m2 _) (run m [{:type :release}])]
                       (assert.is_false m2.cancel? "release clears cancel")))
-                  (let [(m _) (run (initial) [EXCL {:type :cancel :turn 0}])]
+                  (let [(m _) (run (initial) [EXCL {:type :cancel :hid 1}])]
+                    (assert.is_true m.cancel? "exclusive jobs cancel too"))
+                  ;; a fresh hid per acquire: the old one is stale for the next holder
+                  (let [(m _) (run (initial)
+                                   [EXCL
+                                    {:type :release}
+                                    TURN
+                                    {:type :cancel :hid 1}])]
+                    (assert.are.equal 2 m.hid)
                     (assert.is_false m.cancel?))))
             (it "takes by mode, only while a turn holds"
                 (fn []
@@ -347,9 +361,10 @@
                                         :set-status-info
                                         :steering-returned])]
                       (events.on t #(table.insert seen $1) :tasks-test))
-                    (tasks.with-holder :turn
-                      (fn []
-                        (assert.is_true (. (tasks.offer! "x" {:tag 9}) :ok))))
+                    (hold-run :turn
+                              (fn []
+                                (assert.is_true (. (tasks.offer! "x" {:tag 9})
+                                                   :ok))))
                     (let [ret (icollect [_ e (ipairs seen)]
                                 (when (= e.type :steering-returned) e))]
                       (assert.are.equal 1 (length ret))
@@ -357,42 +372,40 @@
                       (assert.are.same [9] (. ret 1 :tags))
                       (assert.are.equal 1 (. ret 1 :turn)))
                     (events.unregister-by-owner :tasks-test))))
-            (it "with-holder releases on return and on error"
+            (it "spawn-holder releases on return and on error"
                 (fn []
-                  (let [(ok? v) (tasks.with-holder :turn #:done)]
+                  (let [(ok? v) (hold-run :turn #:done)]
                     (assert.is_true ok?)
                     (assert.are.equal :done v))
                   (assert.are.equal :none (. (tasks.holder) :kind))
-                  (let [(ok? err) (pcall tasks.with-holder :exclusive
-                                         #(error "boom"))]
+                  (let [(ok? err) (hold-run :exclusive #(error "boom"))]
                     (assert.is_false ok?)
                     (assert.is_truthy (string.find (tostring err) "boom" 1 true)))
                   (assert.are.equal :none (. (tasks.holder) :kind))
                   ;; error objects (cancel markers) pass through untouched
                   (let [marker {}
-                        (ok? err) (pcall tasks.with-holder :turn
-                                         #(error marker))]
+                        (ok? err) (hold-run :turn #(error marker))]
                     (assert.is_false ok?)
                     (assert.are.equal marker err))
                   (assert.are.equal :none (. (tasks.holder) :kind))))
-            (it "with-holder refuses, without running f, when the session is held"
+            (it "spawn-holder refuses, without running f, when the session is held"
                 (fn []
-                  (tasks.with-holder :turn
-                    (fn []
-                      (var ran? false)
-                      (let [(ok? why) (tasks.with-holder :exclusive
-                                        #(set ran? true))]
-                        (assert.is_false ok?)
-                        (assert.is_string why)
-                        (assert.is_false ran?))
-                      (assert.are.equal :turn (. (tasks.holder) :kind))))
+                  (hold-run :turn
+                            (fn []
+                              (var ran? false)
+                              (let [(ok? why) (hold-run :exclusive
+                                                        #(set ran? true))]
+                                (assert.is_false ok?)
+                                (assert.is_string why)
+                                (assert.is_false ran?))
+                              (assert.are.equal :turn (. (tasks.holder) :kind))))
                   (assert.are.equal :none (. (tasks.holder) :kind))))
-            (it "spawn-held holds from creation and releases when the body finishes"
+            (it "spawn-holder holds from creation and releases when the body finishes"
                 (fn []
-                  (let [(co hid n) (tasks.spawn-held :turn
-                                                     (fn []
-                                                       (coroutine.yield)
-                                                       :ok))]
+                  (let [(co hid n) (tasks.spawn-holder :turn
+                                                       (fn []
+                                                         (coroutine.yield)
+                                                         :ok))]
                     (assert.are.equal 1 n)
                     (assert.are.equal hid (. (tasks.holder) :hid))
                     (assert.are.equal :turn (. (tasks.holder) :kind))
@@ -401,25 +414,26 @@
                     (coroutine.resume co)
                     (assert.are.equal :dead (coroutine.status co))
                     (assert.are.equal :none (. (tasks.holder) :kind)))))
-            (it "spawn-held releases when the body errors inside a resume"
+            (it "spawn-holder releases when the body errors inside a resume"
                 (fn []
-                  (let [(co _) (tasks.spawn-held :turn
-                                                 (fn []
-                                                   (coroutine.yield)
-                                                   (error "crash")))]
+                  (let [(co _) (tasks.spawn-holder :turn
+                                                   (fn []
+                                                     (coroutine.yield)
+                                                     (error "crash")))]
                     (coroutine.resume co)
                     (let [(ok? _) (coroutine.resume co)]
                       (assert.is_false ok?))
                     (assert.are.equal :none (. (tasks.holder) :kind)))))
             (it "abandonment: a dropped, never-finished coroutine is released by release!"
                 (fn []
-                  (let [(_co hid) (tasks.spawn-held :exclusive
-                                                    #(coroutine.yield))]
+                  (let [(_co hid) (tasks.spawn-holder :exclusive
+                                                      #(coroutine.yield))]
                     (assert.are.equal :exclusive (. (tasks.holder) :kind))
                     (tasks.release! hid)
                     (assert.are.equal :none (. (tasks.holder) :kind))
                     ;; the abandoned body's stale release cannot touch a newer holder
-                    (let [(co2 hid2) (tasks.spawn-held :turn #(coroutine.yield))]
+                    (let [(co2 hid2) (tasks.spawn-holder :turn
+                                                         #(coroutine.yield))]
                       (tasks.release! hid)
                       (assert.are.equal hid2 (. (tasks.holder) :hid))
                       (coroutine.resume co2)
@@ -427,7 +441,8 @@
                       (assert.are.equal :none (. (tasks.holder) :kind))))))
             (it "abandonment across /reload: a re-required tasks module still releases"
                 (fn []
-                  (let [(co _) (tasks.spawn-held :exclusive #(coroutine.yield))]
+                  (let [(co _) (tasks.spawn-holder :exclusive
+                                                   #(coroutine.yield))]
                     (coroutine.resume co)
                     (tset package.loaded :fen.core.tasks nil)
                     (let [fresh (require :fen.core.tasks)]
@@ -437,12 +452,12 @@
                     (tset package.loaded :fen.core.tasks tasks))))
             (it "take! returns texts and tagged items"
                 (fn []
-                  (tasks.with-holder :turn
-                    (fn []
-                      (tasks.offer! "s" {:tag 4})
-                      (let [(ts items) (tasks.take! :steering)]
-                        (assert.are.same ["s"] ts)
-                        (assert.are.equal 4 (. items 1 :tag)))))))))
+                  (hold-run :turn
+                            (fn []
+                              (tasks.offer! "s" {:tag 4})
+                              (let [(ts items) (tasks.take! :steering)]
+                                (assert.are.same ["s"] ts)
+                                (assert.are.equal 4 (. items 1 :tag)))))))))
 
 (describe "fen.core.tasks deprecated shims (closures from a872c57 after /reload)"
           (fn []
@@ -478,10 +493,55 @@
                     (events.unregister-by-owner :shim-test)
                     (assert.are.equal :none (. (tasks.holder) :kind))
                     (assert.is_true (<= (length infos) 1)))
-                  (tasks.spawn-held :turn #(coroutine.yield))
+                  (tasks.spawn-holder :turn #(coroutine.yield))
                   (tasks.offer! "unread")
                   (tasks.turn-end! 7)
                   (assert.are.equal :turn (. (tasks.holder) :kind)
                                     "wrong turn: no-op")
                   (assert.are.same ["unread"] (tasks.turn-end! 1))
                   (assert.are.equal :none (. (tasks.holder) :kind))))))
+
+(describe "fen.core.tasks cancel fenced on the holder id"
+          (fn []
+            (before_each (fn [] (tasks.reset!)))
+            (after_each (fn [] (tasks.reset!)))
+            (it "a Ctrl-C read for turn N lands after N released: turn N+1 is not cancelled"
+                (fn []
+                  (let [(co1 hid1) (tasks.spawn-holder :turn #(coroutine.yield))]
+                    ;; the keypress reads hid1 ...
+                    (let [pressed-for (. (tasks.holder) :hid)]
+                      ;; ... turn N releases and turn N+1 starts first
+                      (coroutine.resume co1)
+                      (coroutine.resume co1)
+                      (let [(_co2 hid2) (tasks.spawn-holder :turn
+                                                            #(coroutine.yield))]
+                        (assert.is_false (tasks.cancel! pressed-for))
+                        (assert.is_false (tasks.cancel-requested? hid2))
+                        (assert.is_false (. (tasks.holder) :cancel?))
+                        (assert.are.equal hid1 pressed-for))))))
+            (it "a Ctrl-C meant for an exclusive job does not cancel the following turn"
+                (fn []
+                  (let [(co hid) (tasks.spawn-holder :exclusive
+                                                     #(coroutine.yield))]
+                    (coroutine.resume co)
+                    (coroutine.resume co)
+                    (tasks.offer! "next")
+                    (let [(_item hid2) (tasks.next-start!)]
+                      (assert.is_false (tasks.cancel! hid))
+                      (assert.is_false (tasks.cancel-requested? hid2))))))
+            (it "cancel! arms the current turn or exclusive job; a stale hid is a no-op"
+                (fn []
+                  (assert.is_false (tasks.cancel! 0) "nothing holds")
+                  (let [(_ hid) (tasks.spawn-holder :exclusive
+                                                    #(coroutine.yield))]
+                    (assert.is_false (tasks.cancel! (+ hid 1)))
+                    (assert.is_true (tasks.cancel-current!))
+                    (assert.is_true (tasks.cancel-requested? hid))
+                    (tasks.release! hid)
+                    (assert.is_false (tasks.cancel-requested? hid)))))
+            (it "maps a pre-holder closure's state flag onto cancel! of the polling holder"
+                (fn []
+                  (let [(_ hid) (tasks.spawn-holder :turn #(coroutine.yield))
+                        st {:cancel-requested? true}]
+                    (assert.is_true (tasks.cancel-requested? hid st))
+                    (assert.is_nil st.cancel-requested?))))))

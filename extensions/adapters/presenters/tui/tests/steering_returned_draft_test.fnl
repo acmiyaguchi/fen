@@ -53,7 +53,7 @@
             (after_each (fn [] (tasks.reset!) (test-api.reset!)))
             (it "puts unread steering back in front of the current draft"
                 (fn []
-                  (let [(_ hid) (tasks.spawn-held :turn #(coroutine.yield))]
+                  (let [(_ hid) (tasks.spawn-holder :turn #(coroutine.yield))]
                     (type-text! "fix the tests too")
                     (press-enter!)
                     (assert.are.equal 1 (. (tasks.info) :steering-queued))
@@ -71,7 +71,7 @@
                                                    1 true)))))
             (it "leaves the draft alone when the turn read every line"
                 (fn []
-                  (let [(_ hid) (tasks.spawn-held :turn #(coroutine.yield))]
+                  (let [(_ hid) (tasks.spawn-holder :turn #(coroutine.yield))]
                     (type-text! "steer")
                     (press-enter!)
                     (assert.are.same ["steer"] (tasks.take! :steering))

@@ -8,6 +8,12 @@
 (local events (require :fen.core.extensions.events))
 (local rpc (require :fen.extensions.rpc))
 
+(fn hold-run [kind f]
+  "Hold the session with spawn-holder and run f to completion: true and f's
+   results, false and the error, or false and the refusal."
+  (let [(co why) (tasks.spawn-holder kind f)]
+    (if co (coroutine.resume co) (values false why))))
+
 (fn make-ch []
   (let [lines []]
     {:run "run-1"
@@ -32,12 +38,12 @@
                           (tasks.reset!)))
             (it "names a released turn's unread steering by ref"
                 (fn []
-                  (tasks.with-holder :turn
-                    (fn []
-                      (tasks.offer! "a" {:tag 4 :turn 1})
-                      (tasks.offer! "b" {:tag 5 :turn 1})
-                      (let [(_ items) (tasks.take! :steering)]
-                        (assert.are.equal 4 (. items 1 :tag)))))
+                  (hold-run :turn
+                            (fn []
+                              (tasks.offer! "a" {:tag 4 :turn 1})
+                              (tasks.offer! "b" {:tag 5 :turn 1})
+                              (let [(_ items) (tasks.take! :steering)]
+                                (assert.are.equal 4 (. items 1 :tag)))))
                   (let [out (infos ch)]
                     (assert.are.equal 1 (length out))
                     (assert.is_truthy (string.find (. out 1) "\"refs\":[5]" 1

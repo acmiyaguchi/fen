@@ -236,7 +236,8 @@
         info (steering.queue-info)]
     {:available? (not= st nil)
      :busy? (or (?. st :busy?) false)
-     :cancel-requested? (or (?. st :cancel-requested?) false)
+     :cancel-requested? (= true (. ((. (require :fen.core.tasks) :holder))
+                                   :cancel?))
      :steering-count info.steering-queued
      :follow-up-count info.follow-up-queued
      :steering-mode info.steering-mode

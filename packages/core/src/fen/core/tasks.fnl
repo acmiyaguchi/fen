@@ -14,7 +14,7 @@
 ;; advances `fen.core.tasks.state.machine` and turns event-shaped outputs into
 ;; bus events. The public verbs below are thin wrappers over `dispatch!`.
 ;;
-;; `with-holder` (and its coroutine form `spawn-held`) is the only way to hold
+;; `spawn-holder` is the only way to hold
 ;; the session; `next-start!` is the only way a turn starts from queued input.
 
 (local state (require :fen.core.tasks.state))
@@ -122,7 +122,7 @@
 
 (local STEPS {})
 
-;; (with-holder kind f), acquire half. Never replaces a holder; a pending turn
+;; (spawn-holder kind f), acquire half. Never replaces a holder; a pending turn
 ;; start has priority over an exclusive holder.
 (fn STEPS.acquire [m input outs]
   (let [kind input.kind]
@@ -274,10 +274,12 @@
     (when (and admitted item (= item.seq admitted.seq))
       (set admitted.consumed? true))))
 
+;; cancel! hid (cancelHolder): arms only the holder that is still holder hid,
+;; turn or exclusive; release clears it, so a stale keypress is a no-op.
 (fn STEPS.cancel [m input outs]
-  (let [ok? (and (= m.kind :turn) (= input.turn m.n))]
+  (let [ok? (and (busy? m) (= input.hid m.hid))]
     (when ok? (set m.cancel? true))
-    (table.insert outs {:type :cancel :accepted? ok? :turn m.n})))
+    (table.insert outs {:type :cancel :accepted? ok? :hid m.hid})))
 
 (fn STEPS.clear [m input outs]
   (let [kind (canonical-queue input.queue)
@@ -361,7 +363,7 @@
 ;; @doc fen.core.tasks.holder
 ;; kind: function
 ;; signature: (holder) -> {:kind :none|:turn|:exclusive :n n :hid n :cancel? bool}
-;; summary: Who holds the session now, the current (or last) turn number, the holder id release! fences on, and whether cancel! armed the running turn.
+;; summary: Who holds the session now, the current (or last) turn number, the holder id release! fences on, and whether cancel! armed it.
 ;; tags: tasks turn
 (fn M.holder []
   (let [m (live)]
@@ -370,7 +372,7 @@
 ;; @doc fen.core.tasks.release!
 ;; kind: function
 ;; signature: (release! hid) -> [text]|nil
-;; summary: Release holder hid (fenced: a no-op unless hid still holds). with-holder calls it on every exit; code that drops a held coroutine without resuming it to completion calls it too. Returns the handed-back steer lines, also emitted as :steering-returned.
+;; summary: Release holder hid (fenced: a no-op unless hid still holds). spawn-holder bodies call it on every exit; code that drops a held coroutine without resuming it to completion calls it too. Returns the handed-back steer lines, also emitted as :steering-returned.
 ;; tags: tasks turn
 (fn M.release! [hid]
   (let [out (find-output (M.dispatch! {:type :release : hid}) :released)]
@@ -397,23 +399,12 @@
         (table.unpack result 2 result.n)
         (error (. result 2) 0))))
 
-;; @doc fen.core.tasks.with-holder
+;; @doc fen.core.tasks.spawn-holder
 ;; kind: function
-;; signature: (with-holder kind f) -> true ...|false reason
-;; summary: Hold the session as :turn or :exclusive, run f, and release on every exit (return, error, cancel). Never replaces a holder; :exclusive is refused while a queued turn start is pending. Returns true and f's results, or false and the refusal; f's errors propagate after release.
+;; signature: (spawn-holder kind f) -> co hid n|nil reason
+;; summary: The only acquire: hold the session as :turn or :exclusive now (never replacing a holder; refused while a queued turn start is pending) and return a coroutine whose body runs f and releases on every exit (return, error, cancel); f's errors propagate after release. A caller that drops the coroutine without resuming it to completion must call (release! hid).
 ;; tags: tasks turn
-(fn M.with-holder [kind f]
-  (let [(hid why) (acquire! kind)]
-    (if hid
-        (values true (run-held hid f))
-        (values false why))))
-
-;; @doc fen.core.tasks.spawn-held
-;; kind: function
-;; signature: (spawn-held kind f) -> co hid n|nil reason
-;; summary: The coroutine form of with-holder: hold the session now and return a coroutine whose body runs f and releases on every exit. A caller that drops the coroutine without resuming it to completion must call (release! hid).
-;; tags: tasks turn
-(fn M.spawn-held [kind f]
+(fn M.spawn-holder [kind f]
   (let [(hid n-or-why) (acquire! kind)]
     (if hid
         (values (coroutines.create (fn [...] (run-held hid f ...))) hid
@@ -475,12 +466,12 @@
 ;; @doc fen.core.tasks.spawn-next
 ;; kind: function
 ;; signature: (spawn-next make-body) -> co item n hid|nil
-;; summary: next-start! plus the turn coroutine: (make-body item n) returns the body, run under the turn holder and released on every exit.
+;; summary: next-start! plus the turn coroutine: (make-body item n hid) returns the body, run under the turn holder and released on every exit.
 ;; tags: tasks steering runtime
 (fn M.spawn-next [make-body]
   (let [(item hid n) (M.next-start!)]
     (when item
-      (values (held-coroutine hid (make-body item n)) item n hid))))
+      (values (held-coroutine hid (make-body item n hid)) item n hid))))
 
 ;; @doc fen.core.tasks.offer-start!
 ;; kind: function
@@ -501,7 +492,8 @@
          :item started.item
          :turn started.turn
          :hid started.hid
-         :co (held-coroutine started.hid (make-body started.item started.turn))}
+         :co (held-coroutine started.hid
+                             (make-body started.item started.turn started.hid))}
         admitted
         {:ok true :started? false :queue admitted.queue :seq admitted.seq}
         {:ok false
@@ -561,20 +553,31 @@
 
 ;; @doc fen.core.tasks.cancel!
 ;; kind: function
-;; signature: (cancel! n) -> ok?
-;; summary: Arm cancellation of turn n; fenced, so it does nothing unless turn n holds the session.
+;; signature: (cancel! hid) -> ok?
+;; summary: Arm cancellation of holder hid (a turn or an exclusive job); fenced, so it does nothing unless hid still holds the session. Cancel entry points read (holder).hid when the request is made.
 ;; tags: tasks turn
-(fn M.cancel! [n]
-  (?. (find-output (M.dispatch! {:type :cancel :turn n}) :cancel) :accepted?))
+(fn M.cancel! [hid]
+  (?. (find-output (M.dispatch! {:type :cancel : hid}) :cancel) :accepted?))
+
+;; @doc fen.core.tasks.cancel-current!
+;; kind: function
+;; signature: (cancel-current!) -> ok?
+;; summary: Ctrl-C and other cancel controls: cancel! the holder that holds right now.
+;; tags: tasks turn
+(fn M.cancel-current! []
+  (M.cancel! (. (live) :hid)))
 
 ;; @doc fen.core.tasks.cancel-requested?
 ;; kind: function
-;; signature: (cancel-requested? n) -> bool
-;; summary: Whether cancel! armed turn n and it still holds the session.
+;; signature: (cancel-requested? hid ?state) -> bool
+;; summary: Whether cancel! armed holder hid and it still holds. ?state maps a pre-holder closure's state.cancel-requested? flag (a session reloaded from older code) onto cancel! of hid.
 ;; tags: tasks turn
-(fn M.cancel-requested? [n]
+(fn M.cancel-requested? [hid ?state]
+  (when (and ?state ?state.cancel-requested?)
+    (set ?state.cancel-requested? nil)
+    (M.cancel! hid))
   (let [m (live)]
-    (and (= m.kind :turn) (= m.n n) m.cancel?)))
+    (and (not= m.kind :none) (= m.hid hid) m.cancel?)))
 
 ;; @doc fen.core.tasks.clear!
 ;; kind: function

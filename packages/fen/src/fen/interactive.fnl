@@ -204,10 +204,11 @@
                    (tasks.attach! true))
         is-busy? (fn [] state.busy?)
         request-cancel (fn []
+                         ;; Fenced on the holder id read at the keypress: a
+                         ;; turn or job that already released is not replaced
+                         ;; by its successor as the target.
                          (when state.busy?
-                           (set state.cancel-requested? true)
-                           (let [h (tasks.holder)]
-                             (when (= h.kind :turn) (tasks.cancel! h.n)))))
+                           (tasks.cancel-current!)))
         on-submit (fn [line]
                     (if (= (string.sub line 1 1) "/")
                         (command-registry.dispatch line state)
@@ -245,7 +246,6 @@
                             (set state.turn-error value))
                         ;; Releases the holder if the body could not (fenced no-op otherwise).
                         (turn-submit.drop! state)
-                        (set state.cancel-requested? false)
                         (turn-lifecycle.emit-complete! state ok? value))))
                   ;; Reload requests stay queued until the turn coroutine is gone, so modules never swap during a stream or tool call.
                   (when (and (not state.busy?) (not state.turn))

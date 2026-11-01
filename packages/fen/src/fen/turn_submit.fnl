@@ -18,7 +18,6 @@
 
 (fn reset-turn-fields! [state]
   (set state.turn-id (+ (or state.turn-id 0) 1))
-  (set state.cancel-requested? false)
   (set state.turn-result nil)
   (set state.turn-error nil))
 
@@ -30,12 +29,13 @@
   "Body builder for a mailbox turn: the holder is already taken (atomically
    with the line, by `tasks.next-start!`/`offer-start!`); the body runs under
    it and releases on every exit."
-  (fn [item n]
+  (fn [item _n hid]
     (let [text (framed item.text)]
       (fn []
-        (agent-step state.agent text
-                    (fn []
-                      (or state.cancel-requested? (tasks.cancel-requested? n))))))))
+        ;; Fenced on this turn's holder id: a Ctrl-C meant for an earlier
+        ;; holder can never cancel this turn. Passing state maps a flag set by
+        ;; a pre-holder closure (a session /reloaded from older code).
+        (agent-step state.agent text #(tasks.cancel-requested? hid state))))))
 
 (fn adopt! [state co hid n item]
   (reset-turn-fields! state)
@@ -48,6 +48,8 @@
   "Side chat and headless session states: no mailbox and no holder."
   (let [text (framed text)]
     (reset-turn-fields! state)
+    ;; No holder here: these states keep their own cancel flag.
+    (set state.cancel-requested? false)
     (set state.turn
          (coroutines.create (fn []
                               (agent-step state.agent text

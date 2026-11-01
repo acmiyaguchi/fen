@@ -22,7 +22,7 @@
 
 (fn with-steering-stub [f]
   (tasks.reset!)
-  (tasks.spawn-held :turn #(coroutine.yield))
+  (tasks.spawn-holder :turn #(coroutine.yield))
   (let [(ok? err) (pcall f)]
     (let [snap (tasks.snapshot)]
       (tasks.reset!)
@@ -238,7 +238,7 @@
                       (assert.are.equal "mine" (. st.agent.seen 1 :text))))))
             (it "refuses to start while another holder has the session"
                 (fn []
-                  (tasks.spawn-held :exclusive #(coroutine.yield))
+                  (tasks.spawn-holder :exclusive #(coroutine.yield))
                   (let [st (make-state false true)
                         result (turn-submit.start! st "go" agent-step)]
                     (assert.is_false result.ok)
@@ -281,8 +281,8 @@
                   (let [st (make-state false true)]
                     (turn-submit.start! st "go" agent-step)
                     (coroutine.resume st.turn)
-                    (let [(_ hid) (tasks.spawn-held :exclusive
-                                                    #(coroutine.yield))]
+                    (let [(_ hid) (tasks.spawn-holder :exclusive
+                                                      #(coroutine.yield))]
                       (turn-submit.drop! st)
                       (assert.are.equal hid (. (tasks.holder) :hid)
                                         "a newer holder survives the stale drop")))))))

@@ -87,4 +87,10 @@ module witnesses {
       .then(H::doOffer(-1, 2, false)).then(H::doStartTurn)
       .expect(H::s.why.get(2) == "started" and H::s.followUp == Set(1)
               and H::s.n == 2 and H::allInvariants)
+
+  // A cancel aimed at /reload (holder 1) does not reach the turn that follows it.
+  run reachCancelExclusiveFencedTest =
+    H::init.then(H::doStartExclusive).then(H::doBodyExit(false))
+      .then(H::doOffer(-1, 0, false)).then(H::doStartTurn).then(H::doCancel(1))
+      .expect(not(H::s.cancel) and H::s.hid == 2 and H::allInvariants)
 }

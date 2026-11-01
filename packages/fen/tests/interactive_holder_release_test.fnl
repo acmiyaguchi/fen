@@ -1,6 +1,6 @@
 ;; Abandonment: when the presenter returns (quit, rpc exit) or crashes while a
 ;; turn or exclusive coroutine is still suspended, nothing resumes that
-;; coroutine to completion, so with-holder's xpcall never runs. The runtime's
+;; coroutine to completion, so spawn-holder's xpcall never runs. The runtime's
 ;; shutdown must release the session holder itself.
 
 (local tasks (require :fen.core.tasks))
@@ -77,8 +77,8 @@
             (it "presenter crash while an exclusive coroutine is suspended"
                 (fn []
                   (let [interactive (stub! (fn [ctx]
-                                             (let [(co hid) (tasks.spawn-held :exclusive
-                                                                              #(coroutine.yield))]
+                                             (let [(co hid) (tasks.spawn-holder :exclusive
+                                                                                #(coroutine.yield))]
                                                (set ctx.state.turn co)
                                                (set ctx.state.holder-id hid)
                                                (set ctx.state.busy? true))

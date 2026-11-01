@@ -92,7 +92,7 @@ A `version-mismatch` gets no ack: the child exits `failed`.
 
 A turn is one agent step; `turn-started` and `turn-complete` bracket it, and `turn` counts from 1 per run.
 `turn-complete` carries the last assistant stop reason (`aborted` for an interrupted turn) and the turn's summed usage.
-`finalize` interrupts a running turn at its next cooperative yield, pairs any unexecuted tool calls with cancelled results, then runs one turn with `{:tool-choice :none}` using the `note` (or a default instruction) as the user message.
+`finalize` (and `cancel`) interrupts the child's current holder (read when the control is applied, so it never reaches a later turn) at its next cooperative yield, pairs any unexecuted tool calls with cancelled results, then runs one turn with `{:tool-choice :none}` using the `note` (or a default instruction) as the user message.
 `close` in `running` lets the current turn finish.
 `result` is emitted exactly once, immediately before `exit done`, from the run's last assistant message; its `usage` sums the whole run.
 A `final-text` too long for one line is written whole to a new private temp file named by `final-text-path`, then cut at a UTF-8 boundary with `truncated? true`.

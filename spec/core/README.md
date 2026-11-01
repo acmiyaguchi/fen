@@ -83,7 +83,7 @@ Inherited invariants (`absInv` and `reqAbsInv`): cancel arms and requests are is
 ### proofs/holder
 
 `tasks/proofs/holder/model.qnt` models the session **holder** and its mailbox in the vocabulary of the `fen.core.tasks` API, revised after design review (gpt-6.1-sol, Fable); the code implements it.
-Code-facing differences: drain modes are spelled `:one-at-a-time`/`:all`; `spawn-held` is the coroutine form of `with-holder` (acquired at creation; code that drops the coroutine unfinished calls the fenced `release!`); `/compact` is also an exclusive holder; queue kinds in `take!`/`clear!` are `:steering`/`:follow-up`. `next-start!` is `startTurn` (pick and hold in one step); `offer-start!` is an offer followed by `startTurn` in one dispatch; a plain turn acquire outside `startTurn` exists only when no start is pending (tests use it). Deprecated `idle-tick!`/`queue!`/`steer-or-follow-up!`/`turn-start!`/`turn-end!` shims serve closures from the pre-holder runtime after `/reload`.
+Code-facing differences: drain modes are spelled `:one-at-a-time`/`:all`; `with-holder` is realized only as `spawn-holder` (acquired at creation, body under `xpcall`; code that drops the coroutine unfinished calls the fenced `release!`); `cancel!`/`cancel-requested?` take the holder id (`cancelHolder`), with `cancel-current!` for Ctrl-C; a pre-holder closure's `state.cancel-requested?` is mapped onto `cancel!` of the polling holder; `/compact` is also an exclusive holder; queue kinds in `take!`/`clear!` are `:steering`/`:follow-up`. `next-start!` is `startTurn` (pick and hold in one step); `offer-start!` is an offer followed by `startTurn` in one dispatch; a plain turn acquire outside `startTurn` exists only when no start is pending (tests use it). Deprecated `idle-tick!`/`queue!`/`steer-or-follow-up!`/`turn-start!`/`turn-end!` shims serve closures from the pre-holder runtime after `/reload`.
 
 | Term | Meaning |
 | --- | --- |
@@ -95,10 +95,10 @@ Code-facing differences: drain modes are spelled `:one-at-a-time`/`:all`; `spawn
 | offer / take | queue input (never starts a turn) / the agent drains lines at a boundary |
 | returned | a line leaving unread, with its reason (`started`, `released`, `refused`, `cleared`) and the turn it was for |
 
-API: `(with-holder kind f)` is the only way to hold the session; it releases on every exit (return, error, cancel) under `xpcall`, so a holder can never leak and is never replaced.
+API: `(spawn-holder kind f)` is the only way to hold the session; every acquire takes a fresh holder id `hid`; it releases on every exit (return, error, cancel) under `xpcall`, so a holder can never leak and is never replaced.
 `(next-start!)` is the single start path: the driver's idle tick takes the head follow-up an idle offer asked for and runs `(with-holder :turn ...)` with it.
 `(offer! text {:tag :turn :follow-up?})` routes: no `:turn` steers the running turn, waits behind an exclusive holder, or asks for a start when idle; `:turn 0` means start only if idle; `:turn t` steers only turn `t`.
-`(cancel! n)` is fenced the same way.
+`(cancel! hid)` is fenced on the holder id, for turns and exclusive jobs alike: Ctrl-C reads the holder id at the keypress, so a late press cannot cancel the next holder.
 Dispositions (`why`, `whyN` per seq) are part of the abstract `Session`, so a refinement (serve) must preserve exactly-once, correctly attributed returns.
 
 | Invariant | Meaning |
@@ -109,7 +109,7 @@ Dispositions (`why`, `whyN` per seq) are part of the abstract `Session`, so a re
 | `startedOpensItsTurnInv` | a started line opened a real turn number |
 | `localOfferNeverRefusedInv` | an offer without `:turn` is never refused (it waits behind an exclusive holder) |
 | `followUpOrderInv` | follow-ups are taken only after the turn's steer lines |
-| `cancelFencedInv` | a cancel never arms a turn other than its target |
+| `cancelFencedInv` | a cancel never arms a holder other than its target (turn or exclusive) |
 
 **Drain modes.** `set-mode!` sets `:one` or `:all` per queue; `take!` drains exactly what the mode says (`takeByModeInv`), and modes persist across turns, releases, and clears until changed (`modesPersistInv`).
 
@@ -119,7 +119,7 @@ Dispositions (`why`, `whyN` per seq) are part of the abstract `Session`, so a re
 
 | layer | dir | what | proof |
 |---|---|---|---|
-| L0 lease | `proofs/lease` | holder kind, turn number, body, fenced cancel, start request | inductive, ~3 s |
+| L0 lease | `proofs/lease` | holder kind, turn number, holder id, body, cancel fenced on the holder id, start request | inductive, ~3 s |
 | L1 line | `proofs/line` | one representative line against the lease; other lines abstracted to steerAhead / otherSteer / followAhead | inductive over the generator (~80 s) and over every step `lineNext` allows (`lineSpec@stepRel`, ~20 s) |
 | L2 holder | `proofs/holder` | the full mailbox | `inductiveInv` (~25 s); refines L0 (`refinesLeaseInv`, ~25 s) and L1 for every seq (`refinesInv`, ~40 s) |
 | L3 code | `fen.core.tasks` | the pure `step` | trace replay of `holderSpec` (`conform.sh`: state, dispositions, forbidden-transition probes) |

@@ -1,4 +1,4 @@
 # file	sed edit	main	invariant	description
 model.qnt	s|  action doBodyExit: bool = all { body, go(leaseRelease(l), true) }|  action doBodyExit: bool = all { body, go({ ...leaseRelease(l), kind: kind }, true) }|	leaseSpec	releasedInTimeInv	the body exits but the holder stays (leak): held past the bound
-model.qnt	s|    if (a.kind == "turn" and m == a.n) { ...a, cancel: true } else a|    if (a.kind == "turn") { ...a, cancel: true } else a|	leaseSpec	cancelFencedInv	a cancel for an old turn cancels the running one
+model.qnt	s|    if (a.kind != "none" and h == a.hid) { ...a, cancel: true } else a|    if (a.kind != "none") { ...a, cancel: true } else a|	leaseSpec	cancelFencedInv	a cancel for an old holder cancels the current one
 model.qnt	s|  pure def canStart(a: Lease): bool = a.startReq and a.kind == "none"|  pure def canStart(a: Lease): bool = not(a.startReq) and a.kind == "none"|	leaseSpec	startedInTimeInv	the tick cannot start a requested turn (starvation)

@@ -482,6 +482,7 @@ digraph fen_modules {
   "fen.extensions.agent_state" -> "fen.util.json" [label="require"];
   "fen.extensions.agent_state.tool" -> "fen.core.agent" [label="require"];
   "fen.extensions.agent_state.tool" -> "fen.core.settings" [color="gray50", label="late", style="dashed"];
+  "fen.extensions.agent_state.tool" -> "fen.core.tasks" [color="gray50", label="late", style="dashed"];
   "fen.extensions.agent_state.tool" -> "fen.core.types" [label="require"];
   "fen.extensions.agent_state.tool" -> "fen.extensions.status.util" [label="require"];
   "fen.extensions.agent_state.tool" -> "fen.extensions.steering.service" [label="require"];
@@ -582,6 +583,7 @@ digraph fen_modules {
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.util.args" [label="require"];
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.util.panel" [label="require"];
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.util.tokens" [label="require"];
+  "fen.extensions.goal" -> "fen.core.tasks" [color="gray50", label="late", style="dashed"];
   "fen.extensions.goal" -> "fen.core.types" [label="require"];
   "fen.extensions.goal" -> "fen.extensions.goal.state" [label="require"];
   "fen.extensions.goal" -> "fen.util.args" [label="require"];
@@ -722,6 +724,7 @@ digraph fen_modules {
   "fen.extensions.provider_shared.streaming" -> "fen.util.log" [label="require"];
   "fen.extensions.provider_shared.streaming" -> "fen.util.sse" [label="require"];
   "fen.extensions.queue" -> "fen.extensions.queue.commands.queue" [label="require"];
+  "fen.extensions.queue.commands.queue" -> "fen.core.tasks" [color="gray50", label="late", style="dashed"];
   "fen.extensions.queue.commands.queue" -> "fen.core.types" [label="require"];
   "fen.extensions.queue.commands.queue" -> "fen.extensions.queue.state.queue" [label="require"];
   "fen.extensions.queue.commands.queue" -> "fen.extensions.steering.service" [label="require"];

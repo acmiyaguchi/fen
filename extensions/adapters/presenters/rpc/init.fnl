@@ -229,7 +229,7 @@
 (fn interrupt-turn! [ch]
   ;; The step's cancel-fn fires at its next yield and pairs pending tool calls.
   (when ch.active
-    (set ch.state.cancel-requested? true)))
+    ((. (tasks) :cancel-current!))))
 
 (fn queue! [ch kind msg]
   ;; A steer names the active turn, so it can only reach that turn.

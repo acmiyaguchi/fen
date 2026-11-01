@@ -623,15 +623,12 @@
                                       :wrap-tick (fn [state base]
                                                    (fn []
                                                      (if (and state.turn
-                                                              state.cancel-requested?)
+                                                              (. (tasks.holder)
+                                                                 :cancel?))
                                                          (do
                                                            (set state.turn-error
                                                                 "tool blew up")
-                                                           (set state.turn nil)
-                                                           (set state.busy?
-                                                                false)
-                                                           (set state.cancel-requested?
-                                                                false))
+                                                           (turn-submit.drop! state))
                                                          (base))))
                                       :script (fn [p]
                                                 (p.wait-type :ready)
@@ -747,10 +744,10 @@
                                                      (when (and (not started.done?)
                                                                 (not state.turn))
                                                        (set started.done? true)
-                                                       (let [(co hid) (tasks.spawn-held :exclusive
-                                                                                        (fn []
-                                                                                          (for [_ 1 6]
-                                                                                            (coroutine.yield))))]
+                                                       (let [(co hid) (tasks.spawn-holder :exclusive
+                                                                                          (fn []
+                                                                                            (for [_ 1 6]
+                                                                                              (coroutine.yield))))]
                                                          (set state.turn co)
                                                          (set state.holder-id
                                                               hid)

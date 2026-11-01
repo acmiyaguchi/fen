@@ -2,7 +2,7 @@
 ;; `holderSpec` are replayed through the real pure step, `fen.core.tasks.step`.
 ;; Each model action becomes the matching machine input(s); after every step
 ;; the code's holder kind, turn number, steer and follow-up seqs, start
-;; request and the line it starts first (firstUp), cancel flag, and drain modes must equal the model's, and every
+;; request and the line it starts first (firstUp), holder id (hid), cancel flag, and drain modes must equal the model's, and every
 ;; issued line's disposition (taken, started, released, refused, cleared) and
 ;; the turn it is attributed to must equal the model's `why`/`whyN`.
 ;; At every state the replay also probes transitions the model forbids there
@@ -126,7 +126,15 @@
                             :follow-up? (pick st :f)}))
           :doTakeSteer (run! {:type :take :queue :steering})
           :doTakeFollowUp (run! {:type :take :queue :follow-up})
-          :doCancel (run! {:type :cancel :turn (pick st :m)})
+          :doCancel (let [target (pick st :m)]
+                      ;; cancelHolder(m) fences on hid. A trace from a model
+                      ;; without hid (cancelTurn(m) on the turn number) maps
+                      ;; to the current hid when turn m holds, else a stale one.
+                      (run! {:type :cancel
+                             :hid (if (not= nil st.hid) target
+                                      (and (= prev.kind :turn)
+                                           (= (int prev.n) target)) m.hid
+                                      -1)}))
           :doClearSteer (run! {:type :clear :queue :steering})
           :doClearFollowUp (run! {:type :clear :queue :follow-up})
           :doSetMode (run! {:type :set-mode
@@ -144,6 +152,7 @@
                          (int st.firstUp)
                          (if m.first-up (- m.first-up 1) -1)]
                         [:cancel st.cancel m.cancel?]
+                        [:hid (if (not= nil st.hid) (int st.hid) m.hid) m.hid]
                         [:steerMode (. MODE st.steerMode) m.modes.steering]
                         [:followMode (. MODE st.followMode) m.modes.follow-up]]
                 model-why (map-of st.why)

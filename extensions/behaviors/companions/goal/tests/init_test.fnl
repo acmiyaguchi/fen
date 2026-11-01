@@ -422,14 +422,21 @@
                 (fn []
                   (let [(_seen _submitted goal _api run-state) (fresh)]
                     (set run-state.turn-id nil)
+                    ((. (require :fen.core.tasks) :reset!))
                     (set run-state.submit-user-turn!
-                         (fn [_text _opts] {:ok true :started? true}))
+                         (fn [_text _opts]
+                           ((. (require :fen.core.tasks) :spawn-holder) :turn
+                                                                        #(coroutine.yield))
+                           {:ok true :started? true}))
                     (command-registry.dispatch "/goal implement feature"
                                                run-state)
                     (assert.are.equal :error goal._state.status)
                     (assert.are.equal "submitted turn has no correlation id"
                                       goal._state.last-error)
-                    (assert.is_true run-state.cancel-requested?)
+                    ;; the uncorrelated turn's holder is cancelled
+                    (assert.is_true (. ((. (require :fen.core.tasks) :holder))
+                                       :cancel?))
+                    ((. (require :fen.core.tasks) :reset!))
                     (assert.is_nil goal._state.active-turn-id))))
             (it "requires agent compaction before high-context goal work continues"
                 (fn []
@@ -669,9 +676,13 @@
                     (command-registry.dispatch "/goal --max-iterations 3 implement feature"
                                                run-state)
                     (set run-state.busy? true)
-                    (set run-state.cancel-requested? false)
+                    ((. (require :fen.core.tasks) :reset!))
+                    ((. (require :fen.core.tasks) :spawn-holder) :turn
+                                                                 #(coroutine.yield))
                     (command-registry.dispatch "/goal stop" run-state)
-                    (assert.is_true run-state.cancel-requested?)
+                    (assert.is_true (. ((. (require :fen.core.tasks) :holder))
+                                       :cancel?))
+                    ((. (require :fen.core.tasks) :reset!))
                     (assert.are.equal :stopped goal._state.status)
                     (assert.are.equal 1 (length submitted))
                     (assert.is_truthy (string.find (. (last-goal-decision seen)

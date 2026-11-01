@@ -189,7 +189,7 @@
                  :description "Cancel current turn and clear queues"
                  :handler (fn [_args state]
                             (when state.busy?
-                              (set state.cancel-requested? true))
+                              ((. (require :fen.core.tasks) :cancel-current!)))
                             (steering.clear-queues!)
                             (invalidate-cache!)
                             (api.emit {:type :info
@@ -209,8 +209,9 @@
                                 :steering-mode info.steering-mode
                                 :follow-up-mode info.follow-up-mode
                                 :busy? (or (?. rs :busy?) false)
-                                :cancel-requested? (or (?. rs
-                                                           :cancel-requested?)
-                                                       false)}))}))
+                                :cancel-requested? (= true
+                                                      (. ((. (require :fen.core.tasks)
+                                                             :holder))
+                                                         :cancel?))}))}))
 
 M

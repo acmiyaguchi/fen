@@ -10,7 +10,7 @@
   (test-api.reset!)
   (tasks.reset!)
   ;; Held, never resumed: the next reset! drops it.
-  (tasks.spawn-held :turn #(coroutine.yield)))
+  (tasks.spawn-holder :turn #(coroutine.yield)))
 
 (fn watch [type-key]
   (let [seen []]

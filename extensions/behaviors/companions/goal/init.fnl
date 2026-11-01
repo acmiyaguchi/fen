@@ -379,7 +379,7 @@
               (do
                 (set result.ok false)
                 (set result.error "submitted turn has no correlation id")
-                (set run-state.cancel-requested? true))))
+                ((. (require :fen.core.tasks) :cancel-current!)))))
         (set state.active-turn-id nil))
     (when (not result.ok)
       (set state.active-turn-id nil)
@@ -478,7 +478,7 @@
         ;; callbacks; cooperative cancellation stops an in-flight goal turn without
         ;; touching user-owned queue entries.
         (when cancel-active?
-          (set run-state.cancel-requested? true))
+          ((. (require :fen.core.tasks) :cancel-current!)))
         (set-status! api :stopped "stopped by user")
         (emit-decision! api :stop :stopped "stopped by user"
                         (if cancel-active?

@@ -717,6 +717,7 @@ digraph fen_modules_clustered {
   "fen.extensions.agent_state" -> "fen.util.json";
   "fen.extensions.agent_state.tool" -> "fen.core.agent";
   "fen.extensions.agent_state.tool" -> "fen.core.settings";
+  "fen.extensions.agent_state.tool" -> "fen.core.tasks";
   "fen.extensions.agent_state.tool" -> "fen.core.types";
   "fen.extensions.agent_state.tool" -> "fen.extensions.status.util";
   "fen.extensions.agent_state.tool" -> "fen.extensions.steering.service";
@@ -817,6 +818,7 @@ digraph fen_modules_clustered {
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.util.args";
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.util.panel";
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.util.tokens";
+  "fen.extensions.goal" -> "fen.core.tasks";
   "fen.extensions.goal" -> "fen.core.types";
   "fen.extensions.goal" -> "fen.extensions.goal.state";
   "fen.extensions.goal" -> "fen.util.args";
@@ -957,6 +959,7 @@ digraph fen_modules_clustered {
   "fen.extensions.provider_shared.streaming" -> "fen.util.log";
   "fen.extensions.provider_shared.streaming" -> "fen.util.sse";
   "fen.extensions.queue" -> "fen.extensions.queue.commands.queue";
+  "fen.extensions.queue.commands.queue" -> "fen.core.tasks";
   "fen.extensions.queue.commands.queue" -> "fen.core.types";
   "fen.extensions.queue.commands.queue" -> "fen.extensions.queue.state.queue";
   "fen.extensions.queue.commands.queue" -> "fen.extensions.steering.service";
