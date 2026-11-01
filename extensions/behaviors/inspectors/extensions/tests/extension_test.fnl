@@ -357,7 +357,7 @@
                     (assert.are.equal 0 provider-refresh.count)
                     (assert.are.equal 1 (length state.reload-requests))
                     (assert.are.equal "/reload-extension demo-ext"
-                                      ((. (require :fen.reload_request)
+                                      ((. (require :fen.core.reload_request)
                                           :command-line) (. state.reload-requests
                                                             1)))
                     (assert.are_not.equal replacement state.agent))))))

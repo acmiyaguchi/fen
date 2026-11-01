@@ -550,14 +550,14 @@ module tools {
   }
 
   // ================================================================ disp
-  // fen.tool_policy.policy -> agent.tools (the executable registry).
+  // fen.core.tool_policy.policy -> agent.tools (the executable registry).
   pure def registry(kind: str, names: Set[str]): Set[str] =
     if (kind == "none") TOOLS
     else if (kind == "notools") Set()
     else if (kind == "allow") TOOLS.intersect(names)
     else TOOLS.exclude(names)
 
-  // fen.tool_policy.narrow (side chat's read-only set).
+  // fen.core.tool_policy.narrow (side chat's read-only set).
   pure def narrow(cands: Set[str], kind: str, names: Set[str]): Set[str] =
     if (kind == "notools") Set()
     else if (kind == "allow") cands.intersect(names)

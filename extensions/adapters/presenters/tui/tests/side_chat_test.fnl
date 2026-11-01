@@ -8,7 +8,7 @@
 (local command-registry (require :fen.core.extensions.register.command))
 (local agent-mod (require :fen.core.agent))
 (local turn-submit (require :fen.turn_submit))
-(local tool-policy (require :fen.tool_policy))
+(local tool-policy (require :fen.core.tool_policy))
 (local original-step agent-mod.step)
 (local state (require :fen.extensions.tui.state))
 (local workspaces (require :fen.extensions.tui.workspaces))

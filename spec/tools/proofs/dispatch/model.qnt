@@ -7,7 +7,7 @@
 // whether the arguments validate; dispatch then runs policy -> hook ->
 // validate -> execute.
 //
-// Code: packages/fen/src/fen/tool_policy.fnl (policy, narrow),
+// Code: packages/core/src/fen/core/tool_policy.fnl (policy, narrow),
 // packages/core/src/fen/core/tools.fnl (execute, check-before-tool),
 // packages/core/src/fen/core/extensions/register/hook.fnl (run-before-tool),
 // extensions/adapters/presenters/tui/side_chat.fnl (safe-side-opts),
@@ -28,14 +28,14 @@ module dispatch {
   var parentAllowed: Set[str]
   var executed: bool
 
-  // fen.tool_policy.policy -> agent.tools (the executable registry).
+  // fen.core.tool_policy.policy -> agent.tools (the executable registry).
   pure def registry(k: str, names: Set[str]): Set[str] =
     if (k == "none") TOOLS
     else if (k == "notools") Set()
     else if (k == "allow") TOOLS.intersect(names)
     else TOOLS.exclude(names)
 
-  // fen.tool_policy.narrow (side chat's read-only set).
+  // fen.core.tool_policy.narrow (side chat's read-only set).
   pure def narrow(cands: Set[str], k: str, names: Set[str]): Set[str] =
     if (k == "notools") Set()
     else if (k == "allow") cands.intersect(names)

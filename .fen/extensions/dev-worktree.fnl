@@ -1,6 +1,6 @@
 ;; Repository-local maintainer command; it is intentionally not bundled.
 
-(local overlay (require :fen.util.dev_overlay))
+(local overlay (require :fen.core.extensions.dev_overlay))
 (local text (require :fen.util.text))
 
 (fn [api]

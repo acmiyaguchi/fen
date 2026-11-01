@@ -4,7 +4,7 @@
 (local parse-util (require :fen.cli_parse))
 (local json (require :fen.util.json))
 (local control (require :fen.session_control))
-(local tool-policy (require :fen.tool_policy))
+(local tool-policy (require :fen.core.tool_policy))
 (local prompt-source (require :fen.prompt_source))
 
 (local M {})

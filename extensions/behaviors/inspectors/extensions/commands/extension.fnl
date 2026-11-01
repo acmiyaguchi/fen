@@ -11,7 +11,7 @@
 (local args-util (require :fen.util.args))
 (local panel (require :fen.util.panel))
 (local types (require :fen.core.types))
-(local reload-request (require :fen.reload_request))
+(local reload-request (require :fen.core.reload_request))
 (local panel-state
        (require :fen.extensions.extensions_inspector.state.extensions))
 

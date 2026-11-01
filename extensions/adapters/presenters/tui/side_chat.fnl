@@ -4,7 +4,7 @@
 
 (local text (require :fen.util.text))
 (local usage-util (require :fen.util.usage))
-(local tool-policy (require :fen.tool_policy))
+(local tool-policy (require :fen.core.tool_policy))
 (local workspaces (require :fen.extensions.tui.workspaces))
 
 (local M {})
@@ -51,7 +51,7 @@
   "Clone options and force an isolated read-only tool policy.
 
   The read-only set never widens the parent restriction: it is intersected with
-  the parent's --tools/--denied-tools via the shared fen.tool_policy, and a
+  the parent's --tools/--denied-tools via the shared fen.core.tool_policy, and a
   --no-tools parent (or an empty intersection) yields a tool-less side chat
   rather than one that can still read and grep. A tool-less side chat also
   drops hosted web search, which rides only with agent tools."

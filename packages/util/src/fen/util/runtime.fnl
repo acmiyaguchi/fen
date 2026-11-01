@@ -33,7 +33,7 @@
         (pipe:close)
         (when (and out (not= out "") (path.file-exists? out)) out)))))
 
-;; @doc fen.runtime.binary-path
+;; @doc fen.util.runtime.binary-path
 ;; kind: function
 ;; signature: (binary-path) -> string|nil
 ;; summary: Best-effort absolute path to fen's own executable. Prefers argv[0]

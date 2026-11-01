@@ -27,14 +27,14 @@
       (table.insert out item))
     out))
 
-;; @doc fen.runtime_recovery.supported-scopes
+;; @doc fen.core.runtime_recovery.supported-scopes
 ;; kind: function
 ;; signature: (supported-scopes) -> [keyword]
 ;; summary: Return the small explicit set of runtime recovery scopes accepted by deferred reload requests.
 ;; tags: reload recovery runtime
 (fn M.supported-scopes [] [:registries])
 
-;; @doc fen.runtime_recovery.recover!
+;; @doc fen.core.runtime_recovery.recover!
 ;; kind: function
 ;; signature: (recover! scope) -> RecoveryResult|nil, error
 ;; summary: Reset only the declared registry buckets for scope and preserve session, UI table identity, logs, diagnostics, overlays, and other persistent extension state.

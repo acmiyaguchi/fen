@@ -1,7 +1,7 @@
 (local h (require :fen.testing))
 (local compiler (require :fen.core.extensions.loader.compiler))
 (local process (require :fen.util.process))
-(local runtime (require :fen.runtime))
+(local runtime (require :fen.util.runtime))
 
 (describe "loader.compiler one-shot batch"
           (fn []

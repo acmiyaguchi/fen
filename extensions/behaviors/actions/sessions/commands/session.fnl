@@ -10,8 +10,8 @@
 (local steering (require :fen.extensions.steering.service))
 (local log (require :fen.util.log))
 (local clock (require :fen.util.clock))
-(local reload-request (require :fen.reload_request))
-(local runtime-recovery (require :fen.runtime_recovery))
+(local reload-request (require :fen.core.reload_request))
+(local runtime-recovery (require :fen.core.runtime_recovery))
 
 (local M {})
 

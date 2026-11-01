@@ -17,11 +17,12 @@ dependencies = {
    "fennel >= 1.4",
    "fen-core >= 1-1",
    "fen-util >= 1-1",
+   "fen-ext-builtin-tools >= 1-1",
+   "fen-ext-tui >= 1-1",
 }
 
 test_dependencies = {
    "busted >= 2.0",
-   "fen-ext-builtin-tools >= 1-1",
 }
 
 build = {

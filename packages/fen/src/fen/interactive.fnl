@@ -16,8 +16,8 @@
 (local session-lifecycle (require :fen.session_lifecycle))
 (local turn-lifecycle (require :fen.turn_lifecycle))
 (local turn-submit (require :fen.turn_submit))
-(local tool-policy (require :fen.tool_policy))
-(local reload-request (require :fen.reload_request))
+(local tool-policy (require :fen.core.tool_policy))
+(local reload-request (require :fen.core.reload_request))
 
 (local M {})
 

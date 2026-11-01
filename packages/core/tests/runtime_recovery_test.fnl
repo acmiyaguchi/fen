@@ -1,8 +1,8 @@
 (local state (require :fen.core.extensions.state))
 (local test-api (require :fen.core.extensions.test_api))
-(local recovery (require :fen.runtime_recovery))
+(local recovery (require :fen.core.runtime_recovery))
 
-(describe "fen.runtime_recovery"
+(describe "fen.core.runtime_recovery"
           (fn []
             (before_each (fn [] (test-api.reset!)))
             (after_each (fn [] (test-api.reset!)))
