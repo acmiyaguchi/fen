@@ -4,7 +4,7 @@
 (local h (require :fen.testing))
 (local test-api (require :fen.core.extensions.test_api))
 (local tool-registry (require :fen.core.extensions.register.tool))
-(local reload-request (require :fen.reload_request))
+(local reload-request (require :fen.core.reload_request))
 (local tools (require :fen.core.tools))
 
 (local EXTENSION-MODULE :fen.extensions.extensions_inspector.commands.extension)

@@ -1,6 +1,6 @@
-(local reload-request (require :fen.reload_request))
+(local reload-request (require :fen.core.reload_request))
 
-(describe "fen.reload_request"
+(describe "fen.core.reload_request"
           (fn []
             (it "defers an agent request made during an active turn until the idle boundary"
                 (fn []

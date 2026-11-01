@@ -1,6 +1,6 @@
-(local runtime (require :fen.runtime))
+(local runtime (require :fen.util.runtime))
 
-(describe "fen.runtime"
+(describe "fen.util.runtime"
           (fn []
             (var saved-arg nil)
             (var saved-getenv nil)

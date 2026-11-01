@@ -81,7 +81,7 @@
                                 {:env (collect [_ k (ipairs env-names)]
                                         (values k (or (os.getenv k) false)))
                                  :process (. package.loaded :fen.util.process)
-                                 :runtime (. package.loaded :fen.runtime)
+                                 :runtime (. package.loaded :fen.util.runtime)
                                  :discover (. package.loaded
                                               :fen.extensions.subagent.discover)})
                            (process.setenv! :FEN_MOCK_SCRIPT
@@ -105,7 +105,7 @@
                                                      mock-extension " \"$@\"\n"))
                              (assert (os.execute (.. "chmod +x "
                                                      (testing.shellquote mock-runner))))
-                             (tset package.loaded :fen.runtime
+                             (tset package.loaded :fen.util.runtime
                                    {:binary-path (fn [] mock-runner)}))
                            (tset package.loaded
                                  :fen.extensions.subagent.discover
@@ -127,7 +127,7 @@
                           (each [k v (pairs saved.env)]
                             (process.setenv! k (or v nil)))
                           (tset package.loaded :fen.util.process saved.process)
-                          (tset package.loaded :fen.runtime saved.runtime)
+                          (tset package.loaded :fen.util.runtime saved.runtime)
                           (tset package.loaded
                                 :fen.extensions.subagent.discover saved.discover)
                           (tset package.loaded :fen.extensions.subagent nil)

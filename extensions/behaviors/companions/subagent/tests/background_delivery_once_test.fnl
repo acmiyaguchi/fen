@@ -130,7 +130,7 @@
 
 (local STUBBED [:fen.util.process
                 :fen.util.clock
-                :fen.runtime
+                :fen.util.runtime
                 :fen.extensions.subagent.discover])
 
 (fn install-mocks [script find-agent-fn]
@@ -144,7 +144,7 @@
   (tset package.loaded :fen.util.clock
         {:monotonic-ms (fn [] clock.now)
          :sleep-ms (fn [ms] (set clock.now (+ clock.now ms)))})
-  (tset package.loaded :fen.runtime {:binary-path (fn [] "/bin/true")})
+  (tset package.loaded :fen.util.runtime {:binary-path (fn [] "/bin/true")})
   (tset package.loaded :fen.extensions.subagent.discover
         {:find-agent find-agent-fn :list (fn [] []) :roots (fn [] [])}))
 

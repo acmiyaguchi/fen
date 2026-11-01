@@ -1,7 +1,7 @@
 (local h (require :fen.testing))
 (local state (require :fen.core.extensions.state))
 
-(describe "fen.util.dev_overlay"
+(describe "fen.core.extensions.dev_overlay"
           (fn []
             (var tmp nil)
             (var old-path nil)
@@ -39,7 +39,8 @@
                                  {:install! (fn [opts]
                                               (table.insert installs opts)
                                               :searcher)})
-                           (tset package.loaded :fen.util.dev_overlay nil)))
+                           (tset package.loaded
+                                 :fen.core.extensions.dev_overlay nil)))
             (after_each (fn []
                           (set package.path old-path)
                           (set package.cpath old-cpath)
@@ -47,11 +48,12 @@
                           (tset package.loaded :fen.util.process old-process)
                           (tset package.loaded :fen.util.flat_extensions
                                 old-flat)
-                          (tset package.loaded :fen.util.dev_overlay nil)
+                          (tset package.loaded :fen.core.extensions.dev_overlay
+                                nil)
                           (when tmp (h.rmtree tmp))))
             (it "rejects a directory missing the required fen source roots"
                 (fn []
-                  (let [overlay (require :fen.util.dev_overlay)
+                  (let [overlay (require :fen.core.extensions.dev_overlay)
                         (_roots err) (overlay.validate-worktree tmp)]
                     (assert.is_truthy (string.find err
                                                    "missing required directories"
@@ -65,7 +67,7 @@
                         two (.. tmp "/two")]
                     (make-worktree! one)
                     (make-worktree! two)
-                    (let [overlay (require :fen.util.dev_overlay)
+                    (let [overlay (require :fen.core.extensions.dev_overlay)
                           (first first-err) (overlay.switch-worktree! one)
                           (second second-err) (overlay.switch-worktree! two)]
                       (assert.is_nil first-err)

@@ -3,7 +3,7 @@
 
 (local process (require :fen.util.process))
 (local clock (require :fen.util.clock))
-(local runtime (require :fen.runtime))
+(local runtime (require :fen.util.runtime))
 
 (local M {})
 

@@ -10,7 +10,7 @@
 (local ext-api (require :fen.core.extensions.test_api))
 (local state (require :fen.extensions.tui.state))
 (local tui (require :fen.extensions.tui))
-(local reload-request (require :fen.reload_request))
+(local reload-request (require :fen.core.reload_request))
 
 (tui.register (ext-api.make-runtime-api :tui))
 

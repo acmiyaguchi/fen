@@ -9,7 +9,7 @@
         (= scope "extension") :extension
         nil)))
 
-;; @doc fen.reload_request.enqueue!
+;; @doc fen.core.reload_request.enqueue!
 ;; kind: function
 ;; signature: (enqueue! state request) -> ok?, request|error
 ;; summary: Validate and append an agent-requested reload, single-extension reload (scope :extension with a :name, #627), or explicitly scoped recovery request to one interactive run state's deferred queue.
@@ -65,7 +65,7 @@
               (values true request))
             (values false nil)))))
 
-;; @doc fen.reload_request.command-line
+;; @doc fen.core.reload_request.command-line
 ;; kind: function
 ;; signature: (command-line request) -> string
 ;; summary: Convert one validated deferred request into the ordinary reload command line used by the interactive command dispatcher.

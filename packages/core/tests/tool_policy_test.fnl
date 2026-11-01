@@ -1,4 +1,4 @@
-(local policy (require :fen.tool_policy))
+(local policy (require :fen.core.tool_policy))
 (local interactive (require :fen.interactive))
 (local ext-api (require :fen.core.extensions.test_api))
 (local tool-registry (require :fen.core.extensions.register.tool))
@@ -7,7 +7,7 @@
 
 (after_each (fn [] (ext-api.reset!)))
 
-(describe "fen.tool_policy"
+(describe "fen.core.tool_policy"
           (fn []
             (it "leaves the registry unchanged without a policy"
                 (fn []

@@ -76,7 +76,7 @@
 
 (fn ensure-tool-policy! []
   (when (not tool-policy)
-    (set tool-policy (require :fen.tool_policy)))
+    (set tool-policy (require :fen.core.tool_policy)))
   tool-policy)
 
 (local GOAL-DEFAULT-MAX-ITERATIONS 10)

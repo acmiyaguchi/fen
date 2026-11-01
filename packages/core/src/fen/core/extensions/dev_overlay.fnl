@@ -22,7 +22,7 @@
    {:label "packages/fen/src" :path (.. worktree "/packages/fen/src")}
    {:label "extensions" :path (.. worktree "/extensions")}])
 
-;; @doc fen.util.dev_overlay.validate-worktree
+;; @doc fen.core.extensions.dev_overlay.validate-worktree
 ;; kind: function
 ;; signature: (validate-worktree worktree) -> OverlayRoots|nil, string|nil
 ;; summary: Canonicalize a trusted development worktree and require its core, util, CLI, and extension source directories.
@@ -72,7 +72,7 @@
         (set fennel.macro-path
              (prepend all-prefix state.dev-overlay.fennel-macro-path))))))
 
-;; @doc fen.util.dev_overlay.switch-worktree!
+;; @doc fen.core.extensions.dev_overlay.switch-worktree!
 ;; kind: function
 ;; signature: (switch-worktree! worktree) -> OverlayRoots|nil, string|nil
 ;; summary: Validate and install a replaceable trusted worktree overlay for Lua/Fennel core modules and flat first-party extensions.
