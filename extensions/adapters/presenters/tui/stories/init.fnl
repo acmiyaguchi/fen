@@ -194,7 +194,7 @@
    :cols story.cols
    :rows story.rows})
 
-;; @doc fen.extensions.tui.stories.init.list
+;; @doc fen.extensions.tui.stories.list
 ;; kind: function
 ;; signature: (list) -> [StoryMetadata]
 ;; summary: List discoverable TUI story names, descriptions, tags, and default dimensions.
@@ -203,7 +203,7 @@
   (icollect [_ story (ipairs STORIES)]
     (story-metadata story)))
 
-;; @doc fen.extensions.tui.stories.init.find
+;; @doc fen.extensions.tui.stories.find
 ;; kind: function
 ;; signature: (find name) -> Story|nil
 ;; summary: Return a TUI story fixture by keyword/string name.

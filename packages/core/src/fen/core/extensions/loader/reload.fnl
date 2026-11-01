@@ -7,6 +7,7 @@
 (local compiler (require :fen.core.extensions.loader.compiler))
 (local clock (require :fen.util.clock))
 (local path (require :fen.util.path))
+(local {: core-reloadable?} (require :fen.core.extensions.loader.reloadable))
 
 (local M {})
 
@@ -183,22 +184,6 @@
               (?yield {:phase :extension-module :module modname})))
           (commit-observation! summary modname)))
     (values summary failure)))
-
-;; Persistent-identity modules must never reload in place; fen.extensions.* state
-;; modules are excluded by prefix below.
-(local NON-RELOADABLE {:fen.main true
-                       :fen.core.extensions.state true
-                       :fen.util.log_sink true
-                       :fen.util.file_mutex_state true})
-
-(fn core-reloadable? [modname]
-  (and (= (type modname) :string) (not= nil (string.find modname "^fen%."))
-       ;; Extension modules reload through their manifest's reload-modules.
-       (= nil (string.find modname "^fen%.extensions%."))
-       ;; *.backend selector modules are host injection points: reloading would clobber
-       ;; an injected backend with the on-disk default. Concrete backends.* still reload.
-       (= nil (string.find modname "%.backend$"))
-       (not (. NON-RELOADABLE modname))))
 
 (fn M.core-modules []
   "Derive the reloadable core set from package.loaded instead of a hand-kept
