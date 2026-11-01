@@ -355,7 +355,7 @@
 
 (fn evaluate-turn! [api st key]
   (when (not (and auto.evaluated (same-turn? auto.evaluated key)))
-    ;; lint-allow reload/state: per-instance auto-compaction bookkeeping; intentionally starts fresh on /reload
+    ;; lint-allow reload/state: a reset allows at most one re-evaluation per /reload; idle? blocks a second compaction while one runs
     (set auto.evaluated key)
     (let [(n threshold) (auto-position api st)]
       (if (not n)

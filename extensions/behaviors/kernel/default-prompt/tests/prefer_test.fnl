@@ -90,10 +90,11 @@
                         (it "keeps the pending candidate across a reload of the prefer module"
                             (fn []
                               (prefer.set-candidate! "use tabs")
-                              (let [reloaded (h.reload-module :fen.extensions.default_prompt.prefer)]
-                                (assert.are.equal "use tabs"
-                                                  (reloaded.get-candidate))
-                                (reloaded.set-candidate! nil))))
+                              (let [reloaded (h.reload-module :fen.extensions.default_prompt.prefer)
+                                    got (reloaded.get-candidate)]
+                                ;; Clear before asserting so a failure cannot leak into later tests.
+                                (reloaded.set-candidate! nil)
+                                (assert.are.equal "use tabs" got))))
                         (it "formats new file content with # Preferences header"
                             (fn []
                               (let [formatted (prefer.format-entry nil
