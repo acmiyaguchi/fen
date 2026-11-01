@@ -87,6 +87,13 @@
                                                   (prefer.resolve-project-file cwd)))))))
             (describe "formatting and file storage"
                       (fn []
+                        (it "keeps the pending candidate across a reload of the prefer module"
+                            (fn []
+                              (prefer.set-candidate! "use tabs")
+                              (let [reloaded (h.reload-module :fen.extensions.default_prompt.prefer)]
+                                (assert.are.equal "use tabs"
+                                                  (reloaded.get-candidate))
+                                (reloaded.set-candidate! nil))))
                         (it "formats new file content with # Preferences header"
                             (fn []
                               (let [formatted (prefer.format-entry nil

@@ -157,6 +157,7 @@
         cached
         (let [raw ((. entry.module :list))
               rec {:version version :raw raw :frozen (util.freeze raw)}]
+          ;; lint-allow reload/state: memo keyed by state.registry-version; refilled on demand after /reload
           (tset LIST-CACHE entry.list-kind rec)
           rec))))
 

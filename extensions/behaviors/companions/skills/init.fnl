@@ -136,6 +136,7 @@
         (set result bundled-materialized-root)
         (let [root (.. (data-dir) "/skills/bundled")
               specs (bundled.skills)]
+          ;; lint-allow reload/state: materialization memo; re-materializing after /reload is idempotent
           (set bundled-materialized? true)
           (if (not (mkdir-p root))
               (log.warn (.. "skills: cannot create bundled skills dir " root))
@@ -153,6 +154,7 @@
                                                                      spec.content))))))]
                 (if ok?
                     (do
+                      ;; lint-allow reload/state: materialization memo; re-materializing after /reload is idempotent
                       (set bundled-materialized-root root)
                       (set result root))
                     (log.warn (.. "skills: cannot materialize bundled skills: "

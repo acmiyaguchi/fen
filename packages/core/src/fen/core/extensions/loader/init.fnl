@@ -14,8 +14,6 @@
 
 (local M {})
 
-(local loaded {})
-
 (fn record-spec-status! [spec status extra]
   (let [rec {:manifest spec.manifest
              :status status
@@ -112,7 +110,7 @@
                         (contrib.commit! token)
                         (reload.commit-summary! changes)
                         (record-spec-status! spec :loaded {})
-                        (tset loaded spec.name spec)
+                        (tset state.loaded-specs spec.name spec)
                         (events.emit {:type :extension-loaded :name spec.name})
                         (values true nil changes))
                       (do
@@ -154,7 +152,7 @@
                         (contrib.commit! token)
                         (reload.commit-summary! changes)
                         (record-spec-status! spec :loaded {})
-                        (tset loaded spec.name spec)
+                        (tset state.loaded-specs spec.name spec)
                         (events.emit {:type :extension-loaded :name spec.name})
                         (values true nil changes))
                       (do
@@ -190,7 +188,7 @@
     (if (not enabled?)
         (do
           (register-registry.unregister-by-owner spec.name)
-          (tset loaded spec.name nil)
+          (tset state.loaded-specs spec.name nil)
           (record-spec-status! spec :disabled {})
           {:name spec.name
            :status :disabled
@@ -316,7 +314,7 @@
 ;; summary: Reload a previously loaded extension by name using its retained spec and interactive TUI reload mode.
 ;; tags: extensions loader reload
 (fn M.reload-extension! [name]
-  (let [spec (. loaded name)]
+  (let [spec (. state.loaded-specs name)]
     (if spec
         (let [opts {:interactive? true :presenter :tui :reload? true}]
           (let [(ok? err _changes) (load-spec! spec opts)]

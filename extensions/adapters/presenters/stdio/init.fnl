@@ -83,6 +83,7 @@
   (when stream-state.kind
     (io.stdout:write "\n")
     (io.stdout:flush)
+    ;; lint-allow reload/state: render mode of the open stream; /reload runs between turns, when none is open
     (set stream-state.kind nil)))
 
 (fn stream-delta! [kind prefix delta]

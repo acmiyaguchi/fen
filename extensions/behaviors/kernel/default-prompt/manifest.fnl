@@ -3,4 +3,5 @@
  :entry-module :fen.extensions.default_prompt
  :reload-modules [:fen.extensions.default_prompt.resources
                   :fen.extensions.default_prompt.prefer
-                  :fen.extensions.default_prompt]}
+                  :fen.extensions.default_prompt]
+ :reload-exclude [:fen.extensions.default_prompt.state]}

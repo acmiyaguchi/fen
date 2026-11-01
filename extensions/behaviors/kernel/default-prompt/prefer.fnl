@@ -10,7 +10,7 @@
 
 (local M {})
 
-(var candidate-preference nil)
+(local state (require :fen.extensions.default_prompt.state))
 
 (fn read-file [file-path]
   (let [(f _err) (io.open file-path :r)]
@@ -96,7 +96,7 @@
 ;; summary: Return the pending suggested preference candidate, if any.
 ;; tags: prompt prefer candidate
 (fn M.get-candidate []
-  candidate-preference)
+  state.candidate-preference)
 
 ;; @doc fen.extensions.default_prompt.prefer.set-candidate!
 ;; kind: function
@@ -104,14 +104,14 @@
 ;; summary: Set or clear the pending suggested preference candidate.
 ;; tags: prompt prefer candidate
 (fn M.set-candidate! [?text]
-  (set candidate-preference ?text)
+  (set state.candidate-preference ?text)
   nil)
 
 (fn execute! [scope raw-text api ?get-loader]
   (let [trimmed (when raw-text (text.trim raw-text))
         pref (if (and trimmed (not= trimmed ""))
                  trimmed
-                 candidate-preference)]
+                 state.candidate-preference)]
     (if (or (= pref nil) (= pref ""))
         (api.emit {:type :error
                    :error "prefer: specify a preference to save (e.g. /prefer [project|user] <text>)"})
@@ -122,7 +122,7 @@
           (if (not ok?)
               (api.emit {:type :error :error (.. "prefer: " (tostring res))})
               (do
-                (set candidate-preference nil)
+                (set state.candidate-preference nil)
                 (when ?get-loader
                   (let [loader (?get-loader)]
                     (when (and loader loader.reload)
@@ -136,16 +136,17 @@
 ;; summary: Register the /prefer command, observe :hint suggestions, and clear stale candidates.
 ;; tags: prompt prefer command register
 (fn M.register! [api ?get-loader]
-  (api.on :hint (fn [ev]
-                  (when (and (= ev.text "save as preference? · /prefer")
-                             ev.preference)
-                    (set candidate-preference ev.preference))))
+  (api.on :hint
+          (fn [ev]
+            (when (and (= ev.text "save as preference? · /prefer")
+                       ev.preference)
+              (set state.candidate-preference ev.preference))))
   (api.on :user (fn [ev]
                   (when (not (string.find (or (?. ev :text) "") "^/prefer"))
-                    (set candidate-preference nil))))
+                    (set state.candidate-preference nil))))
   (api.on :reset-conversation
           (fn [_ev]
-            (set candidate-preference nil)))
+            (set state.candidate-preference nil)))
   (let [sub (subcommands.build {:name :prefer
                                 :emit api.emit
                                 :summary "Save a durable user preference to project or user instructions"

@@ -270,6 +270,7 @@
   "Record what one catalog fetch says; several providers (the built-in and a
    models.json override) may share this adapter, so entries merge by id."
   (each [_ m (ipairs models)]
+    ;; lint-allow reload/state: derived cache; refilled on demand after /reload
     (tset reasoning-support m.id m.reasoning?)))
 
 ;; @doc fen.extensions.provider_openrouter.openrouter_completions.list-models

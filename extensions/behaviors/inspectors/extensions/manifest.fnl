@@ -2,4 +2,5 @@
  :description "Extension inspector: /extensions, /reload-extension, and extension detail panel."
  :entry-module :fen.extensions.extensions_inspector
  :reload-modules [:fen.extensions.extensions_inspector.commands.extension
-                  :fen.extensions.extensions_inspector]}
+                  :fen.extensions.extensions_inspector]
+ :reload-exclude [:fen.extensions.extensions_inspector.state.extensions]}

@@ -30,6 +30,7 @@
 (fn lfs []
   (when (= lfs-mod :unknown)
     (let [(ok? mod) (pcall require :lfs)]
+      ;; lint-allow reload/state: lazy optional require; re-resolved after /reload
       (set lfs-mod (if ok? mod false))))
   (if lfs-mod lfs-mod nil))
 

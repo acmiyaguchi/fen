@@ -257,6 +257,7 @@
         path (and pipe (pipe:read :*l))]
     (when pipe (pipe:close))
     (assert (and path (not= path "")) "mktemp -d failed")
+    ;; lint-allow reload/state: test-helper bookkeeping; test processes never /reload
     (tset owned-temp-roots path true)
     path))
 
@@ -333,6 +334,7 @@
     (assert (and path (not= path "")) "mktemp failed")
     ;; Register ownership before writing, so a failed write still leaves a path
     ;; the test can clean with rm-file.
+    ;; lint-allow reload/state: test-helper bookkeeping; test processes never /reload
     (tset owned-temp-files path true)
     (write-file path content)
     path))

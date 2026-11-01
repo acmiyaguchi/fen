@@ -82,6 +82,7 @@
   (if collecting?
       {:error "introspection already in progress"}
       (let [out {}]
+        ;; lint-allow reload/state: reentrancy guard; false outside the guarded call
         (set collecting? true)
         (each [_ rec (ipairs state.introspectors-extra)]
           (when (or (= ?owner nil) (= (tostring rec.__owner) (tostring ?owner)))
