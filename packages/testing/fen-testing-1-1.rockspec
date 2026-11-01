@@ -37,6 +37,7 @@ set -eu
       lua = {
          ["fen.testing"] = ".lrbuild/testing/init.lua",
          ["fen.testing.macros"] = "src/fen/testing/macros.fnl",
+         ["fen.testing.tasks"] = ".lrbuild/testing/tasks.lua",
          ["fen.testing.tools"] = ".lrbuild/testing/tools.lua",
       },
    },

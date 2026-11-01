@@ -19,10 +19,11 @@
 ;; Busy-time queueing goes to the core turn mailbox; each queueing test opens
 ;; a mailbox turn so steering has a running turn to attach to.
 (local tasks (require :fen.core.tasks))
+(local hold (require :fen.testing.tasks))
 
 (fn with-steering-stub [f]
   (tasks.reset!)
-  (tasks.spawn-holder :turn #(coroutine.yield))
+  ((. (require :fen.testing.tasks) :hold-turn!))
   (let [(ok? err) (pcall f)]
     (let [snap (tasks.snapshot)]
       (tasks.reset!)
@@ -174,17 +175,15 @@
           (fn []
             (before_each (fn [] (tasks.reset!)))
             (after_each (fn [] (tasks.reset!)))
-            (it "starts a main turn through offer! and next-start!, holding the session as that turn"
+            (it "starts a main turn in one offer-start step, its coroutine registered as the current job"
                 (fn []
                   (let [st (make-state false true)
                         result (turn-submit.start! st "go" agent-step)]
                     (assert.is_true result.ok)
                     (assert.are.equal 1 result.turn)
-                    (assert.are.same {:kind :turn
-                                      :n 1
-                                      :hid st.holder-id
-                                      :cancel? false}
-                                     (tasks.holder))
+                    (assert.are.equal :turn (. (tasks.holder) :kind))
+                    (assert.are.equal 1 (. (tasks.holder) :n))
+                    (assert.are.equal st.turn (. (tasks.current-job) :co))
                     (coroutine.resume st.turn)
                     (assert.are.equal :dead (coroutine.status st.turn))
                     (assert.are.equal :none (. (tasks.holder) :kind)))))
@@ -230,20 +229,34 @@
                     (let [r (turn-submit.start! st "mine" agent-step)]
                       (events.unregister-by-owner :steal-test)
                       (assert.is_true r.ok)
-                      (assert.are.equal st.holder-id (. (tasks.holder) :hid))
+                      (assert.are.equal st.turn (. (tasks.current-job) :co))
                       (assert.is_false (. stolen 1 :ok))
                       (assert.is_nil (. stolen 2))
                       (assert.is_nil other.turn)
                       (coroutine.resume st.turn)
                       (assert.are.equal "mine" (. st.agent.seen 1 :text))))))
-            (it "refuses to start while another holder has the session"
+            (it "behind an exclusive job the line waits with its own body and starts when the job ends (c)"
                 (fn []
-                  (tasks.spawn-holder :exclusive #(coroutine.yield))
-                  (let [st (make-state false true)
-                        result (turn-submit.start! st "go" agent-step)]
-                    (assert.is_false result.ok)
+                  (let [job (hold.hold-exclusive! (fn [] (coroutine.yield)))
+                        st (make-state false true)
+                        result (turn-submit.start! st "go"
+                                                   (fn [agent text _]
+                                                     (table.insert agent.seen
+                                                                   {:text text
+                                                                    :own? true})))]
+                    (assert.is_true result.ok)
+                    (assert.is_true result.start-pending?)
                     (assert.is_nil st.turn)
-                    (assert.are.same [] (. (tasks.snapshot) :follow-up)))))
+                    ;; a deferred reload requested meanwhile still goes after it
+                    (tasks.request-job! {:run (fn [] nil)})
+                    (coroutine.resume job)
+                    (coroutine.resume job)
+                    (let [r (turn-submit.start-queued! st agent-step)]
+                      (assert.is_true r.ok)
+                      (coroutine.resume st.turn)
+                      (assert.are.same [{:text "go" :own? true}] st.agent.seen
+                                       "the line's own agent-step ran"))
+                    (assert.are.equal 1 (. (tasks.snapshot) :jobs)))))
             (it "start-queued! starts only a requested follow-up"
                 (fn []
                   (let [st (make-state false true)]
@@ -281,8 +294,7 @@
                   (let [st (make-state false true)]
                     (turn-submit.start! st "go" agent-step)
                     (coroutine.resume st.turn)
-                    (let [(_ hid) (tasks.spawn-holder :exclusive
-                                                      #(coroutine.yield))]
+                    (let [(_ hid) (hold.hold-exclusive!)]
                       (turn-submit.drop! st)
                       (assert.are.equal hid (. (tasks.holder) :hid)
                                         "a newer holder survives the stale drop")))))))

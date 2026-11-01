@@ -215,7 +215,11 @@
           :start-index (+ (length (or state.agent.messages [])) 1)})
     (let [started (turn-submit.start! state prompt agent-step {:tag ?ref})]
       (set ch.started-ref nil)
-      (if started.ok
+      (if (and started.ok started.start-pending?)
+          ;; Behind an exclusive job (a deferred reload): the line waits with
+          ;; a start request and its own body; tick! adopts the turn.
+          (set ch.active.pending? true)
+          started.ok
           (do
             (set ch.active.co state.turn)
             (set ch.active.n started.turn)
@@ -228,7 +232,8 @@
 
 (fn interrupt-turn! [ch]
   ;; The step's cancel-fn fires at its next yield and pairs pending tool calls.
-  (when ch.active
+  ;; Only our own turn: never a job a waiting start line queued behind.
+  (when (and ch.active (not ch.active.pending?))
     ((. (tasks) :cancel-current!))))
 
 (fn queue! [ch kind msg]
@@ -359,9 +364,25 @@
         (set ch.started-ref nil))
       (fatal! ch "untracked turn started")))
 
+(fn adopt-pending! [ch]
+  "The turn a waiting start line opened, once the exclusive job ahead of it
+   is done."
+  (let [h ((. (tasks) :holder))]
+    (when (and ch.state.turn (= h.kind :turn))
+      (set ch.active.pending? nil)
+      (set ch.active.co ch.state.turn)
+      (set ch.active.n h.n)
+      (set ch.active.start-index (+ (length (or ch.state.agent.messages [])) 1))
+      (send! ch :turn-started
+             {:turn ch.active.turn :ref (math.tointeger ch.started-ref)})
+      (set ch.started-ref nil))))
+
 (fn tick! [ch]
   (when ch.ctx.on-tick (ch.ctx.on-tick))
-  (when (and ch.active (not= ch.state.turn ch.active.co))
+  (when (and ch.active ch.active.pending?)
+    (adopt-pending! ch))
+  (when (and ch.active (not ch.active.pending?)
+             (not= ch.state.turn ch.active.co))
     (turn-ended! ch))
   (when (and ch.state.turn (not ch.active) (not ch.exited?))
     (adopt-turn! ch)))

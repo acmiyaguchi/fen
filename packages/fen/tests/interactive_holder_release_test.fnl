@@ -77,11 +77,12 @@
             (it "presenter crash while an exclusive coroutine is suspended"
                 (fn []
                   (let [interactive (stub! (fn [ctx]
-                                             (let [(co hid) (tasks.spawn-holder :exclusive
-                                                                                #(coroutine.yield))]
+                                             (let [co ((. (require :fen.testing.tasks)
+                                                          :hold-exclusive!))]
                                                (set ctx.state.turn co)
-                                               (set ctx.state.holder-id hid)
                                                (set ctx.state.busy? true))
+                                             (assert (= :exclusive
+                                                        (. (tasks.holder) :kind)))
                                              (error "presenter blew up")))
                         real-exit os.exit
                         real-stderr io.stderr]

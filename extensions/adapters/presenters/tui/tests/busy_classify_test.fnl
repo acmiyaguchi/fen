@@ -39,7 +39,7 @@
 (fn reset! []
   (test-api.reset!)
   (tasks.reset!)
-  (tasks.spawn-holder :turn #(coroutine.yield))
+  ((. (require :fen.testing.tasks) :hold-turn!))
   (set asks [])
   (tset package.loaded :fen.extensions.decide.service
         {:enabled? (fn []

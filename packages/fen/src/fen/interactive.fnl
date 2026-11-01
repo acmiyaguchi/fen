@@ -18,7 +18,6 @@
 (local turn-submit (require :fen.turn_submit))
 (local tasks (require :fen.core.tasks))
 (local tool-policy (require :fen.core.tool_policy))
-(local reload-request (require :fen.core.reload_request))
 
 (local M {})
 
@@ -231,35 +230,32 @@
                   (events.emit {:type :runtime-tick
                                 :busy? (not (not state.busy?))
                                 :agent state.agent})
-                  (when state.turn
-                    (let [(ok? value) (coroutine.resume state.turn)]
-                      (when (not ok?)
-                        (events.emit {:type :error
-                                      :error (.. "agent task: "
-                                                 (err-first-line value))
-                                      :traceback (debug.traceback state.turn
-                                                                  (tostring value))}))
-                      (when (or (not ok?)
-                                (= (coroutine.status state.turn) :dead))
-                        (if ok?
-                            (set state.turn-result value)
-                            (set state.turn-error value))
-                        ;; Releases the holder if the body could not (fenced no-op otherwise).
-                        (turn-submit.drop! state)
-                        (turn-lifecycle.emit-complete! state ok? value))))
-                  ;; Reload requests stay queued until the turn coroutine is gone, so modules never swap during a stream or tool call.
-                  (when (and (not state.busy?) (not state.turn))
-                    (reload-request.drain! state
-                                           (fn [request]
-                                             (events.emit {:type :info
-                                                           :text (.. "reload request> executing "
-                                                                     (tostring request.scope)
-                                                                     ": "
-                                                                     request.reason)})
-                                             (command-registry.dispatch (reload-request.command-line request)
-                                                                        state)))
-                    ;; Idle follow-ups start only after active-turn and reload work reach this boundary.
-                    (turn-submit.start-queued! state agent-mod.step)))]
+                  ;; Scheduling waits for a tick that begins idle, so whoever
+                  ;; reacts to a finished turn (a presenter finalizing, a
+                  ;; queued prompt) is offered before the next job starts.
+                  (let [idle-at-start? (and (not state.busy?) (not state.turn))]
+                    (when state.turn
+                      (let [co state.turn
+                            (ok? value done?) (tasks.resume-current! co)]
+                        (when (not ok?)
+                          (events.emit {:type :error
+                                        :error (.. "agent task: "
+                                                   (err-first-line value))
+                                        :traceback (debug.traceback co
+                                                                    (tostring value))}))
+                        (when done?
+                          (if ok?
+                              (set state.turn-result value)
+                              (set state.turn-error value))
+                          ;; The job table already released it; drop! is a no-op then.
+                          (turn-submit.drop! state)
+                          (turn-lifecycle.emit-complete! state ok? value))))
+                    ;; The one scheduler: a pending turn start first, else the
+                    ;; oldest requested exclusive job (/reload, /handoff,
+                    ;; compaction, deferred reload requests).
+                    (when (and idle-at-start? (not state.busy?)
+                               (not state.turn))
+                      (turn-submit.start-queued! state agent-mod.step))))]
     (session-lifecycle.install! state)
     (when (> replayed 0) (state.flush))
     (let [(init-ok? init-err) (presenter-registry.init-active-presenter {:state state})]

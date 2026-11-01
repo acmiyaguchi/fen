@@ -233,7 +233,7 @@
                         ctx {:agent (agent reg)
                              :state {:busy? true :cancel-requested? false}}]
                     (tasks.reset!)
-                    (tasks.spawn-holder :turn #(coroutine.yield))
+                    ((. (require :fen.testing.tasks) :hold-turn!))
                     (tasks.offer! "a")
                     (tasks.offer! "b")
                     (tasks.offer! "c" {:follow-up? true})

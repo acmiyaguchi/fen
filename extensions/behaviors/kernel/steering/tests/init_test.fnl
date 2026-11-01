@@ -10,7 +10,7 @@
   (test-api.reset!)
   (tasks.reset!)
   ;; Held, never resumed: the next reset! drops it.
-  (tasks.spawn-holder :turn #(coroutine.yield)))
+  ((. (require :fen.testing.tasks) :hold-turn!)))
 
 (fn watch [type-key]
   (let [seen []]
@@ -98,13 +98,23 @@
                   (tasks.attach! true)
                   (let [api (test-api.make-runtime-api :enqueue-test)]
                     (api.enqueue :follow-up "plain")
-                    (assert.is_nil (?. (tasks.next-start!) :text))
+                    (assert.is_nil (?. (tasks.next-job! {:make-turn (fn []
+                                                                      (fn []
+                                                                        nil))})
+                                       :item :text))
                     (steering.clear-queues!)
                     (let [result (api.enqueue :follow-up "start me"
                                               {:start-if-idle? true})]
                       (assert.is_true result.start-pending?))
-                    (assert.are.equal "start me" (?. (tasks.next-start!) :text))
-                    (assert.is_nil (?. (tasks.next-start!) :text))
+                    (assert.are.equal "start me"
+                                      (?. (tasks.next-job! {:make-turn (fn []
+                                                                         (fn []
+                                                                           nil))})
+                                          :item :text))
+                    (assert.is_nil (?. (tasks.next-job! {:make-turn (fn []
+                                                                      (fn []
+                                                                        nil))})
+                                       :item :text))
                     (assert.are.same [] (snap :follow-up)))))
             (it "clearing queues removes extension-enqueued messages and idle starts"
                 (fn []
@@ -118,7 +128,10 @@
                     (steering.clear-queues!)
                     (assert.are.same [] (snap :steering))
                     (assert.are.same [] (snap :follow-up))
-                    (assert.is_nil (?. (tasks.next-start!) :text)))))
+                    (assert.is_nil (?. (tasks.next-job! {:make-turn (fn []
+                                                                      (fn []
+                                                                        nil))})
+                                       :item :text)))))
             (it "api enqueue fails without an attached interactive runtime"
                 (fn []
                   (reset!)
@@ -199,6 +212,18 @@
                     (assert.are.same ["x"] started)
                     (assert.is_false (steering.start-idle-follow-up!))
                     (steering.install-runtime! nil))))
+            (it "the legacy idle shim never takes a holder, even when the old runtime refuses (b)"
+                (fn []
+                  (reset!)
+                  (tasks.release! (. (tasks.holder) :hid))
+                  ;; an old runtime that is busy and drops the start
+                  (steering.install-runtime! {:start-follow-up! (fn [_] nil)})
+                  (tasks.offer! "x" {:turn 0})
+                  (steering.start-idle-follow-up!)
+                  (assert.are.equal :none (. (tasks.holder) :kind))
+                  (assert.is_nil (tasks.current-job))
+                  (assert.is_nil (next (. (require :fen.core.tasks.state) :jobs)))
+                  (steering.install-runtime! nil)))
             (it "handle-input starts a turn when idle"
                 (fn []
                   (reset!)

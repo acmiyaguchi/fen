@@ -57,16 +57,19 @@
     {:agent agent :opts {} :mailbox? true}))
 
 (fn make-on-tick [state]
-  "Mirror of the interactive runtime tick: one resume per tick, then the
-   usual completion bookkeeping."
+  "Mirror of the interactive runtime tick: one resume per tick, the usual
+   completion bookkeeping, and the scheduler on a tick that began idle."
   (fn []
-    (when state.turn
-      (let [(ok? value) (coroutine.resume state.turn)]
-        (when (or (not ok?) (= (coroutine.status state.turn) :dead))
-          (if ok? (set state.turn-result value) (set state.turn-error value))
-          (turn-submit.drop! state)
-          (set state.cancel-requested? false)
-          (turn-lifecycle.emit-complete! state ok? value))))))
+    (let [idle-at-start? (not state.turn)]
+      (when state.turn
+        (let [co state.turn
+              (ok? value done?) (tasks.resume-current! co)]
+          (when done?
+            (if ok? (set state.turn-result value) (set state.turn-error value))
+            (turn-submit.drop! state)
+            (turn-lifecycle.emit-complete! state ok? value))))
+      (when (and idle-at-start? (not state.turn))
+        (turn-submit.start-queued! state agent-mod.step)))))
 
 (fn make-parent [control-path event-path]
   "Scripted fake parent. `seen` holds every validated wire event so far."
@@ -368,6 +371,42 @@
                         (assert.is_false (and (= m.role :assistant)
                                               (= m.stop-reason :aborted)))))
                     (assert-closed-run! r))))
+            (it "a finalize is never refused behind a deferred reload: the final turn runs first (c)"
+                (fn []
+                  (let [order []
+                        requested {:done? false}
+                        script (fn [req]
+                                 (if (= req.options.tool-choice :none)
+                                     (do
+                                       (table.insert order :final-turn)
+                                       "final summary")
+                                     {:tool-call {:id "c1" :name :slow}}))
+                        r (run-child {:mock script
+                                      :tools [(slow-tool :slow 3 [])]
+                                      :wrap-tick (fn [state base]
+                                                   (fn []
+                                                     ;; the agent asks for a reload mid-turn
+                                                     (when (and state.turn
+                                                                (not requested.done?))
+                                                       (set requested.done?
+                                                            true)
+                                                       (tasks.request-job! {:run (fn []
+                                                                                   (table.insert order
+                                                                                                 :reload))
+                                                                            :on-spawn (tasks.adopter state)}))
+                                                     (base)))
+                                      :script (fn [p]
+                                                (p.wait-type :ready)
+                                                (p.send! :prompt {:text "work"})
+                                                (p.wait-type :llm-end)
+                                                (p.send! :finalize
+                                                         {:note "wrap up"}))})
+                        exit (last-event r.parent)]
+                    (assert.are.equal :done exit.status)
+                    (assert.are.equal "final summary"
+                                      (. (r.parent.find #(= $1.type :result))
+                                         :final-text))
+                    (assert.are.equal :final-turn (. order 1)))))
             (it "finalizes from ready by finishing with the answer already produced (#665)"
                 (fn []
                   (let [r (run-child {:mock ["answer" "final"]
@@ -744,13 +783,11 @@
                                                      (when (and (not started.done?)
                                                                 (not state.turn))
                                                        (set started.done? true)
-                                                       (let [(co hid) (tasks.spawn-holder :exclusive
-                                                                                          (fn []
-                                                                                            (for [_ 1 6]
-                                                                                              (coroutine.yield))))]
+                                                       (let [co ((. (require :fen.testing.tasks)
+                                                                    :hold-exclusive!) (fn []
+                                                                                        (for [_ 1 6]
+                                                                                          (coroutine.yield))))]
                                                          (set state.turn co)
-                                                         (set state.holder-id
-                                                              hid)
                                                          (set state.busy? true)))))
                                       :script (fn [p]
                                                 (p.wait-type :turn-started)

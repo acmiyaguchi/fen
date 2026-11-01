@@ -87,11 +87,13 @@
   (tasks.attach! (not= runtime nil)))
 
 (fn M.start-idle-follow-up! []
-  (let [item (when (and M.legacy-runtime M.legacy-runtime.start-follow-up!)
-               (tasks.next-start!))]
-    (if item
+  ;; Pops without holding (tasks.idle-tick!); the old runtime submits the
+  ;; text, which starts it through the scheduler. Never leaves an unowned hid.
+  (let [text (when (and M.legacy-runtime M.legacy-runtime.start-follow-up!)
+               (tasks.idle-tick!))]
+    (if text
         (do
-          (M.legacy-runtime.start-follow-up! item.text)
+          (M.legacy-runtime.start-follow-up! text)
           true)
         false)))
 

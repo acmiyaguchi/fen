@@ -101,7 +101,7 @@
                     (check-returned-and-next-turn-clean state returned))))
             (it "steering offered for a stale turn number is rejected"
                 (fn []
-                  (let [(_ _ n) (tasks.spawn-holder :turn #(coroutine.yield))
+                  (let [(_ _ n) ((. (require :fen.testing.tasks) :hold-turn!))
                         stale (steering.queue! :steering "old" {:turn (- n 1)})
                         current (steering.queue! :steering "new" {:turn n})]
                     (assert.is_false stale.ok)

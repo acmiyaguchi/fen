@@ -43,7 +43,8 @@ module holderAbstract {
     steer: Set[int],       // seqs of steer lines for the running turn
     followUp: Set[int],    // seqs of follow-ups
     start: bool,           // an idle offer asked next-start! to start a turn
-    firstUp: int,             // the seq that idle offer admitted: it starts first (-1: none)
+    firstUp: int,
+    exReq: bool,           // an exclusive job (/reload, /handoff, compaction) waits for next-job!             // the seq that idle offer admitted: it starts first (-1: none)
     cancel: bool,          // cancel! n was accepted for the running turn
     steerMode: str,        // drain mode for take! :steer ("one" | "all")
     followMode: str,       // drain mode for take! :follow-up
@@ -52,7 +53,7 @@ module holderAbstract {
   }
 
   pure def sessionInit: Session = {
-    kind: "none", n: 0, hid: 0, steer: Set(), followUp: Set(), start: false, firstUp: -1, cancel: false,
+    kind: "none", n: 0, hid: 0, steer: Set(), followUp: Set(), start: false, firstUp: -1, exReq: false, cancel: false,
     steerMode: "one", followMode: "one",
     why: SEQS.mapBy(_s => ""), whyN: SEQS.mapBy(_s => 0),
   }
@@ -83,8 +84,12 @@ module holderAbstract {
     a.start and a.followUp != Set() and a.kind == "none"
 
   // (with-holder :exclusive f): /reload, /handoff. Consumes no turn number.
+  // next-job!: a requested exclusive job, only when no turn start is pending.
   pure def startExclusive(a: Session): Session =
-    { ...a, kind: "exclusive", hid: a.hid + 1, cancel: false }
+    { ...a, kind: "exclusive", hid: a.hid + 1, cancel: false, exReq: false }
+
+  // request-job!: an exclusive job asks the scheduler; it never starts itself.
+  pure def requestExclusive(a: Session): Session = { ...a, exReq: true }
 
   // The body exits (return, error, or cancel): release, and return the turn's
   // unread steer lines attributed to that turn.
@@ -104,7 +109,9 @@ module holderAbstract {
                               firstUp: if (a.firstUp >= 0) a.firstUp else s }
       else dispose(a, Set(s), "refused", a.n)
     else if (a.kind == "turn") { ...a, steer: a.steer.union(Set(s)) }
-    else if (a.kind == "exclusive") { ...a, followUp: a.followUp.union(Set(s)) }
+    // behind an exclusive job: queue it and ask for a turn once the job ends
+    else if (a.kind == "exclusive") { ...a, followUp: a.followUp.union(Set(s)), start: true,
+                                      firstUp: if (a.firstUp >= 0) a.firstUp else s }
     else { ...a, followUp: a.followUp.union(Set(s)), start: true,
            firstUp: if (a.firstUp >= 0) a.firstUp else s }
 
@@ -186,9 +193,10 @@ module holderSpec {
   var steerMode: str
   var followMode: str
   var firstUp: int
+  var exReq: bool
 
   def s: Session = {
-    kind: kind, n: n, hid: hid, steer: steer, followUp: followUp, start: start, firstUp: firstUp,
+    kind: kind, n: n, hid: hid, steer: steer, followUp: followUp, start: start, firstUp: firstUp, exReq: exReq,
     cancel: cancel, why: why, whyN: whyN, steerMode: steerMode, followMode: followMode,
   }
   var body: bool               // a with-holder body is running
@@ -208,6 +216,7 @@ module holderSpec {
   var takeOk: bool             // every take! drained exactly what its mode says
   var setSteer: str            // the steer mode last set by set-mode!
   var setFollow: str           // the follow-up mode last set by set-mode!
+  var behindEx: Set[int]       // local follow-ups offered behind an exclusive job, not yet in a turn
   // The previous state, copied each step. Refinement is a state predicate
   // over (previous, current), so the step relation carries no lineNext
   // and the base proof stays cheap; only the refinement proofs pay for it.
@@ -228,25 +237,26 @@ module holderSpec {
   var pIsSteer: int -> bool
   var pIsLocal: int -> bool
   var pFirstUp: int
+  var pExReq: bool
 
   def ps: Session = {
-    kind: pKind, n: pN, hid: pHid, steer: pSteer, followUp: pFollowUp, start: pStart, firstUp: pFirstUp,
+    kind: pKind, n: pN, hid: pHid, steer: pSteer, followUp: pFollowUp, start: pStart, firstUp: pFirstUp, exReq: pExReq,
     cancel: pCancel, why: pWhy, whyN: pWhyN, steerMode: pSteerMode, followMode: pFollowMode,
   }
 
   action init = all {
     kind' = sessionInit.kind, n' = sessionInit.n, hid' = 0, steer' = sessionInit.steer,
-    followUp' = sessionInit.followUp, start' = sessionInit.start, firstUp' = -1,
+    followUp' = sessionInit.followUp, start' = sessionInit.start, firstUp' = -1, exReq' = false,
     cancel' = sessionInit.cancel, why' = sessionInit.why, whyN' = sessionInit.whyN,
     body' = false, nextSeq' = 0,
     tagOf' = SEQS.mapBy(_q => 0), forTurn' = SEQS.mapBy(_q => 0),
     isSteer' = SEQS.mapBy(_q => false), isLocal' = SEQS.mapBy(_q => false),
-    orderOk' = true, cancelOk' = true, leakFree' = true,
+    orderOk' = true, cancelOk' = true, leakFree' = true, behindEx' = Set(),
     steerMode' = "one", followMode' = "one",
     heldFor' = 0, waitedFor' = 0, starved' = false, takeOk' = true,
     setSteer' = "one", setFollow' = "one",
     pKind' = sessionInit.kind, pN' = sessionInit.n, pHid' = 0, pSteer' = sessionInit.steer,
-    pFollowUp' = sessionInit.followUp, pStart' = sessionInit.start, pFirstUp' = -1,
+    pFollowUp' = sessionInit.followUp, pStart' = sessionInit.start, pFirstUp' = -1, pExReq' = false,
     pCancel' = sessionInit.cancel, pWhy' = sessionInit.why, pWhyN' = sessionInit.whyN,
     pSteerMode' = sessionInit.steerMode, pFollowMode' = sessionInit.followMode,
     pBody' = false, pSeq' = 0, pFor' = SEQS.mapBy(_q => 0),
@@ -255,13 +265,14 @@ module holderSpec {
 
   // ---- refinement mappings onto L0 (lease) and L1 (one line) ----
 
-  pure def leaseOf(a: Session, b: bool): { kind: str, n: int, hid: int, body: bool, cancel: bool, startReq: bool } = {
+  pure def leaseOf(a: Session, b: bool): { kind: str, n: int, hid: int, body: bool, cancel: bool, startReq: bool, exReq: bool } = {
     kind: a.kind, n: a.n, hid: a.hid, body: b, cancel: a.cancel,
     startReq: a.start and a.followUp != Set(),
+    exReq: a.exReq,
   }
 
   pure def viewOf(a: Session, b: bool, ns: int, fT: int -> int, sT: int -> bool,
-                  lc: int -> bool, q: int): { lease: { kind: str, n: int, hid: int, body: bool, cancel: bool, startReq: bool }, st: str, why: str, whyN: int, forTurn: int, wasSteer: bool, local: bool, steerAhead: bool, otherSteer: bool, followAhead: bool, steerMode: str, followMode: str } = {
+                  lc: int -> bool, q: int): { lease: { kind: str, n: int, hid: int, body: bool, cancel: bool, startReq: bool, exReq: bool }, st: str, why: str, whyN: int, forTurn: int, wasSteer: bool, local: bool, steerAhead: bool, otherSteer: bool, followAhead: bool, steerMode: str, followMode: str } = {
     lease: leaseOf(a, b),
     st: if (q >= ns) "unissued" else if (a.steer.contains(q)) "steer"
         else if (a.followUp.contains(q)) "follow" else "done",
@@ -289,9 +300,17 @@ module holderSpec {
 
   action goL(gs: Session, gBody: bool, gSeq: int, gTag: int -> int, gFor: int -> int,
              gSteer: int -> bool, gLocal: int -> bool, gOrder: bool, gCancel: bool,
-             gTake: bool, gStarved: bool, gSetSteer: str, gSetFollow: str): bool = all {
+             gTake: bool, gStarved: bool, gSetSteer: str, gSetFollow: str): bool =
+    goLB(gs, gBody, gSeq, gTag, gFor, gSteer, gLocal, gOrder, gCancel, gTake, gStarved,
+         gSetSteer, gSetFollow, false)
+
+  // gBehind: this step admits a plain local offer behind an exclusive job.
+  action goLB(gs: Session, gBody: bool, gSeq: int, gTag: int -> int, gFor: int -> int,
+             gSteer: int -> bool, gLocal: int -> bool, gOrder: bool, gCancel: bool,
+             gTake: bool, gStarved: bool, gSetSteer: str, gSetFollow: str,
+             gBehind: bool): bool = all {
     kind' = gs.kind, n' = gs.n, hid' = gs.hid, steer' = gs.steer, followUp' = gs.followUp,
-    start' = gs.start, firstUp' = gs.firstUp, cancel' = gs.cancel, why' = gs.why, whyN' = gs.whyN,
+    start' = gs.start, firstUp' = gs.firstUp, exReq' = gs.exReq, cancel' = gs.cancel, why' = gs.why, whyN' = gs.whyN,
     steerMode' = gs.steerMode, followMode' = gs.followMode,
     body' = gBody, nextSeq' = gSeq,
     heldFor' = if (gs.kind == "none" or kind == "none") 0 else heldFor + 1,
@@ -300,11 +319,14 @@ module holderSpec {
     takeOk' = (takeOk and gTake),
     setSteer' = gSetSteer, setFollow' = gSetFollow,
     pKind' = kind, pN' = n, pHid' = hid, pSteer' = steer, pFollowUp' = followUp, pStart' = start,
-    pFirstUp' = firstUp, pCancel' = cancel, pWhy' = why, pWhyN' = whyN, pSteerMode' = steerMode,
+    pFirstUp' = firstUp, pExReq' = exReq, pCancel' = cancel, pWhy' = why, pWhyN' = whyN, pSteerMode' = steerMode,
     pFollowMode' = followMode, pBody' = body, pSeq' = nextSeq, pFor' = forTurn,
     pIsSteer' = isSteer, pIsLocal' = isLocal,
     tagOf' = gTag, forTurn' = gFor, isSteer' = gSteer, isLocal' = gLocal,
     orderOk' = (orderOk and gOrder),
+    behindEx' = if (gs.kind == "turn" and kind != "turn") Set()
+                else (if (gBehind)
+                        behindEx.union(Set(nextSeq)) else behindEx).intersect(gs.followUp),
     cancelOk' = (cancelOk and gCancel),
     leakFree' = (leakFree and (gBody or gs.kind == "none")),
   }
@@ -325,8 +347,10 @@ module holderSpec {
   }
 
   // (with-holder :exclusive f): /reload, /handoff.
+  action doRequestExclusive: bool = all { not(exReq), plain(requestExclusive(s), body) }
+
   action doStartExclusive: bool = all {
-    s.kind == "none",
+    s.kind == "none", s.exReq,
     // a pending turn start has priority over an exclusive holder
     not(s.start and s.followUp != Set()),
     s.hid < MAX_H,
@@ -351,10 +375,11 @@ module holderSpec {
     val b = offer(s, q, t, f)
     all {
       nextSeq < MAX_SEQ,
-      goL(b, body, nextSeq + 1, tagOf.set(q, g),
+      goLB(b, body, nextSeq + 1, tagOf.set(q, g),
           forTurn.set(q, if (not(b.steer.contains(q))) 0 else if (t > 0) t else s.n),
           isSteer.set(q, b.steer.contains(q)), isLocal.set(q, t == -1),
-          true, true, true, false, setSteer, setFollow),
+          true, true, true, false, setSteer, setFollow,
+          t == -1 and not(f) and s.kind == "exclusive"),
     }
 
   // Exactly what the mode says: one line, or every queued line.
@@ -418,6 +443,7 @@ module holderSpec {
     else if (waiting(s) and waitedFor >= MAX_IDLE) (if (startGuard(s)) doStartTurn else doStarved)
     else any {
       doStartTurn,
+      doRequestExclusive,
       doStartExclusive,
       doBodyExit(f),
       doOffer(t, g, f),
@@ -484,6 +510,10 @@ module holderSpec {
              viewOf(s, body, nextSeq, forTurn, isSteer, isLocal, q)))
 
   val takeByModeInv = takeOk
+  // A line typed during /reload or compaction asks for a turn: it is not
+  // stranded once the job ends (it starts by the idle-start bound).
+  val behindExclusiveStartsInv =
+    (kind != "turn" and behindEx != Set()) implies start
   val modesPersistInv = steerMode == setSteer and followMode == setFollow
   val cancelFencedInv = cancelOk
 
@@ -499,6 +529,7 @@ module holderSpec {
     releasedInTimeInv,
     startedInTimeInv,
     takeByModeInv,
+    behindExclusiveStartsInv,
     modesPersistInv,
   }
 
@@ -511,7 +542,7 @@ module holderSpec {
     pKind.in(KINDS), pN.in(NS), pHid.in(HS), pSteer.in(powerset(SEQS)), pFollowUp.in(powerset(SEQS)),
     pStart.in(Bool), pCancel.in(Bool), pWhy.in(setOfMaps(SEQS, WHYS)),
     pWhyN.in(setOfMaps(SEQS, NS)), pSteerMode.in(MODES), pFollowMode.in(MODES),
-    pBody.in(Bool), pFirstUp.in(Set(-1).union(SEQS)), pSeq.in(0.to(MAX_SEQ)), pFor.in(setOfMaps(SEQS, NS)),
+    pBody.in(Bool), pFirstUp.in(Set(-1).union(SEQS)), pExReq.in(Bool), pSeq.in(0.to(MAX_SEQ)), pFor.in(setOfMaps(SEQS, NS)),
     pIsSteer.in(setOfMaps(SEQS, Bool)), pIsLocal.in(setOfMaps(SEQS, Bool)),
   }
   val inductiveInv = and {
@@ -544,7 +575,11 @@ module holderSpec {
     setSteer.in(MODES),
     setFollow.in(MODES),
     start implies followUp != Set(),
-    start implies kind == "none",
+    start implies kind != "turn",
+    exReq.in(Bool),
+    behindEx.in(powerset(SEQS)),
+    behindEx.subseteq(followUp),
+    kind == "turn" implies behindEx == Set(),
     firstUp.in(Set(-1).union(SEQS)),
     start == (firstUp >= 0),
     firstUp >= 0 implies followUp.contains(firstUp),

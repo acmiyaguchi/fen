@@ -25,19 +25,24 @@ module leaseAbstract {
     hid: int,        // holder id: every acquire (turn or exclusive) takes a fresh one
     body: bool,      // a with-holder body is running
     cancel: bool,    // cancel! n was accepted for the running turn
-    startReq: bool,  // an idle offer asked next-start! for a turn, and a line waits
+    startReq: bool,  // an offer (idle or behind an exclusive job) asked for a turn, and a line waits
+    exReq: bool,     // an exclusive job (/reload, compaction) is requested and waits for the scheduler
   }
 
   pure def leaseInit: Lease =
-    { kind: "none", n: 0, hid: 0, body: false, cancel: false, startReq: false }
+    { kind: "none", n: 0, hid: 0, body: false, cancel: false, startReq: false, exReq: false }
 
   // next-start! + (with-holder :turn ...): consumes the request.
   pure def leaseStartTurn(a: Lease): Lease =
     { ...a, kind: "turn", n: a.n + 1, hid: a.hid + 1, body: true, cancel: false, startReq: false }
 
-  // (with-holder :exclusive f): /reload, /handoff; consumes no turn number.
+  // next-job! picks a requested exclusive job (/reload, /handoff, compaction);
+  // consumes the request and no turn number.
   pure def leaseStartExclusive(a: Lease): Lease =
-    { ...a, kind: "exclusive", hid: a.hid + 1, body: true, cancel: false }
+    { ...a, kind: "exclusive", hid: a.hid + 1, body: true, cancel: false, exReq: false }
+
+  // An exclusive job is requested; only the scheduler starts it.
+  pure def leaseRequestExclusive(a: Lease): Lease = { ...a, exReq: true }
 
   // The body exits (return, error, or after a cancel): leaseRelease.
   pure def leaseRelease(a: Lease): Lease = { ...a, kind: "none", body: false, cancel: false }
@@ -53,14 +58,16 @@ module leaseAbstract {
   pure def leaseNext(a: Lease, b: Lease): bool = or {
     a == b,
     a.kind == "none" and a.startReq and b == leaseStartTurn(a),
-    // a pending turn start has priority over an exclusive holder
-    a.kind == "none" and not(a.startReq) and b == leaseStartExclusive(a),
+    // one scheduler: a requested exclusive job starts only when no turn start is pending
+    a.kind == "none" and a.exReq and not(a.startReq) and b == leaseStartExclusive(a),
+    b == leaseRequestExclusive(a),
     a.body and b == leaseRelease(a),
     // cancel: only the current holder can be armed
     a.kind != "none" and b == { ...a, cancel: true },
-    // start requests: raised only while idle (an idle offer), dropped anytime
+    // start requests: raised while no turn holds (an idle offer, or one behind
+    // an exclusive job), dropped anytime
     b == leaseSetStartReq(a, false),
-    a.kind == "none" and b == leaseSetStartReq(a, true),
+    a.kind != "turn" and b == leaseSetStartReq(a, true),
   }
 
   pure def leaseInv(a: Lease): bool = and {
@@ -88,6 +95,7 @@ module leaseSpec {
   var body: bool
   var cancel: bool
   var startReq: bool
+  var exReq: bool
 
   // ---- ghosts ----
   var heldFor: int
@@ -96,13 +104,13 @@ module leaseSpec {
   var stepOk: bool
   var starved: bool   // the idle tick was due but could not start the requested turn
 
-  def l: Lease = { kind: kind, n: n, hid: hid, body: body, cancel: cancel, startReq: startReq }
+  def l: Lease = { kind: kind, n: n, hid: hid, body: body, cancel: cancel, startReq: startReq, exReq: exReq }
 
   pure def waiting(a: Lease): bool =
     a.kind == "none" and a.startReq and a.n < MAX_N and a.hid < MAX_H
 
   action init = all {
-    kind' = "none", n' = 0, hid' = 0, body' = false, cancel' = false, startReq' = false,
+    kind' = "none", n' = 0, hid' = 0, body' = false, cancel' = false, startReq' = false, exReq' = false,
     heldFor' = 0, waitedFor' = 0, cancelOk' = true, stepOk' = true, starved' = false,
   }
 
@@ -112,7 +120,7 @@ module leaseSpec {
 
   action goS(b: Lease, gCancel: bool, gStarved: bool): bool = all {
     starved' = (starved or gStarved),
-    kind' = b.kind, n' = b.n, hid' = b.hid, body' = b.body, cancel' = b.cancel, startReq' = b.startReq,
+    kind' = b.kind, n' = b.n, hid' = b.hid, body' = b.body, cancel' = b.cancel, startReq' = b.startReq, exReq' = b.exReq,
     heldFor' = if (b.kind == "none" or kind == "none") 0 else heldFor + 1,
     waitedFor' = if (waiting(b) and waiting(l)) waitedFor + 1 else 0,
     cancelOk' = (cancelOk and gCancel),
@@ -127,7 +135,8 @@ module leaseSpec {
   // recorded as `starved` rather than deadlocking the forced step.
   pure def startGuard(a: Lease): bool = canStart(a) and a.n < MAX_N and a.hid < MAX_H
   action doStartTurn: bool = all { startGuard(l), go(leaseStartTurn(l), true) }
-  action doStartExclusive: bool = all { kind == "none", not(startReq), hid < MAX_H, go(leaseStartExclusive(l), true) }
+  action doRequestExclusive: bool = all { not(exReq), go(leaseRequestExclusive(l), true) }
+  action doStartExclusive: bool = all { kind == "none", exReq, not(startReq), hid < MAX_H, go(leaseStartExclusive(l), true) }
   // Total at the body deadline: its only guard is `body`, the deadline condition.
   action doBodyExit: bool = all { body, go(leaseRelease(l), true) }
 
@@ -140,7 +149,7 @@ module leaseSpec {
     goS(l, true, true),
   }
 
-  action doRequestStart: bool = all { kind == "none", not(startReq), go(leaseSetStartReq(l, true), true) }
+  action doRequestStart: bool = all { kind != "turn", not(startReq), go(leaseSetStartReq(l, true), true) }
   action doDropStart: bool = all { startReq, go(leaseSetStartReq(l, false), true) }
 
   action step = {
@@ -149,6 +158,7 @@ module leaseSpec {
     else if (waiting(l) and waitedFor >= MAX_IDLE) (if (startGuard(l)) doStartTurn else doStarved)
     else any {
       doStartTurn,
+      doRequestExclusive,
       doStartExclusive,
       doBodyExit,
       doCancel(m),
@@ -163,6 +173,7 @@ module leaseSpec {
     nondet m = HS.oneOf()
     any {
       doStartTurn,
+      doRequestExclusive,
       doStartExclusive,
       doBodyExit,
       doCancel(m),
@@ -195,6 +206,7 @@ module leaseSpec {
     body.in(Bool),
     cancel.in(Bool),
     startReq.in(Bool),
+    exReq.in(Bool),
     heldFor.in(0.to(MAX_BODY)),
     waitedFor.in(0.to(MAX_IDLE)),
     cancelOk.in(Bool),
@@ -206,7 +218,7 @@ module leaseSpec {
   }
 
   // ---- Temporal liveness (unbounded, under weak fairness) ----
-  val vars = (kind, n, hid, body, cancel, startReq, heldFor, waitedFor, cancelOk, stepOk, starved)
+  val vars = (kind, n, hid, body, cancel, startReq, exReq, heldFor, waitedFor, cancelOk, stepOk, starved)
 
   // Every with-holder body exits eventually, so the holder is released.
   temporal releaseEventually =

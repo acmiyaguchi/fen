@@ -452,6 +452,7 @@ digraph fen_modules_clustered {
     "fen.testing" [fillcolor="lightyellow", label="fen.testing", style="filled", tooltip="packages/testing/src/fen/testing/init.fnl persistent"];
     "fen.testing.macros" [fillcolor="lightyellow", label="fen.testing.macros", style="filled", tooltip="packages/testing/src/fen/testing/macros.fnl persistent"];
     "fen.testing.pty" [fillcolor="lightyellow", label="fen.testing.pty", style="filled", tooltip="packages/testing/src/fen/testing/pty.fnl persistent"];
+    "fen.testing.tasks" [fillcolor="lightyellow", label="fen.testing.tasks", style="filled", tooltip="packages/testing/src/fen/testing/tasks.fnl persistent"];
     "fen.testing.tools" [fillcolor="lightyellow", label="fen.testing.tools", style="filled", tooltip="packages/testing/src/fen/testing/tools.fnl persistent"];
     "fen.testing.tui" [fillcolor="lightyellow", label="fen.testing.tui", style="filled", tooltip="packages/testing/src/fen/testing/tui.fnl persistent"];
     "fen.testing.tui_latency" [fillcolor="lightyellow", label="fen.testing.tui_latency", style="filled", tooltip="packages/testing/src/fen/testing/tui_latency.fnl persistent"];
@@ -636,6 +637,7 @@ digraph fen_modules_clustered {
   "fen.core.extensions.register.command" -> "fen.core.extensions.events";
   "fen.core.extensions.register.command" -> "fen.core.extensions.state";
   "fen.core.extensions.register.command" -> "fen.core.extensions.util";
+  "fen.core.extensions.register.command" -> "fen.core.tasks";
   "fen.core.extensions.register.command" -> "fen.util.text";
   "fen.core.extensions.register.contribution" -> "fen.core.extensions.contrib";
   "fen.core.extensions.register.contribution" -> "fen.core.extensions.util";
@@ -693,6 +695,8 @@ digraph fen_modules_clustered {
   "fen.core.llm.models" -> "fen.util.log";
   "fen.core.llm.models" -> "fen.util.path";
   "fen.core.prompt" -> "fen.core.extensions.register.prompt";
+  "fen.core.reload_request" -> "fen.core.extensions.events";
+  "fen.core.reload_request" -> "fen.core.extensions.register.command";
   "fen.core.reload_request" -> "fen.core.tasks";
   "fen.core.runtime_recovery" -> "fen.core.extensions.state";
   "fen.core.runtime_recovery" -> "fen.core.extensions.util";
@@ -1177,7 +1181,6 @@ digraph fen_modules_clustered {
   "fen.interactive" -> "fen.core.extensions.register.tool";
   "fen.interactive" -> "fen.core.llm.models";
   "fen.interactive" -> "fen.core.prompt";
-  "fen.interactive" -> "fen.core.reload_request";
   "fen.interactive" -> "fen.core.tasks";
   "fen.interactive" -> "fen.core.thinking";
   "fen.interactive" -> "fen.core.tool_policy";
@@ -1234,6 +1237,7 @@ digraph fen_modules_clustered {
   "fen.testing" -> "fen.util.log_sink";
   "fen.testing.macros" -> "fen.testing";
   "fen.testing.pty" -> "fen.testing";
+  "fen.testing.tasks" -> "fen.core.tasks";
   "fen.testing.tools" -> "fen.core.tools";
   "fen.testing.tools" -> "fen.core.types";
   "fen.testing.tools" -> "fen.extensions.builtin_tools.registry";

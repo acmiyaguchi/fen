@@ -71,8 +71,6 @@
                :turn nil
                :turn-result nil
                :turn-error nil
-               ;; Reload requests are per-run ephemeral, not extension singleton state or session history.
-               :reload-requests []
                :submit-agent-turn! cfg.submit-agent-turn!
                :submit-user-turn! nil}]
     (set state.submit-user-turn!

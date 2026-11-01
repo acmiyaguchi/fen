@@ -425,8 +425,7 @@
                     ((. (require :fen.core.tasks) :reset!))
                     (set run-state.submit-user-turn!
                          (fn [_text _opts]
-                           ((. (require :fen.core.tasks) :spawn-holder) :turn
-                                                                        #(coroutine.yield))
+                           ((. (require :fen.testing.tasks) :hold-turn!))
                            {:ok true :started? true}))
                     (command-registry.dispatch "/goal implement feature"
                                                run-state)
@@ -677,8 +676,7 @@
                                                run-state)
                     (set run-state.busy? true)
                     ((. (require :fen.core.tasks) :reset!))
-                    ((. (require :fen.core.tasks) :spawn-holder) :turn
-                                                                 #(coroutine.yield))
+                    ((. (require :fen.testing.tasks) :hold-turn!))
                     (command-registry.dispatch "/goal stop" run-state)
                     (assert.is_true (. ((. (require :fen.core.tasks) :holder))
                                        :cancel?))

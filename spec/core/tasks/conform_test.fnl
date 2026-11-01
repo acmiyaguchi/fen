@@ -2,7 +2,8 @@
 ;; `holderSpec` are replayed through the real pure step, `fen.core.tasks.step`.
 ;; Each model action becomes the matching machine input(s); after every step
 ;; the code's holder kind, turn number, steer and follow-up seqs, start
-;; request and the line it starts first (firstUp), holder id (hid), cancel flag, and drain modes must equal the model's, and every
+;; request and the line it starts first (firstUp), holder id (hid), the
+;; exclusive request (exReq: a job waits in the scheduler), cancel flag, and drain modes must equal the model's, and every
 ;; issued line's disposition (taken, started, released, refused, cleared) and
 ;; the turn it is attributed to must equal the model's `why`/`whyN`.
 ;; At every state the replay also probes transitions the model forbids there
@@ -22,6 +23,7 @@
 (local MAX-N 3)
 (local MAX-BODY 4)
 (local MAX-IDLE 2)
+(local MAX-H 4)
 
 (fn int [v]
   (if (= (type v) :table) (tonumber (. v "#bigint")) v))
@@ -62,7 +64,7 @@
 
 (fn waiting? [st]
   (and (= st.kind :none) st.start (> (length (set-of st.followUp)) 0)
-       (< (int st.n) MAX-N)))
+       (< (int st.n) MAX-N) (< (int st.hid) MAX-H)))
 
 (fn forced-action [prev]
   "The step relation forces a move when a fairness bound is reached; the
@@ -115,44 +117,60 @@
             label (. st "mbt::actionTaken")
             action (if (= label :step) (forced-action prev) label)]
         (case action
-          :doStartTurn (run! {:type :next-start})
-          :doStartExclusive (run! {:type :acquire :kind :exclusive})
-          :doBodyExit (when (not CORRUPT?) (run! {:type :release :hid m.hid}))
-          :doOffer (let [t (pick st :t)]
-                     (run! {:type :offer
-                            :text (.. "line" (int prev.nextSeq))
-                            :tag (pick st :g)
-                            :turn (when (not= t -1) t)
-                            :follow-up? (pick st :f)}))
-          :doTakeSteer (run! {:type :take :queue :steering})
-          :doTakeFollowUp (run! {:type :take :queue :follow-up})
-          :doCancel (let [target (pick st :m)]
-                      ;; cancelHolder(m) fences on hid. A trace from a model
-                      ;; without hid (cancelTurn(m) on the turn number) maps
-                      ;; to the current hid when turn m holds, else a stale one.
-                      (run! {:type :cancel
-                             :hid (if (not= nil st.hid) target
-                                      (and (= prev.kind :turn)
-                                           (= (int prev.n) target)) m.hid
-                                      -1)}))
-          :doClearSteer (run! {:type :clear :queue :steering})
-          :doClearFollowUp (run! {:type :clear :queue :follow-up})
-          :doSetMode (run! {:type :set-mode
-                            :queue (if (= (pick st :which) :steer) :steering
-                                       :follow-up)
-                            :mode (. MODE (pick st :mode))})
-          :doStarved nil
-          :init nil
-          other (set err (.. path ": unmapped action " (tostring other))))
+          ;; One scheduler step: a pending turn start goes first, else the
+          ;; requested exclusive job (the model's two start actions).
+          :doStartTurn
+          (run! {:type :next-job})
+          :doStartExclusive
+          (run! {:type :next-job})
+          :doRequestExclusive
+          (run! {:type :request-job :spec {}})
+          :doBodyExit
+          (when (not CORRUPT?)
+            (run! {:type :release :hid (?. m :holder :hid)}))
+          :doOffer
+          (let [t (pick st :t)]
+            (run! {:type :offer
+                   :text (.. "line" (int prev.nextSeq))
+                   :tag (pick st :g)
+                   :turn (when (not= t -1) t)
+                   :follow-up? (pick st :f)}))
+          :doTakeSteer
+          (run! {:type :take :queue :steering})
+          :doTakeFollowUp
+          (run! {:type :take :queue :follow-up})
+          :doCancel
+          (let [target (pick st :m)]
+            ;; cancelHolder(m) fences on hid.
+            (run! {:type :cancel :hid target}))
+          :doClearSteer
+          (run! {:type :clear :queue :steering})
+          :doClearFollowUp
+          (run! {:type :clear :queue :follow-up})
+          :doSetMode
+          (run! {:type :set-mode
+                 :queue (if (= (pick st :which) :steer) :steering :follow-up)
+                 :mode (. MODE (pick st :mode))})
+          :doStarved
+          nil
+          :init
+          nil
+          other
+          (set err (.. path ": unmapped action " (tostring other))))
         (when (not err)
-          (let [checks [[:kind st.kind m.kind]
+          (let [code-kind (if m.holder m.holder.kind :none)
+                checks [[:kind st.kind code-kind]
                         [:n (int st.n) m.n]
                         [:start st.start m.start?]
                         [:firstUp
                          (int st.firstUp)
                          (if m.first-up (- m.first-up 1) -1)]
-                        [:cancel st.cancel m.cancel?]
-                        [:hid (if (not= nil st.hid) (int st.hid) m.hid) m.hid]
+                        [:cancel st.cancel (= true (?. m :holder :cancel?))]
+                        [:hid (int st.hid) m.hid]
+                        [:exReq st.exReq (> (length m.jobs) 0)]
+                        [:exclusiveHasNoTurn
+                         true
+                         (or (not= code-kind :exclusive) (= nil m.holder.n))]
                         [:steerMode (. MODE st.steerMode) m.modes.steering]
                         [:followMode (. MODE st.followMode) m.modes.follow-up]]
                 model-why (map-of st.why)
@@ -179,22 +197,18 @@
                                (. why-n q)])))
             ;; Forbidden transitions, probed on the pure step (state unchanged).
             (when (not= st.kind :none)
-              (each [_ kind (ipairs [:turn :exclusive])]
-                (table.insert checks
-                              [(.. "neverReplace:" kind)
-                               true
-                               (not= nil
-                                     (find-out (probe {:type :acquire : kind})
-                                               :hold-refused))])))
+              (table.insert checks
+                            [:neverReplace
+                             0
+                             (length (icollect [_ o (ipairs (probe {:type :next-job}))]
+                                       (when (= o.type :spawn) o)))]))
             (when (and (= st.kind :none) st.start
-                       (> (length (set-of st.followUp)) 0))
+                       (> (length (set-of st.followUp)) 0) st.exReq)
               (table.insert checks
                             [:startBeatsExclusive
-                             true
-                             (not= nil
-                                   (find-out (probe {:type :acquire
-                                                     :kind :exclusive})
-                                             :hold-refused))]))
+                             :turn
+                             (?. (find-out (probe {:type :next-job}) :spawn)
+                                 :kind)]))
             (when (not= st.kind :turn)
               (each [_ q (ipairs [:steering :follow-up])]
                 (table.insert checks

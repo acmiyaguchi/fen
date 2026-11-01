@@ -8,11 +8,8 @@
 (local events (require :fen.core.extensions.events))
 (local rpc (require :fen.extensions.rpc))
 
-(fn hold-run [kind f]
-  "Hold the session with spawn-holder and run f to completion: true and f's
-   results, false and the error, or false and the refusal."
-  (let [(co why) (tasks.spawn-holder kind f)]
-    (if co (coroutine.resume co) (values false why))))
+(fn hold-run [_kind f]
+  ((. (require :fen.testing.tasks) :run-turn) f))
 
 (fn make-ch []
   (let [lines []]

@@ -339,6 +339,9 @@
                                                                1)))
                              :make-agent-from-opts (fn [_opts _on-event _extra]
                                                      replacement)}]
+                  ;; The tool runs inside a turn.
+                  ((. (require :fen.core.tasks) :reset!))
+                  ((. (require :fen.testing.tasks) :hold-turn!))
                   (mod.register api)
                   (let [registered (tool-registry.merged [])
                         missing-state (tools.execute-call registered
@@ -355,9 +358,10 @@
                     (assert.is_false call.result.is-error?)
                     ;; Deferred (#627): queued for the idle boundary, nothing swapped now.
                     (assert.are.equal 0 provider-refresh.count)
-                    (assert.are.equal 1 (length state.reload-requests))
-                    (assert.are.equal "/reload-extension demo-ext"
-                                      ((. (require :fen.core.reload_request)
-                                          :command-line) (. state.reload-requests
-                                                            1)))
+                    ;; one exclusive job waits behind the turn
+                    (assert.are.equal 1
+                                      (. ((. (require :fen.core.tasks)
+                                             :snapshot))
+                                         :jobs))
+                    ((. (require :fen.core.tasks) :reset!))
                     (assert.are_not.equal replacement state.agent))))))

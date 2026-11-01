@@ -1,4 +1,5 @@
-;; Deferred agent reload requests; live on the run-state so they are consumed only at that run's idle boundary.
+;; Agent reload requests, deferred as exclusive jobs of the one scheduler
+;; (fen.core.tasks): they run at an idle boundary, after any pending turn.
 
 (local M {})
 
@@ -12,7 +13,7 @@
 ;; @doc fen.core.reload_request.enqueue!
 ;; kind: function
 ;; signature: (enqueue! state request) -> ok?, request|error
-;; summary: Validate and append an agent-requested reload, single-extension reload (scope :extension with a :name, #627), or explicitly scoped recovery request to one interactive run state's deferred queue.
+;; summary: Validate an agent-requested reload, single-extension reload (scope :extension with a :name, #627), or explicitly scoped recovery, and request it as an exclusive job (fen.core.tasks.request-job!): it runs when the session is idle, after any pending turn start. A request matching one still waiting (scope, name, force) only updates its reason.
 ;; tags: reload recovery runtime agent
 (fn M.enqueue! [state request]
   (let [scope (normalized-scope (?. request :scope))
@@ -24,49 +25,27 @@
         (values false "extension scope requires a name without whitespace")
         (= reason "")
         (values false "reason is required")
-        (do
-          (when (= state.reload-requests nil)
-            (set state.reload-requests []))
-          (let [entry {:scope scope
-                       :name (if (= scope :extension) name nil)
-                       :reason reason
-                       :force? (= (?. request :force?) true)}]
-            ;; Coalesce by scope+force so a looping agent cannot stack reloads; latest reason wins.
-            (var existing nil)
-            (each [_ queued (ipairs state.reload-requests) &until existing]
-              (when (and (= queued.scope entry.scope)
-                         (= queued.force? entry.force?)
-                         (= queued.name entry.name))
-                (set existing queued)))
-            (if existing
-                (do
-                  (set existing.reason entry.reason)
-                  (values true existing))
-                (do
-                  (table.insert state.reload-requests entry)
-                  (values true entry))))))))
-
-(fn M.drain! [state execute!]
-  "The presenter calls this after finishing a turn. `state.busy?` covers
-   streaming and tool execution because both occur inside the active turn
-   coroutine; `state.turn` is checked independently as a defensive guard."
-  (if (or state.busy? state.turn
-          ;; A queued turn start goes first (/reload would be refused and the
-          ;; request lost); the request drains once that turn is done.
-          ((. (require :fen.core.tasks) :start-pending?)))
-      (values false nil)
-      (let [queue (or state.reload-requests [])
-            request (. queue 1)]
-        (if request
-            (do
-              (table.remove queue 1)
-              ;; A synchronous throw in the dispatch prelude must not escape the tick loop.
-              (let [(ok err) (pcall execute! request)]
-                (when (not ok)
-                  (io.stderr:write (.. "[warn] deferred reload failed: "
-                                       (tostring err) "\n"))))
-              (values true request))
-            (values false nil)))))
+        (let [tasks (require :fen.core.tasks)
+              events (require :fen.core.extensions.events)
+              entry {: scope
+                     :name (if (= scope :extension) name nil)
+                     : reason
+                     :force? (= (?. request :force?) true)}
+              line (M.command-line entry)]
+          ;; Coalesced by key so a looping agent cannot stack reloads.
+          (tasks.request-job! {:key (.. "reload-request:" line)
+                               : reason
+                               :label :reload-request
+                               :on-spawn (tasks.adopter state)
+                               :run (fn [_hid]
+                                      (events.emit {:type :info
+                                                    :text (.. "reload request> executing "
+                                                              (tostring scope)
+                                                              ": " reason)})
+                                      ;; Inside this job, /reload runs inline.
+                                      ((. (require :fen.core.extensions.register.command)
+                                          :dispatch) line state))})
+          (values true entry)))))
 
 ;; @doc fen.core.reload_request.command-line
 ;; kind: function

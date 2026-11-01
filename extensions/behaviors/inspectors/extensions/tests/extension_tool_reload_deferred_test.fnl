@@ -4,8 +4,10 @@
 (local h (require :fen.testing))
 (local test-api (require :fen.core.extensions.test_api))
 (local tool-registry (require :fen.core.extensions.register.tool))
-(local reload-request (require :fen.core.reload_request))
 (local tools (require :fen.core.tools))
+(local tasks (require :fen.core.tasks))
+(local hold (require :fen.testing.tasks))
+(local command-registry (require :fen.core.extensions.register.command))
 
 (local EXTENSION-MODULE :fen.extensions.extensions_inspector.commands.extension)
 
@@ -15,11 +17,13 @@
             (before_each (fn []
                            (set snapshot
                                 (h.package-loaded-snapshot [EXTENSION-MODULE]))
+                           (tasks.reset!)
                            (test-api.reset!)))
             (after_each (fn []
+                          (tasks.reset!)
                           (test-api.reset!)
                           (h.restore-package-loaded! snapshot)))
-            (it "queues the reload, leaves the registry and the turn's agent alone, and runs it from the idle drain"
+            (it "queues the reload as an exclusive job, leaves the registry and the turn's agent alone, and runs it after the turn"
                 (fn []
                   (let [inspector-api (test-api.make-runtime-api :extensions_inspector)
                         demo-api (test-api.make-runtime-api :demo-ext)
@@ -29,11 +33,11 @@
                                        {:name :demo
                                         :parameters {:type :object}
                                         :execute (fn [] nil)})
+                    (hold.hold-turn!)
                     (let [old-agent {:messages [{:role :user}]}
                           reloads {:count 0}
                           state {:busy? true
                                  :turn {:id 1}
-                                 :reload-requests []
                                  :agent old-agent
                                  :reload-extension (fn [_]
                                                      (set reloads.count
@@ -47,32 +51,28 @@
                       (assert.is_false call.result.is-error?)
                       (assert.are.equal 0 reloads.count)
                       (assert.are.equal old-agent state.agent)
-                      (assert.are.equal 1 (length state.reload-requests))
-                      (let [request (. state.reload-requests 1)]
-                        (assert.are.equal :extension request.scope)
-                        (assert.are.equal "/reload-extension demo-ext"
-                                          (reload-request.command-line request)))
-                      ;; Busy: the drain does nothing. Idle: it hands the request to the dispatcher.
-                      (assert.is_false (reload-request.drain! state
-                                                              (fn [_]
-                                                                (error "ran while busy"))))
-                      (set state.busy? false)
-                      (set state.turn nil)
+                      (assert.are.equal 1 (. (tasks.snapshot) :jobs))
+                      ;; The turn ends; the scheduler runs the job, which
+                      ;; dispatches the reload command line.
+                      (tasks.drop-current!)
                       (var line nil)
-                      (reload-request.drain! state
-                                             (fn [request]
-                                               (set line
-                                                    (reload-request.command-line request))))
+                      (let [orig command-registry.dispatch]
+                        (set command-registry.dispatch
+                             (fn [l _state] (set line l)))
+                        (let [r (tasks.next-job!)]
+                          (assert.are.equal :exclusive r.kind)
+                          (coroutine.resume r.co))
+                        (set command-registry.dispatch orig))
                       (assert.are.equal "/reload-extension demo-ext" line)))))
             (it "rejects an empty name without queueing"
                 (fn []
                   (let [inspector-api (test-api.make-runtime-api :extensions_inspector)
                         mod (h.reload-module EXTENSION-MODULE)]
                     (mod.register inspector-api)
-                    (let [state {:busy? true :reload-requests []}
+                    (let [state {:busy? true}
                           call (tools.execute-call (tool-registry.merged [])
                                                    {:name :extension
                                                     :arguments {:action "reload"}}
                                                    {: state})]
                       (assert.is_true call.result.is-error?)
-                      (assert.are.equal 0 (length state.reload-requests))))))))
+                      (assert.are.equal 0 (. (tasks.snapshot) :jobs))))))))

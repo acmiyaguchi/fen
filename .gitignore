@@ -19,4 +19,4 @@
 /*.tar.gz
 .direnv/
 .env
-/_apalache-out/
+_apalache-out/

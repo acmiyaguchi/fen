@@ -46,8 +46,10 @@
                     ((. (require :fen.core.tasks) :attach!) true)
 
                     (fn idle-tick! []
-                      (let [text (?. ((. (require :fen.core.tasks) :next-start!))
-                                     :text)]
+                      (let [text (?. ((. (require :fen.core.tasks) :next-job!) {:make-turn (fn []
+                                                                                             (fn []
+                                                                                               nil))})
+                                     :item :text)]
                         (when text
                           (set state.busy? true)
                           (set state.turn :follow-up)

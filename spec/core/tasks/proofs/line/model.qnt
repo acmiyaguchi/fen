@@ -62,8 +62,8 @@ module lineAbstract {
   // This line is lineAdmitted by offer! (t = -1 local, 0 start-if-idle, > 0 turn t).
   pure def lineAdmitted(a: View, b: View): bool = and {
     a.st == "unissued",
-    // an idle offer may also raise the start request in the same step
-    b.lease == a.lease or (a.lease.kind == "none" and b.lease == leaseSetStartReq(a.lease, true)),
+    // an offer while no turn holds may also raise the start request in the same step
+    b.lease == a.lease or (a.lease.kind != "turn" and b.lease == leaseSetStartReq(a.lease, true)),
     or {
       // steer: the running turn, local or the turn the sender saw
       and { a.lease.kind == "turn", b.st == "steer", b.wasSteer, b.why == "",
@@ -144,6 +144,7 @@ module lineSpec {
   var cancel: bool
   var hid: int
   var startReq: bool
+  var exReq: bool
   var st: str
   var why: str
   var whyN: int
@@ -158,7 +159,7 @@ module lineSpec {
   var stepOk: bool
 
   def v: View = {
-    lease: { kind: kind, n: n, hid: hid, body: body, cancel: cancel, startReq: startReq },
+    lease: { kind: kind, n: n, hid: hid, body: body, cancel: cancel, startReq: startReq, exReq: exReq },
     st: st, why: why, whyN: whyN, forTurn: forTurn, wasSteer: wasSteer, local: local,
     steerAhead: steerAhead, otherSteer: otherSteer, followAhead: followAhead,
     steerMode: steerMode, followMode: followMode,
@@ -166,7 +167,7 @@ module lineSpec {
 
   action putView(b: View): bool = all {
     kind' = b.lease.kind, n' = b.lease.n, body' = b.lease.body,
-    cancel' = b.lease.cancel, hid' = b.lease.hid, startReq' = b.lease.startReq,
+    cancel' = b.lease.cancel, hid' = b.lease.hid, startReq' = b.lease.startReq, exReq' = b.lease.exReq,
     st' = b.st, why' = b.why, whyN' = b.whyN, forTurn' = b.forTurn,
     wasSteer' = b.wasSteer, local' = b.local, steerAhead' = b.steerAhead,
     otherSteer' = b.otherSteer, followAhead' = b.followAhead,
@@ -175,7 +176,7 @@ module lineSpec {
   }
 
   action init = all {
-    kind' = "none", n' = 0, hid' = 0, body' = false, cancel' = false, startReq' = false,
+    kind' = "none", n' = 0, hid' = 0, body' = false, cancel' = false, startReq' = false, exReq' = false,
     st' = "unissued", why' = "", whyN' = 0, forTurn' = 0, wasSteer' = false,
     local' = false, steerAhead' = false, otherSteer' = false, followAhead' = false,
     steerMode' = "one", followMode' = "one", stepOk' = true,
@@ -253,12 +254,13 @@ module lineSpec {
     nondet fm = LINE_MODES.oneOf()
     nondet m = HS.oneOf()
     nondet r = Bool.oneOf()
-    nondet k = Set("turn", "exclusive", "release", "cancel", "req").oneOf()
+    nondet k = Set("turn", "exclusive", "release", "cancel", "req", "exreq").oneOf()
     val lb =
       if (k == "turn") leaseStartTurn(v.lease)
       else if (k == "exclusive") leaseStartExclusive(v.lease)
       else if (k == "release") leaseRelease(v.lease)
       else if (k == "cancel") leaseCancel(v.lease, m)
+      else if (k == "exreq") leaseRequestExclusive(v.lease)
       else leaseSetStartReq(v.lease, r)
     any {
       doLease(lb, sa, os, fa, sm, fm),
@@ -280,6 +282,7 @@ module lineSpec {
     nondet bd = Bool.oneOf()
     nondet cn = Bool.oneOf()
     nondet rq = Bool.oneOf()
+    nondet xr = Bool.oneOf()
     nondet s2 = LINE_STATES.oneOf()
     nondet w = LINE_WHYS.oneOf()
     nondet wn = NS.oneOf()
@@ -292,7 +295,7 @@ module lineSpec {
     nondet sm = LINE_MODES.oneOf()
     nondet fm = LINE_MODES.oneOf()
     val b = {
-      lease: { kind: k, n: nn, hid: hh, body: bd, cancel: cn, startReq: rq },
+      lease: { kind: k, n: nn, hid: hh, body: bd, cancel: cn, startReq: rq, exReq: xr },
       st: s2, why: w, whyN: wn, forTurn: ft, wasSteer: ws, local: lc,
       steerAhead: sa, otherSteer: os, followAhead: fa, steerMode: sm, followMode: fm,
     }
@@ -318,7 +321,7 @@ module lineSpec {
   }
 
   val inductiveInv = and {
-    kind.in(LEASE_KINDS), n.in(NS), hid.in(HS), n <= hid, body.in(Bool), cancel.in(Bool), startReq.in(Bool),
+    kind.in(LEASE_KINDS), n.in(NS), hid.in(HS), n <= hid, body.in(Bool), cancel.in(Bool), startReq.in(Bool), exReq.in(Bool),
     st.in(LINE_STATES), why.in(LINE_WHYS), whyN.in(NS), forTurn.in(NS),
     wasSteer.in(Bool), local.in(Bool), steerAhead.in(Bool), otherSteer.in(Bool),
     followAhead.in(Bool), steerMode.in(LINE_MODES), followMode.in(LINE_MODES), stepOk.in(Bool),

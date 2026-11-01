@@ -608,7 +608,7 @@
                     (assert.is_nil state.turn)
                     (assert.are.equal 0 (length asks))
                     (assert.are.equal 0 (event-count seen :error)))))
-            (it "skips auto-compaction quietly while a turn start is pending, and retries on the next trigger"
+            (it "auto-compaction waits behind a pending turn start without an error, then runs after it"
                 (fn []
                   (let [tasks (require :fen.core.tasks)
                         (decide _rates _asks) (mock-decide-compaction)
@@ -622,14 +622,16 @@
                                     decide {:autoCompactTokens threshold})]
                     (tasks.offer! "queued prompt")
                     (complete-turn! state)
+                    ;; requested, not started: the queued turn goes first
                     (assert.is_nil state.turn)
                     (assert.are.equal 0 (event-count seen :error))
-                    (assert.are.equal 0 (event-count seen :info))
-                    ;; The queued turn starts and completes; the next trigger compacts.
-                    (let [(_ hid) (tasks.next-start!)]
-                      (tasks.release! hid))
-                    (set state.turn-id (+ (or state.turn-id 0) 1))
-                    (complete-turn! state)
+                    (assert.are.equal 1 (. (tasks.snapshot) :jobs))
+                    (let [r (tasks.next-job! {:make-turn (fn [] (fn [] nil))})]
+                      (assert.are.equal :turn r.kind)
+                      (assert.are.equal "queued prompt" r.item.text)
+                      (coroutine.resume r.co))
+                    ;; then the scheduler runs the waiting compaction
+                    (assert.are.equal :exclusive (. (tasks.next-job!) :kind))
                     (assert.is_not_nil state.turn)
                     (assert.is_true (drain! state))
                     (assert.are.equal 1 (length state._test.entries)))))
@@ -648,9 +650,10 @@
                     (assert.is_not_nil state.turn)
                     (assert.is_true state.busy?)
                     (assert.are.equal 0 (length asks))
+                    (assert.is_true (drain! state))
+                    ;; the notice is shown when the job actually runs
                     (assert.is_true (has? (. (last-event seen :info) :text)
                                           "autoCompactTokens"))
-                    (assert.is_true (drain! state))
                     (assert.are.equal 1 (length state._test.entries))
                     (assert.are.equal :auto (. state._test.entries 1 :trigger))
                     (assert.are.equal :auto
@@ -763,9 +766,9 @@
                       (assert.are.equal state.agent.messages ask.messages)
                       (ask.on-good))
                     (assert.is_not_nil state.turn)
+                    (assert.is_true (drain! state))
                     (assert.is_true (has? (. (last-event seen :info) :text)
                                           "compacting early"))
-                    (assert.is_true (drain! state))
                     (assert.are.equal :auto (. state._test.entries 1 :trigger))
                     (assert.are.equal "early summary"
                                       (. (last-event seen :compaction-summary)

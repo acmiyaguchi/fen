@@ -34,12 +34,12 @@ module witnesses {
       .then(H::doCancel(1))
       .expect(H::s.cancel and H::allInvariants)
 
-  // An offer behind /reload waits as a follow-up; the line typed once idle
-  // starts the next turn first, and the older one is taken at its stop.
+  // An offer behind /reload asks for a turn; it starts once /reload ends,
+  // ahead of a line typed after it (typing order), which is taken at the stop.
   run reachOfferBehindExclusiveTest =
-    H::init.then(H::doStartExclusive).then(H::doOffer(-1, 1, false)).then(H::doBodyExit(false))
+    H::init.then(H::doRequestExclusive).then(H::doStartExclusive).then(H::doOffer(-1, 1, false)).then(H::doBodyExit(false))
       .then(H::doOffer(-1, 1, false)).then(H::doStartTurn).then(H::doTakeFollowUp)
-      .expect(H::s.why.get(1) == "started" and H::s.why.get(0) == "taken"
+      .expect(H::s.why.get(0) == "started" and H::s.why.get(1) == "taken"
               and H::s.n == 1 and H::allInvariants)
 
   // Steer lines are taken before follow-ups; repeated caller tags do not matter.
@@ -90,7 +90,13 @@ module witnesses {
 
   // A cancel aimed at /reload (holder 1) does not reach the turn that follows it.
   run reachCancelExclusiveFencedTest =
-    H::init.then(H::doStartExclusive).then(H::doBodyExit(false))
+    H::init.then(H::doRequestExclusive).then(H::doStartExclusive).then(H::doBodyExit(false))
       .then(H::doOffer(-1, 0, false)).then(H::doStartTurn).then(H::doCancel(1))
       .expect(not(H::s.cancel) and H::s.hid == 2 and H::allInvariants)
+
+  // A requested /reload waits for a pending turn start, then runs.
+  run reachReloadAfterPendingTurnTest =
+    H::init.then(H::doOffer(-1, 0, false)).then(H::doRequestExclusive).then(H::doStartTurn)
+      .then(H::doBodyExit(false)).then(H::doStartExclusive)
+      .expect(H::s.kind == "exclusive" and not(H::s.exReq) and H::s.n == 1 and H::allInvariants)
 }

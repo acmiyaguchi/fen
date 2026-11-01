@@ -210,6 +210,7 @@ digraph fen_modules {
   "fen.testing" [fillcolor="lightyellow", label="fen.testing", style="filled", tooltip="packages/testing/src/fen/testing/init.fnl persistent"];
   "fen.testing.macros" [fillcolor="lightyellow", label="fen.testing.macros", style="filled", tooltip="packages/testing/src/fen/testing/macros.fnl persistent"];
   "fen.testing.pty" [fillcolor="lightyellow", label="fen.testing.pty", style="filled", tooltip="packages/testing/src/fen/testing/pty.fnl persistent"];
+  "fen.testing.tasks" [fillcolor="lightyellow", label="fen.testing.tasks", style="filled", tooltip="packages/testing/src/fen/testing/tasks.fnl persistent"];
   "fen.testing.tools" [fillcolor="lightyellow", label="fen.testing.tools", style="filled", tooltip="packages/testing/src/fen/testing/tools.fnl persistent"];
   "fen.testing.tui" [fillcolor="lightyellow", label="fen.testing.tui", style="filled", tooltip="packages/testing/src/fen/testing/tui.fnl persistent"];
   "fen.testing.tui_latency" [fillcolor="lightyellow", label="fen.testing.tui_latency", style="filled", tooltip="packages/testing/src/fen/testing/tui_latency.fnl persistent"];
@@ -401,6 +402,7 @@ digraph fen_modules {
   "fen.core.extensions.register.command" -> "fen.core.extensions.events" [label="require"];
   "fen.core.extensions.register.command" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions.register.command" -> "fen.core.extensions.util" [label="require"];
+  "fen.core.extensions.register.command" -> "fen.core.tasks" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.register.command" -> "fen.util.text" [label="require"];
   "fen.core.extensions.register.contribution" -> "fen.core.extensions.contrib" [label="require"];
   "fen.core.extensions.register.contribution" -> "fen.core.extensions.util" [label="require"];
@@ -458,6 +460,8 @@ digraph fen_modules {
   "fen.core.llm.models" -> "fen.util.log" [label="require"];
   "fen.core.llm.models" -> "fen.util.path" [label="require"];
   "fen.core.prompt" -> "fen.core.extensions.register.prompt" [label="require"];
+  "fen.core.reload_request" -> "fen.core.extensions.events" [color="gray50", label="late", style="dashed"];
+  "fen.core.reload_request" -> "fen.core.extensions.register.command" [color="gray50", label="late", style="dashed"];
   "fen.core.reload_request" -> "fen.core.tasks" [color="gray50", label="late", style="dashed"];
   "fen.core.runtime_recovery" -> "fen.core.extensions.state" [label="require"];
   "fen.core.runtime_recovery" -> "fen.core.extensions.util" [label="require"];
@@ -942,7 +946,6 @@ digraph fen_modules {
   "fen.interactive" -> "fen.core.extensions.register.tool" [label="require"];
   "fen.interactive" -> "fen.core.llm.models" [label="require"];
   "fen.interactive" -> "fen.core.prompt" [label="require"];
-  "fen.interactive" -> "fen.core.reload_request" [label="require"];
   "fen.interactive" -> "fen.core.tasks" [label="require"];
   "fen.interactive" -> "fen.core.thinking" [label="require"];
   "fen.interactive" -> "fen.core.tool_policy" [label="require"];
@@ -999,6 +1002,7 @@ digraph fen_modules {
   "fen.testing" -> "fen.util.log_sink" [color="gray50", label="late", style="dashed"];
   "fen.testing.macros" -> "fen.testing" [color="gray50", label="late", style="dashed"];
   "fen.testing.pty" -> "fen.testing" [label="require"];
+  "fen.testing.tasks" -> "fen.core.tasks" [label="require"];
   "fen.testing.tools" -> "fen.core.tools" [color="gray50", label="late", style="dashed"];
   "fen.testing.tools" -> "fen.core.types" [color="gray50", label="late", style="dashed"];
   "fen.testing.tools" -> "fen.extensions.builtin_tools.registry" [color="gray50", label="late", style="dashed"];
