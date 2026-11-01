@@ -101,9 +101,26 @@
                                :error "cannot enqueue an empty message"}
                               (let [tasks (require :fen.core.tasks)
                                     tasks-state (require :fen.core.tasks.state)]
-                                (if tasks-state.attached?
-                                    (tasks.queue! kind text ?opts)
-                                    {:ok false :error "no interactive runtime"}))))
+                                (if (not tasks-state.attached?)
+                                    {:ok false :error "no interactive runtime"}
+                                    (let [opts (or ?opts {})
+                                          idle? (= :none
+                                                   (. (tasks.holder) :kind))]
+                                      (if (= kind :steering)
+                                          ;; Steering names a turn (default the
+                                          ;; running one), so it never starts one.
+                                          (tasks.offer! text
+                                                        {:tag opts.tag
+                                                         :turn (or opts.turn
+                                                                   (math.max (. (tasks.holder)
+                                                                                :n)
+                                                                             1))})
+                                          (and opts.start-if-idle? idle?)
+                                          (tasks.offer! text
+                                                        {:tag opts.tag :turn 0})
+                                          (tasks.offer! text
+                                                        {:tag opts.tag
+                                                         :follow-up? true})))))))
                :auth {:find-backend (fn [name]
                                       (auth-backend-registry.find name))}
                :session {:active-backend (fn []

@@ -145,6 +145,10 @@ module holderAbstract {
 
 module holderSpec {
   import holderAbstract.* from "./model"
+  // Selective imports, and L0/L1 helpers with unique names: quint 0.32 flattens
+  // imported helpers into this module, and qualified imports lose them.
+  import leaseAbstract.leaseNext from "../lease/model"
+  import lineAbstract.lineNext from "../line/model"
 
   pure val MAX_N = 3
   pure val NS = 0.to(MAX_N)
@@ -191,6 +195,29 @@ module holderSpec {
   var takeOk: bool             // every take! drained exactly what its mode says
   var setSteer: str            // the steer mode last set by set-mode!
   var setFollow: str           // the follow-up mode last set by set-mode!
+  // The previous state, copied each step. Refinement is a state predicate
+  // over (previous, current), so the step relation carries no lineNext
+  // and the base proof stays cheap; only the refinement proofs pay for it.
+  var pKind: str
+  var pN: int
+  var pSteer: Set[int]
+  var pFollowUp: Set[int]
+  var pStart: bool
+  var pCancel: bool
+  var pWhy: int -> str
+  var pWhyN: int -> int
+  var pSteerMode: str
+  var pFollowMode: str
+  var pBody: bool
+  var pSeq: int
+  var pFor: int -> int
+  var pIsSteer: int -> bool
+  var pIsLocal: int -> bool
+
+  def ps: Session = {
+    kind: pKind, n: pN, steer: pSteer, followUp: pFollowUp, start: pStart,
+    cancel: pCancel, why: pWhy, whyN: pWhyN, steerMode: pSteerMode, followMode: pFollowMode,
+  }
 
   action init = all {
     kind' = sessionInit.kind, n' = sessionInit.n, steer' = sessionInit.steer,
@@ -203,6 +230,32 @@ module holderSpec {
     steerMode' = "one", followMode' = "one",
     heldFor' = 0, waitedFor' = 0, starved' = false, takeOk' = true,
     setSteer' = "one", setFollow' = "one",
+    pKind' = sessionInit.kind, pN' = sessionInit.n, pSteer' = sessionInit.steer,
+    pFollowUp' = sessionInit.followUp, pStart' = sessionInit.start,
+    pCancel' = sessionInit.cancel, pWhy' = sessionInit.why, pWhyN' = sessionInit.whyN,
+    pSteerMode' = sessionInit.steerMode, pFollowMode' = sessionInit.followMode,
+    pBody' = false, pSeq' = 0, pFor' = SEQS.mapBy(_q => 0),
+    pIsSteer' = SEQS.mapBy(_q => false), pIsLocal' = SEQS.mapBy(_q => false),
+  }
+
+  // ---- refinement mappings onto L0 (lease) and L1 (one line) ----
+
+  pure def leaseOf(a: Session, b: bool): { kind: str, n: int, body: bool, cancel: bool, startReq: bool } = {
+    kind: a.kind, n: a.n, body: b, cancel: a.cancel,
+    startReq: a.start and a.followUp != Set(),
+  }
+
+  pure def viewOf(a: Session, b: bool, ns: int, fT: int -> int, sT: int -> bool,
+                  lc: int -> bool, q: int): { lease: { kind: str, n: int, body: bool, cancel: bool, startReq: bool }, st: str, why: str, whyN: int, forTurn: int, wasSteer: bool, local: bool, steerAhead: bool, otherSteer: bool, followAhead: bool, steerMode: str, followMode: str } = {
+    lease: leaseOf(a, b),
+    st: if (q >= ns) "unissued" else if (a.steer.contains(q)) "steer"
+        else if (a.followUp.contains(q)) "follow" else "done",
+    why: a.why.get(q), whyN: a.whyN.get(q), forTurn: fT.get(q),
+    wasSteer: sT.get(q), local: lc.get(q),
+    steerAhead: a.steer.exists(x => x < q),
+    otherSteer: a.steer.exclude(Set(q)) != Set(),
+    followAhead: a.followUp.exists(x => x < q),
+    steerMode: a.steerMode, followMode: a.followMode,
   }
 
   // A start was asked for and is possible (the spec of "waiting", kept
@@ -230,6 +283,10 @@ module holderSpec {
     starved' = (starved or gStarved),
     takeOk' = (takeOk and gTake),
     setSteer' = gSetSteer, setFollow' = gSetFollow,
+    pKind' = kind, pN' = n, pSteer' = steer, pFollowUp' = followUp, pStart' = start,
+    pCancel' = cancel, pWhy' = why, pWhyN' = whyN, pSteerMode' = steerMode,
+    pFollowMode' = followMode, pBody' = body, pSeq' = nextSeq, pFor' = forTurn,
+    pIsSteer' = isSteer, pIsLocal' = isLocal,
     tagOf' = gTag, forTurn' = gFor, isSteer' = gSteer, isLocal' = gLocal,
     orderOk' = (orderOk and gOrder),
     cancelOk' = (cancelOk and gCancel),
@@ -240,14 +297,22 @@ module holderSpec {
     go(ps, pBody, nextSeq, tagOf, forTurn, isSteer, true, true)
 
   // The driver's idle tick: next-start! then (with-holder :turn ...).
+  // The whole start guard, in one place: the deadline tick below takes
+  // `doStartTurn` exactly when this holds and `doStarved` otherwise, so the
+  // forced step is total and a guard bug shows up as `starved`, never as a
+  // silent deadlock. Keep every start condition here, not in the action.
+  pure def startGuard(a: Session): bool = canStartTurn(a) and a.n < MAX_N
+
   action doStartTurn: bool = all {
-    canStartTurn(s), s.n < MAX_N,
+    startGuard(s),
     plain(startTurn(s), true),
   }
 
   // (with-holder :exclusive f): /reload, /handoff.
   action doStartExclusive: bool = all {
     s.kind == "none",
+    // a pending turn start has priority over an exclusive holder
+    not(s.start and s.followUp != Set()),
     plain(startExclusive(s), true),
   }
 
@@ -271,7 +336,7 @@ module holderSpec {
       nextSeq < MAX_SEQ,
       goL(b, body, nextSeq + 1, tagOf.set(q, g),
           forTurn.set(q, if (not(b.steer.contains(q))) 0 else if (t > 0) t else s.n),
-          isSteer.set(q, b.steer.contains(q)), isLocal.set(q, t == -1 and not(f)),
+          isSteer.set(q, b.steer.contains(q)), isLocal.set(q, t == -1),
           true, true, true, false, setSteer, setFollow),
     }
 
@@ -305,7 +370,7 @@ module holderSpec {
 
   // The idle tick is due but cannot start a requested turn: a liveness failure.
   action doStarved: bool = all {
-    not(canStartTurn(s)),
+    not(startGuard(s)),
     goL(s, body, nextSeq, tagOf, forTurn, isSteer, isLocal, true, true, true, true,
         setSteer, setFollow),
   }
@@ -333,7 +398,7 @@ module holderSpec {
     // Fairness made explicit: an overdue body exits; an overdue idle tick
     // starts the requested turn (or is recorded as starved).
     if (body and heldFor >= MAX_BODY) doBodyExit(f)
-    else if (waiting(s) and waitedFor >= MAX_IDLE) any { doStartTurn, doStarved }
+    else if (waiting(s) and waitedFor >= MAX_IDLE) (if (startGuard(s)) doStartTurn else doStarved)
     else any {
       doStartTurn,
       doStartExclusive,
@@ -393,11 +458,19 @@ module holderSpec {
 
   // Modes: every take! drains exactly what the mode says, and modes persist
   // across turns, releases, and clears until set-mode! changes them.
+  // Refinement: L2 is a correct implementation of L0 and, per seq, of L1,
+  // so the lease's liveness and the line's safety carry up to this model.
+  // The last step was an L0 lease step, and for every seq an L1 line step.
+  val refinesLease = leaseNext(leaseOf(ps, pBody), leaseOf(s, body))
+  val refinesLine = SEQS.forall(q =>
+    lineNext(viewOf(ps, pBody, pSeq, pFor, pIsSteer, pIsLocal, q),
+             viewOf(s, body, nextSeq, forTurn, isSteer, isLocal, q)))
+
   val takeByModeInv = takeOk
   val modesPersistInv = steerMode == setSteer and followMode == setFollow
   val cancelFencedInv = cancelOk
 
-  val allInvariants = and {
+  val safetyInvariants = and {
     sessionInvHolds,
     holderHasBodyInv,
     eachSeqOnceInv,
@@ -412,7 +485,20 @@ module holderSpec {
     modesPersistInv,
   }
 
+  // Simulation checks the refinement monitors too; the proofs split them off
+  // (see verify.tsv): the per-seq lineNext monitor dominates solver time.
+  val allInvariants = and { safetyInvariants, refinesLease, refinesLine }
+
+  // Typing for the previous-state copy; nothing else is assumed about it.
+  val prevTyped = and {
+    pKind.in(KINDS), pN.in(NS), pSteer.in(powerset(SEQS)), pFollowUp.in(powerset(SEQS)),
+    pStart.in(Bool), pCancel.in(Bool), pWhy.in(setOfMaps(SEQS, WHYS)),
+    pWhyN.in(setOfMaps(SEQS, NS)), pSteerMode.in(MODES), pFollowMode.in(MODES),
+    pBody.in(Bool), pSeq.in(0.to(MAX_SEQ)), pFor.in(setOfMaps(SEQS, NS)),
+    pIsSteer.in(setOfMaps(SEQS, Bool)), pIsLocal.in(setOfMaps(SEQS, Bool)),
+  }
   val inductiveInv = and {
+    prevTyped,
     kind.in(KINDS),
     n.in(NS),
     steer.in(powerset(SEQS)),
@@ -438,6 +524,8 @@ module holderSpec {
     takeOk.in(Bool),
     setSteer.in(MODES),
     setFollow.in(MODES),
+    start implies followUp != Set(),
+    start implies kind == "none",
     kind == "none" implies heldFor == 0,
     not(waiting(s)) implies waitedFor == 0,
     SEQS.forall(q => isSteer.get(q) implies forTurn.get(q) >= 1),
@@ -445,6 +533,16 @@ module holderSpec {
     SEQS.forall(q => s.followUp.contains(q) implies not(isSteer.get(q))),
     SEQS.forall(q => s.whyN.get(q) <= s.n),
     SEQS.forall(q => forTurn.get(q) <= s.n),
-    allInvariants,
+    // a seq not yet issued carries only initial values
+    SEQS.forall(q => q >= nextSeq implies and {
+      s.why.get(q) == "", s.whyN.get(q) == 0, forTurn.get(q) == 0, tagOf.get(q) == 0,
+      not(isSteer.get(q)), not(isLocal.get(q)),
+      not(s.steer.contains(q)), not(s.followUp.contains(q)) }),
+    safetyInvariants,
   }
+
+  // Refinement of L0 and, per seq, of L1, on top of the base induction.
+  // Each step from a state satisfying the base invariant refines L0 / L1.
+  val refinesLeaseInv = and { inductiveInv, refinesLease }
+  val refinesInv = and { inductiveInv, refinesLease, refinesLine }
 }

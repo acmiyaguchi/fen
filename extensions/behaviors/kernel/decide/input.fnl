@@ -8,16 +8,15 @@
 ;;   conversation reset makes a pending answer stale.
 ;; - A plain line typed while busy is classified as a correction, follow-up,
 ;;   or cancel request. Steering queues the line as usual right after this
-;;   handler; the answer lands on a later tick, and a confident follow-up
-;;   still pending in steering moves to the follow-up queue (/decide undo
-;;   moves it back), while a cancel only suggests ctrl-c.
+;;   handler; the answer lands on a later tick. A confident follow-up only
+;;   gets a hint (the line stays where it is), and a cancel only suggests
+;;   ctrl-c.
 ;;
-;; Behavior only; the pending topic token and the undo record live in the
+;; Behavior only; the pending idle tokens live in the
 ;; non-reloadable `fen.extensions.decide.state`.
 
 (local store (require :fen.extensions.decide.state))
 (local service (require :fen.extensions.decide.service))
-(local steering (require :fen.extensions.steering.service))
 (local text (require :fen.util.text))
 
 (local M {})
@@ -212,7 +211,7 @@
      :latest_user_message (latest-user-message messages)
      :activity (activity messages)}))
 
-(fn apply-route! [api line runtime turn-id answers]
+(fn apply-route! [api _line runtime turn-id answers]
   (let [answer (?. answers :route)
         choice (when (and answer (= (type answer.confidence) :number)
                           (>= answer.confidence MIN-CONFIDENCE))
@@ -220,10 +219,9 @@
     ;; A decision about a finished turn is stale even if a new turn is running.
     (when (and (?. runtime :busy?) (= (?. runtime :turn-id) turn-id))
       (if (= choice :follow-up)
-          (when (. (steering.requeue! line :steering :follow-up) :ok)
-            (set store.reclassified line)
-            (api.emit {:type :info
-                       :text "reads as a follow-up, so it waits for this turn · /decide undo to steer now"}))
+          ;; The mailbox never moves a queued line; the user decides.
+          (api.emit {:type :info
+                     :text "reads as a follow-up; prefix with `>` to queue it for after this turn"})
           (= choice :cancel)
           (api.emit {:type :info
                      :text "reads as a cancel request · ctrl-c cancels the turn"})))
@@ -242,27 +240,6 @@
     (service.ask-async! (route-state line runtime) ROUTE-QUESTIONS
                         (fn [answers]
                           (apply-route! api line runtime turn-id answers)))))
-
-;; @doc fen.extensions.decide.input.undo!
-;; kind: function
-;; signature: (undo!) -> {:ok true :queued true :queue :steering}|{:ok false :error msg}
-;; summary: Move the line last classified as a follow-up back to the steering queue while it is still pending there; backs /decide undo.
-;; tags: decide input queue
-(fn M.undo! []
-  (let [line store.reclassified]
-    (set store.reclassified nil)
-    (if (= line nil)
-        {:ok false :error "nothing to undo"}
-        (steering.requeue! line :follow-up :steering))))
-
-;; @doc fen.extensions.decide.input.on-status-info
-;; kind: function
-;; signature: (on-status-info ev) -> nil
-;; summary: Drop the /decide undo record once a :set-status-info event reports an empty follow-up queue, as clear-queues! does for /cancel-all, /new, /resume, and /handoff.
-;; tags: decide input queue
-(fn M.on-status-info [ev]
-  (when (= (?. ev :info :follow-up-queued) 0)
-    (set store.reclassified nil)))
 
 ;; ---------------------------------------------------------------------------
 ;; Input handler

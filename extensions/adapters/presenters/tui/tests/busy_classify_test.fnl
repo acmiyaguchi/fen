@@ -1,6 +1,6 @@
 ;; Busy-time input classification as the TUI user sees it: the line queues as
-;; steering at once, a confident decide answer surfaces a transcript notice,
-;; and /decide undo moves a reclassified line back to steering.
+;; steering at once, and a confident decide answer surfaces a transcript
+;; notice; the line itself is never moved.
 
 (local tui-test (require :fen.testing.tui))
 (local tb (tui-test.install-termbox-stub! {:capture? true :cols 80 :rows 12}))
@@ -39,7 +39,7 @@
 (fn reset! []
   (test-api.reset!)
   (tasks.reset!)
-  (tasks.turn-start!)
+  (tasks.spawn-held :turn #(coroutine.yield))
   (set asks [])
   (tset package.loaded :fen.extensions.decide.service
         {:enabled? (fn []
@@ -103,7 +103,7 @@
                                 original-decide-input)
                           (steering.clear-queues!)
                           (test-api.reset!)))
-            (it "moves a follow-up out of steering, shows how to undo, and /decide undo restores it"
+            (it "hints at > for a follow-up and leaves the line in steering"
                 (fn []
                   (type-and-submit! "then add a changelog entry")
                   ;; Accepted immediately as steering, before any decision arrives.
@@ -113,21 +113,11 @@
                                         "queued> steering: then add a changelog entry"))
                   ((. asks 1) (answer :follow-up 0.9))
                   (let [screen (frame)]
-                    (assert.is_true (has? screen
-                                          "queued> follow-up: then add a changelog entry"))
-                    (assert.is_true (has? screen "/decide undo to steer now")))
-                  (assert.are.same ["then add a changelog entry"]
-                                   (. (tasks.snapshot) :follow-up))
-                  (run-subcommand! "/decide undo")
+                    (assert.is_true (has? screen "reads as a follow-up"))
+                    (assert.is_false (has? screen "queued> follow-up")))
                   (assert.are.same ["then add a changelog entry"]
                                    (. (tasks.snapshot) :steering))
-                  (assert.are.same [] (. (tasks.snapshot) :follow-up))
-                  (assert.are.equal "" state.input-buf)
-                  ;; A second undo has nothing left to move and says so.
-                  (run-subcommand! "/decide undo")
-                  (assert.is_true (has? (frame) "decide undo: nothing to undo"))
-                  (assert.are.same ["then add a changelog entry"]
-                                   (. (tasks.snapshot) :steering))))
+                  (assert.are.same [] (. (tasks.snapshot) :follow-up))))
             (it "suggests ctrl-c for a cancel request without cancelling or moving the line"
                 (fn []
                   (type-and-submit! "stop, never mind")

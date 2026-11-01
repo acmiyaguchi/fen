@@ -11,4 +11,6 @@ holderSpec	releasedInTimeInv	holds
 holderSpec	startedInTimeInv	holds
 holderSpec	takeByModeInv	holds
 holderSpec	modesPersistInv	holds
+holderSpec	refinesLease	holds
+holderSpec	refinesLine	holds
 holderSpec	inductiveInv	holds

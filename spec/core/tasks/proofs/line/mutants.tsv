@@ -1,0 +1,5 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    val steerOk = kind == "turn" and (isLocal or t == n)|    val steerOk = kind == "turn"|	lineSpec	steerBelongsInv	a late offer for an old turn becomes a steer line of the running one
+model.qnt	s|    move({ ...lineDone(v, "released", n), lease: leaseRelease(v.lease) }, sa, os, fa, sm, fm),|    move({ ...lineDone(v, "released", n + 1), lease: leaseRelease(v.lease) }, sa, os, fa, sm, fm),|	lineSpec	steerAttributedInv	a returned steer line is attributed to the next turn
+model.qnt	s|    val refuse = (t > 0 and not(steerOk)) or (t == 0 and kind != "none")|    val refuse = (t > 0 and not(steerOk)) or (t == 0 and kind != "none") or (t == -1 and kind == "exclusive")|	lineSpec	localNotRefusedInv	a local offer behind an exclusive holder is refused
+model.qnt	s|    st == "follow", kind == "turn", body, not(otherSteer),|    st == "follow", kind == "turn", body,|	lineSpec	movesAreAbsSteps	a follow-up is taken while steer lines are queued

@@ -233,10 +233,10 @@
                         ctx {:agent (agent reg)
                              :state {:busy? true :cancel-requested? false}}]
                     (tasks.reset!)
-                    (tasks.turn-start!)
-                    (tasks.queue! :steering "a")
-                    (tasks.queue! :steering "b")
-                    (tasks.queue! :follow-up "c")
+                    (tasks.spawn-held :turn #(coroutine.yield))
+                    (tasks.offer! "a")
+                    (tasks.offer! "b")
+                    (tasks.offer! "c" {:follow-up? true})
                     (let [r (execute reg :agent_state {:query "(:get :run)"}
                                      ctx)
                           decoded (json.decode (first-text r.content))]

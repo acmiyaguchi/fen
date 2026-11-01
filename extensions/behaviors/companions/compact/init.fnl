@@ -17,7 +17,7 @@
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
 (local tokens (require :fen.util.tokens))
-(local coroutines (require :fen.util.coroutines))
+(local tasks (require :fen.core.tasks))
 (local decide-compaction (require :fen.extensions.decide.compaction))
 (local ext-state (require :fen.core.extensions.state))
 
@@ -284,25 +284,38 @@
                                              ?emit-error?))))))))))))
 
 (fn start-compact! [api run-state args trigger]
-  (set run-state.cancel-requested? false)
-  (set run-state.turn
-       (coroutines.create (fn []
-                            (let [(ok? err) (xpcall #(finish-compact! api
-                                                                      run-state
-                                                                      (trim args)
-                                                                      trigger
-                                                                      (make-yield run-state)
-                                                                      true)
-                                                    #(if (= $1 CANCEL-MARKER)
-                                                         $1
-                                                         (debug.traceback (tostring $1)
-                                                                          2)))]
-                              (when (not ok?)
-                                (api.emit {:type :llm-end :usage nil})
-                                (if (= err CANCEL-MARKER)
-                                    (api.emit {:type :cancelled})
-                                    (error err)))))))
-  (set run-state.busy? true))
+  (let [(co hid-or-why) (tasks.spawn-held :exclusive
+                                          (fn []
+                                            (let [(ok? err) (xpcall #(finish-compact! api
+                                                                                      run-state
+                                                                                      (trim args)
+                                                                                      trigger
+                                                                                      (make-yield run-state)
+                                                                                      true)
+                                                                    #(if (= $1
+                                                                            CANCEL-MARKER)
+                                                                         $1
+                                                                         (debug.traceback (tostring $1)
+                                                                                          2)))]
+                                              (when (not ok?)
+                                                (api.emit {:type :llm-end
+                                                           :usage nil})
+                                                (if (= err CANCEL-MARKER)
+                                                    (api.emit {:type :cancelled})
+                                                    (error err))))))]
+    (if co
+        (do
+          (set run-state.cancel-requested? false)
+          (set run-state.holder-id hid-or-why)
+          (set run-state.turn co)
+          (set run-state.busy? true)
+          true)
+        (do
+          ;; Auto-compaction yields quietly (a queued turn start goes first)
+          ;; and is evaluated again when that turn completes.
+          (when (not= trigger :auto)
+            (api.emit {:type :error :error (.. "compact: " hid-or-why)}))
+          false))))
 
 ;; Per-instance auto-compaction bookkeeping; a reload starts fresh.
 ;; pending: the last completed turn awaiting evaluation on the next tick.
@@ -339,8 +352,8 @@
           (values n threshold))))))
 
 (fn start-auto! [api st notice]
-  (api.emit {:type :info :text notice})
-  (start-compact! api st "" :auto))
+  (when (start-compact! api st "" :auto)
+    (api.emit {:type :info :text notice})))
 
 (fn on-good-moment [api st key]
   ;; The answer arrives on a later tick: compact only if still loaded, idle on

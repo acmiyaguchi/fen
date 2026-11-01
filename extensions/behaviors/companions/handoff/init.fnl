@@ -7,7 +7,7 @@
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
 (local steering (require :fen.extensions.steering.service))
-(local coroutines (require :fen.util.coroutines))
+(local tasks (require :fen.core.tasks))
 
 (local OWNER :handoff)
 
@@ -115,21 +115,28 @@
 
 (fn start-handoff! [api state args]
   "Run /handoff as cooperative background work so the TUI can redraw and cancel."
-  (set state.cancel-requested? false)
-  (set state.turn
-       (coroutines.create (fn []
-                            (let [(ok? err) (xpcall #(finish-handoff! api state
-                                                                      args)
-                                                    #(if (= $1 CANCEL-MARKER)
-                                                         $1
-                                                         (debug.traceback (tostring $1)
-                                                                          2)))]
-                              (when (not ok?)
-                                (api.emit {:type :llm-end})
-                                (if (= err CANCEL-MARKER)
-                                    (api.emit {:type :cancelled})
-                                    (error err)))))))
-  (set state.busy? true))
+  (let [(co hid-or-why) (tasks.spawn-held :exclusive
+                                          (fn []
+                                            (let [(ok? err) (xpcall #(finish-handoff! api
+                                                                                      state
+                                                                                      args)
+                                                                    #(if (= $1
+                                                                            CANCEL-MARKER)
+                                                                         $1
+                                                                         (debug.traceback (tostring $1)
+                                                                                          2)))]
+                                              (when (not ok?)
+                                                (api.emit {:type :llm-end})
+                                                (if (= err CANCEL-MARKER)
+                                                    (api.emit {:type :cancelled})
+                                                    (error err))))))]
+    (if co
+        (do
+          (set state.cancel-requested? false)
+          (set state.holder-id hid-or-why)
+          (set state.turn co)
+          (set state.busy? true))
+        (api.emit {:type :error :error (.. "handoff: " hid-or-why)}))))
 
 ;; @doc fen.extensions.handoff.register!
 ;; kind: function

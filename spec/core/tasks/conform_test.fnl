@@ -1,149 +1,216 @@
-;; Turn-mailbox conformance: Quint traces of spec/core/tasks requestsSpec are
-;; replayed through the real pure step, `fen.core.tasks.step`. Each model
-;; action becomes the matching machine input; after every step the code's
-;; turn, running flag, queue lengths, and idle-start request must equal the
-;; model's, and the code's outputs (:inject, :returned, :start-turn, accepted
-;; acks, clears) must account for every line exactly as the model's ghost
-;; counters do (steeringConservedInv, followUpsConservedInv).
-;; At every state the replay also probes the transitions the model forbids
-;; there (steer or take while idle, follow-up while steering is queued) and
-;; requires the code to refuse them. Request actions (open/answer/tick/
-;; reload/resolver) and the /reload-/handoff busy flag do not touch the
-;; mailbox and are skipped. Run by spec/core/tasks/conform.sh, which generates the
-;; traces and sets FEN_SPEC_ITF_INDEX; not part of `make test`.
+;; Holder conformance: Quint traces of spec/core/tasks/proofs/holder
+;; `holderSpec` are replayed through the real pure step, `fen.core.tasks.step`.
+;; Each model action becomes the matching machine input(s); after every step
+;; the code's holder kind, turn number, steer and follow-up seqs, start
+;; request, cancel flag, and drain modes must equal the model's, and every
+;; issued line's disposition (taken, started, released, refused, cleared) and
+;; the turn it is attributed to must equal the model's `why`/`whyN`.
+;; At every state the replay also probes transitions the model forbids there
+;; (replacing a holder, an exclusive holder while a turn start is pending,
+;; take! without a turn, a follow-up while a steer line waits) and requires
+;; the code to refuse them. Run by spec/core/tasks/conform.sh, which generates
+;; the traces and sets FEN_SPEC_ITF_INDEX; not part of `make test`.
 
 (local json (require :fen.util.json))
 (local tasks (require :fen.core.tasks))
 
-;; --negative: drop every turn end, so a harness that cannot see a turn's
-;; leftovers being handed back makes the check fail.
+;; --negative: drop every body exit (a leaked holder), so a harness that
+;; cannot see a missing release makes the check fail.
 (local CORRUPT? (= (os.getenv :FEN_SPEC_CONFORM_CORRUPT) :1))
+
+;; holderSpec bounds (see proofs/holder/model.qnt).
+(local MAX-N 3)
+(local MAX-BODY 4)
+(local MAX-IDLE 2)
 
 (fn int [v]
   (if (= (type v) :table) (tonumber (. v "#bigint")) v))
 
+(fn set-of [v]
+  "ITF set -> sorted list of ints."
+  (let [out (icollect [_ x (ipairs (or (?. v "#set") []))]
+              (int x))]
+    (table.sort out)
+    out))
+
+(fn map-of [v]
+  (let [out {}]
+    (each [_ [k x] (ipairs (or (?. v "#map") []))]
+      (tset out (int k) (if (= (type x) :table) (int x) x)))
+    out))
+
 (fn pick [st name]
   (let [p (?. st "mbt::nondetPicks" name)]
-    (when (and p (= p.tag :Some)) p.value)))
+    (when (and p (= p.tag :Some))
+      (if (= (type p.value) :table) (int p.value) p.value))))
 
-(fn initial []
-  {:turn 0
-   :running? false
-   :mailbox []
-   :follow-ups []
-   :modes {:steering :one-at-a-time :follow-up :one-at-a-time}
-   :next-id 1
-   :idle-start? false})
+(local MODE {:one :one-at-a-time :all :all})
 
-(fn find-out [outs typ ?queue]
+(fn seqs [items]
+  "Code seqs are 1-based; the model's are 0-based."
+  (let [out (icollect [_ item (ipairs items)] (- item.seq 1))]
+    (table.sort out)
+    out))
+
+(fn same-list? [a b]
+  (and (= (length a) (length b))
+       (accumulate [ok true i x (ipairs a)]
+         (and ok (= x (. b i))))))
+
+(fn show [l]
+  (.. "[" (table.concat (icollect [_ x (ipairs l)] (tostring x)) ",") "]"))
+
+(fn waiting? [st]
+  (and (= st.kind :none) st.start (> (length (set-of st.followUp)) 0)
+       (< (int st.n) MAX-N)))
+
+(fn forced-action [prev]
+  "The step relation forces a move when a fairness bound is reached; the
+   trace then labels it `step`. Recover which one from the previous state."
+  (if (and prev.body (>= (int prev.heldFor) MAX-BODY)) :doBodyExit
+      (and (waiting? prev) (>= (int prev.waitedFor) MAX-IDLE))
+      ;; waiting? is startGuard here, so the forced tick starts the turn.
+      :doStartTurn :unknown))
+
+(fn find-out [outs typ]
   (var found nil)
   (each [_ o (ipairs outs)]
-    (when (and (not found) (= o.type typ)
-               (or (= ?queue nil) (= o.queue ?queue)))
-      (set found o)))
+    (when (and (not found) (= o.type typ)) (set found o)))
   found)
 
 (fn replay-trace [path]
   "Returns nil, or a mismatch description."
   (let [itf (with-open [f (assert (io.open path :r))]
               (json.decode (f:read :a)))
-        g {:sAcc 0 :sInj 0 :sRet 0 :sDrop 0 :fAcc 0 :fInj 0 :fStart 0 :fDrop 0}]
-    (var m (initial))
+        why {}
+        why-n {}]
+    (var m (tasks.initial-machine))
     (var err nil)
+
+    (fn dispose! [items w turn]
+      (each [_ item (ipairs (or items []))]
+        (tset why (- item.seq 1) w)
+        (tset why-n (- item.seq 1) turn)))
+
+    (fn record! [outs]
+      (each [_ o (ipairs outs)]
+        (case o.type
+          :taken (dispose! o.items :taken o.turn)
+          :started (dispose! [o.item] :started o.turn)
+          :released (dispose! o.items :released o.turn)
+          :refused (dispose! [o] :refused o.turn)
+          :cleared (dispose! o.items :cleared o.turn))))
 
     (fn run! [input]
       (let [(m2 outs) (tasks.step m input)]
         (set m m2)
+        (record! outs)
         outs))
 
-    (fn accepted? [outs]
-      (= :accepted (?. (find-out outs :ack) :status)))
+    (fn probe [input]
+      (let [(_ outs) (tasks.step m input)] outs))
 
     (each [i st (ipairs itf.states) &until err]
-      (let [action (. st "mbt::actionTaken")
-            prev (. itf.states (- i 1))]
+      (let [prev (. itf.states (- i 1))
+            label (. st "mbt::actionTaken")
+            action (if (= label :step) (forced-action prev) label)]
         (case action
-          :doStartTurn (run! {:type :turn-start})
-          :doEndTurn (when (not CORRUPT?)
-                       (let [r (find-out (run! {:type :turn-end}) :returned)]
-                         (set g.sRet (+ g.sRet (length (or (?. r :texts) []))))))
-          :doQueueSteer (when (accepted? (run! {:type :steer
-                                                :text (.. "s" g.sAcc)}))
-                          (set g.sAcc (+ g.sAcc 1)))
-          :doInjectSteer (do
-                           (run! {:type :set-mode
-                                  :queue :steering
-                                  :mode (if (pick st :allMode) :all
-                                            :one-at-a-time)})
-                           (let [o (find-out (run! {:type :take-steering})
-                                             :inject)]
-                             (set g.sInj (+ g.sInj (length o.texts)))))
-          :doQueueFollowUp (let [start? (and (pick st :hr)
-                                             (not (. prev :running)))]
-                             (when (accepted? (run! {:type :follow-up
-                                                     :text (.. "f" g.fAcc)
-                                                     :start-if-idle? start?}))
-                               (set g.fAcc (+ g.fAcc 1))))
-          :doInjectFollowUp (do
-                              (run! {:type :set-mode
-                                     :queue :follow-up
-                                     :mode (if (pick st :allMode) :all
-                                               :one-at-a-time)})
-                              (let [o (find-out (run! {:type :take-follow-up})
-                                                :inject)]
-                                (set g.fInj (+ g.fInj (length o.texts)))))
-          :doIdleStart (when (find-out (run! {:type :idle-tick}) :start-turn)
-                         (set g.fStart (+ g.fStart 1)))
-          :doTypedBusy (if m.running?
-                           (when (accepted? (run! {:type :steer
-                                                   :text (.. "s" g.sAcc)}))
-                             (set g.sAcc (+ g.sAcc 1)))
-                           (when (accepted? (run! {:type :follow-up
-                                                   :text (.. "f" g.fAcc)}))
-                             (set g.fAcc (+ g.fAcc 1))))
-          :doClearSteering (do
-                             (set g.sDrop (+ g.sDrop (length m.mailbox)))
-                             (run! {:type :clear :queue :steering}))
-          :doClearFollowUps (do
-                              (set g.fDrop (+ g.fDrop (length m.follow-ups)))
-                              (run! {:type :clear :queue :follow-up})))
-        (let [checks [[:running (. st :running) m.running?]
-                      [:turnNo (int st.turnNo) m.turn]
-                      [:sLen (int st.sLen) (length m.mailbox)]
-                      [:fLen (int st.fLen) (length m.follow-ups)]
-                      [:idleStart (. st :idleStart) m.idle-start?]]]
-          (each [k _ (pairs g)]
-            (table.insert checks [k (int (. st k)) (. g k)]))
-          ;; Forbidden transitions: where the model's guard is false, the code
-          ;; must refuse too (probed on the pure step, state unchanged).
-          (let [running? (. st :running)
-                steering-left? (> (int st.sLen) 0)
-                (_ steer-outs) (tasks.step m {:type :steer :text "probe"})
-                (_ take-s) (tasks.step m {:type :take-steering})
-                (_ take-f) (tasks.step m {:type :take-follow-up})]
-            (when (not running?)
+          :doStartTurn (do
+                         (run! {:type :next-start})
+                         (run! {:type :acquire :kind :turn}))
+          :doStartExclusive (run! {:type :acquire :kind :exclusive})
+          :doBodyExit (when (not CORRUPT?) (run! {:type :release :hid m.hid}))
+          :doOffer (let [t (pick st :t)]
+                     (run! {:type :offer
+                            :text (.. "line" (int prev.nextSeq))
+                            :tag (pick st :g)
+                            :turn (when (not= t -1) t)
+                            :follow-up? (pick st :f)}))
+          :doTakeSteer (run! {:type :take :queue :steering})
+          :doTakeFollowUp (run! {:type :take :queue :follow-up})
+          :doCancel (run! {:type :cancel :turn (pick st :m)})
+          :doClearSteer (run! {:type :clear :queue :steering})
+          :doClearFollowUp (run! {:type :clear :queue :follow-up})
+          :doSetMode (run! {:type :set-mode
+                            :queue (if (= (pick st :which) :steer) :steering
+                                       :follow-up)
+                            :mode (. MODE (pick st :mode))})
+          :doStarved nil
+          :init nil
+          other (set err (.. path ": unmapped action " (tostring other))))
+        (when (not err)
+          (let [checks [[:kind st.kind m.kind]
+                        [:n (int st.n) m.n]
+                        [:start st.start m.start?]
+                        [:cancel st.cancel m.cancel?]
+                        [:steerMode (. MODE st.steerMode) m.modes.steering]
+                        [:followMode (. MODE st.followMode) m.modes.follow-up]]
+                model-why (map-of st.why)
+                model-why-n (map-of st.whyN)]
+            (when (not (same-list? (set-of st.steer) (seqs m.steer)))
               (table.insert checks
-                            [:steerRefusedWhenIdle
-                             :rejected
-                             (?. (find-out steer-outs :ack) :status)])
+                            [:steer
+                             (show (set-of st.steer))
+                             (show (seqs m.steer))]))
+            (when (not (same-list? (set-of st.followUp) (seqs m.follow-up)))
               (table.insert checks
-                            [:noSteeringInjectWhenIdle
+                            [:followUp
+                             (show (set-of st.followUp))
+                             (show (seqs m.follow-up))]))
+            (for [q 0 (- (int st.nextSeq) 1)]
+              (table.insert checks
+                            [(.. "why[" q "]")
+                             (. model-why q)
+                             (or (. why q) "")])
+              (when (not= (. model-why q) "")
+                (table.insert checks
+                              [(.. "whyN[" q "]")
+                               (. model-why-n q)
+                               (. why-n q)])))
+            ;; Forbidden transitions, probed on the pure step (state unchanged).
+            (when (not= st.kind :none)
+              (each [_ kind (ipairs [:turn :exclusive])]
+                (table.insert checks
+                              [(.. "neverReplace:" kind)
+                               true
+                               (not= nil
+                                     (find-out (probe {:type :acquire : kind})
+                                               :hold-refused))])))
+            (when (and (= st.kind :none) st.start
+                       (> (length (set-of st.followUp)) 0))
+              (table.insert checks
+                            [:startBeatsExclusive
+                             true
+                             (not= nil
+                                   (find-out (probe {:type :acquire
+                                                     :kind :exclusive})
+                                             :hold-refused))]))
+            (when (not= st.kind :turn)
+              (each [_ q (ipairs [:steering :follow-up])]
+                (table.insert checks
+                              [(.. "noTakeWithoutTurn:" q)
+                               0
+                               (length (. (find-out (probe {:type :take
+                                                            :queue q})
+                                                    :taken)
+                                          :items))])))
+            (when (and (= st.kind :turn) (> (length (set-of st.steer)) 0))
+              (table.insert checks
+                            [:steeringWins
                              0
-                             (length (. (find-out take-s :inject) :texts))]))
-            (when (or (not running?) steering-left?)
-              (table.insert checks
-                            [:followUpGuard
-                             0
-                             (length (. (find-out take-f :inject) :texts))])))
-          (each [_ [name want got] (ipairs checks) &until err]
-            (when (not= want got)
-              (set err
-                   (string.format "%s step %d (%s): %s model %s, code %s" path
-                                  (- i 1) (tostring action) name (tostring want)
-                                  (tostring got))))))))
+                             (length (. (find-out (probe {:type :take
+                                                          :queue :follow-up})
+                                                  :taken)
+                                        :items))]))
+            (each [_ [name want got] (ipairs checks) &until err]
+              (when (not= want got)
+                (set err
+                     (string.format "%s step %d (%s): %s model %s, code %s"
+                                    path (- i 1) (tostring action) name
+                                    (tostring want) (tostring got)))))))))
     err))
 
-(describe "turn mailbox conformance (spec/core/tasks requestsSpec)"
+(describe "holder conformance (spec/core/tasks/proofs/holder holderSpec)"
           (fn []
             (it "fen.core.tasks.step follows every replayed model trace"
                 (fn []

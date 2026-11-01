@@ -6,7 +6,7 @@
 
 (fn reset-queues! []
   (tasks.reset!)
-  (tasks.turn-start!))
+  (tasks.spawn-held :turn #(coroutine.yield)))
 
 (fn fresh-tool []
   (test-api.reset!)

@@ -72,6 +72,9 @@
                   (assert.is_true state.busy?)
                   (assert.is_true (coroutine.resume state.turn))
                   (assert.are.equal messages state.agent.messages)
+                  ;; Finish the reload coroutine so its exclusive holder releases.
+                  (while (not= :dead (coroutine.status state.turn))
+                    (coroutine.resume state.turn))
                   (set state.busy? false)
                   (set state.turn nil)
                   (table.insert extension-state.tools-extra {:name :stale})
@@ -91,4 +94,27 @@
                       (command-registry.dispatch "/reload please" state)
                       (assert.is_false state.busy?)
                       (assert.is_nil state.turn)
-                      (assert.are.equal 0 reloads))))))
+                      (assert.are.equal 0 reloads))))
+              (it "/reload yields to a pending turn start: refused with a message, nothing held"
+                  (fn []
+                    (let [tasks (require :fen.core.tasks)
+                          events (require :fen.core.extensions.events)
+                          errors []
+                          api (test-api.make-runtime-api :sessions)
+                          mod (require :fen.extensions.sessions.commands.session)
+                          state {:busy? false}]
+                      (tasks.reset!)
+                      (events.on :error #(table.insert errors $1.error)
+                                 :reload-refused-test)
+                      (mod.register api)
+                      (tasks.offer! "queued prompt")
+                      (command-registry.dispatch "/reload" state)
+                      (events.unregister-by-owner :reload-refused-test)
+                      (assert.is_false state.busy?)
+                      (assert.is_nil state.turn)
+                      (assert.are.equal :none (. (tasks.holder) :kind))
+                      (assert.is_truthy (string.find (or (. errors 1) "")
+                                                     "queued turn" 1 true))
+                      (assert.are.equal "queued prompt"
+                                        (?. (tasks.next-start!) :text))
+                      (tasks.reset!))))))

@@ -1,0 +1,3 @@
+# main	invariants	mode	steps	seconds	why
+lineSpec	inductiveInv	inductive	1	300	Induction over one representative line against the lease: attribution, fencing, local offers never refused, one disposition per line.
+lineSpec@stepRel	inductiveInv	inductive	1	300	The same induction over every step lineNext allows (the contract L2 is checked against), not only the generated ones.

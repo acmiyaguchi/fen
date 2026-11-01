@@ -152,14 +152,17 @@
 
 (fn inject-user-lines! [agent lines event-type]
   "Append queued raw user lines as canonical messages and emit an event for
-   the live UI. Empty/nil callback returns are fine. Returns the number of
-   lines injected."
+   the live UI. A line is a string or a mailbox item {:text :tag}; the tag
+   rides on the event. Empty/nil callback returns are fine. Returns the
+   number of lines injected."
   (var n 0)
-  (each [_ line (ipairs (or lines []))]
-    (when (and line (not= line ""))
-      (append-message! agent (types.user-message line))
-      (emit agent {:type event-type :text line})
-      (set n (+ n 1))))
+  (each [_ entry (ipairs (or lines []))]
+    (let [line (if (= (type entry) :table) entry.text entry)
+          tag (when (= (type entry) :table) entry.tag)]
+      (when (and line (not= line ""))
+        (append-message! agent (types.user-message line))
+        (emit agent {:type event-type :text line : tag})
+        (set n (+ n 1)))))
   n)
 
 (fn inject-after-natural-stop! [agent]

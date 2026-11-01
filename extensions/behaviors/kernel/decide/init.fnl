@@ -10,35 +10,13 @@
 (local store (require :fen.extensions.decide.state))
 (local service (require :fen.extensions.decide.service))
 (local decide-input (require :fen.extensions.decide.input))
-(local subcommands (require :fen.util.subcommands))
 
 (local M {})
-
-(fn undo-command! [api]
-  ;; Success already shows as the :queued steering line from requeue!.
-  (let [result (decide-input.undo!)]
-    (when (not result.ok)
-      (api.emit {:type :info
-                 :text (.. "decide undo: " (tostring result.error))}))))
-
-(fn register-command! [api]
-  (let [sub (subcommands.build {:name :decide
-                                :emit api.emit
-                                :summary "Experimental decisions"
-                                :subcommands {:undo {:description "move the line last reclassified as follow-up back to steering"
-                                                     :handler (fn [_ _]
-                                                                (undo-command! api))}}})]
-    (api.register :command {:name :decide
-                            :description "Experimental decisions: /decide undo"
-                            :usage sub.usage
-                            :subcommands sub.descriptor
-                            :handler sub.handler
-                            :complete sub.complete})))
 
 ;; @doc fen.extensions.decide.register
 ;; kind: function
 ;; signature: (register api) -> true
-;; summary: Capture the api handle for the decision service, finish ask-async! tasks left by a previous instance with nil, pump new tasks on each :runtime-tick, and register the observing input handler, its staleness listeners, and /decide undo.
+;; summary: Capture the api handle for the decision service, finish ask-async! tasks left by a previous instance with nil, pump new tasks on each :runtime-tick, and register the observing input handler, and its staleness listeners.
 ;; tags: decide register
 (fn M.register [api]
   (set store.api api)
@@ -64,9 +42,6 @@
   ;; Every submitted line (slash commands too) and every reset makes a pending topic-shift answer stale.
   (api.on :user (fn [ev] (decide-input.forget-pending! ev)))
   (api.on :reset-conversation (fn [ev] (decide-input.forget-pending! ev)))
-  ;; Queue clears report an empty follow-up queue here, which invalidates /decide undo.
-  (api.on :set-status-info (fn [ev] (decide-input.on-status-info ev)))
-  (register-command! api)
   true)
 
 M

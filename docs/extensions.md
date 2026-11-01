@@ -421,7 +421,8 @@ Unknown `:when-busy` modes return `{:ok false :error "invalid when-busy mode: ..
 
 Use `api.enqueue` when an extension needs the same steering or follow-up queue that interactive user input uses.
 This is an interactive-session-only API: without a live interactive runtime it returns `{:ok false :error "no interactive runtime"}`.
-Steering goes to the running turn's mailbox and is rejected with `"no turn is running"` while idle; lines the turn does not read come back as `:steering-returned` when it ends.
+Steering goes to the running turn (or `opts.turn`) and is refused while no such turn runs; lines the turn does not read come back as `:steering-returned` when it ends.
+`opts.tag` is carried back on the result and on the line's events.
 The method accepts exactly `:steering` or `:follow-up`, a non-empty text string, and optional options; invalid text returns a structured `{:ok false :error ...}` result.
 Queued messages preserve FIFO ordering with user-entered messages, update presenter queue counters, and are cleared by `/cancel-all` or `/queue clear` like user-entered entries.
 
@@ -1230,26 +1231,18 @@ The extension also exposes a `discovered-skills` introspection snapshot for `/ex
 
 ## Steering queue service
 
-Queued input lives in the core **turn mailbox**, `fen.core.tasks`: a Mealy machine whose pure `(step machine input) -> (machine' outputs)` advances non-reloadable `fen.core.tasks.state`, so pending input survives `/reload`.
-Steering lines are tagged with the main turn they were accepted for and are only injected into that turn.
-Whatever a turn has not read when it ends (normally, by error, or by cancel) comes back as one `:steering-returned` event; the TUI puts those lines back at the front of the main draft.
-Follow-ups are untagged and survive turn end.
-Busy-time input with no mailbox turn open (the session is busy running `/reload` or `/handoff`) is queued as a follow-up rather than refused, so it runs next.
-`turn_submit` opens a mailbox turn when the main run-state (`state.mailbox?`) starts a turn and closes it inside the turn coroutine, in the same resume that finishes the step.
-The model and its proofs are in `spec/core/tasks` (`requestsSpec`), and `spec/core/tasks/conform.sh` replays model traces through the real step.
+Queued input lives in the core **session holder and mailbox**, `fen.core.tasks`: a pure `(step machine input) -> (machine' outputs)` advances non-reloadable `fen.core.tasks.state`, so the holder and pending input survive `/reload`.
+The model and its proofs are in `spec/core/tasks/proofs/holder` (`holderAbstract`, `holderSpec`), and `spec/core/tasks/conform.sh` replays `holderSpec` traces through the real step.
 
-| input | accepted when | outputs |
-| --- | --- | --- |
-| `:turn-start` | always; closes an unreported previous turn first | `:started`, `:returned` for the old turn's leftovers |
-| `:steer {:text :turn?}` | a turn runs and `turn` is absent or current | `:ack`, `:queued` (else a rejected `:ack`) |
-| `:follow-up {:text :start-if-idle?}` | non-empty text | `:ack`, `:queued`; `start-if-idle?` while idle sets the idle-start request |
-| `:take-steering` / `:take-follow-up` | steering: a turn runs; follow-ups: a turn runs and has no steering queued | `:inject` with lines by drain mode (empty when refused) |
-| `:turn-end {:turn?}` | that turn runs | `:returned` with its leftover steering |
-| `:idle-tick` | idle and an idle start was requested | `:start-turn` with one follow-up |
-| `:requeue`, `:clear`, `:set-mode` | see `fen.core.tasks` docs | `:ack`/`:queued`, counts |
+- **Holder.** The session is held by nothing, a turn (numbered `n`), or an exclusive job (`/reload`, `/handoff`, `/compact`). `(with-holder kind f)` is the only way to hold it: acquire, run `f`, release on every exit (return, error, cancel). `(spawn-held kind f)` is its coroutine form; code that drops such a coroutine without resuming it to completion calls the fenced `(release! hid)` (the runtime does this when a turn ends and at shutdown). A holder is never replaced, and an exclusive holder is refused while a queued turn start is pending.
+- **Offer.** `(offer! text {:tag :turn :follow-up?})` only queues. `:follow-up? true` always queues a follow-up; `:turn n` steers only turn `n` (else refused); `:turn 0` starts only if idle; without `:turn` (Enter) a line steers a running turn, follows up an exclusive holder, or follows up and requests an idle start. Each admitted line gets an increasing `seq`; the caller's `tag` is carried back on events and results and never used for order or lookup.
+- **Start.** `(next-start!)` is the one start path for queued input: at the driver's idle tick it pops the head follow-up when a start was requested, and the driver runs it under a turn holder. `turn_submit.start!` offers the line and then calls it, so an older queued follow-up starts first.
+- **Take.** `(take! :steering)` and `(take! :follow-up)` drain by mode (`:one-at-a-time` or `:all`, set by `set-mode!`) only while a turn holds; steering wins, so follow-ups wait while a steer line is queued.
+- **Release.** Releasing a turn hands its unread steer lines back as one `:steering-returned {:turn :texts :tags}` event; the TUI puts them back at the front of the main draft and the rpc presenter reports their refs. Follow-ups survive.
+- `(cancel! n)` arms cancellation only for the running turn `n`; `(clear! kind)` drops lines (clearing follow-ups also drops the start request) and returns them.
 
-The first-party `steering` extension (`extensions/behaviors/kernel/steering/`) is the user-facing shell over it: `>`-prefixed lines are follow-ups, other busy-time input steers the running turn.
-The run loop wires the agent's `get-steering`/`get-follow-up` callbacks to `tasks.take!` and starts the follow-up `tasks.idle-tick!` returns at its idle boundary.
+The first-party `steering` extension (`extensions/behaviors/kernel/steering/`) is the user-facing shell over it: `>`-prefixed lines are follow-ups, other busy-time input is a local offer.
+The run loop wires the agent's `get-steering`/`get-follow-up` callbacks to `tasks.take!` (with tags, so injected events carry them) and calls `turn_submit.start-queued!` at its idle boundary.
 
 The service API lives in `fen.extensions.steering.service`:
 
@@ -1258,8 +1251,7 @@ The service API lives in `fen.extensions.steering.service`:
 | `(submit line ctx)` | Decide non-slash input: `{:action :start}` when idle, else queue (steering, or follow-up after stripping `>`); `{:action :error}` if the mailbox rejects it. |
 | `(handle-input input ctx)` | Input-pipeline wrapper around `submit`; registered as the default `:input-handler` at order 1000 (see below). |
 | `(get-steering)` / `(get-follow-up)` | Drain a queue by its mode (steering only for the running turn). |
-| `(queue! kind text ?opts)` | Offer a line; steering needs a running turn (`opts.turn` must be current when given). |
-| `(requeue! text from to)` | Move the latest still-pending copy of a line to the other queue. |
+| `(queue! kind text ?opts)` | Offer a line as a follow-up, or as steering for `opts.turn` (default the running turn; refused when no turn runs). |
 | `(clear-queues! ?kind)` | Empty one queue or both (`/cancel-all`, `/new`, `/resume`, `/handoff`). |
 | `(set-queue-mode! kind mode)` | `:one-at-a-time` (default) or `:all`. |
 | `(queue-info)` / `(queue-snapshot)` | Counts+modes for status, copied contents for UI such as the `/queue` panel. |
@@ -1351,8 +1343,7 @@ Every consumer is advisory: without an answer, fen keeps its behavior without de
 - **Busy-line classification.**
   A plain line submitted while busy is classified as a correction, a follow-up, or a cancel request; slash and `>`-prefixed lines never are.
   The line queues as steering at once, so classification never delays input.
-  With confidence of at least 0.7, a follow-up still pending in steering moves to the follow-up queue through the [steering service](#steering-queue-service)'s `requeue!` with an `:info` notice, and `/decide undo` moves the last such line back to steering.
-  Emptying the follow-up queue, as `/cancel-all`, `/new`, `/resume`, and `/handoff` do, forgets that line.
+  With confidence of at least 0.7, a follow-up answer emits an `:info` hint to prefix the line with `>` next time; the line stays where it was queued (the mailbox never moves a queued line).
   A cancel answer only emits a notice suggesting `ctrl-c`; a correction, a lower confidence, a `nil` answer, or an answer arriving after the observed turn ended keeps today's routing.
   The question's state is the new line, the latest earlier user message (possibly an injected steering line, since the turn's original request is not marked), and the agent's latest step, each capped at 2000 bytes.
 

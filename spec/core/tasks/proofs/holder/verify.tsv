@@ -1,2 +1,4 @@
 # main	invariants	mode	steps	seconds	why
-holderSpec	inductiveInv	inductive	1	300	Induction over the finite holder/seq state: release on every body exit, exactly-once dispositions, fencing of steer and cancel, and follow-up order hold at any depth.
+holderSpec	inductiveInv	inductive	1	120	Induction over the finite holder/seq state: release on every body exit, exactly-once dispositions, fencing of steer and cancel, and follow-up order hold at any depth.
+holderSpec	refinesLeaseInv	inductive	1	120	Every holder step is an L0 lease step (stuttering allowed), at any depth.
+holderSpec	refinesInv	inductive	1	180	Every holder step is also an L1 line step for every seq, at any depth.

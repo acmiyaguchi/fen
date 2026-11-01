@@ -22,7 +22,7 @@
 
 (fn with-steering-stub [f]
   (tasks.reset!)
-  (tasks.turn-start!)
+  (tasks.spawn-held :turn #(coroutine.yield))
   (let [(ok? err) (pcall f)]
     (let [snap (tasks.snapshot)]
       (tasks.reset!)
@@ -120,7 +120,7 @@
                   (let [st (make-state false true)]
                     (turn-submit.start! st "go"
                                         (fn []
-                                          (tasks.queue! :steering "unread")
+                                          (tasks.offer! "unread")
                                           (error "kaboom")))
                     (let [(ok? err) (coroutine.resume st.turn)]
                       (assert.is_false ok?)
@@ -169,3 +169,80 @@
                                           (assert.are.same ["after"]
                                                            (. (tasks.snapshot)
                                                               :follow-up)))))))))
+
+(describe "fen.turn_submit holder"
+          (fn []
+            (before_each (fn [] (tasks.reset!)))
+            (after_each (fn [] (tasks.reset!)))
+            (it "starts a main turn through offer! and next-start!, holding the session as that turn"
+                (fn []
+                  (let [st (make-state false true)
+                        result (turn-submit.start! st "go" agent-step)]
+                    (assert.is_true result.ok)
+                    (assert.are.equal 1 result.turn)
+                    (assert.are.same {:kind :turn
+                                      :n 1
+                                      :hid st.holder-id
+                                      :cancel? false}
+                                     (tasks.holder))
+                    (coroutine.resume st.turn)
+                    (assert.are.equal :dead (coroutine.status st.turn))
+                    (assert.are.equal :none (. (tasks.holder) :kind)))))
+            (it "an older queued follow-up starts first (FIFO); the new line follows"
+                (fn []
+                  (tasks.offer! "older" {:follow-up? true})
+                  (let [st (make-state false true)]
+                    (turn-submit.start! st "newer" agent-step)
+                    (coroutine.resume st.turn)
+                    (assert.are.equal "older" (. st.agent.seen 1 :text))
+                    (assert.are.same ["newer"] (. (tasks.snapshot) :follow-up)))))
+            (it "refuses to start while another holder has the session"
+                (fn []
+                  (tasks.spawn-held :exclusive #(coroutine.yield))
+                  (let [st (make-state false true)
+                        result (turn-submit.start! st "go" agent-step)]
+                    (assert.is_false result.ok)
+                    (assert.is_nil st.turn)
+                    (assert.are.same [] (. (tasks.snapshot) :follow-up)))))
+            (it "start-queued! starts only a requested follow-up"
+                (fn []
+                  (let [st (make-state false true)]
+                    (tasks.offer! "plain" {:follow-up? true})
+                    (assert.is_nil (turn-submit.start-queued! st agent-step))
+                    (tasks.offer! "asked" {:turn 0})
+                    (let [r (turn-submit.start-queued! st agent-step)]
+                      (assert.is_true r.ok)
+                      (coroutine.resume st.turn)
+                      (assert.are.equal "plain" (. st.agent.seen 1 :text)
+                                        "FIFO head")))))
+            (it "cancel! for the running turn reaches the agent's cancel check"
+                (fn []
+                  (let [st (make-state false true)]
+                    (turn-submit.start! st "go" agent-step)
+                    (set st.cancel-requested? false)
+                    (assert.is_true (tasks.cancel! 1))
+                    (coroutine.resume st.turn)
+                    (assert.is_true (. st.agent.seen 1 :cancelled?)))))
+            (it "abandonment: drop! releases a turn that was never resumed and hands its steering back"
+                (fn []
+                  (let [st (make-state false true)]
+                    (turn-submit.start! st "go" agent-step)
+                    (tasks.offer! "unread")
+                    (assert.is_nil (tasks.release! 999)
+                                   "a stale release is fenced out")
+                    (assert.are.same ["unread"] (. (tasks.snapshot) :steering))
+                    (turn-submit.drop! st)
+                    (assert.are.equal :none (. (tasks.holder) :kind))
+                    (assert.are.same [] (. (tasks.snapshot) :steering))
+                    (assert.is_nil st.turn)
+                    (assert.is_false st.busy?))))
+            (it "abandonment: drop! after the body already released is a no-op"
+                (fn []
+                  (let [st (make-state false true)]
+                    (turn-submit.start! st "go" agent-step)
+                    (coroutine.resume st.turn)
+                    (let [(_ hid) (tasks.spawn-held :exclusive
+                                                    #(coroutine.yield))]
+                      (turn-submit.drop! st)
+                      (assert.are.equal hid (. (tasks.holder) :hid)
+                                        "a newer holder survives the stale drop")))))))

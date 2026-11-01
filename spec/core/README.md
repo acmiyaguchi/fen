@@ -28,7 +28,7 @@ That is why the replay rule also has its own laws (`replay/`), checked independe
 | [replay](replay/model.qnt): replay of a log cut anywhere | #668 | six laws bounded-safe over every log of up to 5 entries (2–13 s each) | sessions (`fixed` replay, provider check, doctor; `proofs/replay` checks the sessions projection against the same laws) |
 | [store](store/abstract.qnt): kernel lock plus atomic replace | #669 | abstract spec proved inductively (~5 s) and to 10 steps | sessions (`proofs/lock`, `proofs/persistence`), auth (`proofs/rotation`), tools (`proofs/file-commit`) |
 | [job](job/abstract.qnt): process group and output capture | #670 | abstract spec proved inductively (~8 s) and to 10 steps | tools (`proofs/process-group`, `proofs/popen-cancel`, `proofs/output-envelope`), subagents (`proofs/lifecycle`) |
-| [tasks](tasks/abstract.qnt): one task table with turn-keyed ownership, async request table, and countdown budgets | #671 | `tasksSpec` proved inductively (~16 s) and to 10 steps; `requestsSpec` proved inductively (~70 s), including the turn mailbox (`steeringConservedInv`, `followUpsConservedInv`, `followUpOrderInv`, `queueLenConsistentInv`); `conform.sh` replays traces through `fen.core.tasks.step` | scheduler (`proofs/cancel-arm`, `proofs/pump`), tui-turns (`proofs/ctrl-c`, `proofs/side-ownership`), serve (`issueRefines`/`proposedRefines`/`proposedTuiRefines`, `proofs/requests`) |
+| [tasks](tasks/abstract.qnt): one task table with turn-keyed ownership, async request table, and countdown budgets | #671 | `tasksSpec` proved inductively (~16 s) and to 10 steps; `requestsSpec` proved inductively (~70 s), including the turn mailbox (`steeringConservedInv`, `followUpsConservedInv`, `followUpOrderInv`, `queueLenConsistentInv`); the implemented mailbox is `proofs/holder`, and `conform.sh` replays `holderSpec` traces through `fen.core.tasks.step` | scheduler (`proofs/cancel-arm`, `proofs/pump`), tui-turns (`proofs/ctrl-c`, `proofs/side-ownership`), serve (`issueRefines`/`proposedRefines`/`proposedTuiRefines`, `proofs/requests`) |
 | [ledger](ledger/abstract.qnt): usage as a fold over one log | #672 | abstract spec proved inductively (~11 s) and to 10 steps | context (`proofs/ledger`), presenters (`proofs/outcome`) |
 | [contrib](contrib/abstract.qnt): per-owner extension contribution map | #673 | abstract spec proved inductively (~6 s) and to 10 steps | extensions (`proofs/contrib`, `proofs/turn-identity`), context |
 | [runs](runs/abstract.qnt): subagent run table and mailbox | #674 | abstract spec proved inductively (~2 s) and to 10 steps | subagents (`proofs/lifecycle`), wire (`proofs/acks`) |
@@ -80,9 +80,10 @@ Laws, each checked on one log chosen in `init` (one Apalache step, every log of 
 
 Inherited invariants (`absInv` and `reqAbsInv`): cancel arms and requests are isolated to their owning task (`ownershipIsolated`, `cancelRequiresRegistered`), poll cadence matches runnable work (`cadenceMatchesRunnable`), every request resolves at most once (`resolvedOnce`), no request outlives its turn (`noOrphanTurnReq`), `parkedOn` and pending turn-scoped requests agree (`parkConsistent`), no pending request belongs to a prior reload generation (`pendingCurrentGen`), every queued steering line belongs to the running turn (`queueOwnedByRunningTurn`), and every pending request has a strictly positive remaining tick budget (`pendingBoundedBudget`, `boundedWaitTicksInv`).
 
-### proofs/holder (proposed design)
+### proofs/holder
 
-`tasks/proofs/holder/model.qnt` models the session **holder** and its mailbox in the vocabulary of the target `fen.core.tasks` API, revised after design review (gpt-6.1-sol, Fable).
+`tasks/proofs/holder/model.qnt` models the session **holder** and its mailbox in the vocabulary of the `fen.core.tasks` API, revised after design review (gpt-6.1-sol, Fable); the code implements it.
+Code-facing differences: drain modes are spelled `:one-at-a-time`/`:all`; `spawn-held` is the coroutine form of `with-holder` (acquired at creation; code that drops the coroutine unfinished calls the fenced `release!`); `/compact` is also an exclusive holder; queue kinds in `take!`/`clear!` are `:steering`/`:follow-up`.
 
 | Term | Meaning |
 | --- | --- |
@@ -112,9 +113,21 @@ Dispositions (`why`, `whyN` per seq) are part of the abstract `Session`, so a re
 
 **Drain modes.** `set-mode!` sets `:one` or `:all` per queue; `take!` drains exactly what the mode says (`takeByModeInv`), and modes persist across turns, releases, and clears until changed (`modesPersistInv`).
 
-**Liveness, bounded and encoded as safety.** Unbounded temporal checking (`quint verify --temporal` with `weakFair`) did not finish in 10 minutes even at depth 6, so the fairness assumptions are explicit in the step relation instead: every `with-holder` body exits within `MAX_BODY` steps (the agent's work terminates), and the driver's idle tick runs at least every `MAX_IDLE` steps. When a bound is reached the step is forced (exit, or start the requested turn, or record starvation). Then `releasedInTimeInv` (no holder outlives its body bound; a leaked holder violates it) and `startedInTimeInv` (a requested idle start happens within the bound, and the tick never finds it unstartable) are ordinary inductive invariants. Steer lines leave by their turn's release, so they inherit the body bound.
-Not bounded, by design and still open: a follow-up queued while idle without a start request (`reachUnrequestedFollowUpWaitsTest`) waits for the next turn however long that takes.
+**Liveness, bounded and encoded as safety.** Unbounded temporal checking needs TLC (Apalache does not handle fairness); `quint verify --backend tlc` works (`yes | nix shell nixpkgs#tlaplus nixpkgs#jdk --command quint verify --backend tlc ...`) and catches a leaked holder in about a minute, but only on a model with bounded counters and few nondets: the full holder model is too large. So the fairness assumptions are explicit in the step relation: every `with-holder` body exits within `MAX_BODY` steps, and the driver's idle tick runs at least every `MAX_IDLE` steps. The forced steps are total: the deadline tick is `if (startGuard) doStartTurn else doStarved`, with every start condition in `startGuard`, so a guard bug is recorded as starvation instead of deadlocking the forced step. A pending turn start has priority over an exclusive holder (otherwise alternating exclusive holds starve it forever under weak fairness, and the bounded check, which resets on each hold, would miss it). `releasedInTimeInv` and `startedInTimeInv` are then ordinary inductive invariants. Release is stated on the holder `kind`, not on `body`: a crashed exit can clear `body` and still leak the holder.
 
-`holderSpec.inductiveInv` is proved inductively (~13 s); fourteen mutants are each caught (leaked holder on crash, both as a wedge and as a liveness violation; starvation of a requested start; unfenced offer and cancel; refused offer behind an exclusive holder; dropped, misattributed, or leaked returns; follow-up ahead of steering; unreported start or refusal; take ignoring the mode; release resetting the mode).
-The model is finite (3 turn numbers, 4 seqs): induction covers any depth within those bounds.
+**Refinement layers.**
+
+| layer | dir | what | proof |
+|---|---|---|---|
+| L0 lease | `proofs/lease` | holder kind, turn number, body, fenced cancel, start request | inductive, ~3 s |
+| L1 line | `proofs/line` | one representative line against the lease; other lines abstracted to steerAhead / otherSteer / followAhead | inductive over the generator (~80 s) and over every step `lineNext` allows (`lineSpec@stepRel`, ~20 s) |
+| L2 holder | `proofs/holder` | the full mailbox | `inductiveInv` (~25 s); refines L0 (`refinesLeaseInv`, ~25 s) and L1 for every seq (`refinesInv`, ~40 s) |
+| L3 code | `fen.core.tasks` | the pure `step` | trace replay of `holderSpec` (`conform.sh`: state, dispositions, forbidden-transition probes) |
+
+Refinement is a state predicate over a copy of the previous state (`p*` variables), not a ghost updated in the step: putting `lineNext` in the step relation made every holder proof time out. The L1 proof covers the whole `lineNext` relation, so invariants L2 inherits through `refinesLine` hold for every step the monitor accepts. `verify.sh` takes `main@action` to pick the step action.
+
+Quint 0.32 flattener notes: qualified imports (`import M as X`) lose imported helpers, and selective imports flatten helpers unqualified, so the L0/L1 helpers have unique names (`leaseStartTurn`, `lineDone`, ...) and L2 imports single names.
+
+Fifteen holder mutants are each caught (leaked holder on crash, as a wedge and as a liveness violation; starvation of a requested start; an extra start condition, recorded as starvation; unfenced offer and cancel; refused offer behind an exclusive holder; dropped, misattributed, or leaked returns; follow-up ahead of steering; unreported start or refusal; take ignoring the mode; release resetting the mode). They are caught by simulation; the take-by-mode mutant needs a long trace and is caught reliably only at `SPEC_SAMPLES=50000`.
+
 When the code adopts this design, `holderAbstract` replaces the mailbox half of `requestsAbstract`, and serve re-proves its refinement against it, composing request cleanup with `release`.

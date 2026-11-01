@@ -5,7 +5,7 @@
 ;; path so scripts and muscle memory still work.
 
 (local path-util (require :fen.util.path))
-(local coroutines (require :fen.util.coroutines))
+(local tasks (require :fen.core.tasks))
 (local types (require :fen.core.types))
 (local steering (require :fen.extensions.steering.service))
 (local log (require :fen.util.log))
@@ -488,15 +488,23 @@
   (api.log :info {:event :reload-executing :scope (or opts.recovery :reload)})
   (api.emit {:type :assistant-text
              :text "reload> reloading core modules and extensions…"})
-  (set state.cancel-requested? false)
-  (set state.busy? true)
-  (set state.turn
-       (coroutines.create (fn []
-                            (let [(text _error?) (perform-reload! api state
-                                                                  (fn [_progress]
-                                                                    (coroutine.yield))
-                                                                  opts)]
-                              (api.emit {:type :assistant-text :text text}))))))
+  ;; /reload holds the session exclusively; a queued turn start goes first.
+  (let [(co hid-or-why) (tasks.spawn-held :exclusive
+                                          (fn []
+                                            (let [(text _error?) (perform-reload! api
+                                                                                  state
+                                                                                  (fn [_progress]
+                                                                                    (coroutine.yield))
+                                                                                  opts)]
+                                              (api.emit {:type :assistant-text
+                                                         : text}))))]
+    (if co
+        (do
+          (set state.cancel-requested? false)
+          (set state.busy? true)
+          (set state.holder-id hid-or-why)
+          (set state.turn co))
+        (api.emit {:type :error :error (.. "reload: " hid-or-why)}))))
 
 (fn register-reload [api]
   (api.register :command

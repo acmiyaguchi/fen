@@ -50,6 +50,8 @@
 
 (fn fresh [complete-messages ?decide-compaction ?settings]
   (test-api.reset!)
+  ;; /compact holds the session; a test that leaves it unfinished must not leak it.
+  ((. (require :fen.core.tasks) :reset!))
   (tset package.loaded :fen.extensions.compact nil)
   (tset package.loaded :fen.core.agent {:complete-messages complete-messages})
   (when ?decide-compaction
@@ -606,6 +608,30 @@
                     (assert.is_nil state.turn)
                     (assert.are.equal 0 (length asks))
                     (assert.are.equal 0 (event-count seen :error)))))
+            (it "skips auto-compaction quietly while a turn start is pending, and retries on the next trigger"
+                (fn []
+                  (let [tasks (require :fen.core.tasks)
+                        (decide _rates _asks) (mock-decide-compaction)
+                        state (make-state)
+                        (_ compact) (fresh (fn [] (make-assistant "unused"))
+                                           decide {})
+                        threshold (context-tokens compact state)
+                        seen (fresh (fn [_a _m _mo _o _e yield-fn]
+                                      (yield-fn)
+                                      (make-assistant "auto summary"))
+                                    decide {:autoCompactTokens threshold})]
+                    (tasks.offer! "queued prompt")
+                    (complete-turn! state)
+                    (assert.is_nil state.turn)
+                    (assert.are.equal 0 (event-count seen :error))
+                    (assert.are.equal 0 (event-count seen :info))
+                    ;; The queued turn starts (and later completes); the next trigger compacts.
+                    (tasks.next-start!)
+                    (set state.turn-id (+ (or state.turn-id 0) 1))
+                    (complete-turn! state)
+                    (assert.is_not_nil state.turn)
+                    (assert.is_true (drain! state))
+                    (assert.are.equal 1 (length state._test.entries)))))
             (it "compacts at the threshold with trigger :auto and does not repeat"
                 (fn []
                   (let [(decide _rates asks) (mock-decide-compaction)

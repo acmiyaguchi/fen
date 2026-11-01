@@ -1,6 +1,6 @@
 ;; Input-time decide questions through the input-handler pipeline with a
 ;; mocked decide service: the idle topic-shift hint (#513) and busy-line
-;; classification with /decide undo (#514).
+;; classification hints (#514).
 
 (local test-api (require :fen.core.extensions.test_api))
 (local events (require :fen.core.extensions.events))
@@ -35,10 +35,9 @@
   (let [opts (or ?opts {})]
     (test-api.reset!)
     (tasks.reset!)
-    (tasks.turn-start!)
+    (tasks.spawn-held :turn #(coroutine.yield))
     (set asks [])
     (set store.topic-pending nil)
-    (set store.reclassified nil)
     (tset package.loaded :fen.extensions.decide.service (mock-service opts))
     (tset package.loaded :fen.extensions.decide nil)
     (tset package.loaded :fen.extensions.decide.input nil)
@@ -256,7 +255,7 @@
                     (assert.are.equal 1 (length (of-type seen :hint))))))))
 
 ;; ---------------------------------------------------------------------------
-;; Busy-line classification and /decide undo
+;; Busy-line classification
 ;; ---------------------------------------------------------------------------
 
 (fn route [choice confidence]
@@ -276,9 +275,6 @@
 (fn submit! [line rt]
   (input-pipeline.handle {:kind :user-input :text line}
                          {:busy? rt.busy? :state rt}))
-
-(fn undo! []
-  (command-registry.dispatch "/decide undo" (runtime)))
 
 (describe "decide busy-line classification"
           (fn []
@@ -302,42 +298,29 @@
                       (assert.is_truthy (. questions.route.criteria :follow-up))
                       (assert.is_truthy questions.route.criteria.correction)
                       (assert.is_truthy questions.route.criteria.cancel)))))
-            (it "moves a confident follow-up still pending in steering to the follow-up queue"
+            (it "hints at > for a confident follow-up and leaves the line in steering"
                 (fn []
                   (let [seen (fresh!)
                         rt (runtime)]
                     (submit! "then write a changelog entry" rt)
                     ((. asks 1 :on-done) (route :follow-up 0.9))
-                    (assert.are.same [] (. (tasks.snapshot) :steering))
                     (assert.are.same ["then write a changelog entry"]
-                                     (. (tasks.snapshot) :follow-up))
-                    (let [queued (of-type seen :queued)
-                          last (. queued (length queued))
-                          status (of-type seen :set-status-info)]
-                      (assert.are.equal :follow-up last.queue)
-                      (assert.are.equal "then write a changelog entry"
-                                        last.text)
-                      (assert.are.equal 1
-                                        (. status (length status) :info
-                                           :follow-up-queued))
-                      (assert.are.equal 0
-                                        (. status (length status) :info
-                                           :steering-queued)))
+                                     (. (tasks.snapshot) :steering))
+                    (assert.are.same [] (. (tasks.snapshot) :follow-up))
                     (let [infos (of-type seen :info)]
-                      (assert.is_truthy (string.find (. infos (length infos)
-                                                        :text)
-                                                     "/decide undo" 1 true))))))
-            (it "leaves a line the agent already drained untouched"
+                      (assert.are.equal 1 (length infos))
+                      (assert.is_truthy (string.find (. infos 1 :text)
+                                                     "prefix with `>`" 1 true))))))
+            (it "never moves a line, even one the agent already drained"
                 (fn []
-                  (let [seen (fresh!)
-                        rt (runtime)]
+                  (fresh!)
+                  (let [rt (runtime)]
                     (submit! "then write a changelog entry" rt)
                     (assert.are.same ["then write a changelog entry"]
                                      (steering.get-steering))
                     ((. asks 1 :on-done) (route :follow-up 0.95))
                     (assert.are.same [] (. (tasks.snapshot) :follow-up))
-                    (assert.are.equal 0 (length (of-type seen :info)))
-                    (assert.is_nil store.reclassified))))
+                    (assert.are.same [] (. (tasks.snapshot) :steering)))))
             (it "keeps a correction in steering without a notice"
                 (fn []
                   (let [seen (fresh!)
@@ -450,43 +433,4 @@
                   (let [result (submit! "steer me" (runtime))]
                     (assert.are.equal :queued result.action)
                     (assert.are.same ["steer me"]
-                                     (. (tasks.snapshot) :steering)))))
-            (it "/decide undo moves the reclassified line back to steering once"
-                (fn []
-                  (let [seen (fresh!)
-                        rt (runtime)]
-                    (submit! "then write a changelog entry" rt)
-                    ((. asks 1 :on-done) (route :follow-up 0.9))
-                    (undo!)
-                    (assert.are.same ["then write a changelog entry"]
-                                     (. (tasks.snapshot) :steering))
-                    (assert.are.same [] (. (tasks.snapshot) :follow-up))
-                    (let [queued (of-type seen :queued)]
-                      (assert.are.equal :steering
-                                        (. queued (length queued) :queue)))
-                    (assert.are.equal 0 (length (of-type seen :error)))
-                    (undo!)
-                    (let [infos (of-type seen :info)]
-                      (assert.are.equal "decide undo: nothing to undo"
-                                        (. infos (length infos) :text))))))
-            (it "clearing the follow-up queue invalidates the undo record"
-                (fn []
-                  (fresh!)
-                  (let [rt (runtime)]
-                    (submit! "then write a changelog entry" rt)
-                    ((. asks 1 :on-done) (route :follow-up 0.9))
-                    ;; Clearing steering alone leaves the follow-up line and its undo.
-                    (steering.clear-queues! :steering)
-                    (assert.are.equal "then write a changelog entry"
-                                      store.reclassified)
-                    ;; /cancel-all, /new, /resume, and /handoff clear both queues.
-                    (steering.clear-queues!)
-                    (assert.is_nil store.reclassified)
-                    ;; The same text queued again as a follow-up is not moved by a stale undo.
-                    (steering.queue! :follow-up "then write a changelog entry")
-                    (assert.are.equal "nothing to undo"
-                                      (. ((. (require :fen.extensions.decide.input)
-                                             :undo!))
-                                         :error))
-                    (assert.are.same ["then write a changelog entry"]
-                                     (. (tasks.snapshot) :follow-up)))))))
+                                     (. (tasks.snapshot) :steering)))))))

@@ -34,27 +34,27 @@
 
 ;; @doc fen.extensions.steering.service.queue!
 ;; kind: function
-;; signature: (queue! kind text ?opts) -> {:ok true :queued true :queue kind}|{:ok false :error msg}
-;; summary: Offer a line to the running turn's steering mailbox or the follow-up queue; steering is rejected when no turn runs or opts.turn is stale.
+;; signature: (queue! kind text ?opts) -> {:ok true :queued true :queue kind :seq n}|{:ok false :error msg}
+;; summary: Offer a line as a follow-up, or as steering for the running turn (opts.turn, default the running one); steering is refused when no turn runs or opts.turn is stale. opts.tag is carried back.
 ;; tags: steering queue
 (fn M.queue! [kind text ?opts]
-  (if (canonical-kind kind)
-      (tasks.queue! kind text ?opts)
-      {:ok false :error (.. "unknown queue: " (tostring kind))}))
-
-;; @doc fen.extensions.steering.service.requeue!
-;; kind: function
-;; signature: (requeue! text from to) -> {:ok true :queued true :queue kind}|{:ok false :error msg}
-;; summary: Move the most recent still-pending copy of a line from one queue to the end of the other; fails when no copy is pending or steering has no running turn.
-;; tags: steering queue
-(fn M.requeue! [text from to] (tasks.requeue! text from to))
+  (let [opts (or ?opts {})
+        h (tasks.holder)]
+    (case (canonical-kind kind)
+      :follow-up
+      (tasks.offer! text {:follow-up? true :tag opts.tag})
+      ;; An explicit steering request names a turn, so it never starts one.
+      :steering
+      (tasks.offer! text {:tag opts.tag :turn (or opts.turn (math.max h.n 1))})
+      _
+      {:ok false :error (.. "unknown queue: " (tostring kind))})))
 
 ;; @doc fen.extensions.steering.service.clear-queues!
 ;; kind: function
 ;; signature: (clear-queues! ?kind) -> nil
 ;; summary: Empty the named queue, or both when kind is nil or :all, and refresh status counts.
 ;; tags: steering queue
-(fn M.clear-queues! [?kind] (tasks.clear! ?kind))
+(fn M.clear-queues! [?kind] (tasks.clear! ?kind) nil)
 
 ;; @doc fen.extensions.steering.service.set-queue-mode!
 ;; kind: function
@@ -87,10 +87,11 @@
   (tasks.attach! (not= runtime nil)))
 
 (fn M.start-idle-follow-up! []
-  (let [text (tasks.idle-tick!)]
-    (if (and text M.legacy-runtime M.legacy-runtime.start-follow-up!)
+  (let [item (when (and M.legacy-runtime M.legacy-runtime.start-follow-up!)
+               (tasks.next-start!))]
+    (if item
         (do
-          (M.legacy-runtime.start-follow-up! text)
+          (M.legacy-runtime.start-follow-up! item.text)
           true)
         false)))
 
@@ -108,9 +109,9 @@
       {:action :start :text line}
       (let [result (if (follow-up-line? line)
                        (M.queue! :follow-up (strip-follow-up-prefix line))
-                       ;; Busy without a mailbox turn (/reload, /handoff): the
-                       ;; line becomes a follow-up rather than being rejected.
-                       (tasks.steer-or-follow-up! line))
+                       ;; Local offer: steers a running turn; an exclusive
+                       ;; holder (/reload, /handoff) gets a follow-up instead.
+                       (tasks.offer! line))
             text (if (follow-up-line? line) (strip-follow-up-prefix line) line)]
         (if result.ok
             {:action :queued :queue result.queue : text}

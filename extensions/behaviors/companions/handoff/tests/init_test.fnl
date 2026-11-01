@@ -6,10 +6,10 @@
 (local session-registry (require :fen.core.extensions.register.session_backend))
 
 (fn seed-queues! []
+  ;; /handoff runs idle, so only follow-ups can be waiting (steer lines exist
+  ;; only while a turn holds the session).
   (tasks.reset!)
-  (tasks.turn-start!)
-  (tasks.queue! :steering "queued steering")
-  (tasks.queue! :follow-up "queued follow-up"))
+  (tasks.offer! "queued follow-up" {:follow-up? true}))
 
 (local original-agent-mod (. package.loaded :fen.core.agent))
 
@@ -45,6 +45,7 @@
 
 (fn fresh [complete-messages]
   (test-api.reset!)
+  (tasks.reset!)
   (tset package.loaded :fen.extensions.handoff nil)
   (tset package.loaded :fen.core.agent {:complete-messages complete-messages})
   (let [seen []

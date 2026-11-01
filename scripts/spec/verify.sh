@@ -5,7 +5,7 @@
 # script checks only the obligations a spec dir declares in verify.tsv, each a
 # proof Apalache can finish:
 #
-#   <main> <TAB> <invariants> <TAB> <mode> <TAB> <steps> <TAB> <seconds> <TAB> <why>
+#   <main[@step]> <TAB> <invariants> <TAB> <mode> <TAB> <steps> <TAB> <seconds> <TAB> <why>
 #
 #   mode bounded    no execution of up to <steps> steps violates <invariants>
 #                   (space-separated); `quint verify --max-steps`.
@@ -57,11 +57,15 @@ if [ "${1-}" = "--lane" ]; then
     set -f
     IFS=' '
     # shellcheck disable=SC2086
+    # main may name a step action: `spec@action` (default `step`).
+    stepact=step
+    case $main in *@*) stepact=${main#*@}; main=${main%@*} ;; esac
     if [ "$mode" = inductive ]; then
       set -- --inductive-invariant="$invs" --max-steps=1
     else
       set -- --invariants $invs --max-steps="$steps"
     fi
+    set -- --step="$stepact" "$@"
     IFS=$tab
     set +f
     if [ -n "$have_timeout" ]; then

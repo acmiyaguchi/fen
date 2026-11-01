@@ -53,14 +53,14 @@
             (after_each (fn [] (tasks.reset!) (test-api.reset!)))
             (it "puts unread steering back in front of the current draft"
                 (fn []
-                  (let [n (tasks.turn-start!)]
+                  (let [(_ hid) (tasks.spawn-held :turn #(coroutine.yield))]
                     (type-text! "fix the tests too")
                     (press-enter!)
                     (assert.are.equal 1 (. (tasks.info) :steering-queued))
                     (assert.are.equal "" state.input-buf)
                     (type-text! "and docs")
                     ;; The turn errors before its next boundary.
-                    (tasks.turn-end! n)
+                    (tasks.release! hid)
                     (set run.busy? false)
                     (assert.are.equal "fix the tests too\nand docs"
                                       state.input-buf)
@@ -71,9 +71,9 @@
                                                    1 true)))))
             (it "leaves the draft alone when the turn read every line"
                 (fn []
-                  (let [n (tasks.turn-start!)]
+                  (let [(_ hid) (tasks.spawn-held :turn #(coroutine.yield))]
                     (type-text! "steer")
                     (press-enter!)
                     (assert.are.same ["steer"] (tasks.take! :steering))
-                    (tasks.turn-end! n)
+                    (tasks.release! hid)
                     (assert.are.equal "" state.input-buf))))))

@@ -1,0 +1,8 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+lineSpec	movesAreAbsSteps	holds
+lineSpec	leaseInvHolds	holds
+lineSpec	steerBelongsInv	holds
+lineSpec	steerAttributedInv	holds
+lineSpec	localNotRefusedInv	holds
+lineSpec	doneHasWhyInv	holds
+lineSpec	inductiveInv	holds

@@ -9,7 +9,8 @@
   "Fresh machine with one running main turn, so steering has a turn to attach to."
   (test-api.reset!)
   (tasks.reset!)
-  (tasks.turn-start!))
+  ;; Held, never resumed: the next reset! drops it.
+  (tasks.spawn-held :turn #(coroutine.yield)))
 
 (fn watch [type-key]
   (let [seen []]
@@ -93,17 +94,17 @@
             (it "starts opted-in idle follow-ups only at the idle tick"
                 (fn []
                   (reset!)
-                  (tasks.turn-end!)
+                  (tasks.release! (. (tasks.holder) :hid))
                   (tasks.attach! true)
                   (let [api (test-api.make-runtime-api :enqueue-test)]
                     (api.enqueue :follow-up "plain")
-                    (assert.is_nil (tasks.idle-tick!))
+                    (assert.is_nil (?. (tasks.next-start!) :text))
                     (steering.clear-queues!)
                     (let [result (api.enqueue :follow-up "start me"
                                               {:start-if-idle? true})]
                       (assert.is_true result.start-pending?))
-                    (assert.are.equal "start me" (tasks.idle-tick!))
-                    (assert.is_nil (tasks.idle-tick!))
+                    (assert.are.equal "start me" (?. (tasks.next-start!) :text))
+                    (assert.is_nil (?. (tasks.next-start!) :text))
                     (assert.are.same [] (snap :follow-up)))))
             (it "clearing queues removes extension-enqueued messages and idle starts"
                 (fn []
@@ -111,13 +112,13 @@
                   (tasks.attach! true)
                   (let [api (test-api.make-runtime-api :enqueue-test)]
                     (api.enqueue :steering "extension steering")
-                    (tasks.turn-end!)
+                    (tasks.release! (. (tasks.holder) :hid))
                     (api.enqueue :follow-up "extension follow-up"
                                  {:start-if-idle? true})
                     (steering.clear-queues!)
                     (assert.are.same [] (snap :steering))
                     (assert.are.same [] (snap :follow-up))
-                    (assert.is_nil (tasks.idle-tick!)))))
+                    (assert.is_nil (?. (tasks.next-start!) :text)))))
             (it "api enqueue fails without an attached interactive runtime"
                 (fn []
                   (reset!)
@@ -148,24 +149,6 @@
                                                              :sometimes))
                   (assert.is_false (steering.set-queue-mode! :bogus :all))
                   (assert.are.equal :one-at-a-time (snap :steering-mode))))
-            (it "requeue! moves the most recent pending copy and rejects same-queue or missing moves"
-                (fn []
-                  (reset!)
-                  (steering.queue! :steering "a")
-                  (steering.queue! :steering "b")
-                  (steering.queue! :steering "a")
-                  (assert.is_true (. (steering.requeue! "a" :steering
-                                                        :follow-up)
-                                     :ok))
-                  (assert.are.same ["a" "b"] (snap :steering))
-                  (assert.are.same ["a"] (snap :follow-up))
-                  (assert.is_false (. (steering.requeue! "b" :steering
-                                                         :steering)
-                                      :ok))
-                  (assert.is_false (. (steering.requeue! "zzz" :steering
-                                                         :follow-up)
-                                      :ok))
-                  (assert.are.same ["a" "b"] (snap :steering))))
             (it "clear-queues! clears one queue or both"
                 (fn []
                   (reset!)
@@ -192,7 +175,7 @@
             (it "busy input with no mailbox turn (/reload, /handoff) becomes a follow-up"
                 (fn []
                   (reset!)
-                  (tasks.turn-end!)
+                  (tasks.release! (. (tasks.holder) :hid))
                   (let [result (steering.submit "typed during reload"
                                                 {:busy? true})]
                     (assert.are.equal :queued result.action)
@@ -202,18 +185,16 @@
             (it "explicit steering is still rejected when no turn is running"
                 (fn []
                   (reset!)
-                  (tasks.turn-end!)
+                  (tasks.release! (. (tasks.holder) :hid))
                   (assert.is_false (. (steering.queue! :steering "late") :ok))))
             (it "legacy runtime shims keep a pre-mailbox session's tick working"
                 (fn []
                   (reset!)
-                  (tasks.turn-end!)
+                  (tasks.release! (. (tasks.holder) :hid))
                   (let [started []]
                     (steering.install-runtime! {:start-follow-up! #(table.insert started
                                                                                  $1)})
-                    (assert.is_true (. (tasks.queue! :follow-up "x"
-                                                     {:start-if-idle? true})
-                                       :ok))
+                    (assert.is_true (. (tasks.offer! "x" {:turn 0}) :ok))
                     (assert.is_true (steering.start-idle-follow-up!))
                     (assert.are.same ["x"] started)
                     (assert.is_false (steering.start-idle-follow-up!))

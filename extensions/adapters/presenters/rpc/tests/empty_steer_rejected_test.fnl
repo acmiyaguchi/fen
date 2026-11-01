@@ -9,8 +9,9 @@
 (local turn-lifecycle (require :fen.turn_lifecycle))
 (local wire (require :fen.util.wire))
 (local mock (require :fen.extensions.provider_mock.mock_provider))
-(local steering (require :fen.extensions.steering.service))
 (local rpc (require :fen.extensions.rpc))
+(local tasks (require :fen.core.tasks))
+(local turn-submit (require :fen.turn_submit))
 
 (local RUN "run-1")
 (local MAX-TICKS 2000)
@@ -38,10 +39,13 @@
                                      :api-key :test
                                      :tools tools
                                      :on-event (fn [ev] (events.emit ev))
+                                     ;; As the interactive runtime: tagged items.
                                      :get-steering (fn []
-                                                     (steering.get-steering))
+                                                     (let [(_ items) (tasks.take! :steering)]
+                                                       items))
                                      :get-follow-up (fn []
-                                                      (steering.get-follow-up))
+                                                      (let [(_ items) (tasks.take! :follow-up)]
+                                                        items))
                                      :provider-options {:mock-script script
                                                         :mock-record record}})]
     {:agent agent :opts {} :mailbox? true}))
@@ -53,8 +57,7 @@
       (let [(ok? value) (coroutine.resume state.turn)]
         (when (or (not ok?) (= (coroutine.status state.turn) :dead))
           (if ok? (set state.turn-result value) (set state.turn-error value))
-          (set state.busy? false)
-          (set state.turn nil)
+          (turn-submit.drop! state)
           (set state.cancel-requested? false)
           (turn-lifecycle.emit-complete! state ok? value))))))
 
@@ -152,7 +155,7 @@
 (fn reset! []
   (test-api.reset!)
   (register-mock!)
-  (steering.clear-queues!))
+  (tasks.reset!))
 
 (describe "#666 rpc child: an empty steer"
           (fn []

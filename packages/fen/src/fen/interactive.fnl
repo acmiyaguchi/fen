@@ -169,8 +169,13 @@
                                      (events.emit {:type :set-status-info
                                                    :info info})))))
         ;; Resolved through the tasks module table at call time, so they stay reload-safe.
-        agent-extra {:get-steering (fn [] (tasks.take! :steering))
-                     :get-follow-up (fn [] (tasks.take! :follow-up))
+        ;; Items carry each line's caller tag onto the injected event.
+        agent-extra {:get-steering (fn []
+                                     (let [(_ items) (tasks.take! :steering)]
+                                       items))
+                     :get-follow-up (fn []
+                                      (let [(_ items) (tasks.take! :follow-up)]
+                                        items))
                      :tool-context (fn [_agent]
                                      {:state _state-box.state})}
         backend (session-lifecycle.resolve-backend opts)
@@ -200,7 +205,9 @@
         is-busy? (fn [] state.busy?)
         request-cancel (fn []
                          (when state.busy?
-                           (set state.cancel-requested? true)))
+                           (set state.cancel-requested? true)
+                           (let [h (tasks.holder)]
+                             (when (= h.kind :turn) (tasks.cancel! h.n)))))
         on-submit (fn [line]
                     (if (= (string.sub line 1 1) "/")
                         (command-registry.dispatch line state)
@@ -236,8 +243,8 @@
                         (if ok?
                             (set state.turn-result value)
                             (set state.turn-error value))
-                        (set state.busy? false)
-                        (set state.turn nil)
+                        ;; Releases the holder if the body could not (fenced no-op otherwise).
+                        (turn-submit.drop! state)
                         (set state.cancel-requested? false)
                         (turn-lifecycle.emit-complete! state ok? value))))
                   ;; Reload requests stay queued until the turn coroutine is gone, so modules never swap during a stream or tool call.
@@ -252,8 +259,7 @@
                                              (command-registry.dispatch (reload-request.command-line request)
                                                                         state)))
                     ;; Idle follow-ups start only after active-turn and reload work reach this boundary.
-                    (let [text (tasks.idle-tick!)]
-                      (when text (submit-user-turn! state text)))))]
+                    (turn-submit.start-queued! state agent-mod.step)))]
     (session-lifecycle.install! state)
     (when (> replayed 0) (state.flush))
     (let [(init-ok? init-err) (presenter-registry.init-active-presenter {:state state})]
@@ -295,6 +301,9 @@
             (pcall (fn [] (termbox2.shutdown)))
             (set tui-state.tb-initialized? false)
             (when ok-sink? (pcall log-sink.close!)))))
+      ;; A presenter that returns (quit, crash, rpc exit) while a turn or
+      ;; exclusive coroutine is suspended abandons it: release its holder.
+      (turn-submit.drop! state)
       (tasks.attach! false)
       (session-lifecycle.close! state.session-backend state.session)
       (emit-agent-shutdown state.agent (if ok? :normal :crashed)

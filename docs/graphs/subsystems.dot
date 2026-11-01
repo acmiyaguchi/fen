@@ -76,7 +76,6 @@ digraph fen_subsystems {
   "extension.compact" -> "util";
   "extension.decide" -> "core";
   "extension.decide" -> "core.extensions";
-  "extension.decide" -> "extension.steering";
   "extension.decide" -> "util";
   "extension.decide" -> "util.http";
   "extension.default_prompt" -> "util";
@@ -132,7 +131,6 @@ digraph fen_subsystems {
   "extension.queue" -> "util";
   "extension.rpc" -> "core";
   "extension.rpc" -> "core.extensions";
-  "extension.rpc" -> "extension.steering";
   "extension.rpc" -> "other";
   "extension.rpc" -> "util";
   "extension.session_jsonl" -> "core";

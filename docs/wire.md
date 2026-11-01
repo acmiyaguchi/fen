@@ -19,6 +19,8 @@ A line may not exceed `MAX-LINE-BYTES`, so a bounded drain can always consume it
 The normalized display events are forwarded as-is: `agent-started`, `user`, `llm-start`, `llm-end`, `assistant-text`, `assistant-text-delta`, `assistant-thinking`, `assistant-thinking-delta`, `assistant-stream-end`, `tool-call`, `tool-result`, `steering-injected`, `follow-up-injected`, `agent-turn-complete`, `error`, and `info`.
 `fen.util.wire.normalize` produces them with transport bounds applied and fields coerced to their schema types; truncated payloads carry `transport-truncated?`.
 `steering-injected` and `follow-up-injected` may carry `ref`, the `seq` of the `steer` or `follow-up` control whose queued text was injected.
+The child passes each control's `seq` to the mailbox as the line's tag, and the mailbox hands it back on injection, refusal, release, and clear, so refs stay exact even when texts repeat.
+A `steer` names the child's running turn, so it is refused (with an `info` naming its `ref`) rather than applied to a later turn.
 
 The live-child lifecycle adds these events:
 
