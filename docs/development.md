@@ -238,7 +238,7 @@ File targets must exist, and `.md#anchor` / same-file `#anchor` targets must res
 External links, `*.html` and `docs/generated/` site-only targets, and vendored docs are skipped; `make check` runs it alongside the `@doc` check.
 
 `make lint` (`scripts/lint/lint.fnl`) statically checks the layering and hot-reload rules: `layer/deps` (a cross-rock `require` must be covered by the requiring rock's rockspec dependencies, transitively), `reload/list` (an extension's manifest lists every module it ships in `:reload-modules` or `:reload-exclude`, and nothing it does not ship), and `reload/state` (a reloadable module must not mutate a module-level `var` or table literal at call time; see [Rules for new code](#rules-for-new-code)).
-It is report-only and not yet part of `make check`; `--json` emits machine-readable findings and `--strict` exits non-zero on unwaived ones.
+`make check-lint` (part of `make check` via `check-static`) runs the self-test and then the lint with `--strict`, so any unwaived finding fails the build; `make lint` prints the full report including waivers, `--json` emits machine-readable findings, and `--quiet` omits the waiver list.
 A file that does not parse or a manifest that does not evaluate is reported (`lint/parse`, `lint/manifest`) rather than skipped.
 Waive a finding with `;; lint-allow <rule>: <reason>` as a trailing comment on its line or on a comment-only line directly above it; the reason is required and every waiver is listed in the report.
 `make lint` first runs `scripts/lint/test.fnl`, which checks the exact findings each rule reports on `scripts/lint/fixtures/<rule>/{bad,good}.fnl`, plus parse-error and waiver cases.
