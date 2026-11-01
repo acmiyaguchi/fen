@@ -801,4 +801,49 @@
                                                                1 true)))]
                     (assert.is_not_nil info)
                     (assert.are.same [1] info.refs)
-                    (assert.are.same [] (. (tasks.snapshot) :follow-up)))))))
+                    (assert.are.same [] (. (tasks.snapshot) :follow-up)))))
+            ;; spec/wire/proofs/refs: every accepted line control gets exactly
+            ;; one terminal notice.
+            (it "an accepted prompt that cannot start is reported by ref before exit failed"
+                (fn []
+                  (let [r (run-child {:mock ["unused"]
+                                      :tools []
+                                      :script (fn [p]
+                                                (p.wait-type :ready)
+                                                (p.send! :prompt {:text ""}))})
+                        p r.parent
+                        info (p.find #(and (= $1.type :info) $1.refs
+                                           (= 1 (. $1.refs 1))))]
+                    (assert.are.equal :accepted (. (p.ack 1) :status))
+                    (assert.is_not_nil info)
+                    (assert.are.equal :failed (. (last-event p) :status))
+                    (assert-closed-run! r))))
+            (it "finalize clears a prompt waiting behind an exclusive job, reports it, and finishes"
+                (fn []
+                  (let [job {}
+                        r (run-child {:mock ["unused"]
+                                      :tools []
+                                      :wrap-tick (fn [_state base]
+                                                   (fn []
+                                                     (base)
+                                                     (when (not job.co)
+                                                       ;; Registered but not adopted: the child
+                                                       ;; stays in ready.
+                                                       (set job.co
+                                                            ((. (require :fen.testing.tasks)
+                                                                :hold-exclusive!))))))
+                                      :script (fn [p]
+                                                (p.wait-type :ready)
+                                                (p.send! :prompt {:text "go"})
+                                                (p.wait-ack 1)
+                                                (p.send! :finalize {})
+                                                (p.wait-ack 2))})
+                        p r.parent
+                        dropped (p.find #(and (= $1.type :info) $1.refs
+                                              (= 1 (. $1.refs 1))))]
+                    (assert.are.equal :accepted (. (p.ack 2) :status))
+                    (assert.is_not_nil dropped)
+                    (assert.is_nil (p.find #(= $1.type :turn-started)))
+                    (assert.are.equal :done (. (last-event p) :status))
+                    (assert-closed-run! r)
+                    (tasks.reset!))))))
