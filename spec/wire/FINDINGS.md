@@ -176,6 +176,30 @@ The `decide`/`advance` rows are copied from the integration model (pinned to the
 `current` fails the same obligation (counterexample, 17 s), and `w664BatchSkipsSteerTest` is its 10-step trace.
 The strengthening needed: an exit waits for the end of the batch (`pend != ""` only mid-batch, `exited` only at a batch boundary), a turn runs exactly in `running`/`closing`/`finalizing` (and while a terminal run unwinds), `done` before exit only with `finish` pending, and `result` is never the last event.
 
+## Proof model: ref accounting (`proofs/refs/`)
+
+The child's control handling composed with the session holder: every mailbox step is a pure def of `holderAbstract` (`spec/core/tasks/proofs/holder/model.qnt`: `offer`, `startTurn`, `takeSteer`, `takeFollowUp`, `release`, `clearSteer`, `clearFollowUp`, `startExclusive`), called, not re-implemented.
+A line control's wire ref is its holder seq (a slot; refs the holder never sees leave their slot unused, and the last slot, `FIN`, is the forced finalize turn's own line, which has no ref), so the tag the code carries is the identity in the model.
+Notices are emitted per code path, as the presenter does: `turn-started` names the started line, `*-injected` names a taken line, and an `info` names refused (`queue!` with no turn of ours), released (`steering-returned`), cleared (`drop-queued!`), or failed-start lines.
+Exclusive jobs may be adopted (the child tracks them as a turn) or not (a prompt then waits behind them as a pending start).
+
+| Invariant | Meaning |
+| --- | --- |
+| `atMostOneNotice` | no ref gets two terminal notices |
+| `rejectedNoNotice` | a ref rejected at ack (or unsent) gets none |
+| `noticeIffDisposed` | an accepted line still queued has no notice; any other accepted line has exactly one |
+| `settledAccounted` | once the run exits, or the session is idle with empty queues, every accepted line has its notice |
+| `steerNeverStarts` | an accepted steer is never started as a turn of its own nor queued as a follow-up |
+| `pendingWillStart` | a start line waiting behind an exclusive job is still queued with its start request |
+
+`inductive` (typing, the strengthening, and the invariants) is proved one obligation per move (`step` is exactly the union of the twelve `step*` moves). The parent's controls are one pure function per (control, state class) with a flat result, selected by guards on the copied `decide` table, and the turn-end rows are one branch per state: with a generic `decide`/perform dispatch in the step, the line and control obligations timed out and `bodyExit` ran out of heap. Each obligation now proves in about 45–220 s.
+Mutants: a dropped release notice, a pending start reported twice, a pending turn-started without its ref, a steer offered without a turn number under an exclusive job, finalize clearing without a notice, and the two pre-fix paths below.
+`conform.sh` replays `refs` traces (from `initReady`) through the real rpc child, `fen.core.tasks`, and `fen.turn_submit` with a scripted turn body, comparing each line ref's notices and ack status and whether the child exited after every step; `--negative` (the scripted agent never drains its queues) must mismatch.
+
+Two mismatches the model found in the code, both fixed in `extensions/adapters/presenters/rpc/init.fnl` with regressions in its `tests/init_test.fnl`:
+- An accepted prompt whose turn cannot start (an empty prompt passes the schema; the mailbox rejects the empty line) failed the run with no notice for its ref. `start-turn!` now reports the ref in an `info` before `fatal!` (and clears `started-ref`).
+- `finalize` while the prompt's start waits behind an exclusive job dropped that line (correctly reported) but then waited forever for a turn that could no longer start (`pendingWillStart`). `finalize-turn!` now finishes the run as in `ready` (the answer it has, `exit done`) when the waiting start is gone.
+
 ## Conformance
 
 `conform.sh` runs two comparisons; `check-spec` runs it and `conform.sh --negative`, which must fail.

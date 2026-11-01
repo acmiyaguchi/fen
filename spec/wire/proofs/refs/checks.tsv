@@ -1,0 +1,8 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+refs	atMostOneNotice	holds
+refs	rejectedNoNotice	holds
+refs	noticeIffDisposed	holds
+refs	settledAccounted	holds
+refs	steerNeverStarts	holds
+refs	pendingWillStart	holds
+refs	inductive	holds
