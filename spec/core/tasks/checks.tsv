@@ -10,12 +10,11 @@ requestsSpec	resolvedOnceInv	holds
 requestsSpec	noOrphanTurnReqInv	holds
 requestsSpec	parkConsistentInv	holds
 requestsSpec	pendingCurrentGenInv	holds
-requestsSpec	queueOwnedByRunningTurnInv	holds
+requestsSpec	sessionInvHolds	holds
 requestsSpec	pendingBoundedBudgetInv	holds
-requestsSpec	queueLenConsistentInv	holds
-requestsSpec	steeringConservedInv	holds
-requestsSpec	followUpsConservedInv	holds
+requestsSpec	eachSeqOnceInv	holds
 requestsSpec	followUpOrderInv	holds
-requestsSpec	typedNeverLostInv	holds
+requestsSpec	localOfferNeverRefusedInv	holds
 requestsSpec	boundedWaitTicksInv	holds
 requestsSpec	inductiveInv	holds
+requestsSpec	refinesInv	holds

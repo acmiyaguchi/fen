@@ -15,9 +15,11 @@ headless	inheritsTasksInvariants	violated	#398
 webReuse	answerHitsItsRequest	violated	#396
 proposed	allInvariants	holds
 proposed	inductiveInv	holds
+proposed	refinesInv	holds
 proposed	refinesTasks	holds
 proposed	inheritsTasksInvariants	holds
 proposedTui	allInvariants	holds
 proposedTui	inductiveInv	holds
+proposedTui	refinesInv	holds
 proposedTui	refinesTasks	holds
 proposedTui	inheritsTasksInvariants	holds

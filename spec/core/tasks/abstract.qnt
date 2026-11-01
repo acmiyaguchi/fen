@@ -1,9 +1,11 @@
 // Abstract specification of task table (#671):
 //   Part 1 (`tasksAbstract`): cooperative task table with turn-keyed ownership,
 //     cancel arms, active poll cadence, and xpcall fault isolation (#635–#637, #660–#663).
-//   Part 2 (`requestsAbstract`): turn-keyed steering mailbox with hand-back and
-//     follow-ups (implemented by `fen.core.tasks`), async request resolution,
-//     reload generation, and bounded park countdown budgets (#638, #662, #397, #398).
+//   Part 2 (`requestsAbstract`): the session holder of `fen.core.tasks`
+//     (`holderAbstract`, proofs/holder: turns, exclusive jobs, steer and
+//     follow-up queues) composed with async request resolution, /reload as an
+//     exclusive job with a generation, and bounded park countdown budgets
+//     (#638, #662, #397, #398, #686).
 //
 // Pure definitions only, so concrete models (`spec/serve`, `spec/serve/proofs/*`)
 // can import them and check step-by-step refinement (`absNext(prevAbs, absOf(state))`).
@@ -258,16 +260,18 @@ module tasksAbstract {
 }
 
 module requestsAbstract {
+  // The session half is the proved holder design (proofs/holder, #686): who
+  // holds the session (none | turn n | exclusive), its steer and follow-up
+  // queues, and every line's disposition. Every session move below is one of
+  // holderAbstract's pure steps (or a composition of them); this module adds
+  // only the request table and the rules that tie it to the holder.
+  import holderAbstract.* from "./proofs/holder/model"
+
   type ReqAbs = {
-    running: bool,          // a turn is open
-    turnNo: int,            // id of the current or last turn (0 = none yet)
+    ses: Session,           // the holder: kind, turn number n, hid, queues, dispositions
     parkedOn: int,          // request id the running turn is parked on, or -1
     gen: int,               // /reload generation
     hasResolver: bool,      // at least one resolver (local UI or connected remote) is present
-    queue: Set[int],        // turn tags of queued steering lines
-    sLen: int,              // steering lines queued (all tagged with the running turn)
-    fLen: int,              // follow-ups queued (untagged; survive turn end)
-    idleStart: bool,        // an idle enqueue asked the idle tick to start one follow-up
     rScope: int -> int,     // req -> 0 (idle slash-command picker) or turn t > 0
     rGen: int -> int,       // req -> /reload generation when issued
     rVer: int -> int,       // req -> choice-list version
@@ -281,17 +285,15 @@ module requestsAbstract {
     Set("none", "pending", "answered", "timeout", "ended", "cancelled", "aborted")
   pure val RESOLVED_STATUSES: Set[str] =
     Set("answered", "timeout", "ended", "cancelled", "aborted")
+  // A line a refining model does not track by seq (serve/proofs/requests has
+  // no mailbox): outside SEQS, so its disposition updates nothing.
+  pure val UNTRACKED_LINE: int = MAX_SEQ
 
   pure def reqAbsInit(hasRes: bool): ReqAbs = {
-    running: false,
-    turnNo: 0,
+    ses: sessionInit,
     parkedOn: -1,
     gen: 0,
     hasResolver: hasRes,
-    queue: Set(),
-    sLen: 0,
-    fLen: 0,
-    idleStart: false,
     rScope: IDS.mapBy(_i => 0),
     rGen: IDS.mapBy(_i => 0),
     rVer: IDS.mapBy(_i => 0),
@@ -299,6 +301,9 @@ module requestsAbstract {
     rRes: IDS.mapBy(_i => 0),
     rRem: IDS.mapBy(_i => 0),
   }
+
+  // A turn holds the session; n is its number.
+  pure def inTurn(a: ReqAbs): bool = a.ses.kind == "turn"
 
   pure def isPending(a: ReqAbs, i: int): bool =
     a.rStatus.get(i) == "pending"
@@ -313,72 +318,136 @@ module requestsAbstract {
     rRem: IDS.mapBy(i => if (ids.contains(i)) 0 else a.rRem.get(i)),
   }
 
-  pure def absStartTurn(a: ReqAbs, b: ReqAbs): bool = and {
-    not(a.running),
-    b == { ...a, running: true, turnNo: a.turnNo + 1, parkedOn: -1 },
+  // ---- session steps (holderAbstract) ----
+  // Each is a relation on the Session alone (x before, y after); `parked` is
+  // the request the running turn is parked on (-1: none). The request table
+  // is unchanged by these (`sameRequests`); the steps that compose request
+  // resolution with the holder (end of turn, /reload) are on ReqAbs below.
+
+  // next-start! + (with-holder :turn ...): the idle tick starts turn n+1.
+  pure def sesStartTurn(x: Session, y: Session): bool = and {
+    canStartTurn(x),
+    y == startTurn(x),
   }
 
+  // A prompt typed at idle: offer! with :turn 0, then the idle tick starts it
+  // (offer then startTurn, fused for models that do not split them). q is a
+  // fresh seq, or UNTRACKED_LINE for a model without a mailbox.
+  pure def sesPromptTurn(x: Session, y: Session, q: int): bool = and {
+    x.kind == "none",
+    not(x.start),
+    y == startTurn(offer(x, q, 0, false)),
+  }
+
+  // A seq never admitted: no disposition and not queued.
+  pure def freshSeq(x: Session, q: int): bool =
+    x.why.get(q) == "" and not(x.steer.contains(q)) and not(x.followUp.contains(q))
+
+  // offer! of fresh seq q: t = -1 local, 0 idle-only start, t > 0 steer turn t.
+  // Turn numbers other than 0 and n behave alike (refused), so n + 1 stands for them.
+  pure def sesOffer(x: Session, y: Session): bool =
+    SEQS.exists(q => and {
+      freshSeq(x, q),
+      Set(-1, 0, x.n, x.n + 1).exists(t => Bool.exists(f => y == offer(x, q, t, f))),
+    })
+
+  // take! :steer at a boundary of the running, unparked turn.
+  pure def sesTakeSteer(x: Session, y: Session, parked: int): bool = and {
+    x.kind == "turn", parked < 0, x.steer != Set(),
+    y == takeSteer(x),
+  }
+
+  // take! :follow-up at a natural stop: steering wins.
+  pure def sesTakeFollowUp(x: Session, y: Session, parked: int): bool = and {
+    x.kind == "turn", parked < 0, x.steer == Set(), x.followUp != Set(),
+    y == takeFollowUp(x),
+  }
+
+  // request-job! / next-job! / the job's release, for an exclusive job
+  // (/reload, /handoff, compaction). next-job! starts one only when idle with
+  // no turn start pending (turns first).
+  pure def canStartExclusive(x: Session): bool = and {
+    x.kind == "none",
+    not(x.start and x.followUp != Set()),
+  }
+
+  pure def sesStartExclusive(x: Session, y: Session): bool = and {
+    canStartExclusive(x), x.exReq,
+    y == startExclusive(x),
+  }
+
+  // No request is parked outside a turn, so an exclusive release resolves nothing.
+  pure def sesEndExclusive(x: Session, y: Session): bool = and {
+    x.kind == "exclusive",
+    y == release(x),
+  }
+
+  pure def sessionStep(x: Session, y: Session, parked: int): bool = or {
+    sesStartTurn(x, y),
+    sesPromptTurn(x, y, UNTRACKED_LINE),
+    SEQS.exists(q => freshSeq(x, q) and sesPromptTurn(x, y, q)),
+    sesOffer(x, y),
+    sesTakeSteer(x, y, parked),
+    sesTakeFollowUp(x, y, parked),
+    // cancel! of the current holder (one aimed at another hid is a no-op)
+    y == cancelHolder(x, x.hid),
+    Set("steer", "followUp").exists(w => MODES.exists(m => y == setMode(x, w, m))),
+    // explicit clears (/new, /resume, /queue clear)
+    y == clearSteer(x),
+    y == clearFollowUp(x),
+    y == requestExclusive(x),
+    sesStartExclusive(x, y),
+    sesEndExclusive(x, y),
+  }
+
+  pure def sameRequests(a: ReqAbs, b: ReqAbs): bool = and {
+    b.parkedOn == a.parkedOn, b.gen == a.gen, b.hasResolver == a.hasResolver,
+    b.rScope == a.rScope, b.rGen == a.rGen, b.rVer == a.rVer,
+    b.rStatus == a.rStatus, b.rRes == a.rRes, b.rRem == a.rRem,
+  }
+
+  // The turn's body exits (natural end or cancel): with-holder releases the
+  // session, handing back unread steer lines, and the turn's own pending
+  // requests resolve "ended" in the same step.
   pure def absEndTurn(a: ReqAbs, b: ReqAbs): bool =
-    val own = pendingSet(a).filter(i => a.rScope.get(i) == a.turnNo)
+    val own = pendingSet(a).filter(i => a.rScope.get(i) == a.ses.n)
     val resolved = resolveSet(a, own, "ended")
     and {
-      a.running,
-      // Leftover steering is handed back (:returned), never carried into the next turn.
-      b == { ...resolved, running: false, parkedOn: -1, queue: Set(), sLen: 0 },
+      inTurn(a),
+      b == { ...resolved, ses: release(a.ses), parkedOn: -1 },
     }
 
-  pure def absQueueSteer(a: ReqAbs, b: ReqAbs): bool = and {
-    a.running,
-    b == { ...a, queue: a.queue.union(Set(a.turnNo)), sLen: a.sLen + 1 },
+  // ---- /reload: an exclusive job ----
+
+  // /reload's effect, inside its exclusive job: idle-scoped requests resolve
+  // "cancelled" and the generation advances. Turn-scoped requests cannot
+  // straddle it: no turn holds the session while the job does.
+  pure def reloadEffect(a: ReqAbs): ReqAbs =
+    val idleP = pendingSet(a).filter(i => a.rScope.get(i) == 0)
+    { ...resolveSet(a, idleP, "cancelled"), gen: a.gen + 1 }
+
+  pure def absReload(a: ReqAbs, b: ReqAbs): bool = and {
+    a.ses.kind == "exclusive",
+    b == reloadEffect(a),
   }
 
-  // Inject one line (:one-at-a-time) or several (:all) into the running turn.
-  pure def absInjectSteer(a: ReqAbs, b: ReqAbs): bool = and {
-    a.running,
-    a.parkedOn < 0,
-    a.queue.contains(a.turnNo),
-    0 <= b.sLen, b.sLen < a.sLen,
-    b.queue.subseteq(a.queue),
-    (b.sLen == 0) == (b.queue == Set()),
-    b == { ...a, queue: b.queue, sLen: b.sLen },
-  }
+  // The whole /reload job in one step, for models that do not split the
+  // holder: startExclusive; reload; release.
+  pure def absReloadJob(a: ReqAbs, b: ReqAbs): bool =
+    val held = { ...a, ses: startExclusive(a.ses) }
+    and {
+      canStartExclusive(a.ses),
+      b == { ...reloadEffect(held), ses: release(held.ses) },
+    }
 
-  // A follow-up may ask the idle tick to start it when no turn runs.
-  pure def absQueueFollowUp(a: ReqAbs, b: ReqAbs): bool = and {
-    b.idleStart == a.idleStart or (b.idleStart and not(a.running)),
-    b == { ...a, fLen: a.fLen + 1, idleStart: b.idleStart },
-  }
-
-  // At a natural stop, follow-ups are injected only once the running turn's
-  // steering is drained (steering wins).
-  pure def absInjectFollowUp(a: ReqAbs, b: ReqAbs): bool = and {
-    a.running,
-    a.parkedOn < 0,
-    a.sLen == 0,
-    0 <= b.fLen, b.fLen < a.fLen,
-    b == { ...a, fLen: b.fLen },
-  }
-
-  // The idle tick consumes the request and starts at most one follow-up.
-  pure def absIdleStart(a: ReqAbs, b: ReqAbs): bool = and {
-    not(a.running),
-    a.idleStart,
-    b == { ...a, idleStart: false, fLen: if (a.fLen > 0) a.fLen - 1 else 0 },
-  }
-
-  // Explicit clears (/new, /resume, /queue clear).
-  pure def absClearSteering(a: ReqAbs, b: ReqAbs): bool =
-    b == { ...a, sLen: 0, queue: Set() }
-
-  pure def absClearFollowUps(a: ReqAbs, b: ReqAbs): bool =
-    b == { ...a, fLen: 0, idleStart: false }
+  // ---- request steps ----
 
   pure def absOpenReq(a: ReqAbs, b: ReqAbs, i: int, scope: int, bgt: int): bool = and {
     IDS.contains(i),
     a.rStatus.get(i) == "none",
     bgt >= 1,
-    if (scope > 0) (a.running and a.parkedOn < 0 and scope == a.turnNo)
-    else (not(a.running) and pendingSet(a).forall(j => a.rScope.get(j) != 0)),
+    if (scope > 0) (inTurn(a) and a.parkedOn < 0 and scope == a.ses.n)
+    else (not(inTurn(a)) and pendingSet(a).forall(j => a.rScope.get(j) != 0)),
     if (a.hasResolver)
       b == {
         ...a,
@@ -414,10 +483,10 @@ module requestsAbstract {
     a.rStatus.get(i) == "pending",
     a.hasResolver,
     if (a.rScope.get(i) > 0) and {
-      a.running,
+      inTurn(a),
       a.parkedOn == i,
       b == { ...resolveSet(a, Set(i), "answered"), parkedOn: -1 },
-    } else if (a.running)
+    } else if (inTurn(a))
       b == resolveSet(a, Set(i), "aborted")
     else
       b == resolveSet(a, Set(i), "answered"),
@@ -438,13 +507,6 @@ module requestsAbstract {
     },
   }
 
-  pure def absReload(a: ReqAbs, b: ReqAbs): bool =
-    val idleP = pendingSet(a).filter(i => a.rScope.get(i) == 0)
-    and {
-      not(a.running),
-      b == { ...resolveSet(a, idleP, "cancelled"), gen: a.gen + 1 },
-    }
-
   pure def absSetResolver(a: ReqAbs, b: ReqAbs, hasRes: bool): bool =
     val P = pendingSet(a)
     or {
@@ -455,25 +517,32 @@ module requestsAbstract {
       },
     }
 
+  // Session steps: a move of the holder with the request table unchanged,
+  // or one that composes request resolution (end of turn, a whole /reload job).
+  pure def sessionNext(a: ReqAbs, b: ReqAbs): bool = or {
+    absEndTurn(a, b),
+    absReloadJob(a, b),
+    and { sameRequests(a, b), sessionStep(a.ses, b.ses, a.parkedOn) },
+  }
+
+  // Request steps (and /reload inside its job): the session is unchanged.
+  pure def requestNext(a: ReqAbs, b: ReqAbs): bool = and {
+    b.ses == a.ses,
+    or {
+      absReload(a, b),
+      absSetResolver(a, b, b.hasResolver),
+      IDS.exists(i => or {
+        absOpenReq(a, b, i, b.rScope.get(i), if (b.rRem.get(i) > 0) b.rRem.get(i) else 1),
+        absUpdateChoices(a, b, i),
+        absAnswer(a, b, i),
+        absTickOrTimeout(a, b, i),
+      }),
+    },
+  }
+
   pure def reqAbsNext(a: ReqAbs, b: ReqAbs): bool = or {
     a == b,
-    absStartTurn(a, b),
-    absEndTurn(a, b),
-    absQueueSteer(a, b),
-    absInjectSteer(a, b),
-    absQueueFollowUp(a, b),
-    absInjectFollowUp(a, b),
-    absIdleStart(a, b),
-    absClearSteering(a, b),
-    absClearFollowUps(a, b),
-    absReload(a, b),
-    absSetResolver(a, b, b.hasResolver),
-    IDS.exists(i => or {
-      absOpenReq(a, b, i, b.rScope.get(i), if (b.rRem.get(i) > 0) b.rRem.get(i) else 1),
-      absUpdateChoices(a, b, i),
-      absAnswer(a, b, i),
-      absTickOrTimeout(a, b, i),
-    }),
+    if (b.ses == a.ses) requestNext(a, b) else sessionNext(a, b),
   }
 
   pure def resolvedOnce(a: ReqAbs): bool =
@@ -484,13 +553,13 @@ module requestsAbstract {
     IDS.forall(i =>
       a.rStatus.get(i) != "pending"
         or a.rScope.get(i) == 0
-        or (a.running and a.rScope.get(i) == a.turnNo))
+        or (inTurn(a) and a.rScope.get(i) == a.ses.n))
 
   pure def parkConsistent(a: ReqAbs): bool = and {
     a.parkedOn >= 0 implies (
-      a.running and IDS.contains(a.parkedOn)
+      inTurn(a) and IDS.contains(a.parkedOn)
         and a.rStatus.get(a.parkedOn) == "pending"
-        and a.rScope.get(a.parkedOn) == a.turnNo
+        and a.rScope.get(a.parkedOn) == a.ses.n
     ),
     IDS.forall(i =>
       (a.rStatus.get(i) == "pending" and a.rScope.get(i) > 0)
@@ -501,28 +570,18 @@ module requestsAbstract {
     IDS.forall(i =>
       a.rStatus.get(i) == "pending" implies a.rGen.get(i) == a.gen)
 
-  pure def queueOwnedByRunningTurn(a: ReqAbs): bool =
-    a.queue.forall(t => a.running and t == a.turnNo)
-
-  // Steering lines are queued exactly when the running turn's tag is: with
-  // queueOwnedByRunningTurn, nothing stays queued once a turn ends.
-  pure def queueLenConsistent(a: ReqAbs): bool = and {
-    a.sLen >= 0,
-    a.fLen >= 0,
-    (a.sLen > 0) == (a.queue != Set()),
-  }
-
   pure def pendingBoundedBudget(a: ReqAbs): bool =
     IDS.forall(i =>
       if (a.rStatus.get(i) == "pending") a.rRem.get(i) >= 1 else a.rRem.get(i) == 0)
 
+  // The mailbox invariants (steer lines only for the running turn, queued
+  // lines undisposed, ...) are the holder's, proved in proofs/holder.
   pure def reqAbsInv(a: ReqAbs): bool = and {
+    sessionInv(a.ses),
     resolvedOnce(a),
     noOrphanTurnReq(a),
     parkConsistent(a),
     pendingCurrentGen(a),
-    queueOwnedByRunningTurn(a),
-    queueLenConsistent(a),
     pendingBoundedBudget(a),
   }
 }

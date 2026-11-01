@@ -64,12 +64,16 @@ module witnesses {
       .expect(not(I::steeringReachesSeenTurn) and I::lastAction == "inject"
               and I::s.steers[1] == { seen: 0, into: 1 })
 
-  // issueRefines.refinesTasks (#397): queueing a steering line tagged `seen == 0`
-  // into turn 1 breaks `absQueueSteer` / `queueOwnedByRunningTurn`.
+  // issueRefines.refinesTasks (#397): the plain queue keeps turn 1's unread
+  // steering line when the turn ends, so the end is not the holder's
+  // `release` (which hands every unread steer line back) and the line is
+  // carried into the next turn. (An untagged line queued into a turn the
+  // sender did not see is a legal no-:turn `offer` at the abstract level;
+  // that half of #397 is `steeringReachesSeenTurn`.)
   run w397RefinementViolatedTest =
     IR::init.then(IR::mConnect(1, false)).then(IR::mFinishReplay(1)).then(IR::mSend(0))
-      .then(IR::mSend(1))
-      .expect(not(IR::refinesTasks))
+      .then(IR::mSend(1)).then(IR::mNaturalEnd)
+      .expect(not(IR::refinesTasks) and IR::state.queue.length() == 1 and not(IR::state.running))
 
   // ---- #398 ----
 

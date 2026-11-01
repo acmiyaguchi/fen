@@ -98,7 +98,7 @@ module serve {
     verSeen: int -> int,      // choice-list version shown per request
   }
 
-  type Steer = { seen: int, src: int }
+  type Steer = { seen: int, src: int, seq: int }
   type CancelRec = { seen: int, hit: int }
   type SteerRec = { seen: int, into: int }
   type Applied = { aimed: int, target: int, inScope: bool, fresh: bool, verOk: bool }
@@ -110,7 +110,20 @@ module serve {
     // ghost history
     cancels: List[CancelRec], steers: List[SteerRec], applied: List[Applied],
     unacked: int, remoteCmds: int,
+    // ghost mailbox bookkeeping for the holder refinement: every submitted
+    // line takes the next seq; why/whyN record each line's disposition
+    // (started, taken, released, refused) and the turn it is attributed to.
+    sq: int, why: int -> str, whyN: int -> int,
   }
+
+  // Lines per trace: the holder's seq space (`holderAbstract::SEQS`).
+  pure val LINES = 0.to(TA::UNTRACKED_LINE - 1)
+
+  pure def disposeSeqs(st: S, qs: Set[int], w: str, at: int): S =
+    { ...st, why: LINES.mapBy(q => if (qs.contains(q)) w else st.why.get(q)),
+             whyN: LINES.mapBy(q => if (qs.contains(q)) at else st.whyN.get(q)) }
+
+  pure def queuedSeqs(st: S): Set[int] = st.queue.foldl(Set(), (acc, x) => acc.union(Set(x.seq)))
 
   pure val freshCl: Cl = {
     conn: false, attaching: false, cursor: 0, replayPos: 0, replayEnd: 0,
@@ -165,27 +178,31 @@ module serve {
                .emit(ev("msg", t, -1, 0)).emit(ev("end", t, -1, 0))
     val ownPending = pendingIds(base).filter(i => base.reqs.get(i).turn == t)
     val resolved = if (END_RESOLVES) base.resolveWhere(ownPending, "ended") else base
-    // TARGETED: queued lines for this turn are handed back (rejected, acked);
-    // today they stay queued for the next turn (spec/tui-turns #662).
-    if (TARGETED) { ...resolved, queue: [] } else resolved
+    // TARGETED: queued lines for this turn are handed back (rejected, acked),
+    // the holder's release; today they stay queued for the next turn
+    // (spec/tui-turns #662).
+    if (TARGETED) { ...resolved.disposeSeqs(queuedSeqs(st), "released", t), queue: [] } else resolved
 
-  pure def startTurn(st: S): S =
+  pure def beginTurn(st: S): S =
     { ...st, turnNo: st.turnNo + 1, running: true, parkedOn: -1 }
       .emit(ev("turn", st.turnNo + 1, -1, 0)).emit(ev("msg", st.turnNo + 1, -1, 0))
 
-  // Refinement mapping onto the abstract `requestsAbstract::ReqAbs` machine (#671).
+  // Refinement mapping onto the abstract `requestsAbstract::ReqAbs` machine
+  // (#671, #686): the session holder is a turn while one runs, else none;
+  // queued steering lines are the turn's steer seqs; this model has no
+  // follow-ups. Every acquire takes a fresh holder id, a turn start or a
+  // /reload job (`absReloadJob`), so hid = turns + reloads.
   pure def absOf(st: S): TA::ReqAbs =
     val hasRes = LOCAL or REMOTES.exists(c => st.cl.get(c).conn)
     {
-      running: st.running,
-      turnNo: st.turnNo,
+      ses: {
+        kind: if (st.running) "turn" else "none", n: st.turnNo, hid: st.turnNo + st.gen,
+        steer: queuedSeqs(st), followUp: Set(), start: false, firstUp: -1, exReq: false,
+        cancel: false, steerMode: "one", followMode: "one", why: st.why, whyN: st.whyN,
+      },
       parkedOn: st.parkedOn,
       gen: st.gen,
       hasResolver: hasRes,
-      queue: st.queue.foldl(Set(), (acc, q) => acc.union(Set(q.seen))),
-      sLen: st.queue.length(),
-      fLen: 0,
-      idleStart: false,
       rScope: TA::IDS.mapBy(i => if (st.reqs.keys().contains(i)) st.reqs.get(i).turn else 0),
       rGen: TA::IDS.mapBy(i => if (st.reqs.keys().contains(i)) st.reqs.get(i).gen else 0),
       rVer: TA::IDS.mapBy(i => if (st.reqs.keys().contains(i)) st.reqs.get(i).ver else 0),
@@ -214,6 +231,7 @@ module serve {
       reqs: Map(), nextReq: 1, log: [],
       cl: CLIENTS.mapBy(c => if (c == 0) { ...freshCl, conn: LOCAL } else freshCl),
       queue: [], cancels: [], steers: [], applied: [], unacked: 0, remoteCmds: 0,
+      sq: 0, why: LINES.mapBy(_q => ""), whyN: LINES.mapBy(_q => 0),
     }),
     lastAction' = "init",
   }
@@ -221,23 +239,26 @@ module serve {
   // Client c submits a line. Its intent is fixed by what it has seen: a new
   // prompt if it sees idle, steering for seenTurn otherwise.
   action send(c: int): bool = all {
-    isClient(s, c), room(s, 3),
+    isClient(s, c), room(s, 3), s.sq < LINES.size(),
     val seen = s.cl.get(c).seenTurn
+    val q = s.sq
+    val s1 = { ...s, sq: s.sq + 1 }
     if (not(s.running)) all {
       s.turnNo < MAX_TURNS,
       if (seen == 0)
-        commit({ ...startTurn(s), steers: s.steers.append({ seen: 0, into: 0 }) }, "sendStart")
+        commit({ ...beginTurn(s1), steers: s.steers.append({ seen: 0, into: 0 }) }
+                 .disposeSeqs(Set(q), "started", s.turnNo + 1), "sendStart")
       else if (TARGETED)
-        commit(s, "sendRejectedTurnEnded")
+        commit(s1.disposeSeqs(Set(q), "refused", s.turnNo), "sendRejectedTurnEnded")
       else
         // on-submit sees busy? = false: the stale steer starts a fresh turn
-        commit({ ...startTurn(s), steers: s.steers.append({ seen: seen, into: s.turnNo + 1 }) },
-               "sendStaleStartsTurn")
+        commit({ ...beginTurn(s1), steers: s.steers.append({ seen: seen, into: s.turnNo + 1 }) }
+                 .disposeSeqs(Set(q), "started", s.turnNo + 1), "sendStaleStartsTurn")
     } else if (seen == s.turnNo or not(TARGETED))
       // on-submit sees busy? = true: queued as steering (untagged string)
-      commit({ ...s, queue: s.queue.append({ seen: seen, src: c }) }, "sendQueued")
+      commit({ ...s1, queue: s.queue.append({ seen: seen, src: c, seq: q }) }, "sendQueued")
     else
-      commit(s, "sendRejectedNotCurrent")
+      commit(s1.disposeSeqs(Set(q), "refused", s.turnNo), "sendRejectedNotCurrent")
   }
 
   // The agent drains one steering line at a safe boundary of the running turn.
@@ -245,7 +266,8 @@ module serve {
     s.running, s.parkedOn < 0, s.queue.length() > 0, room(s, 1),
     val h = s.queue.head()
     commit({ ...s.emit(ev("msg", s.turnNo, -1, 0)), queue: s.queue.tail(),
-             steers: s.steers.append({ seen: h.seen, into: s.turnNo }) }, "inject")
+             steers: s.steers.append({ seen: h.seen, into: s.turnNo }) }
+             .disposeSeqs(Set(h.seq), "taken", s.turnNo), "inject")
   }
 
   action naturalEnd: bool = all {
@@ -616,6 +638,8 @@ module issueRefines {
   action mAnswer(c: int, i: int): bool = all { SI::answer(c, i), prevAbs' = SI::absOf(SI::s) }
   action mToolRequest: bool = all { SI::toolRequest, prevAbs' = SI::absOf(SI::s) }
   action mCancel(c: int): bool = all { SI::cancel(c), prevAbs' = SI::absOf(SI::s) }
+  action mNaturalEnd: bool = all { SI::naturalEnd, prevAbs' = SI::absOf(SI::s) }
+  val state = SI::s
 
   val refinesTasks = TA::reqAbsNext(prevAbs, SI::absOf(SI::s))
   val inheritsTasksInvariants = TA::reqAbsInv(SI::absOf(SI::s))

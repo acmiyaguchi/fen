@@ -1,3 +1,5 @@
 # main	invariants	mode	steps	seconds	why
 proposed	inductiveInv	inductive	1	300	Induction over the finite request table: the resolution rules hold at any depth for the headless protocol.
 proposedTui	inductiveInv	inductive	1	300	Same, with the in-process presenter, which can also open idle-scoped pickers.
+proposed	refinesInv	inductive	1	300	Refinement on top of the base induction: every step of the headless protocol is a `requestsAbstract` step (the session holder composed with requests).
+proposedTui	refinesInv	inductive	1	300	Same, with the in-process presenter.

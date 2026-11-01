@@ -1,4 +1,5 @@
 # main	invariants	mode	steps	seconds	why
 tasksSpec	inductiveInv	inductive	1	300	Induction: task table ownership isolation and cadence invariants hold at any depth.
 tasksSpec	movesAreAbsSteps ownershipIsolatedInv cadenceMatchesRunnableInv runnableConsistencyInv cancelRequiresRegisteredInv	bounded	10	300	Lifecycle of two tasks with faults, cancels, and arms takes at most 10 steps.
-requestsSpec	inductiveInv	inductive	1	300	Induction over the finite turn/request/budget state: safety, reqAbsNext step conformance, and bounded-tick invariants hold at any depth (bounded unrolling times out on map-typed request state, same as proofs/requests).
+requestsSpec	inductiveInv	inductive	1	300	Induction over the finite holder/request/budget state: the composed session and request safety and bounded-tick invariants hold at any depth (bounded unrolling times out on map-typed request state, same as proofs/requests).
+requestsSpec	refinesInv	inductive	1	300	Refinement on top of the base induction: every step is a `requestsAbstract` step (reqAbsNext over a previous-state copy, the holder proofs' layout).

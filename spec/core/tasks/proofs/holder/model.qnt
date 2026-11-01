@@ -23,9 +23,9 @@
 // line, runs `(with-holder :turn ...)` with it.
 //
 // Queues are sets of seqs: seqs are issued in increasing order, so FIFO is
-// "take the smallest". The select/request half of `requestsAbstract`
-// (spec/core/tasks) composes with this lifecycle when serve re-proves against
-// it; it is not repeated here.
+// "take the smallest". `requestsAbstract` (spec/core/tasks/abstract.qnt)
+// is this Session composed with the select/request table; serve refines it.
+// The request half is not repeated here.
 
 module holderAbstract {
   pure val KINDS = Set("none", "turn", "exclusive")

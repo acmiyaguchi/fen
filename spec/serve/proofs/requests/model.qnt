@@ -16,6 +16,8 @@
 // at the bottom are the same designs.
 module requests {
   import requestsAbstract.* from "../../../core/tasks/abstract"
+  import holderAbstract.sessionInit from "../../../core/tasks/proofs/holder/model"
+  import holderAbstract.Session from "../../../core/tasks/proofs/holder/model"
 
   // An answer names its request id (#398); false: the web /select bare index.
   const ANSWER_BY_ID: bool
@@ -71,45 +73,52 @@ module requests {
   var verOk: bool
   var hitOk: bool
   var ackOk: bool
-  var stepRefinesOk: bool
+  // The previous state's projected fields, copied each step. Refinement is a
+  // state predicate over (previous, current), so the step relation carries
+  // no reqAbsNext and the base induction stays cheap; only the refinement
+  // proof pays for it (the holder proofs' layout).
+  var pRunning: bool
+  var pTurnNo: int
+  var pParkedOn: int
+  var pGen: int
+  var pConn: bool
+  var pTurn: int -> int
+  var pGenOf: int -> int
+  var pVer: int -> int
+  var pStatus: int -> str
+  var pRes: int -> int
+  var pRem: int -> int
   var lastAction: str
 
-  // Projection onto the abstract `requestsAbstract::ReqAbs` state (#671).
-  def absOf: ReqAbs = {
-    running: running,
-    turnNo: turnNo,
-    parkedOn: parkedOn,
-    gen: gen,
-    hasResolver: LOCAL or conn,
-    queue: Set(),
-    sLen: 0,
-    fLen: 0,
-    idleStart: false,
-    rScope: rTurn,
-    rGen: rGen,
-    rVer: rVer,
-    rStatus: rStatus,
-    rRes: rRes,
-    rRem: rRem,
-  }
+  // Projection onto the abstract `requestsAbstract::ReqAbs` state (#671): the
+  // session holder is a turn while one runs, else none; this model has no
+  // mailbox, so the queues stay empty and a turn starts from an untracked
+  // line (`absPromptTurn`). Every acquire takes a fresh holder id: a turn
+  // start or a /reload job (`absReloadJob`), so hid = turns + reloads.
+  pure def sesOf(r: bool, t: int, g: int): Session =
+    { ...sessionInit, kind: if (r) "turn" else "none", n: t, hid: t + g }
+
+  def absOf: ReqAbs = mkAbs(running, turnNo, parkedOn, gen, conn, rTurn, rGen, rVer, rStatus, rRes, rRem)
 
   pure def mkAbs(r: bool, t: int, p: int, g: int, c: bool,
                  tu: int -> int, ge: int -> int, ve: int -> int,
                  st: int -> str, re: int -> int, rm: int -> int): ReqAbs = {
-    running: r, turnNo: t, parkedOn: p, gen: g, hasResolver: LOCAL or c,
-    queue: Set(), sLen: 0, fLen: 0, idleStart: false, rScope: tu, rGen: ge, rVer: ve, rStatus: st, rRes: re, rRem: rm,
+    ses: sesOf(r, t, g), parkedOn: p, gen: g, hasResolver: LOCAL or c,
+    rScope: tu, rGen: ge, rVer: ve, rStatus: st, rRes: re, rRem: rm,
   }
+
+  def prevAbs: ReqAbs = mkAbs(pRunning, pTurnNo, pParkedOn, pGen, pConn, pTurn, pGenOf, pVer, pStatus, pRes, pRem)
 
   action commit(r: bool, t: int, p: int, g: int, n: int, c: bool,
                 tu: int -> int, ge: int -> int, st: int -> str, re: int -> int,
                 ve: int -> int, de: int -> bool, rm: int -> int,
                 sc: bool, fr: bool, vo: bool, hi: bool, ac: bool, label: str): bool =
-    val nextAbs = mkAbs(r, t, p, g, c, tu, ge, ve, st, re, rm)
     all {
       running' = r, turnNo' = t, parkedOn' = p, gen' = g, nextReq' = n, conn' = c,
       rTurn' = tu, rGen' = ge, rStatus' = st, rRes' = re, rVer' = ve, rDeadline' = de, rRem' = rm,
       scopeOk' = sc, freshOk' = fr, verOk' = vo, hitOk' = hi, ackOk' = ac,
-      stepRefinesOk' = (stepRefinesOk and reqAbsNext(absOf, nextAbs)),
+      pRunning' = running, pTurnNo' = turnNo, pParkedOn' = parkedOn, pGen' = gen, pConn' = conn,
+      pTurn' = rTurn, pGenOf' = rGen, pVer' = rVer, pStatus' = rStatus, pRes' = rRes, pRem' = rRem,
       lastAction' = label,
     }
 
@@ -131,10 +140,13 @@ module requests {
     rRes' = IDS.mapBy(_i => 0), rVer' = IDS.mapBy(_i => 0), rDeadline' = IDS.mapBy(_i => false),
     rRem' = IDS.mapBy(_i => 0),
     scopeOk' = true, freshOk' = true, verOk' = true, hitOk' = true, ackOk' = true,
-    stepRefinesOk' = true, lastAction' = "init",
+    pRunning' = false, pTurnNo' = 0, pParkedOn' = -1, pGen' = 0, pConn' = false,
+    pTurn' = IDS.mapBy(_i => 0), pGenOf' = IDS.mapBy(_i => 0), pVer' = IDS.mapBy(_i => 0),
+    pStatus' = IDS.mapBy(_i => "none"), pRes' = IDS.mapBy(_i => 0), pRem' = IDS.mapBy(_i => 0),
+    lastAction' = "init",
   }
 
-  action startTurn: bool = all {
+  action beginTurn: bool = all {
     not(running), turnNo < MAX_TURNS,
     commit(true, turnNo + 1, -1, gen, nextReq, conn,
            rTurn, rGen, rStatus, rRes, rVer, rDeadline, rRem,
@@ -291,7 +303,7 @@ module requests {
     nondet i = IDS.oneOf()
     nondet v = VERS.oneOf()
     any {
-      startTurn, naturalEnd, cancel, toolRequest, cmdRequest, updateChoices(i),
+      beginTurn, naturalEnd, cancel, toolRequest, cmdRequest, updateChoices(i),
       answer(i, v), tick(i), timeout(i), reload, connect, disconnect,
     }
   }
@@ -321,14 +333,17 @@ module requests {
     LOCAL or conn or (rDeadline.get(i) and rRem.get(i) >= 1))
   // Refinement of the `spec/core/tasks` abstract machine (#671): every step is
   // a valid `reqAbsNext` transition (or stutter), and state satisfies `reqAbsInv`.
-  val refinesTasks = stepRefinesOk
+  val refinesTasks = reqAbsNext(prevAbs, absOf)
   val inheritsTasksInvariants = reqAbsInv(absOf)
 
-  val allInvariants = and {
+  val safetyInvariants = and {
     resolvedAtMostOnce, answersAcked, answerHitsItsRequest, resolutionInScope,
     noStaleContinuation, answerMatchesShownChoices, noPendingForEndedTurn,
-    pendingHasPossibleResolver, refinesTasks, inheritsTasksInvariants,
+    pendingHasPossibleResolver, inheritsTasksInvariants,
   }
+
+  // Simulation checks the refinement monitor too; the proofs split it off.
+  val allInvariants = and { safetyInvariants, refinesTasks }
 
   // Inductive strengthening: every variable in its finite domain; ids below
   // nextReq are issued; a request is resolved exactly when it is no longer
@@ -344,7 +359,11 @@ module requests {
     rVer.in(setOfMaps(IDS, VERS)), rDeadline.in(setOfMaps(IDS, Bool)),
     rRem.in(setOfMaps(IDS, REMS)),
     scopeOk.in(Bool), freshOk.in(Bool), verOk.in(Bool), hitOk.in(Bool), ackOk.in(Bool),
-    stepRefinesOk.in(Bool), lastAction.in(LABELS),
+    lastAction.in(LABELS),
+    pRunning.in(Bool), pTurnNo.in(TURNS), pParkedOn.in(Set(-1).union(IDS)), pGen.in(GENS),
+    pConn.in(Bool), pTurn.in(setOfMaps(IDS, TURNS)), pGenOf.in(setOfMaps(IDS, GENS)),
+    pVer.in(setOfMaps(IDS, VERS)), pStatus.in(setOfMaps(IDS, STATUSES)),
+    pRes.in(setOfMaps(IDS, 0.to(2))), pRem.in(setOfMaps(IDS, REMS)),
     IDS.forall(i => (i < nextReq) == (rStatus.get(i) != "none")),
     IDS.forall(i => rRes.get(i) == (if (rStatus.get(i) == "none" or pending(i)) 0 else 1)),
     running implies turnNo >= 1,
@@ -355,8 +374,12 @@ module requests {
     IDS.forall(i => pending(i) implies rGen.get(i) == gen),
     IDS.forall(i => not(pending(i)) implies rRem.get(i) == 0),
     TIMEOUTS implies IDS.forall(i => pending(i) implies (rDeadline.get(i) and rRem.get(i) >= 1)),
-    allInvariants,
+    safetyInvariants,
   }
+
+  // Refinement of `spec/core/tasks` on top of the base induction: every step
+  // from a state satisfying the base invariant is a `reqAbsNext` step.
+  val refinesInv = and { inductiveInv, refinesTasks }
 }
 
 // #398 as written, with the TUI attached.

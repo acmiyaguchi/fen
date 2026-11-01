@@ -36,64 +36,75 @@ module witnesses {
       .then(T::doRequestCancel(2))
       .expect(T::a.t2Cancel and not(T::a.t1Cancel) and T::allInvariants)
 
+  // A prompt typed at idle (offer! :turn 0) starts turn 1 at the idle tick.
+  run turnOne =
+    R::init.then(R::doOffer(0, false)).then(R::doStartTurn)
+
   // A tool request inside a turn is answered and unparks the turn.
   run reachToolReqAnsweredTest =
-    R::init.then(R::doStartTurn).then(R::doOpenReq(1, true, 2)).then(R::doAnswer(1))
+    turnOne.then(R::doOpenReq(1, true, 2)).then(R::doAnswer(1))
       .then(R::doEndTurn)
-      .expect(R::rStatus.get(1) == "answered" and not(R::running) and R::allInvariants)
+      .expect(R::rStatus.get(1) == "answered" and R::kind == "none" and R::allInvariants)
 
   // A tool request with budget 2 counts down and resolves on the 2nd tick.
   run reachCountdownTimeoutUnparksTest =
-    R::init.then(R::doStartTurn).then(R::doOpenReq(1, true, 2))
+    turnOne.then(R::doOpenReq(1, true, 2))
       .then(R::doTick(1)).then(R::doTick(1))
       .expect(R::rStatus.get(1) == "timeout" and R::parkedOn == -1
               and R::rRem.get(1) == 0 and R::allInvariants)
 
   // Opening a request when no resolver is present resolves immediately to timeout.
   run reachNoResolverImmediateFallbackTest =
-    R::init.then(R::doSetResolver(false)).then(R::doStartTurn)
+    R::init.then(R::doSetResolver(false)).then(R::doOffer(0, false)).then(R::doStartTurn)
       .then(R::doOpenReq(1, true, 2))
       .expect(R::rStatus.get(1) == "timeout" and R::parkedOn == -1
               and R::rRes.get(1) == 1 and R::allInvariants)
 
   // An idle picker whose continuation is answered after a turn started aborts (#638).
   run reachIdlePickerAbortedWhenBusyTest =
-    R::init.then(R::doOpenReq(1, false, 2)).then(R::doStartTurn).then(R::doAnswer(1))
-      .expect(R::rStatus.get(1) == "aborted" and R::running and R::allInvariants)
+    R::init.then(R::doOpenReq(1, false, 2)).then(R::doOffer(0, false)).then(R::doStartTurn)
+      .then(R::doAnswer(1))
+      .expect(R::rStatus.get(1) == "aborted" and R::kind == "turn" and R::allInvariants)
 
-  // /reload cancels pending idle pickers and advances generation.
+  // /reload is an exclusive job: requested, started by next-job!, its body
+  // cancels pending idle pickers and advances the generation, then released.
   run reachReloadCancelsIdlePickerTest =
-    R::init.then(R::doOpenReq(1, false, 2)).then(R::doReload)
-      .expect(R::rStatus.get(1) == "cancelled" and R::gen == 1 and R::allInvariants)
+    R::init.then(R::doOpenReq(1, false, 2)).then(R::doRequestReload)
+      .then(R::doStartExclusive).then(R::doReload).then(R::doEndExclusive)
+      .expect(R::rStatus.get(1) == "cancelled" and R::gen == 1 and R::kind == "none"
+              and R::hid == 1 and R::n == 0 and R::allInvariants)
 
-  // Turn mailbox (`fen.core.tasks`, #662): steering accepted for a turn that
-  // ends before reading it is handed back, not carried into the next turn.
+  // A pending turn start goes before a requested /reload job.
+  run reachTurnStartBeforeReloadTest =
+    R::init.then(R::doRequestReload).then(R::doOffer(0, false))
+      .then(R::doStartTurn).then(R::doEndTurn).then(R::doStartExclusive)
+      .expect(R::kind == "exclusive" and R::n == 1 and R::allInvariants)
+
+  // A line typed during /reload (offer! without :turn) is not refused: it
+  // waits as a follow-up and starts the next turn once the job releases.
+  run reachTypedDuringReloadStartsTurnTest =
+    R::init.then(R::doRequestReload).then(R::doStartExclusive).then(R::doOffer(-1, false))
+      .then(R::doEndExclusive).then(R::doStartTurn)
+      .expect(R::kind == "turn" and R::why.get(0) == "started" and R::whyN.get(0) == 1
+              and R::allInvariants)
+
+  // Steering for a turn that ends before reading it is handed back
+  // (released, attributed to that turn), not carried into the next turn.
   run reachSteeringReturnedAtTurnEndTest =
-    R::init.then(R::doStartTurn).then(R::doQueueSteer).then(R::doEndTurn)
-      .then(R::doStartTurn)
-      .expect(R::g.sRet == 1 and R::sLen == 0 and R::queue == Set() and R::allInvariants)
+    turnOne.then(R::doOffer(1, false)).then(R::doEndTurn)
+      .expect(R::why.get(1) == "released" and R::whyN.get(1) == 1 and R::steer == Set()
+              and R::allInvariants)
 
-  // Steering wins: the running turn's line is injected before a queued follow-up.
+  // Steering wins: the running turn's line is taken before a queued follow-up.
   run reachSteeringBeforeFollowUpTest =
-    R::init.then(R::doStartTurn).then(R::doQueueSteer).then(R::doQueueFollowUp(false))
-      .then(R::doInjectSteer(false)).then(R::doInjectFollowUp(false))
-      .expect(R::g.sInj == 1 and R::g.fInj == 1 and R::g.orderOk and R::allInvariants)
+    turnOne.then(R::doOffer(1, false)).then(R::doOffer(-1, true))
+      .then(R::doTakeSteer).then(R::doTakeFollowUp)
+      .expect(R::why.get(1) == "taken" and R::why.get(2) == "taken" and R::orderOk
+              and R::allInvariants)
 
-  // :all drains every queued line of the running turn in one injection.
-  run reachSteeringDrainAllTest =
-    R::init.then(R::doStartTurn).then(R::doQueueSteer).then(R::doQueueSteer)
-      .then(R::doInjectSteer(true))
-      .expect(R::g.sInj == 2 and R::sLen == 0 and R::allInvariants)
-
-  // An idle enqueue asks the idle tick to start exactly one follow-up.
-  run reachIdleFollowUpStartTest =
-    R::init.then(R::doQueueFollowUp(true)).then(R::doQueueFollowUp(false))
-      .then(R::doIdleStart)
-      .expect(R::g.fStart == 1 and R::fLen == 1 and not(R::idleStart) and R::allInvariants)
-
-  // Follow-ups survive turn end; an explicit clear accounts for what it drops.
-  run reachFollowUpSurvivesTurnEndThenClearedTest =
-    R::init.then(R::doStartTurn).then(R::doQueueFollowUp(false)).then(R::doEndTurn)
-      .then(R::doClearFollowUps)
-      .expect(R::g.fDrop == 1 and R::fLen == 0 and R::allInvariants)
+  // A parked turn takes no steering until its request resolves.
+  run reachAnswerUnparksThenSteerTakenTest =
+    turnOne.then(R::doOffer(1, false)).then(R::doOpenReq(1, true, 2)).then(R::doAnswer(1))
+      .then(R::doTakeSteer)
+      .expect(R::why.get(1) == "taken" and R::parkedOn == -1 and R::allInvariants)
 }
