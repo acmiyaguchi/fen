@@ -26,6 +26,8 @@
 (local waiver (require :lint.waiver))
 (local {: core-reloadable?} (require :fen.core.extensions.loader.reloadable))
 
+(local BUNDLED-PREFIX "bundled:")
+
 (local RULES (icollect [_ name (ipairs [:layer :reload_list :reload_state])]
                (require (.. :lint.rules. name))))
 
@@ -75,7 +77,12 @@
       (let [mi f.module-info
             dir (and mi (rock-dir mi))]
         (when (and dir (= nil (. rocks dir)))
-          (tset rocks dir (or (rockspec-of dir) false))
+          ;; A rockspec-less extension ships only inside the binary: model it as a
+          ;; bundled-only pseudo-rock (see rules/layer.fnl).
+          (tset rocks dir (or (rockspec-of dir)
+                              (and (= mi.scope :extension)
+                                   {:name (.. BUNDLED-PREFIX dir) :deps []})
+                              false))
           (let [r (. rocks dir)]
             (when r (tset deps r.name r.deps))))
         (let [rock (let [r (and dir (. rocks dir))]
