@@ -49,6 +49,7 @@ set -eu
          ["fen.core.extensions.loader.compiler"] = ".lrbuild/core/extensions/loader/compiler.lua",
          ["fen.core.extensions.loader.manifest"] = ".lrbuild/core/extensions/loader/manifest.lua",
          ["fen.core.extensions.loader.reload"] = ".lrbuild/core/extensions/loader/reload.lua",
+         ["fen.core.extensions.loader.reloadable"] = ".lrbuild/core/extensions/loader/reloadable.lua",
          ["fen.core.extensions.register.action"] = ".lrbuild/core/extensions/register/action.lua",
          ["fen.core.extensions.register.auth_backend"] = ".lrbuild/core/extensions/register/auth_backend.lua",
          ["fen.core.extensions.register.command"] = ".lrbuild/core/extensions/register/command.lua",

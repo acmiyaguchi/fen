@@ -110,7 +110,8 @@
             (let [info (read-manifest-info ext-root)
                   suffix (string.sub path (+ (length ext-root) 2))
                   rel (string.match suffix "^(.+)%.fnl$")
-                  dotted (string.gsub (or rel "") "/" ".")
+                  dotted (let [d (string.gsub (or rel "") "/" ".")]
+                           (or (string.match d "^(.+)%.init$") d))
                   base (or (?. info :entry-module)
                            (and (?. info :name)
                                 (.. "fen.extensions." info.name)))]

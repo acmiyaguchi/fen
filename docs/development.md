@@ -237,6 +237,11 @@ Each documented id must resolve to an export or contract entry, summaries are re
 File targets must exist, and `.md#anchor` / same-file `#anchor` targets must resolve to a heading under GitHub's slug rules.
 External links, `*.html` and `docs/generated/` site-only targets, and vendored docs are skipped; `make check` runs it alongside the `@doc` check.
 
+`make lint` (`scripts/lint/lint.fnl`) statically checks the layering and hot-reload rules: `layer/deps` (a cross-rock `require` must be covered by the requiring rock's rockspec dependencies, transitively), `reload/list` (an extension's manifest lists every module it ships in `:reload-modules` or `:reload-exclude`, and nothing it does not ship), and `reload/state` (a reloadable module must not mutate a module-level `var` or table literal at call time; see [Rules for new code](#rules-for-new-code)).
+It is report-only and not yet part of `make check`; `--json` emits machine-readable findings and `--strict` exits non-zero on unwaived ones.
+Waive a finding on its line or the line above with `;; lint-allow <rule>: <reason>`; the reason is required and every waiver is listed in the report.
+`make lint` first runs `scripts/lint/test.fnl`, which checks each rule against its `scripts/lint/fixtures/<rule>/{bad,good}.fnl`.
+
 `make graphs` regenerates the tracked DOT sources, their SVG renderings, and the graph summary under `docs/generated/graphs/`.
 SVG files are intentionally generated locally rather than tracked in Git.
 

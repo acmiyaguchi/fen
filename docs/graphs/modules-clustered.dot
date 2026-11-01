@@ -44,6 +44,7 @@ digraph fen_modules_clustered {
     "fen.core.extensions.loader.discover.backends.posix" [fillcolor="lightyellow", label="fen.core.extensions.loader.discover.backends.posix", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/discover/backends/posix.fnl persistent"];
     "fen.core.extensions.loader.manifest" [fillcolor="lightyellow", label="fen.core.extensions.loader.manifest", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/manifest.fnl persistent"];
     "fen.core.extensions.loader.reload" [fillcolor="lightyellow", label="fen.core.extensions.loader.reload", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/reload.fnl persistent"];
+    "fen.core.extensions.loader.reloadable" [fillcolor="lightyellow", label="fen.core.extensions.loader.reloadable", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/reloadable.fnl persistent"];
     "fen.core.extensions.logs" [fillcolor="lightyellow", label="fen.core.extensions.logs", style="filled", tooltip="packages/core/src/fen/core/extensions/logs.fnl persistent"];
     "fen.core.extensions.register" [fillcolor="lightyellow", label="fen.core.extensions.register", style="filled", tooltip="packages/core/src/fen/core/extensions/register/init.fnl persistent"];
     "fen.core.extensions.register.action" [fillcolor="lightyellow", label="fen.core.extensions.register.action", style="filled", tooltip="packages/core/src/fen/core/extensions/register/action.fnl persistent"];
@@ -394,7 +395,7 @@ digraph fen_modules_clustered {
     "fen.extensions.tui.selection" [fillcolor="lightyellow", label="fen.extensions.tui.selection", style="filled", tooltip="extensions/adapters/presenters/tui/selection.fnl persistent"];
     "fen.extensions.tui.side_chat" [fillcolor="lightyellow", label="fen.extensions.tui.side_chat", style="filled", tooltip="extensions/adapters/presenters/tui/side_chat.fnl persistent"];
     "fen.extensions.tui.state" [fillcolor="lightyellow", label="fen.extensions.tui.state", style="filled", tooltip="extensions/adapters/presenters/tui/state.fnl persistent"];
-    "fen.extensions.tui.stories.init" [fillcolor="lightyellow", label="fen.extensions.tui.stories.init", style="filled", tooltip="extensions/adapters/presenters/tui/stories/init.fnl persistent"];
+    "fen.extensions.tui.stories" [fillcolor="lightyellow", label="fen.extensions.tui.stories", style="filled", tooltip="extensions/adapters/presenters/tui/stories/init.fnl persistent"];
     "fen.extensions.tui.workspaces" [fillcolor="lightyellow", label="fen.extensions.tui.workspaces", style="filled", tooltip="extensions/adapters/presenters/tui/workspaces.fnl persistent"];
   }
   subgraph cluster_extension_web {
@@ -437,6 +438,7 @@ digraph fen_modules_clustered {
     "native:termbox2" [color="gray", fontcolor="gray", label="termbox2", shape="ellipse", style="dashed"];
     "script:scripts/docs/record-hero-cast.fnl" [fillcolor="lightcyan", label="script\nscripts/docs/record-hero-cast.fnl", shape="component", style="filled", tooltip="scripts/docs/record-hero-cast.fnl"];
     "script:scripts/docs/scanner.fnl" [fillcolor="lightcyan", label="script\nscripts/docs/scanner.fnl", shape="component", style="filled", tooltip="scripts/docs/scanner.fnl"];
+    "script:scripts/lint/lint.fnl" [fillcolor="lightcyan", label="script\nscripts/lint/lint.fnl", shape="component", style="filled", tooltip="scripts/lint/lint.fnl"];
     "script:scripts/spec/conform-wire.fnl" [fillcolor="lightcyan", label="script\nscripts/spec/conform-wire.fnl", shape="component", style="filled", tooltip="scripts/spec/conform-wire.fnl"];
     "script:scripts/test/busted-helper.lua" [fillcolor="lightcyan", label="script\nscripts/test/busted-helper.lua", shape="component", style="filled", tooltip="scripts/test/busted-helper.lua"];
     "script:scripts/test/tui-bench.fnl" [fillcolor="lightcyan", label="script\nscripts/test/tui-bench.fnl", shape="component", style="filled", tooltip="scripts/test/tui-bench.fnl"];
@@ -589,6 +591,7 @@ digraph fen_modules_clustered {
   "fen.core.extensions.loader.manifest" -> "fen.util.path";
   "fen.core.extensions.loader.reload" -> "fen.core.extensions.loader.compiler";
   "fen.core.extensions.loader.reload" -> "fen.core.extensions.loader.manifest";
+  "fen.core.extensions.loader.reload" -> "fen.core.extensions.loader.reloadable";
   "fen.core.extensions.loader.reload" -> "fen.core.extensions.state";
   "fen.core.extensions.loader.reload" -> "fen.core.llm.models";
   "fen.core.extensions.loader.reload" -> "fen.util.checksum";
@@ -1136,7 +1139,7 @@ digraph fen_modules_clustered {
   "fen.extensions.tui.side_chat" -> "fen.interactive";
   "fen.extensions.tui.side_chat" -> "fen.util.text";
   "fen.extensions.tui.side_chat" -> "fen.util.usage";
-  "fen.extensions.tui.stories.init" -> "fen.extensions.tui.state";
+  "fen.extensions.tui.stories" -> "fen.extensions.tui.state";
   "fen.extensions.tui.workspaces" -> "fen.extensions.subagent.runs";
   "fen.extensions.tui.workspaces" -> "fen.extensions.tui.ingest";
   "fen.extensions.tui.workspaces" -> "fen.extensions.tui.redraw";
@@ -1294,6 +1297,7 @@ digraph fen_modules_clustered {
   "script:scripts/docs/record-hero-cast.fnl" -> "fen.testing.pty";
   "script:scripts/docs/scanner.fnl" -> "fen.extensions.docs.contracts";
   "script:scripts/docs/scanner.fnl" -> "fen.util.flat_extensions";
+  "script:scripts/lint/lint.fnl" -> "fen.core.extensions.loader.reloadable";
   "script:scripts/spec/conform-wire.fnl" -> "fen.util.json";
   "script:scripts/spec/conform-wire.fnl" -> "fen.util.wire_session";
   "script:scripts/test/busted-helper.lua" -> "fen.util.flat_extensions";

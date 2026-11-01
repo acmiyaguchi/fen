@@ -1,4 +1,4 @@
-.PHONY: help fmt fmt-check test-fmt install-hooks dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-fast test-all test-list test-shuffle test-compile-cache-clear test-pty profile-tui-scroll check-tui-scroll-perf stall-check smoke smoke-mock check check-static check-fennel bench-tui bench-tui-latency docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-spec check-spec-full verify-spec check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean release-prepare release-tag
+.PHONY: help fmt fmt-check test-fmt install-hooks dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-fast test-all test-list test-shuffle test-compile-cache-clear test-pty profile-tui-scroll check-tui-scroll-perf stall-check smoke smoke-mock check check-static check-fennel lint bench-tui bench-tui-latency docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-spec check-spec-full verify-spec check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean release-prepare release-tag
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -27,6 +27,7 @@ help:
 	@echo '  smoke               — live provider smoke test using FEN_BIN or fen on PATH'
 	@echo '  smoke-mock          — deterministic local mock-provider smoke test'
 	@echo '  check               — fennel-check, generated graph freshness, doc + link validation, and tests'
+	@echo '  lint                — report-only static lint: layering + hot-reload invariants (#676)'
 	@echo '  bench-tui           — run TUI transcript CPU microbenchmarks'
 	@echo '  bench-tui-latency   — scheduled production-loop logical and wall visibility latency'
 	@echo '  docs                — build all documentation: generated Markdown/JSON, graphs, static HTML site'
@@ -138,6 +139,10 @@ check-static: check-fennel fmt-check test-fmt check-graphs check-docs check-link
 
 check-fennel:
 	fennel scripts/test/fennel-check.fnl
+
+lint:
+	@fennel scripts/lint/test.fnl
+	@fennel scripts/lint/lint.fnl $(LINT_ARGS)
 
 bench-tui:
 	fennel scripts/test/tui-bench.fnl

@@ -3,7 +3,7 @@ digraph fen_subsystems {
   node [shape=box, fontname="monospace"];
   edge [fontname="monospace"];
   "cli" [fillcolor="lightblue", label="CLI\n2 modules", style="filled"];
-  "core" [fillcolor="palegreen", label="core\n13 modules", style="filled"];
+  "core" [fillcolor="palegreen", label="core\n10 modules", style="filled"];
   "core.extensions" [fillcolor="palegreen", label="core.extensions\n35 modules", style="filled"];
   "core.llm" [fillcolor="palegreen", label="core.llm\n2 modules", style="filled"];
   "extension.agent_state" [fillcolor="lightyellow", label="extension: agent_state\n2 modules", style="filled"];
@@ -11,7 +11,7 @@ digraph fen_subsystems {
   "extension.claude_memory" [fillcolor="lightyellow", label="extension: claude_memory\n1 modules", style="filled"];
   "extension.compact" [fillcolor="lightyellow", label="extension: compact\n1 modules", style="filled"];
   "extension.decide" [fillcolor="lightyellow", label="extension: decide\n7 modules", style="filled"];
-  "extension.default_prompt" [fillcolor="lightyellow", label="extension: default_prompt\n4 modules", style="filled"];
+  "extension.default_prompt" [fillcolor="lightyellow", label="extension: default_prompt\n3 modules", style="filled"];
   "extension.docs" [fillcolor="lightyellow", label="extension: docs\n3 modules", style="filled"];
   "extension.essentials" [fillcolor="lightyellow", label="extension: essentials\n4 modules", style="filled"];
   "extension.extensions_inspector" [fillcolor="lightyellow", label="extension: extensions_inspector\n3 modules", style="filled"];
@@ -45,7 +45,7 @@ digraph fen_subsystems {
   "extension.todo" [fillcolor="lightyellow", label="extension: todo\n2 modules", style="filled"];
   "extension.tui" [fillcolor="lightyellow", label="extension: tui\n20 modules", style="filled"];
   "extension.web" [fillcolor="lightyellow", label="extension: web\n6 modules", style="filled"];
-  "other" [fillcolor="white", label="other\n29 modules", style="filled"];
+  "other" [fillcolor="white", label="other\n34 modules", style="filled"];
   "testing" [fillcolor="white", label="testing\n6 modules", style="filled"];
   "util" [fillcolor="white", label="util\n46 modules", style="filled"];
   "util.http" [fillcolor="white", label="util.http\n3 modules", style="filled"];
@@ -59,6 +59,7 @@ digraph fen_subsystems {
   "core" -> "util";
   "core.extensions" -> "core";
   "core.extensions" -> "core.llm";
+  "core.extensions" -> "other";
   "core.extensions" -> "util";
   "core.llm" -> "core";
   "core.llm" -> "core.extensions";
@@ -85,6 +86,7 @@ digraph fen_subsystems {
   "extension.essentials" -> "core";
   "extension.essentials" -> "util";
   "extension.extensions_inspector" -> "core";
+  "extension.extensions_inspector" -> "other";
   "extension.extensions_inspector" -> "util";
   "extension.goal" -> "core";
   "extension.goal" -> "util";
@@ -140,6 +142,7 @@ digraph fen_subsystems {
   "extension.sessions" -> "core";
   "extension.sessions" -> "extension.profiler";
   "extension.sessions" -> "extension.steering";
+  "extension.sessions" -> "other";
   "extension.sessions" -> "util";
   "extension.simplify" -> "core";
   "extension.simplify" -> "extension.subagent";
@@ -154,11 +157,11 @@ digraph fen_subsystems {
   "extension.subagent" -> "core";
   "extension.subagent" -> "core.extensions";
   "extension.subagent" -> "core.llm";
+  "extension.subagent" -> "other";
   "extension.subagent" -> "util";
   "extension.todo" -> "core";
   "extension.todo" -> "util";
   "extension.tui" -> "cli";
-  "extension.tui" -> "core";
   "extension.tui" -> "core.extensions";
   "extension.tui" -> "extension.decide";
   "extension.tui" -> "extension.profiler";
@@ -184,5 +187,6 @@ digraph fen_subsystems {
   "testing" -> "extension.builtin_tools";
   "testing" -> "extension.tui";
   "testing" -> "util";
+  "util" -> "core.extensions";
   "util.http" -> "util";
 }
