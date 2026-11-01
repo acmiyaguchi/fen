@@ -78,6 +78,10 @@
   (let [typ (?. ev :type)]
     (when (and (not ch.exited?) (= typ :steering-returned))
       (returned! ch ev))
+    ;; The mailbox started a turn with this line: its tag is the control ref
+    ;; the next turn-started reports.
+    (when (= typ :turn-line-started)
+      (set ch.started-ref ev.tag))
     (when (and (not ch.exited?) (wire.event-type? typ)
                (not (wire-session.lifecycle-event? typ)))
       (let [out (wire.normalize ev)]
@@ -195,7 +199,7 @@
 ;; fatal! is defined below start-turn!, which needs it when a start fails.
 (local late {})
 
-(fn start-turn! [ch prompt ?final?]
+(fn start-turn! [ch prompt ?final? ?ref]
   (let [state ch.state
         step-opts (when ?final? {:tool-choice :none})
         agent-step (fn [agent line cancel-fn]
@@ -209,12 +213,15 @@
           :final? ?final?
           :marker (usage-ledger.mark!)
           :start-index (+ (length (or state.agent.messages [])) 1)})
-    (let [started (turn-submit.start! state prompt agent-step)]
+    (let [started (turn-submit.start! state prompt agent-step {:tag ?ref})]
+      (set ch.started-ref nil)
       (if started.ok
           (do
             (set ch.active.co state.turn)
             (set ch.active.n started.turn)
-            (send! ch :turn-started {:turn ch.turn}))
+            ;; ref: the control whose line this turn started with.
+            (send! ch :turn-started
+                   {:turn ch.turn :ref (math.tointeger started.tag)}))
           (do
             (set ch.active nil)
             (late.fatal! ch (.. "cannot start turn: " (tostring started.error))))))))
@@ -227,10 +234,13 @@
 (fn queue! [ch kind msg]
   ;; A steer names the active turn, so it can only reach that turn.
   (let [ref (math.tointeger msg.seq)
-        result ((. (tasks) :offer!) msg.text
-                                    (if (= kind :follow-up)
-                                        {:tag ref :follow-up? true}
-                                        {:tag ref :turn (?. ch.active :n)}))]
+        n (?. ch.active :n)
+        result (if (= kind :follow-up)
+                   ((. (tasks) :offer!) msg.text {:tag ref :follow-up? true})
+                   ;; No turn of ours holds (idle, or an adopted exclusive job).
+                   (= n nil)
+                   {:ok false :error "no turn is running"}
+                   ((. (tasks) :offer!) msg.text {:tag ref :turn n}))]
     (when (not result.ok)
       ;; Refused (no such turn running) or empty: account for the ref now.
       (send! ch :info {:summary (.. "dropped " (tostring kind) ": "
@@ -246,9 +256,10 @@
 
 (fn perform! [ch action ?msg]
   (if (= action :finish) (defer-exit! ch #(finish! ch)) (= action :start-turn)
-      (start-turn! ch ?msg.text) (= action :queue-steering)
-      (queue! ch :steering ?msg) (= action :queue-follow-up)
-      (queue! ch :follow-up ?msg) (= action :start-finalize-turn)
+      (start-turn! ch ?msg.text nil (math.tointeger ?msg.seq))
+      (= action :queue-steering) (queue! ch :steering ?msg)
+      (= action :queue-follow-up) (queue! ch :follow-up ?msg)
+      (= action :start-finalize-turn)
       (start-turn! ch (or (text.blank->nil ch.finalize-note)
                           DEFAULT-FINALIZE-NOTE) true)
       (= action :interrupt-turn) (interrupt-turn! ch) (= action :abort)
@@ -343,7 +354,9 @@
                         :marker (usage-ledger.mark!)
                         :start-index (+ (length (or ch.state.agent.messages []))
                                         1)})
-        (send! ch :turn-started {:turn ch.turn}))
+        (send! ch :turn-started
+               {:turn ch.turn :ref (math.tointeger ch.started-ref)})
+        (set ch.started-ref nil))
       (fatal! ch "untracked turn started")))
 
 (fn tick! [ch]

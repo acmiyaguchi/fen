@@ -25,7 +25,7 @@ A `steer` names the child's running turn, so it is refused (with an `info` namin
 The live-child lifecycle adds these events:
 
 - `ready` — the child is initialized and waiting for input.
-- `turn-started {turn}` and `turn-complete {turn, stop-reason, usage}` bracket each turn.
+- `turn-started {turn, ref?}` and `turn-complete {turn, stop-reason, usage}` bracket each turn; `ref` is the `seq` of the `prompt` (or queued `follow-up`) control whose line started the turn.
 - `control-ack {ref, status, reason}` answers the control message whose `seq` is `ref`, with status `accepted`, `rejected`, or `applied`; `ref` is omitted only on a rejection for a line with no usable `seq`, including an out-of-order line whose `seq` was already consumed.
 - `result {final-text, stop-reason, usage, truncated?, final-text-path}` carries the run's answer; `truncated?` marks a `final-text` cut to fit one line, and `final-text-path` names a file holding the uncut text.
 - `exit {status, error}` is the last line, with status `done`, `cancelled`, `failed`, or `timed-out`.

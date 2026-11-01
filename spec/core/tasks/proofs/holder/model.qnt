@@ -42,6 +42,7 @@ module holderAbstract {
     steer: Set[int],       // seqs of steer lines for the running turn
     followUp: Set[int],    // seqs of follow-ups
     start: bool,           // an idle offer asked next-start! to start a turn
+    firstUp: int,             // the seq that idle offer admitted: it starts first (-1: none)
     cancel: bool,          // cancel! n was accepted for the running turn
     steerMode: str,        // drain mode for take! :steer ("one" | "all")
     followMode: str,       // drain mode for take! :follow-up
@@ -50,7 +51,7 @@ module holderAbstract {
   }
 
   pure def sessionInit: Session = {
-    kind: "none", n: 0, steer: Set(), followUp: Set(), start: false, cancel: false,
+    kind: "none", n: 0, steer: Set(), followUp: Set(), start: false, firstUp: -1, cancel: false,
     steerMode: "one", followMode: "one",
     why: SEQS.mapBy(_s => ""), whyN: SEQS.mapBy(_s => 0),
   }
@@ -69,11 +70,13 @@ module holderAbstract {
 
   // ---- steps (pure; the concrete model and serve both call these) ----
 
-  // next-start! + (with-holder :turn ...): the head follow-up starts turn n+1.
+  // next-start! + (with-holder :turn ...), one step: the line whose idle
+  // offer asked for the start (what the user just typed) opens turn n+1,
+  // ahead of older follow-ups left by an earlier turn.
   pure def startTurn(a: Session): Session =
-    val first = minOf(a.followUp)
+    val first = if (a.firstUp >= 0) a.firstUp else minOf(a.followUp)
     dispose({ ...a, kind: "turn", n: a.n + 1, followUp: a.followUp.exclude(Set(first)),
-              start: false, cancel: false }, Set(first), "started", a.n + 1)
+              start: false, firstUp: -1, cancel: false }, Set(first), "started", a.n + 1)
 
   pure def canStartTurn(a: Session): bool =
     a.start and a.followUp != Set() and a.kind == "none"
@@ -95,11 +98,13 @@ module holderAbstract {
       if (a.kind == "turn" and t == a.n) { ...a, steer: a.steer.union(Set(s)) }
       else dispose(a, Set(s), "refused", a.n)
     else if (t == 0)
-      if (a.kind == "none") { ...a, followUp: a.followUp.union(Set(s)), start: true }
+      if (a.kind == "none") { ...a, followUp: a.followUp.union(Set(s)), start: true,
+                              firstUp: if (a.firstUp >= 0) a.firstUp else s }
       else dispose(a, Set(s), "refused", a.n)
     else if (a.kind == "turn") { ...a, steer: a.steer.union(Set(s)) }
     else if (a.kind == "exclusive") { ...a, followUp: a.followUp.union(Set(s)) }
-    else { ...a, followUp: a.followUp.union(Set(s)), start: true }
+    else { ...a, followUp: a.followUp.union(Set(s)), start: true,
+           firstUp: if (a.firstUp >= 0) a.firstUp else s }
 
   // take! :steer drains by the session's steer mode.
   pure def takeSteer(a: Session): Session =
@@ -123,7 +128,7 @@ module holderAbstract {
     dispose({ ...a, steer: Set() }, a.steer, "cleared", a.n)
 
   pure def clearFollowUp(a: Session): Session =
-    dispose({ ...a, followUp: Set(), start: false }, a.followUp, "cleared", a.n)
+    dispose({ ...a, followUp: Set(), start: false, firstUp: -1 }, a.followUp, "cleared", a.n)
 
   // Steer lines exist only while a turn holds the session.
   pure def steerOnlyForTurn(a: Session): bool =
@@ -173,9 +178,10 @@ module holderSpec {
   var whyN: int -> int
   var steerMode: str
   var followMode: str
+  var firstUp: int
 
   def s: Session = {
-    kind: kind, n: n, steer: steer, followUp: followUp, start: start,
+    kind: kind, n: n, steer: steer, followUp: followUp, start: start, firstUp: firstUp,
     cancel: cancel, why: why, whyN: whyN, steerMode: steerMode, followMode: followMode,
   }
   var body: bool               // a with-holder body is running
@@ -213,15 +219,16 @@ module holderSpec {
   var pFor: int -> int
   var pIsSteer: int -> bool
   var pIsLocal: int -> bool
+  var pFirstUp: int
 
   def ps: Session = {
-    kind: pKind, n: pN, steer: pSteer, followUp: pFollowUp, start: pStart,
+    kind: pKind, n: pN, steer: pSteer, followUp: pFollowUp, start: pStart, firstUp: pFirstUp,
     cancel: pCancel, why: pWhy, whyN: pWhyN, steerMode: pSteerMode, followMode: pFollowMode,
   }
 
   action init = all {
     kind' = sessionInit.kind, n' = sessionInit.n, steer' = sessionInit.steer,
-    followUp' = sessionInit.followUp, start' = sessionInit.start,
+    followUp' = sessionInit.followUp, start' = sessionInit.start, firstUp' = -1,
     cancel' = sessionInit.cancel, why' = sessionInit.why, whyN' = sessionInit.whyN,
     body' = false, nextSeq' = 0,
     tagOf' = SEQS.mapBy(_q => 0), forTurn' = SEQS.mapBy(_q => 0),
@@ -231,7 +238,7 @@ module holderSpec {
     heldFor' = 0, waitedFor' = 0, starved' = false, takeOk' = true,
     setSteer' = "one", setFollow' = "one",
     pKind' = sessionInit.kind, pN' = sessionInit.n, pSteer' = sessionInit.steer,
-    pFollowUp' = sessionInit.followUp, pStart' = sessionInit.start,
+    pFollowUp' = sessionInit.followUp, pStart' = sessionInit.start, pFirstUp' = -1,
     pCancel' = sessionInit.cancel, pWhy' = sessionInit.why, pWhyN' = sessionInit.whyN,
     pSteerMode' = sessionInit.steerMode, pFollowMode' = sessionInit.followMode,
     pBody' = false, pSeq' = 0, pFor' = SEQS.mapBy(_q => 0),
@@ -254,7 +261,8 @@ module holderSpec {
     wasSteer: sT.get(q), local: lc.get(q),
     steerAhead: a.steer.exists(x => x < q),
     otherSteer: a.steer.exclude(Set(q)) != Set(),
-    followAhead: a.followUp.exists(x => x < q),
+    followAhead: if (a.firstUp >= 0) a.firstUp != q
+                 else a.followUp.exists(x => x < q),
     steerMode: a.steerMode, followMode: a.followMode,
   }
 
@@ -275,7 +283,7 @@ module holderSpec {
              gSteer: int -> bool, gLocal: int -> bool, gOrder: bool, gCancel: bool,
              gTake: bool, gStarved: bool, gSetSteer: str, gSetFollow: str): bool = all {
     kind' = gs.kind, n' = gs.n, steer' = gs.steer, followUp' = gs.followUp,
-    start' = gs.start, cancel' = gs.cancel, why' = gs.why, whyN' = gs.whyN,
+    start' = gs.start, firstUp' = gs.firstUp, cancel' = gs.cancel, why' = gs.why, whyN' = gs.whyN,
     steerMode' = gs.steerMode, followMode' = gs.followMode,
     body' = gBody, nextSeq' = gSeq,
     heldFor' = if (gs.kind == "none" or kind == "none") 0 else heldFor + 1,
@@ -284,7 +292,7 @@ module holderSpec {
     takeOk' = (takeOk and gTake),
     setSteer' = gSetSteer, setFollow' = gSetFollow,
     pKind' = kind, pN' = n, pSteer' = steer, pFollowUp' = followUp, pStart' = start,
-    pCancel' = cancel, pWhy' = why, pWhyN' = whyN, pSteerMode' = steerMode,
+    pFirstUp' = firstUp, pCancel' = cancel, pWhy' = why, pWhyN' = whyN, pSteerMode' = steerMode,
     pFollowMode' = followMode, pBody' = body, pSeq' = nextSeq, pFor' = forTurn,
     pIsSteer' = isSteer, pIsLocal' = isLocal,
     tagOf' = gTag, forTurn' = gFor, isSteer' = gSteer, isLocal' = gLocal,
@@ -494,7 +502,7 @@ module holderSpec {
     pKind.in(KINDS), pN.in(NS), pSteer.in(powerset(SEQS)), pFollowUp.in(powerset(SEQS)),
     pStart.in(Bool), pCancel.in(Bool), pWhy.in(setOfMaps(SEQS, WHYS)),
     pWhyN.in(setOfMaps(SEQS, NS)), pSteerMode.in(MODES), pFollowMode.in(MODES),
-    pBody.in(Bool), pSeq.in(0.to(MAX_SEQ)), pFor.in(setOfMaps(SEQS, NS)),
+    pBody.in(Bool), pFirstUp.in(Set(-1).union(SEQS)), pSeq.in(0.to(MAX_SEQ)), pFor.in(setOfMaps(SEQS, NS)),
     pIsSteer.in(setOfMaps(SEQS, Bool)), pIsLocal.in(setOfMaps(SEQS, Bool)),
   }
   val inductiveInv = and {
@@ -526,6 +534,9 @@ module holderSpec {
     setFollow.in(MODES),
     start implies followUp != Set(),
     start implies kind == "none",
+    firstUp.in(Set(-1).union(SEQS)),
+    start == (firstUp >= 0),
+    firstUp >= 0 implies followUp.contains(firstUp),
     kind == "none" implies heldFor == 0,
     not(waiting(s)) implies waitedFor == 0,
     SEQS.forall(q => isSteer.get(q) implies forTurn.get(q) >= 1),

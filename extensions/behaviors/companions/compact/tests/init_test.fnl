@@ -625,8 +625,9 @@
                     (assert.is_nil state.turn)
                     (assert.are.equal 0 (event-count seen :error))
                     (assert.are.equal 0 (event-count seen :info))
-                    ;; The queued turn starts (and later completes); the next trigger compacts.
-                    (tasks.next-start!)
+                    ;; The queued turn starts and completes; the next trigger compacts.
+                    (let [(_ hid) (tasks.next-start!)]
+                      (tasks.release! hid))
                     (set state.turn-id (+ (or state.turn-id 0) 1))
                     (complete-turn! state)
                     (assert.is_not_nil state.turn)

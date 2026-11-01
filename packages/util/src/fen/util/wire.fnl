@@ -317,7 +317,10 @@
                                                    :items positive-int}})
                       ;; Live-child lifecycle.
                       :ready (object-schema {})
-                      :turn-started (object-schema {:turn positive-int} [:turn])
+                      :turn-started (object-schema {:turn positive-int
+                                                    ;; the steer/follow-up/prompt control the turn started with
+                                                    :ref positive-int}
+                                                   [:turn])
                       :turn-complete (object-schema {:turn positive-int
                                                      :stop-reason str
                                                      :usage obj}

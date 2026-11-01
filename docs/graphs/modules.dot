@@ -458,6 +458,7 @@ digraph fen_modules {
   "fen.core.llm.models" -> "fen.util.log" [label="require"];
   "fen.core.llm.models" -> "fen.util.path" [label="require"];
   "fen.core.prompt" -> "fen.core.extensions.register.prompt" [label="require"];
+  "fen.core.reload_request" -> "fen.core.tasks" [color="gray50", label="late", style="dashed"];
   "fen.core.runtime_recovery" -> "fen.core.extensions.state" [label="require"];
   "fen.core.runtime_recovery" -> "fen.core.extensions.util" [label="require"];
   "fen.core.settings" -> "fen.core.storage" [label="require"];

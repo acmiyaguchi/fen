@@ -37,6 +37,7 @@
    :steer []
    :follow-up []
    :start? false
+   :first-up nil
    :cancel? false
    :modes {:steering :one-at-a-time :follow-up :one-at-a-time}
    :next-seq 1})
@@ -53,6 +54,8 @@
           (set out.next-seq (+ out.next-seq 1)))
         (set out.start?
              (and (not (not m.idle-start?)) (> (length out.follow-up) 0)))
+        (when out.start?
+          (set out.first-up (. out.follow-up 1 :seq)))
         (when m.modes
           (set out.modes
                {:steering (or m.modes.steering :one-at-a-time)
@@ -68,6 +71,7 @@
      :steer (icollect [_ item (ipairs m.steer)] item)
      :follow-up (icollect [_ item (ipairs m.follow-up)] item)
      :start? m.start?
+     :first-up m.first-up
      :cancel? m.cancel?
      :modes {:steering m.modes.steering :follow-up m.modes.follow-up}
      :next-seq m.next-seq}))
@@ -133,7 +137,9 @@
                                             (.. "turn " (tostring m.n))
                                             (tostring m.kind))
                                         ")")})
-        (and (= kind :exclusive) (start-pending? m))
+        ;; Turns start from queued input only through :next-start
+        ;; (startTurn); a plain acquire never jumps a requested start.
+        (start-pending? m)
         (table.insert outs
                       {:type :hold-refused
                        : kind
@@ -143,9 +149,7 @@
           (set m.hid (+ m.hid 1))
           (set m.cancel? false)
           (when (= kind :turn)
-            (set m.n (+ m.n 1))
-            ;; startTurn: the request is consumed by the turn that starts.
-            (set m.start? false))
+            (set m.n (+ m.n 1)))
           (table.insert outs {:type :held : kind :n m.n :hid m.hid})
           (table.insert outs (counts m))))))
 
@@ -166,7 +170,10 @@
   (if (= queue :steering)
       (table.insert m.steer item)
       (table.insert m.follow-up item))
-  (when start? (set m.start? true))
+  (when start?
+    (set m.start? true)
+    ;; The line whose idle offer raised the request starts first.
+    (when (= m.first-up nil) (set m.first-up item.seq)))
   (table.insert outs {:type :admitted
                       :seq item.seq
                       :tag item.tag
@@ -221,14 +228,51 @@
     (table.insert outs {:type :taken : queue :turn m.n :items taken})
     (when (> (length taken) 0) (table.insert outs (counts m)))))
 
-;; next-start!: the single start path. Pops the head follow-up for turn n+1;
-;; the driver then runs (with-holder :turn ...) with it.
-(fn STEPS.next-start [m _input outs]
+;; next-start! (startTurn): the single start path, one step. Pops the line
+;; whose idle offer asked for the start (else the oldest follow-up) AND takes
+;; the :turn holder for turn n+1, so nothing runs between the pick and the
+;; hold. The driver then runs the turn body under that holder id.
+(fn start! [m outs]
   (when (and (not (busy? m)) (start-pending? m))
-    (let [item (table.remove m.follow-up 1)]
+    (var idx 1)
+    (each [i item (ipairs m.follow-up)]
+      (when (= item.seq m.first-up) (set idx i)))
+    (let [item (table.remove m.follow-up idx)]
       (set m.start? false)
-      (table.insert outs {:type :started : item :turn (+ m.n 1)})
+      (set m.first-up nil)
+      (set m.kind :turn)
+      (set m.n (+ m.n 1))
+      (set m.hid (+ m.hid 1))
+      (set m.cancel? false)
+      (table.insert outs {:type :started : item :turn m.n :hid m.hid})
+      (table.insert outs (counts m))
+      item)))
+
+(fn STEPS.next-start [m _input outs]
+  (start! m outs))
+
+;; Deprecated (idle-tick! shim for a pre-holder runtime): pop the start line
+;; without holding; that runtime then submits it as a new local offer.
+(fn STEPS.legacy-pop-start [m _input outs]
+  (when (and (not (busy? m)) (start-pending? m))
+    (var idx 1)
+    (each [i item (ipairs m.follow-up)]
+      (when (= item.seq m.first-up) (set idx i)))
+    (let [item (table.remove m.follow-up idx)]
+      (set m.start? false)
+      (set m.first-up nil)
+      (table.insert outs {:type :popped : item})
       (table.insert outs (counts m)))))
+
+;; offer! then next-start! in one step (an idle submit). The offer the start
+;; consumes is marked so no :queued event is shown for it.
+(fn STEPS.offer-start [m input outs]
+  (STEPS.offer m input outs)
+  (let [admitted (accumulate [a nil _ o (ipairs outs)]
+                   (if (= o.type :admitted) o a))
+        item (start! m outs)]
+    (when (and admitted item (= item.seq admitted.seq))
+      (set admitted.consumed? true))))
 
 (fn STEPS.cancel [m input outs]
   (let [ok? (and (= m.kind :turn) (= input.turn m.n))]
@@ -244,7 +288,8 @@
     (when (or (= kind nil) (= kind :follow-up))
       (each [_ item (ipairs m.follow-up)] (table.insert dropped item))
       (set m.follow-up [])
-      (set m.start? false))
+      (set m.start? false)
+      (set m.first-up nil))
     (table.insert outs {:type :cleared :turn m.n :items dropped})
     (table.insert outs (counts m))))
 
@@ -275,8 +320,15 @@
 (fn emit-output! [out]
   (case out.type
     :counts (events.emit {:type :set-status-info :info out.info})
-    :admitted
-    (events.emit {:type :queued :queue out.queue :text out.text :tag out.tag})
+    :admitted (when (not out.consumed?)
+                (events.emit {:type :queued
+                              :queue out.queue
+                              :text out.text
+                              :tag out.tag}))
+    :started (events.emit {:type :turn-line-started
+                           :turn out.turn
+                           :text out.item.text
+                           :tag out.item.tag})
     :released (when (> (length out.items) 0)
                 (events.emit {:type :steering-returned
                               :turn out.turn
@@ -291,8 +343,13 @@
 (fn M.dispatch! [input]
   (let [(m outs) (M.step (live) input)]
     (set state.machine m)
+    ;; One status update per step: the last :counts is the settled state.
+    (var last-counts nil)
     (each [_ out (ipairs outs)]
-      (emit-output! out))
+      (when (= out.type :counts) (set last-counts out)))
+    (each [_ out (ipairs outs)]
+      (when (or (not= out.type :counts) (= out last-counts))
+        (emit-output! out)))
     outs))
 
 (fn find-output [outs typ]
@@ -405,11 +462,102 @@
 
 ;; @doc fen.core.tasks.next-start!
 ;; kind: function
-;; signature: (next-start!) -> {:seq :tag :text}|nil
-;; summary: At the driver's idle tick: when idle, a start was requested, and a follow-up waits, pop the head follow-up for the driver to run under (with-holder :turn ...). The only start path for queued input.
+;; signature: (next-start!) -> {:seq :tag :text} hid n|nil
+;; summary: The single start step: when idle with a start requested, pop the line that asked for it (else the oldest follow-up) and take the :turn holder for turn n in the same step. The caller owns holder hid and must run a body under it (spawn-next does) or release! it.
 ;; tags: tasks steering runtime
 (fn M.next-start! []
-  (?. (find-output (M.dispatch! {:type :next-start}) :started) :item))
+  (let [out (find-output (M.dispatch! {:type :next-start}) :started)]
+    (when out (values out.item out.hid out.turn))))
+
+(fn held-coroutine [hid f]
+  (coroutines.create (fn [...] (run-held hid f ...))))
+
+;; @doc fen.core.tasks.spawn-next
+;; kind: function
+;; signature: (spawn-next make-body) -> co item n hid|nil
+;; summary: next-start! plus the turn coroutine: (make-body item n) returns the body, run under the turn holder and released on every exit.
+;; tags: tasks steering runtime
+(fn M.spawn-next [make-body]
+  (let [(item hid n) (M.next-start!)]
+    (when item
+      (values (held-coroutine hid (make-body item n)) item n hid))))
+
+;; @doc fen.core.tasks.offer-start!
+;; kind: function
+;; signature: (offer-start! text ?opts make-body) -> {:ok true :started? bool :co co :item item :turn n :hid hid}|{:ok false :error msg}
+;; summary: An idle submit in one step: offer text (local, or opts.turn 0) and, if that raises the start request, start the turn at once. The line that asked first starts; a line it did not start stays queued (and is shown as queued).
+;; tags: tasks steering runtime
+(fn M.offer-start! [text ?opts make-body]
+  (let [opts (or ?opts {})
+        outs (M.dispatch! {:type :offer-start
+                           : text
+                           :tag opts.tag
+                           :turn opts.turn})
+        started (find-output outs :started)
+        admitted (find-output outs :admitted)]
+    (if started
+        {:ok true
+         :started? true
+         :item started.item
+         :turn started.turn
+         :hid started.hid
+         :co (held-coroutine started.hid (make-body started.item started.turn))}
+        admitted
+        {:ok true :started? false :queue admitted.queue :seq admitted.seq}
+        {:ok false
+         :error (or (?. (find-output outs :refused) :reason)
+                    (?. (find-output outs :rejected) :reason) "rejected")})))
+
+;; @doc fen.core.tasks.start-pending?
+;; kind: function
+;; signature: (start-pending?) -> bool
+;; summary: Whether an idle offer asked for a turn start that next-start! has not taken yet.
+;; tags: tasks steering runtime
+(fn M.start-pending? []
+  (start-pending? (live)))
+
+;; Deprecated shims for closures captured by the pre-holder runtime (a872c57)
+;; that survive a /reload into this code (modules reload in place).
+(var restart-notice-shown? false)
+
+(fn restart-notice! []
+  (when (not restart-notice-shown?)
+    ;; lint-allow reload/state: one notice per loaded instance is enough; a later /reload may show it once more
+    (set restart-notice-shown? true)
+    (events.emit {:type :info
+                  :text "fen was reloaded across a turn-mailbox change; restart fen to finish the upgrade"})))
+
+(fn M.idle-tick! []
+  "Deprecated: the old idle tick. Pops the start line without holding; the
+   old runtime submits it, which starts it through offer-start!."
+  (?. (find-output (M.dispatch! {:type :legacy-pop-start}) :popped) :item :text))
+
+(fn M.queue! [kind text ?opts]
+  "Deprecated: old queue!."
+  (let [opts (or ?opts {})
+        h (M.holder)]
+    (if (= kind :follow-up)
+        (if (and opts.start-if-idle? (= h.kind :none))
+            (M.offer! text {:turn 0})
+            (M.offer! text {:follow-up? true}))
+        (= kind :steering)
+        (M.offer! text {:turn (or opts.turn (math.max h.n 1))})
+        {:ok false :error "unknown queue"})))
+
+(fn M.steer-or-follow-up! [text]
+  "Deprecated: old busy-time input; a local offer."
+  (M.offer! text))
+
+(fn M.turn-start! []
+  "Deprecated and unsafe (a turn with no holder body): no-op plus a notice."
+  (restart-notice!)
+  (. (M.holder) :n))
+
+(fn M.turn-end! [?n]
+  "Deprecated: release turn ?n (default the running one) if it still holds."
+  (let [h (M.holder)]
+    (when (and (= h.kind :turn) (or (= ?n nil) (= ?n h.n)))
+      (M.release! h.hid))))
 
 ;; @doc fen.core.tasks.cancel!
 ;; kind: function
@@ -470,7 +618,8 @@
 (fn M.attach! [attached?]
   (set state.attached? (not (not attached?)))
   (when (not attached?)
-    (tset (live) :start? false)))
+    (tset (live) :start? false)
+    (tset (live) :first-up nil)))
 
 ;; @doc fen.core.tasks.reset!
 ;; kind: function

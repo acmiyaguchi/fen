@@ -50,7 +50,10 @@ module lineAbstract {
   // queued line, and steer lines exist only while a turn holds.
   pure def lineEnvOk(a: View, b: View): bool = and {
     (a.st == "steer" and b.st == "steer") implies (b.steerAhead implies a.steerAhead),
-    (a.st == "follow" and b.st == "follow") implies (b.followAhead implies a.followAhead),
+    // another line may jump ahead only as the line whose idle offer raises
+    // the start request (the typed prompt starts first)
+    (a.st == "follow" and b.st == "follow" and not(b.lease.startReq and not(a.lease.startReq)))
+      implies (b.followAhead implies a.followAhead),
     b.steerAhead implies b.otherSteer,
     b.otherSteer implies b.lease.kind == "turn",
     LINE_MODES.contains(b.steerMode), LINE_MODES.contains(b.followMode),

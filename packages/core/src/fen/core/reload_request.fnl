@@ -50,7 +50,10 @@
   "The presenter calls this after finishing a turn. `state.busy?` covers
    streaming and tool execution because both occur inside the active turn
    coroutine; `state.turn` is checked independently as a defensive guard."
-  (if (or state.busy? state.turn)
+  (if (or state.busy? state.turn
+          ;; A queued turn start goes first (/reload would be refused and the
+          ;; request lost); the request drains once that turn is done.
+          ((. (require :fen.core.tasks) :start-pending?)))
       (values false nil)
       (let [queue (or state.reload-requests [])
             request (. queue 1)]

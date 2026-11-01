@@ -2,7 +2,7 @@
 ;; `holderSpec` are replayed through the real pure step, `fen.core.tasks.step`.
 ;; Each model action becomes the matching machine input(s); after every step
 ;; the code's holder kind, turn number, steer and follow-up seqs, start
-;; request, cancel flag, and drain modes must equal the model's, and every
+;; request and the line it starts first (firstUp), cancel flag, and drain modes must equal the model's, and every
 ;; issued line's disposition (taken, started, released, refused, cleared) and
 ;; the turn it is attributed to must equal the model's `why`/`whyN`.
 ;; At every state the replay also probes transitions the model forbids there
@@ -115,9 +115,7 @@
             label (. st "mbt::actionTaken")
             action (if (= label :step) (forced-action prev) label)]
         (case action
-          :doStartTurn (do
-                         (run! {:type :next-start})
-                         (run! {:type :acquire :kind :turn}))
+          :doStartTurn (run! {:type :next-start})
           :doStartExclusive (run! {:type :acquire :kind :exclusive})
           :doBodyExit (when (not CORRUPT?) (run! {:type :release :hid m.hid}))
           :doOffer (let [t (pick st :t)]
@@ -142,6 +140,9 @@
           (let [checks [[:kind st.kind m.kind]
                         [:n (int st.n) m.n]
                         [:start st.start m.start?]
+                        [:firstUp
+                         (int st.firstUp)
+                         (if m.first-up (- m.first-up 1) -1)]
                         [:cancel st.cancel m.cancel?]
                         [:steerMode (. MODE st.steerMode) m.modes.steering]
                         [:followMode (. MODE st.followMode) m.modes.follow-up]]

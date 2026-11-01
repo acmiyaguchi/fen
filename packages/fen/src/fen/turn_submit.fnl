@@ -22,61 +22,60 @@
   (set state.turn-result nil)
   (set state.turn-error nil))
 
-(fn spawn-turn! [state text agent-step]
-  "Create the turn coroutine for TEXT. The main run-state holds the session as
-   a turn (`tasks.spawn-held`): acquired now, released when the body exits in
-   any way, or by `drop!` if the coroutine is abandoned. Other agent states
-   (side chat, headless session send) have no mailbox and no holder."
-  (let [frame (subagent-output-frame)
-        text (if frame (.. frame "\n\n" text) text)]
-    (if state.mailbox?
-        (do
-          (var n nil)
-          (let [body (fn []
-                       (agent-step state.agent text
-                                   (fn []
-                                     (or state.cancel-requested?
-                                         (tasks.cancel-requested? n)))))
-                (co hid turn-or-why) (tasks.spawn-held :turn body)]
-            (if co
-                (do
-                  (set n turn-or-why)
-                  (reset-turn-fields! state)
-                  (set state.turn co)
-                  (set state.holder-id hid)
-                  (set state.busy? true)
-                  {:ok true :started true :turn-id state.turn-id :turn n})
-                {:ok false :error turn-or-why})))
-        (do
-          (reset-turn-fields! state)
-          (set state.turn
-               (coroutines.create (fn []
-                                    (agent-step state.agent text
-                                                (fn []
-                                                  state.cancel-requested?)))))
-          (set state.busy? true)
-          {:ok true :started true :turn-id state.turn-id}))))
+(fn framed [text]
+  (let [frame (subagent-output-frame)]
+    (if frame (.. frame "\n\n" text) text)))
+
+(fn mailbox-body [state agent-step]
+  "Body builder for a mailbox turn: the holder is already taken (atomically
+   with the line, by `tasks.next-start!`/`offer-start!`); the body runs under
+   it and releases on every exit."
+  (fn [item n]
+    (let [text (framed item.text)]
+      (fn []
+        (agent-step state.agent text
+                    (fn []
+                      (or state.cancel-requested? (tasks.cancel-requested? n))))))))
+
+(fn adopt! [state co hid n item]
+  (reset-turn-fields! state)
+  (set state.turn co)
+  (set state.holder-id hid)
+  (set state.busy? true)
+  {:ok true :started true :turn-id state.turn-id :turn n :tag item.tag})
+
+(fn spawn-plain! [state text agent-step]
+  "Side chat and headless session states: no mailbox and no holder."
+  (let [text (framed text)]
+    (reset-turn-fields! state)
+    (set state.turn
+         (coroutines.create (fn []
+                              (agent-step state.agent text
+                                          (fn [] state.cancel-requested?)))))
+    (set state.busy? true)
+    {:ok true :started true :turn-id state.turn-id}))
 
 (fn start-queued! [state agent-step]
-  "The driver's idle tick: start the turn `tasks.next-start!` pops, if any."
-  (let [item (tasks.next-start!)]
-    (when item
-      (spawn-turn! state item.text agent-step))))
+  "The driver's idle tick: start the turn `tasks.spawn-next` picks and holds
+   in one step, if any."
+  (let [(co item n hid) (tasks.spawn-next (mailbox-body state agent-step))]
+    (when co
+      (adopt! state co hid n item))))
 
-(fn start! [state line agent-step]
-  "Start LINE as a turn. For the main run-state every start goes through the
-   mailbox: offer the line (idle: a follow-up plus a start request), then
-   take the head follow-up with `next-start!` (FIFO: an older queued line runs
-   first and this one follows at its natural stop)."
-  (if (not state.mailbox?)
-      (spawn-turn! state line agent-step)
-      (not= :none (. (tasks.holder) :kind))
-      {:ok false :error "agent is busy"}
-      (let [offered (tasks.offer! line)]
-        (if (not offered.ok)
-            offered
-            (or (start-queued! state agent-step)
-                {:ok false :error "turn did not start"})))))
+(fn start! [state line agent-step ?opts]
+  "Start LINE as a turn. For the main run-state this is one mailbox step
+   (`tasks.offer-start!`): the line is offered and, being the first line to
+   ask for a start, starts at once under the turn holder; follow-ups left
+   from an earlier turn follow at its natural stops. opts.tag is carried."
+  (let [opts (or ?opts {})]
+    (if (not state.mailbox?)
+        (spawn-plain! state line agent-step)
+        (not= :none (. (tasks.holder) :kind))
+        {:ok false :error "agent is busy"}
+        (let [r (tasks.offer-start! line {:tag opts.tag}
+                                    (mailbox-body state agent-step))]
+          (if (not r.ok) r r.started? (adopt! state r.co r.hid r.turn r.item)
+              {:ok false :error "turn did not start"})))))
 
 (fn drop! [state]
   "Forget the session's coroutine. Releases its holder (fenced, so a no-op

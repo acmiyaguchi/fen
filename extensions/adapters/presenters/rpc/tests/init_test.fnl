@@ -701,4 +701,70 @@
                     (assert.are.equal "from the idle follow-up"
                                       (. (p.find #(= $1.type :result))
                                          :final-text))
-                    (assert-closed-run! r))))))
+                    (assert-closed-run! r))))
+            (it "turn-started names the prompt control that started the turn"
+                (fn []
+                  (let [r (run-child {:mock ["hi"]
+                                      :tools []
+                                      :script (fn [p]
+                                                (p.wait-type :ready)
+                                                (p.send! :prompt {:text "go"})
+                                                (p.wait-type :turn-complete)
+                                                (p.send! :close {}))})
+                        started (r.parent.find #(= $1.type :turn-started))]
+                    (assert.are.equal 1 started.ref)
+                    (assert-closed-run! r))))
+            (it "a turn the idle tick starts reports the started line's ref"
+                (fn []
+                  (let [started {:done? false}
+                        r (run-child {:mock ["from the queued line"]
+                                      :tools []
+                                      :wrap-tick (fn [state base]
+                                                   (fn []
+                                                     (base)
+                                                     (when (and (not started.done?)
+                                                                (not state.turn))
+                                                       (set started.done? true)
+                                                       (tasks.offer! "queued"
+                                                                     {:turn 0
+                                                                      :tag 5})
+                                                       (turn-submit.start-queued! state
+                                                                                  agent-mod.step))))
+                                      :script (fn [p]
+                                                (p.wait-type :turn-complete)
+                                                (p.send! :close {}))})
+                        ev (r.parent.find #(= $1.type :turn-started))]
+                    (assert.are.equal 5 ev.ref)
+                    (assert-closed-run! r))))
+            (it "refuses a steer while an adopted exclusive job (not a turn) holds"
+                (fn []
+                  (let [started {:done? false}
+                        r (run-child {:mock ["unused"]
+                                      :tools []
+                                      :wrap-tick (fn [state base]
+                                                   (fn []
+                                                     (base)
+                                                     (when (and (not started.done?)
+                                                                (not state.turn))
+                                                       (set started.done? true)
+                                                       (let [(co hid) (tasks.spawn-held :exclusive
+                                                                                        (fn []
+                                                                                          (for [_ 1 6]
+                                                                                            (coroutine.yield))))]
+                                                         (set state.turn co)
+                                                         (set state.holder-id
+                                                              hid)
+                                                         (set state.busy? true)))))
+                                      :script (fn [p]
+                                                (p.wait-type :turn-started)
+                                                (p.send! :steer {:text "nudge"})
+                                                (p.wait-type :turn-complete)
+                                                (p.send! :close {}))})
+                        info (r.parent.find #(and (= $1.type :info)
+                                                  (string.find (or $1.summary
+                                                                   "")
+                                                               "no turn is running"
+                                                               1 true)))]
+                    (assert.is_not_nil info)
+                    (assert.are.same [1] info.refs)
+                    (assert.are.same [] (. (tasks.snapshot) :follow-up)))))))

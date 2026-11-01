@@ -83,7 +83,7 @@ Inherited invariants (`absInv` and `reqAbsInv`): cancel arms and requests are is
 ### proofs/holder
 
 `tasks/proofs/holder/model.qnt` models the session **holder** and its mailbox in the vocabulary of the `fen.core.tasks` API, revised after design review (gpt-6.1-sol, Fable); the code implements it.
-Code-facing differences: drain modes are spelled `:one-at-a-time`/`:all`; `spawn-held` is the coroutine form of `with-holder` (acquired at creation; code that drops the coroutine unfinished calls the fenced `release!`); `/compact` is also an exclusive holder; queue kinds in `take!`/`clear!` are `:steering`/`:follow-up`.
+Code-facing differences: drain modes are spelled `:one-at-a-time`/`:all`; `spawn-held` is the coroutine form of `with-holder` (acquired at creation; code that drops the coroutine unfinished calls the fenced `release!`); `/compact` is also an exclusive holder; queue kinds in `take!`/`clear!` are `:steering`/`:follow-up`. `next-start!` is `startTurn` (pick and hold in one step); `offer-start!` is an offer followed by `startTurn` in one dispatch; a plain turn acquire outside `startTurn` exists only when no start is pending (tests use it). Deprecated `idle-tick!`/`queue!`/`steer-or-follow-up!`/`turn-start!`/`turn-end!` shims serve closures from the pre-holder runtime after `/reload`.
 
 | Term | Meaning |
 | --- | --- |

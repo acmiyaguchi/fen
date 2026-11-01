@@ -65,6 +65,44 @@
                                     {:type :release}
                                     EXCL])]
                     (assert.are.equal :exclusive m.kind))))
+            (it "a plain turn acquire never jumps a requested start"
+                (fn []
+                  (let [(m outs) (run (initial) [(offer "go") TURN])]
+                    (assert.are.equal :none m.kind)
+                    (assert.is_true m.start?)
+                    (assert.are.equal 1 (length (of-type outs :hold-refused))))))
+            (it "offer-start starts the offered line in one step and marks it consumed"
+                (fn []
+                  (let [(m outs) (run (initial)
+                                      [(offer "left" {:follow-up? true})
+                                       {:type :offer-start
+                                        :text "typed"
+                                        :tag 3}])
+                        adm (. (of-type outs :admitted) 2)
+                        st (. (of-type outs :started) 1)]
+                    (assert.is_true adm.consumed?)
+                    (assert.are.equal "typed" st.item.text)
+                    (assert.are.equal 3 st.item.tag)
+                    (assert.are.equal :turn m.kind)
+                    (assert.are.same ["left"] (texts m.follow-up)))
+                  ;; an earlier start request wins; the new line stays queued
+                  (let [(_ outs) (run (initial)
+                                      [(offer "first" {:turn 0})
+                                       {:type :offer-start :text "second"}])
+                        adm (. (of-type outs :admitted) 2)]
+                    (assert.is_nil adm.consumed?)
+                    (assert.are.equal "first"
+                                      (. (of-type outs :started) 1 :item :text)))))
+            (it "keeps start? iff first-up is set, and first-up queued"
+                (fn []
+                  (let [(m _) (run (initial) [(offer "a") (offer "b")])]
+                    (assert.is_true m.start?)
+                    (assert.are.equal 1 m.first-up))
+                  (let [(m _) (run (initial)
+                                   [(offer "a")
+                                    {:type :clear :queue :follow-up}])]
+                    (assert.is_false m.start?)
+                    (assert.is_nil m.first-up))))
             (it "routes offers by :turn, :follow-up?, and the holder"
                 (fn []
                   ;; idle, local: follow-up + start request
@@ -212,20 +250,35 @@
                                                                      :taken))]
                                        (texts t.items)))
                     (assert.are.same [] m.follow-up))))
-            (it "next-start! pops exactly the head follow-up, only when idle and asked"
+            (it "next-start! starts the line that asked first, holding the turn in the same step"
                 (fn []
                   (let [(m outs) (run (initial)
                                       [(offer "a" {:follow-up? true})
                                        {:type :next-start}
                                        (offer "b")
+                                       (offer "c")
                                        {:type :next-start}
                                        {:type :next-start}])
                         started (of-type outs :started)]
                     (assert.are.equal 1 (length started))
-                    (assert.are.equal "a" (. started 1 :item :text) "FIFO")
+                    (assert.are.equal "b" (. started 1 :item :text)
+                                      "the typed line starts, ahead of the leftover")
                     (assert.are.equal 1 (. started 1 :turn))
-                    (assert.are.same ["b"] (texts m.follow-up))
-                    (assert.is_false m.start?))
+                    (assert.are.equal :turn m.kind)
+                    (assert.are.equal 1 m.n)
+                    (assert.are.equal (. started 1 :hid) m.hid)
+                    (assert.are.same ["a" "c"] (texts m.follow-up)
+                                     "leftovers stay FIFO for natural stops")
+                    (assert.is_false m.start?)
+                    (assert.is_nil m.first-up))
+                  ;; without a first-up (migrated machine), the oldest starts
+                  (let [m (doto (initial)
+                            (tset :follow-up
+                                  [{:seq 1 :text "old"} {:seq 2 :text "new"}])
+                            (tset :start? true))
+                        (_ outs) (tasks.step m {:type :next-start})]
+                    (assert.are.equal "old"
+                                      (. (of-type outs :started) 1 :item :text)))
                   (let [(_ outs) (run (initial)
                                       [EXCL
                                        (offer "x" {:turn 0})
@@ -272,7 +325,9 @@
                                            :next-id 2
                                            :idle-start? true}
                                           {:type :next-start})]
-                    (assert.are.equal 4 m.n)
+                    (assert.are.equal 5 m.n
+                                      "the migrated start request opens turn 5")
+                    (assert.are.equal :turn m.kind)
                     (assert.are.equal :all m.modes.steering)
                     (assert.are.same [] m.follow-up))))
             (it "rejects unknown inputs without changing state"
@@ -388,3 +443,45 @@
                       (let [(ts items) (tasks.take! :steering)]
                         (assert.are.same ["s"] ts)
                         (assert.are.equal 4 (. items 1 :tag)))))))))
+
+(describe "fen.core.tasks deprecated shims (closures from a872c57 after /reload)"
+          (fn []
+            (before_each (fn [] (tasks.reset!)))
+            (after_each (fn [] (tasks.reset!)))
+            (it "idle-tick! pops the start line without holding the session"
+                (fn []
+                  (tasks.offer! "left" {:follow-up? true})
+                  (tasks.offer! "typed")
+                  (assert.are.equal "typed" (tasks.idle-tick!))
+                  (assert.are.equal :none (. (tasks.holder) :kind))
+                  (assert.is_false (tasks.start-pending?))
+                  (assert.is_nil (tasks.idle-tick!))
+                  (assert.are.same ["left"] (. (tasks.snapshot) :follow-up))))
+            (it "queue! and steer-or-follow-up! route through offer!"
+                (fn []
+                  (assert.is_false (. (tasks.queue! :steering "s") :ok)
+                                   "no turn runs")
+                  (assert.is_true (. (tasks.queue! :follow-up "f") :ok))
+                  (assert.is_true (. (tasks.queue! :follow-up "g"
+                                                   {:start-if-idle? true})
+                                     :start-pending?))
+                  (assert.is_true (. (tasks.steer-or-follow-up! "h") :ok))
+                  (assert.are.same ["f" "g" "h"]
+                                   (. (tasks.snapshot) :follow-up))
+                  (assert.is_false (. (tasks.queue! :bogus "x") :ok))))
+            (it "turn-start! is a no-op with one restart notice; turn-end! releases turn n"
+                (fn []
+                  (let [infos []]
+                    (events.on :info #(table.insert infos $1.text) :shim-test)
+                    (assert.are.equal 0 (tasks.turn-start!))
+                    (tasks.turn-start!)
+                    (events.unregister-by-owner :shim-test)
+                    (assert.are.equal :none (. (tasks.holder) :kind))
+                    (assert.is_true (<= (length infos) 1)))
+                  (tasks.spawn-held :turn #(coroutine.yield))
+                  (tasks.offer! "unread")
+                  (tasks.turn-end! 7)
+                  (assert.are.equal :turn (. (tasks.holder) :kind)
+                                    "wrong turn: no-op")
+                  (assert.are.same ["unread"] (tasks.turn-end! 1))
+                  (assert.are.equal :none (. (tasks.holder) :kind))))))

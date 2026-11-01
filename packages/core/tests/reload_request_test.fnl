@@ -2,6 +2,27 @@
 
 (describe "fen.core.reload_request"
           (fn []
+            (it "waits for a pending turn start instead of draining into a refused /reload"
+                (fn []
+                  (let [tasks (require :fen.core.tasks)
+                        state {:busy? false :reload-requests []}
+                        executed []]
+                    (tasks.reset!)
+                    (reload-request.enqueue! state
+                                             {:scope "reload" :reason "r"})
+                    (tasks.offer! "queued prompt")
+                    (assert.is_false (reload-request.drain! state
+                                                            #(table.insert executed
+                                                                           $1)))
+                    (assert.are.equal 1 (length state.reload-requests))
+                    ;; the turn starts and finishes; then the request drains
+                    (let [(_ hid) (tasks.next-start!)]
+                      (tasks.release! hid))
+                    (assert.is_true (reload-request.drain! state
+                                                           #(table.insert executed
+                                                                          $1)))
+                    (assert.are.equal 1 (length executed))
+                    (tasks.reset!))))
             (it "defers an agent request made during an active turn until the idle boundary"
                 (fn []
                   (let [state {:busy? true :turn :active :reload-requests []}

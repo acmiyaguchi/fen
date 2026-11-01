@@ -188,14 +188,54 @@
                     (coroutine.resume st.turn)
                     (assert.are.equal :dead (coroutine.status st.turn))
                     (assert.are.equal :none (. (tasks.holder) :kind)))))
-            (it "an older queued follow-up starts first (FIFO); the new line follows"
+            (it "the typed line starts first; an older leftover follows at a natural stop"
                 (fn []
                   (tasks.offer! "older" {:follow-up? true})
                   (let [st (make-state false true)]
                     (turn-submit.start! st "newer" agent-step)
                     (coroutine.resume st.turn)
-                    (assert.are.equal "older" (. st.agent.seen 1 :text))
-                    (assert.are.same ["newer"] (. (tasks.snapshot) :follow-up)))))
+                    (assert.are.equal "newer" (. st.agent.seen 1 :text))
+                    (assert.are.same ["older"] (. (tasks.snapshot) :follow-up)))))
+            (it "an idle submit emits no :queued event and one status update"
+                (fn []
+                  (let [events (require :fen.core.extensions.events)
+                        seen []
+                        st (make-state false true)]
+                    (events.on :* #(table.insert seen $1.type)
+                               :idle-submit-test)
+                    (turn-submit.submit! st "go" {} agent-step (make-emit []))
+                    (events.unregister-by-owner :idle-submit-test)
+                    (assert.are.same []
+                                     (icollect [_ t (ipairs seen)]
+                                       (when (= t :queued) t)))
+                    (assert.are.equal 1
+                                      (length (icollect [_ t (ipairs seen)]
+                                                (when (= t :set-status-info) t)))))))
+            (it "a status handler reacting during the start cannot steal the turn or lose the prompt"
+                (fn []
+                  (let [events (require :fen.core.extensions.events)
+                        st (make-state false true)
+                        other (make-state false true)
+                        stolen []]
+                    (events.on :set-status-info
+                               (fn [_]
+                                 (table.insert stolen
+                                               (turn-submit.start! other
+                                                                   "thief"
+                                                                   agent-step))
+                                 (table.insert stolen
+                                               (turn-submit.start-queued! other
+                                                                          agent-step)))
+                               :steal-test)
+                    (let [r (turn-submit.start! st "mine" agent-step)]
+                      (events.unregister-by-owner :steal-test)
+                      (assert.is_true r.ok)
+                      (assert.are.equal st.holder-id (. (tasks.holder) :hid))
+                      (assert.is_false (. stolen 1 :ok))
+                      (assert.is_nil (. stolen 2))
+                      (assert.is_nil other.turn)
+                      (coroutine.resume st.turn)
+                      (assert.are.equal "mine" (. st.agent.seen 1 :text))))))
             (it "refuses to start while another holder has the session"
                 (fn []
                   (tasks.spawn-held :exclusive #(coroutine.yield))
@@ -213,8 +253,8 @@
                     (let [r (turn-submit.start-queued! st agent-step)]
                       (assert.is_true r.ok)
                       (coroutine.resume st.turn)
-                      (assert.are.equal "plain" (. st.agent.seen 1 :text)
-                                        "FIFO head")))))
+                      (assert.are.equal "asked" (. st.agent.seen 1 :text)
+                                        "the line that asked starts")))))
             (it "cancel! for the running turn reaches the agent's cancel check"
                 (fn []
                   (let [st (make-state false true)]

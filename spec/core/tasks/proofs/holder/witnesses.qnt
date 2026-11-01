@@ -34,11 +34,12 @@ module witnesses {
       .then(H::doCancel(1))
       .expect(H::s.cancel and H::allInvariants)
 
-  // An offer behind /reload waits as a follow-up and is taken in a later turn.
+  // An offer behind /reload waits as a follow-up; the line typed once idle
+  // starts the next turn first, and the older one is taken at its stop.
   run reachOfferBehindExclusiveTest =
     H::init.then(H::doStartExclusive).then(H::doOffer(-1, 1, false)).then(H::doBodyExit(false))
       .then(H::doOffer(-1, 1, false)).then(H::doStartTurn).then(H::doTakeFollowUp)
-      .expect(H::s.why.get(0) == "started" and H::s.why.get(1) == "taken"
+      .expect(H::s.why.get(1) == "started" and H::s.why.get(0) == "taken"
               and H::s.n == 1 and H::allInvariants)
 
   // Steer lines are taken before follow-ups; repeated caller tags do not matter.
@@ -78,4 +79,12 @@ module witnesses {
       .then(H::doSetMode("steer", "one")).then(H::doSetMode("steer", "all"))
       .expect(H::s.kind == "none" and H::s.followUp == Set(0) and not(H::s.start)
               and H::waitedFor == 0 and H::allInvariants)
+
+  // The typed prompt starts first even when older follow-ups wait.
+  run reachTypedPromptFirstTest =
+    H::init.then(H::doOffer(-1, 0, false)).then(H::doStartTurn)
+      .then(H::doOffer(0, 1, true)).then(H::doBodyExit(false))
+      .then(H::doOffer(-1, 2, false)).then(H::doStartTurn)
+      .expect(H::s.why.get(2) == "started" and H::s.followUp == Set(1)
+              and H::s.n == 2 and H::allInvariants)
 }

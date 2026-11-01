@@ -693,6 +693,7 @@ digraph fen_modules_clustered {
   "fen.core.llm.models" -> "fen.util.log";
   "fen.core.llm.models" -> "fen.util.path";
   "fen.core.prompt" -> "fen.core.extensions.register.prompt";
+  "fen.core.reload_request" -> "fen.core.tasks";
   "fen.core.runtime_recovery" -> "fen.core.extensions.state";
   "fen.core.runtime_recovery" -> "fen.core.extensions.util";
   "fen.core.settings" -> "fen.core.storage";
