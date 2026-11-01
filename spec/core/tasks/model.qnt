@@ -181,6 +181,19 @@ module requestsSpec {
   pure val VERS = 0.to(MAX_VER)
   pure val REMS = 0.to(MAX_BUDGET)
   pure val PARKS = Set(-1).union(IDS)
+  pure val MAX_Q = 2      // lines one queue holds in a trace
+  pure val MAX_ACC = 3    // lines accepted per queue in a trace
+  pure val QS = 0.to(MAX_Q)
+  pure val ACCS = 0.to(MAX_ACC)
+
+  // Ghost line accounting for the turn mailbox (`fen.core.tasks`): where every
+  // accepted steering line and follow-up went, and whether a follow-up was ever
+  // injected ahead of the running turn's steering.
+  type Ghost = {
+    sAcc: int, sInj: int, sRet: int, sDrop: int,
+    fAcc: int, fInj: int, fStart: int, fDrop: int,
+    orderOk: bool,
+  }
 
   var running: bool
   var turnNo: int
@@ -188,6 +201,29 @@ module requestsSpec {
   var gen: int
   var hasResolver: bool
   var queue: Set[int]
+  var sLen: int
+  var fLen: int
+  var idleStart: bool
+  var sAcc: int
+  var sInj: int
+  var sRet: int
+  var sDrop: int
+  var fAcc: int
+  var fInj: int
+  var fStart: int
+  var fDrop: int
+  var orderOk: bool
+  // Busy without a mailbox turn: a /reload or /handoff coroutine owns the
+  // session (state.busy?) but no turn is open, so steering has nowhere to go.
+  var busyOther: bool
+  // Ghost: lines typed while busy that were refused (lost to the user).
+  var typedLost: int
+
+  def g: Ghost = {
+    sAcc: sAcc, sInj: sInj, sRet: sRet, sDrop: sDrop,
+    fAcc: fAcc, fInj: fInj, fStart: fStart, fDrop: fDrop,
+    orderOk: orderOk,
+  }
   var rScope: int -> int
   var rGen: int -> int
   var rVer: int -> int
@@ -207,6 +243,9 @@ module requestsSpec {
     gen: gen,
     hasResolver: hasResolver,
     queue: queue,
+    sLen: sLen,
+    fLen: fLen,
+    idleStart: idleStart,
     rScope: rScope,
     rGen: rGen,
     rVer: rVer,
@@ -215,7 +254,23 @@ module requestsSpec {
     rRem: rRem,
   }
 
-  action fromAbs(b: ReqAbs, tso: int -> int): bool = all {
+  action fromAbs(b: ReqAbs, tso: int -> int): bool = fromAbsG(b, tso, g)
+
+  action fromAbsG(b: ReqAbs, tso: int -> int, ng: Ghost): bool = all {
+    sAcc' = ng.sAcc,
+    sInj' = ng.sInj,
+    sRet' = ng.sRet,
+    sDrop' = ng.sDrop,
+    fAcc' = ng.fAcc,
+    fInj' = ng.fInj,
+    fStart' = ng.fStart,
+    fDrop' = ng.fDrop,
+    orderOk' = ng.orderOk,
+    busyOther' = busyOther,
+    typedLost' = typedLost,
+    sLen' = b.sLen,
+    fLen' = b.fLen,
+    idleStart' = b.idleStart,
     running' = b.running,
     turnNo' = b.turnNo,
     parkedOn' = b.parkedOn,
@@ -241,6 +296,20 @@ module requestsSpec {
       gen' = a0.gen,
       hasResolver' = a0.hasResolver,
       queue' = a0.queue,
+      sLen' = a0.sLen,
+      fLen' = a0.fLen,
+      idleStart' = a0.idleStart,
+      sAcc' = 0,
+      sInj' = 0,
+      sRet' = 0,
+      sDrop' = 0,
+      fAcc' = 0,
+      fInj' = 0,
+      fStart' = 0,
+      fDrop' = 0,
+      orderOk' = true,
+      busyOther' = false,
+      typedLost' = 0,
       rScope' = a0.rScope,
       rGen' = a0.rGen,
       rVer' = a0.rVer,
@@ -255,6 +324,7 @@ module requestsSpec {
     val a = toAbs
     all {
       not(a.running),
+      not(busyOther),
       a.turnNo < MAX_TURNS,
       fromAbs({ ...a, running: true, turnNo: a.turnNo + 1, parkedOn: -1 }, ticksSinceOpen),
     }
@@ -265,9 +335,11 @@ module requestsSpec {
     val resolved = resolveSet(a, own, "ended")
     all {
       a.running,
-      fromAbs(
-        { ...resolved, running: false, parkedOn: -1, queue: Set() },
-        IDS.mapBy(i => if (own.contains(i)) 0 else ticksSinceOpen.get(i))
+      fromAbsG(
+        { ...resolved, running: false, parkedOn: -1, queue: Set(),
+          sLen: 0 },
+        IDS.mapBy(i => if (own.contains(i)) 0 else ticksSinceOpen.get(i)),
+        { ...g, sRet: g.sRet + a.sLen }
       ),
     }
 
@@ -275,17 +347,130 @@ module requestsSpec {
     val a = toAbs
     all {
       a.running,
-      fromAbs({ ...a, queue: a.queue.union(Set(a.turnNo)) }, ticksSinceOpen),
+      a.sLen < MAX_Q, g.sAcc < MAX_ACC,
+      fromAbsG({ ...a, queue: a.queue.union(Set(a.turnNo)), sLen: a.sLen + 1 },
+               ticksSinceOpen, { ...g, sAcc: g.sAcc + 1 }),
     }
 
-  action doInjectSteer: bool =
+  // drainAll = :all drain mode, otherwise :one-at-a-time.
+  action doInjectSteer(drainAll: bool): bool =
     val a = toAbs
+    val k = if (drainAll) a.sLen else 1
     all {
       a.running,
       a.parkedOn < 0,
       a.queue.contains(a.turnNo),
-      fromAbs({ ...a, queue: Set() }, ticksSinceOpen),
+      a.sLen >= 1,
+      fromAbsG({ ...a, sLen: a.sLen - k,
+                 queue: if (a.sLen - k == 0) Set() else a.queue },
+               ticksSinceOpen, { ...g, sInj: g.sInj + k }),
     }
+
+  action doQueueFollowUp(startIfIdle: bool): bool =
+    val a = toAbs
+    all {
+      a.fLen < MAX_Q, g.fAcc < MAX_ACC,
+      fromAbsG({ ...a, fLen: a.fLen + 1,
+                 idleStart: a.idleStart or (startIfIdle and not(a.running)) },
+               ticksSinceOpen, { ...g, fAcc: g.fAcc + 1 }),
+    }
+
+  action doInjectFollowUp(drainAll: bool): bool =
+    val a = toAbs
+    val k = if (drainAll) a.fLen else 1
+    all {
+      a.running,
+      a.parkedOn < 0,
+      a.sLen == 0,
+      a.fLen >= 1,
+      fromAbsG({ ...a, fLen: a.fLen - k }, ticksSinceOpen,
+               { ...g, fInj: g.fInj + k, orderOk: g.orderOk and a.sLen == 0 }),
+    }
+
+  action doIdleStart: bool =
+    val a = toAbs
+    val n = if (a.fLen > 0) 1 else 0
+    all {
+      not(a.running),
+      a.idleStart,
+      fromAbsG({ ...a, idleStart: false, fLen: a.fLen - n }, ticksSinceOpen,
+               { ...g, fStart: g.fStart + n }),
+    }
+
+  // /reload or /handoff takes the session: busy, but no mailbox turn.
+  action doOtherBusyStart: bool = all {
+    not(running), not(busyOther),
+    busyOther' = true,
+    typedLost' = typedLost,
+    running' = running, turnNo' = turnNo, parkedOn' = parkedOn, gen' = gen,
+    hasResolver' = hasResolver, queue' = queue, sLen' = sLen, fLen' = fLen,
+    idleStart' = idleStart, rScope' = rScope, rGen' = rGen, rVer' = rVer,
+    rStatus' = rStatus, rRes' = rRes, rRem' = rRem,
+    ticksSinceOpen' = ticksSinceOpen, stepOk' = stepOk,
+    sAcc' = sAcc, sInj' = sInj, sRet' = sRet, sDrop' = sDrop,
+    fAcc' = fAcc, fInj' = fInj, fStart' = fStart, fDrop' = fDrop,
+    orderOk' = orderOk,
+  }
+
+  action doOtherBusyEnd: bool = all {
+    busyOther,
+    busyOther' = false,
+    typedLost' = typedLost,
+    running' = running, turnNo' = turnNo, parkedOn' = parkedOn, gen' = gen,
+    hasResolver' = hasResolver, queue' = queue, sLen' = sLen, fLen' = fLen,
+    idleStart' = idleStart, rScope' = rScope, rGen' = rGen, rVer' = rVer,
+    rStatus' = rStatus, rRes' = rRes, rRem' = rRem,
+    ticksSinceOpen' = ticksSinceOpen, stepOk' = stepOk,
+    sAcc' = sAcc, sInj' = sInj, sRet' = sRet, sDrop' = sDrop,
+    fAcc' = fAcc, fInj' = fInj, fStart' = fStart, fDrop' = fDrop,
+    orderOk' = orderOk,
+  }
+
+  // Enter while busy (steering.service submit, tasks.steer-or-follow-up!):
+  // steer the open turn, or queue a follow-up when busy without one.
+  action doTypedBusy: bool =
+    val a = toAbs
+    all {
+      a.running or busyOther,
+      if (a.running) all {
+        a.sLen < MAX_Q, sAcc < MAX_ACC,
+        fromAbsG({ ...a, queue: a.queue.union(Set(a.turnNo)), sLen: a.sLen + 1 },
+                 ticksSinceOpen, { ...g, sAcc: sAcc + 1 }),
+      } else typedWhileNoTurn,
+    }
+
+  // Busy without a turn: the line waits as a follow-up.
+  action typedWhileNoTurn: bool =
+    val a = toAbs
+    all {
+      a.fLen < MAX_Q, fAcc < MAX_ACC,
+      fromAbsG({ ...a, fLen: a.fLen + 1 }, ticksSinceOpen,
+               { ...g, fAcc: fAcc + 1 }),
+    }
+
+  // The pre-fix behavior, kept for the mutant check: the line is refused.
+  action typedRefused: bool = all {
+    busyOther' = busyOther,
+    typedLost' = typedLost + 1,
+    running' = running, turnNo' = turnNo, parkedOn' = parkedOn, gen' = gen,
+    hasResolver' = hasResolver, queue' = queue, sLen' = sLen, fLen' = fLen,
+    idleStart' = idleStart, rScope' = rScope, rGen' = rGen, rVer' = rVer,
+    rStatus' = rStatus, rRes' = rRes, rRem' = rRem,
+    ticksSinceOpen' = ticksSinceOpen, stepOk' = stepOk,
+    sAcc' = sAcc, sInj' = sInj, sRet' = sRet, sDrop' = sDrop,
+    fAcc' = fAcc, fInj' = fInj, fStart' = fStart, fDrop' = fDrop,
+    orderOk' = orderOk,
+  }
+
+  action doClearSteering: bool =
+    val a = toAbs
+    fromAbsG({ ...a, sLen: 0, queue: Set() }, ticksSinceOpen,
+             { ...g, sDrop: g.sDrop + a.sLen })
+
+  action doClearFollowUps: bool =
+    val a = toAbs
+    fromAbsG({ ...a, fLen: 0, idleStart: false }, ticksSinceOpen,
+             { ...g, fDrop: g.fDrop + a.fLen })
 
   action doOpenReq(i: int, tool: bool, bgt: int): bool =
     val a = toAbs
@@ -401,11 +586,20 @@ module requestsSpec {
     nondet tool = Bool.oneOf()
     nondet bgt = 1.to(MAX_BUDGET).oneOf()
     nondet hr = Bool.oneOf()
+    nondet allMode = Bool.oneOf()
     any {
       doStartTurn,
       doEndTurn,
       doQueueSteer,
-      doInjectSteer,
+      doInjectSteer(allMode),
+      doQueueFollowUp(hr),
+      doInjectFollowUp(allMode),
+      doIdleStart,
+      doClearSteering,
+      doClearFollowUps,
+      doOtherBusyStart,
+      doOtherBusyEnd,
+      doTypedBusy,
       doOpenReq(i, tool, bgt),
       doUpdateChoices(i),
       doAnswer(i),
@@ -424,6 +618,16 @@ module requestsSpec {
   val pendingCurrentGenInv = pendingCurrentGen(toAbs)
   val queueOwnedByRunningTurnInv = queueOwnedByRunningTurn(toAbs)
   val pendingBoundedBudgetInv = pendingBoundedBudget(toAbs)
+  val queueLenConsistentInv = queueLenConsistent(toAbs)
+  // NoSteeringLost: every accepted line was injected into its own turn,
+  // handed back when that turn ended, explicitly cleared, or is still queued.
+  val steeringConservedInv = g.sAcc == g.sInj + g.sRet + g.sDrop + sLen
+  val followUpsConservedInv = g.fAcc == g.fInj + g.fStart + g.fDrop + fLen
+  // FollowUpOrder: no follow-up was injected while the running turn had steering.
+  val followUpOrderInv = g.orderOk
+  // Busy-time input is never refused: it steers the open turn or waits as a
+  // follow-up (the /reload and /handoff gap found in review).
+  val typedNeverLostInv = typedLost == 0
 
   val boundedWaitTicksInv = IDS.forall(i =>
     rStatus.get(i) == "pending"
@@ -438,6 +642,11 @@ module requestsSpec {
     queueOwnedByRunningTurnInv,
     pendingBoundedBudgetInv,
     boundedWaitTicksInv,
+    queueLenConsistentInv,
+    steeringConservedInv,
+    followUpsConservedInv,
+    followUpOrderInv,
+    typedNeverLostInv,
   }
 
   val inductiveInv = and {
@@ -447,6 +656,21 @@ module requestsSpec {
     gen.in(GENS),
     hasResolver.in(Bool),
     queue.in(powerset(TURNS)),
+    sLen.in(QS),
+    fLen.in(QS),
+    idleStart.in(Bool),
+    sAcc.in(ACCS),
+    sInj.in(ACCS),
+    sRet.in(ACCS),
+    sDrop.in(ACCS),
+    fAcc.in(ACCS),
+    fInj.in(ACCS),
+    fStart.in(ACCS),
+    fDrop.in(ACCS),
+    orderOk.in(Bool),
+    busyOther.in(Bool),
+    typedLost.in(0.to(1)),
+    busyOther implies not(running),
     rScope.in(setOfMaps(IDS, TURNS)),
     rGen.in(setOfMaps(IDS, GENS)),
     rVer.in(setOfMaps(IDS, VERS)),

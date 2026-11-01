@@ -16,8 +16,8 @@
 (local session-lifecycle (require :fen.session_lifecycle))
 (local turn-lifecycle (require :fen.turn_lifecycle))
 (local turn-submit (require :fen.turn_submit))
+(local tasks (require :fen.core.tasks))
 (local tool-policy (require :fen.core.tool_policy))
-(local reload-request (require :fen.core.reload_request))
 
 (local M {})
 
@@ -159,19 +159,22 @@
         _state-box {:state nil}
         make-agent (fn [o oe ex]
                      (M.make-agent-from-opts resolve-provider-config o oe ex))
-        ;; Callbacks resolve through the steering module table at call time, so they stay reload-safe.
-        steering (require :fen.extensions.steering.service)
         update-queue-status! (fn []
                                (let [st _state-box.state]
                                  (when st
-                                   (let [info (steering.queue-info)]
+                                   (let [info (tasks.info)]
                                      (each [k v (pairs (context-status-info st.agent))]
                                        (tset info k v))
                                      (events.emit {:type :set-status-info
                                                    :info info})))))
-        agent-extra {:get-steering (fn [] (steering.get-steering))
-                     :clear-steering (fn [] (steering.clear-queues! :steering))
-                     :get-follow-up (fn [] (steering.get-follow-up))
+        ;; Resolved through the tasks module table at call time, so they stay reload-safe.
+        ;; Items carry each line's caller tag onto the injected event.
+        agent-extra {:get-steering (fn []
+                                     (let [(_ items) (tasks.take! :steering)]
+                                       items))
+                     :get-follow-up (fn []
+                                      (let [(_ items) (tasks.take! :follow-up)]
+                                        items))
                      :tool-context (fn [_agent]
                                      {:state _state-box.state})}
         backend (session-lifecycle.resolve-backend opts)
@@ -195,16 +198,16 @@
                                :update-queue-status update-queue-status!
                                :submit-agent-turn! submit-agent-turn!
                                :submit-user-turn! submit-user-turn!})
-        _steering-runtime (steering.install-runtime! {:is-idle? (fn []
-                                                                  (and (not state.busy?)
-                                                                       (not state.turn)))
-                                                      :start-follow-up! (fn [text]
-                                                                          (submit-user-turn! state
-                                                                                             text))})
+        _mailbox (do
+                   (set state.mailbox? true)
+                   (tasks.attach! true))
         is-busy? (fn [] state.busy?)
         request-cancel (fn []
+                         ;; Fenced on the holder id read at the keypress: a
+                         ;; turn or job that already released is not replaced
+                         ;; by its successor as the target.
                          (when state.busy?
-                           (set state.cancel-requested? true)))
+                           (tasks.cancel-current!)))
         on-submit (fn [line]
                     (if (= (string.sub line 1 1) "/")
                         (command-registry.dispatch line state)
@@ -227,36 +230,32 @@
                   (events.emit {:type :runtime-tick
                                 :busy? (not (not state.busy?))
                                 :agent state.agent})
-                  (when state.turn
-                    (let [(ok? value) (coroutine.resume state.turn)]
-                      (when (not ok?)
-                        (events.emit {:type :error
-                                      :error (.. "agent task: "
-                                                 (err-first-line value))
-                                      :traceback (debug.traceback state.turn
-                                                                  (tostring value))}))
-                      (when (or (not ok?)
-                                (= (coroutine.status state.turn) :dead))
-                        (if ok?
-                            (set state.turn-result value)
-                            (set state.turn-error value))
-                        (set state.busy? false)
-                        (set state.turn nil)
-                        (set state.cancel-requested? false)
-                        (turn-lifecycle.emit-complete! state ok? value))))
-                  ;; Reload requests stay queued until the turn coroutine is gone, so modules never swap during a stream or tool call.
-                  (when (and (not state.busy?) (not state.turn))
-                    (reload-request.drain! state
-                                           (fn [request]
-                                             (events.emit {:type :info
-                                                           :text (.. "reload request> executing "
-                                                                     (tostring request.scope)
-                                                                     ": "
-                                                                     request.reason)})
-                                             (command-registry.dispatch (reload-request.command-line request)
-                                                                        state)))
-                    ;; Idle follow-ups start only after active-turn and reload work reach this boundary.
-                    (steering.start-idle-follow-up!)))]
+                  ;; Scheduling waits for a tick that begins idle, so whoever
+                  ;; reacts to a finished turn (a presenter finalizing, a
+                  ;; queued prompt) is offered before the next job starts.
+                  (let [idle-at-start? (and (not state.busy?) (not state.turn))]
+                    (when state.turn
+                      (let [co state.turn
+                            (ok? value done?) (tasks.resume-current! co)]
+                        (when (not ok?)
+                          (events.emit {:type :error
+                                        :error (.. "agent task: "
+                                                   (err-first-line value))
+                                        :traceback (debug.traceback co
+                                                                    (tostring value))}))
+                        (when done?
+                          (if ok?
+                              (set state.turn-result value)
+                              (set state.turn-error value))
+                          ;; The job table already released it; drop! is a no-op then.
+                          (turn-submit.drop! state)
+                          (turn-lifecycle.emit-complete! state ok? value))))
+                    ;; The one scheduler: a pending turn start first, else the
+                    ;; oldest requested exclusive job (/reload, /handoff,
+                    ;; compaction, deferred reload requests).
+                    (when (and idle-at-start? (not state.busy?)
+                               (not state.turn))
+                      (turn-submit.start-queued! state agent-mod.step))))]
     (session-lifecycle.install! state)
     (when (> replayed 0) (state.flush))
     (let [(init-ok? init-err) (presenter-registry.init-active-presenter {:state state})]
@@ -298,7 +297,10 @@
             (pcall (fn [] (termbox2.shutdown)))
             (set tui-state.tb-initialized? false)
             (when ok-sink? (pcall log-sink.close!)))))
-      (steering.install-runtime! nil)
+      ;; A presenter that returns (quit, crash, rpc exit) while a turn or
+      ;; exclusive coroutine is suspended abandons it: release its holder.
+      (turn-submit.drop! state)
+      (tasks.attach! false)
       (session-lifecycle.close! state.session-backend state.session)
       (emit-agent-shutdown state.agent (if ok? :normal :crashed)
                            (when (not ok?) run-result))

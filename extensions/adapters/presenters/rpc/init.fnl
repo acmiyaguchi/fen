@@ -32,9 +32,9 @@
 (fn env [name]
   (text.blank->nil (os.getenv name)))
 
-(fn steering []
-  ;; Resolved at call time: the queue service is reloadable.
-  (require :fen.extensions.steering.service))
+(fn tasks []
+  ;; Resolved at call time: the mailbox behavior is reloadable.
+  (require :fen.core.tasks))
 
 (fn report! [msg]
   (io.stderr:write (.. "rpc presenter: " msg "\n")))
@@ -50,42 +50,52 @@
         (report! (.. "cannot send " (tostring typ) ": "
                      (tostring (?. rej :reason)))))))
 
-(local INJECTED-QUEUE {:steering-injected :steering
-                       :follow-up-injected :follow-up})
+;; Every queued line carries its control's wire seq as the mailbox tag, and
+;; the mailbox hands the tag back on each injected, refused, released, and
+;; cleared line: no ref bookkeeping lives here.
+(local INJECTED {:steering-injected true :follow-up-injected true})
 
-(fn take-ref! [ch typ text]
-  "Pop the oldest accepted control queued for TYP's queue when its text is
-   the injected text; injections from other sources carry no ref."
-  (let [fifo (. ch.pending (. INJECTED-QUEUE typ))
-        head (?. fifo 1)]
-    (when (and head (= head.text text))
-      (table.remove fifo 1)
-      head.ref)))
+(fn refs-of [items]
+  (let [refs (icollect [_ item (ipairs (or items []))]
+               item.tag)]
+    (when (> (length refs) 0) refs)))
+
+(fn returned! [ch ev]
+  "The turn mailbox handed back steering the turn ended without reading:
+   name those controls in one `info`, so accepted controls are always
+   accounted for."
+  (let [texts (or ev.texts [])
+        refs (icollect [_ tag (ipairs (or ev.tags []))]
+               tag)]
+    (when (> (length texts) 0)
+      (send! ch :info
+             {:summary (.. "returned " (length texts)
+                           " unread steering line(s): the turn ended")
+              :refs (when (> (length refs) 0) refs)}))))
 
 (fn M.forward! [ch ev]
   "Forward a bus event when it is a wire display event type."
   (let [typ (?. ev :type)]
+    (when (and (not ch.exited?) (= typ :steering-returned))
+      (returned! ch ev))
+    ;; The mailbox started a turn with this line: its tag is the control ref
+    ;; the next turn-started reports.
+    (when (= typ :turn-line-started)
+      (set ch.started-ref ev.tag))
     (when (and (not ch.exited?) (wire.event-type? typ)
                (not (wire-session.lifecycle-event? typ)))
       (let [out (wire.normalize ev)]
-        (when (. INJECTED-QUEUE typ)
-          (set out.ref (take-ref! ch typ ev.text)))
+        (when (. INJECTED typ)
+          (set out.ref (math.tointeger ev.tag)))
         (send! ch typ out)))))
 
 (fn drop-queued! [ch]
   "Clear both input queues; name the dropped controls in one `info` event."
-  (let [snapshot ((. (steering) :queue-snapshot))
-        n (+ (length snapshot.steering) (length snapshot.follow-up))
-        refs []]
-    (each [_ kind (ipairs [:steering :follow-up])]
-      (each [_ item (ipairs (. ch.pending kind))]
-        (table.insert refs item.ref))
-      (tset ch.pending kind []))
+  (let [dropped ((. (tasks) :clear!))
+        n (length dropped)]
     (when (> n 0)
-      ((. (steering) :clear-queues!))
-      (send! ch :info
-             {:summary (.. "dropped " n " queued input line(s)")
-              :refs (when (> (length refs) 0) refs)}))))
+      (send! ch :info {:summary (.. "dropped " n " queued input line(s)")
+                       :refs (refs-of dropped)}))))
 
 (fn run-messages [ch]
   (let [messages (or (?. ch.state :agent :messages) [])
@@ -186,7 +196,10 @@
             (exit! ch :failed reason))
           (exit! ch :done)))))
 
-(fn start-turn! [ch prompt ?final?]
+;; fatal! is defined below start-turn!, which needs it when a start fails.
+(local late {})
+
+(fn start-turn! [ch prompt ?final? ?ref]
   (let [state ch.state
         step-opts (when ?final? {:tool-choice :none})
         agent-step (fn [agent line cancel-fn]
@@ -200,19 +213,44 @@
           :final? ?final?
           :marker (usage-ledger.mark!)
           :start-index (+ (length (or state.agent.messages [])) 1)})
-    (turn-submit.start! state prompt agent-step)
-    (set ch.active.co state.turn)
-    (send! ch :turn-started {:turn ch.turn})))
+    (let [started (turn-submit.start! state prompt agent-step {:tag ?ref})]
+      (set ch.started-ref nil)
+      (if (and started.ok started.start-pending?)
+          ;; Behind an exclusive job (a deferred reload): the line waits with
+          ;; a start request and its own body; tick! adopts the turn.
+          (set ch.active.pending? true)
+          started.ok
+          (do
+            (set ch.active.co state.turn)
+            (set ch.active.n started.turn)
+            ;; ref: the control whose line this turn started with.
+            (send! ch :turn-started
+                   {:turn ch.turn :ref (math.tointeger started.tag)}))
+          (do
+            (set ch.active nil)
+            (late.fatal! ch (.. "cannot start turn: " (tostring started.error))))))))
 
 (fn interrupt-turn! [ch]
   ;; The step's cancel-fn fires at its next yield and pairs pending tool calls.
-  (when ch.active
-    (set ch.state.cancel-requested? true)))
+  ;; Only our own turn: never a job a waiting start line queued behind.
+  (when (and ch.active (not ch.active.pending?))
+    ((. (tasks) :cancel-current!))))
 
 (fn queue! [ch kind msg]
-  (table.insert (. ch.pending kind)
-                {:ref (math.tointeger msg.seq) :text msg.text})
-  ((. (steering) :queue!) kind msg.text))
+  ;; A steer names the active turn, so it can only reach that turn.
+  (let [ref (math.tointeger msg.seq)
+        n (?. ch.active :n)
+        result (if (= kind :follow-up)
+                   ((. (tasks) :offer!) msg.text {:tag ref :follow-up? true})
+                   ;; No turn of ours holds (idle, or an adopted exclusive job).
+                   (= n nil)
+                   {:ok false :error "no turn is running"}
+                   ((. (tasks) :offer!) msg.text {:tag ref :turn n}))]
+    (when (not result.ok)
+      ;; Refused (no such turn running) or empty: account for the ref now.
+      (send! ch :info {:summary (.. "dropped " (tostring kind) ": "
+                                    (tostring result.error))
+                       :refs [ref]}))))
 
 (fn defer-exit! [ch f]
   "Run F now, or at the end of the current poll batch so every control line
@@ -223,9 +261,10 @@
 
 (fn perform! [ch action ?msg]
   (if (= action :finish) (defer-exit! ch #(finish! ch)) (= action :start-turn)
-      (start-turn! ch ?msg.text) (= action :queue-steering)
-      (queue! ch :steering ?msg) (= action :queue-follow-up)
-      (queue! ch :follow-up ?msg) (= action :start-finalize-turn)
+      (start-turn! ch ?msg.text nil (math.tointeger ?msg.seq))
+      (= action :queue-steering) (queue! ch :steering ?msg)
+      (= action :queue-follow-up) (queue! ch :follow-up ?msg)
+      (= action :start-finalize-turn)
       (start-turn! ch (or (text.blank->nil ch.finalize-note)
                           DEFAULT-FINALIZE-NOTE) true)
       (= action :interrupt-turn) (interrupt-turn! ch) (= action :abort)
@@ -243,6 +282,8 @@
 (fn fatal! [ch reason]
   (set ch.error reason)
   (advance! ch :fatal))
+
+(set late.fatal! fatal!)
 
 (fn apply-control! [ch msg]
   (let [entry (if (= msg.run ch.run)
@@ -313,15 +354,35 @@
         (set ch.turn (+ ch.turn 1))
         (set ch.active {:turn ch.turn
                         :co ch.state.turn
+                        :n (let [h ((. (tasks) :holder))]
+                             (when (= h.kind :turn) h.n))
                         :marker (usage-ledger.mark!)
                         :start-index (+ (length (or ch.state.agent.messages []))
                                         1)})
-        (send! ch :turn-started {:turn ch.turn}))
+        (send! ch :turn-started
+               {:turn ch.turn :ref (math.tointeger ch.started-ref)})
+        (set ch.started-ref nil))
       (fatal! ch "untracked turn started")))
+
+(fn adopt-pending! [ch]
+  "The turn a waiting start line opened, once the exclusive job ahead of it
+   is done."
+  (let [h ((. (tasks) :holder))]
+    (when (and ch.state.turn (= h.kind :turn))
+      (set ch.active.pending? nil)
+      (set ch.active.co ch.state.turn)
+      (set ch.active.n h.n)
+      (set ch.active.start-index (+ (length (or ch.state.agent.messages [])) 1))
+      (send! ch :turn-started
+             {:turn ch.active.turn :ref (math.tointeger ch.started-ref)})
+      (set ch.started-ref nil))))
 
 (fn tick! [ch]
   (when ch.ctx.on-tick (ch.ctx.on-tick))
-  (when (and ch.active (not= ch.state.turn ch.active.co))
+  (when (and ch.active ch.active.pending?)
+    (adopt-pending! ch))
+  (when (and ch.active (not ch.active.pending?)
+             (not= ch.state.turn ch.active.co))
     (turn-ended! ch))
   (when (and ch.state.turn (not ch.active) (not ch.exited?))
     (adopt-turn! ch)))
@@ -348,7 +409,6 @@
               {:ctx ctx
                :state ctx.state
                :reader (wire.line-reader control-path)
-               :pending {:steering [] :follow-up []}
                : out
                : run
                : deadline

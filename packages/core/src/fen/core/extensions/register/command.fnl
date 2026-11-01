@@ -50,7 +50,9 @@
           (if (not rec)
               (events.emit {:type :error
                             :error (.. "unknown command: /" name " (try /help)")})
-              (and rec.idle-only? caller-state.busy?)
+              (and rec.idle-only? caller-state.busy?
+                   ;; The exclusive job running this command is not "the agent".
+                   (not ((. (require :fen.core.tasks) :in-exclusive-job?))))
               (events.emit {:type :error
                             :error (.. "/" name
                                        " is disabled while the agent is running")})

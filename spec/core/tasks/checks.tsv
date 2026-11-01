@@ -12,5 +12,10 @@ requestsSpec	parkConsistentInv	holds
 requestsSpec	pendingCurrentGenInv	holds
 requestsSpec	queueOwnedByRunningTurnInv	holds
 requestsSpec	pendingBoundedBudgetInv	holds
+requestsSpec	queueLenConsistentInv	holds
+requestsSpec	steeringConservedInv	holds
+requestsSpec	followUpsConservedInv	holds
+requestsSpec	followUpOrderInv	holds
+requestsSpec	typedNeverLostInv	holds
 requestsSpec	boundedWaitTicksInv	holds
 requestsSpec	inductiveInv	holds

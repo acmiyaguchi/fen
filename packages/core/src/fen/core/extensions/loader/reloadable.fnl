@@ -7,6 +7,7 @@
 ;; modules reload through their manifest's reload-modules instead.
 (local NON-RELOADABLE {:fen.main true
                        :fen.core.extensions.state true
+                       :fen.core.tasks.state true
                        :fen.util.log_sink true
                        :fen.util.file_mutex_state true})
 

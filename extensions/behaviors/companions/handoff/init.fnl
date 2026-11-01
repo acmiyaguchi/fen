@@ -7,7 +7,7 @@
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
 (local steering (require :fen.extensions.steering.service))
-(local coroutines (require :fen.util.coroutines))
+(local tasks (require :fen.core.tasks))
 
 (local OWNER :handoff)
 
@@ -89,17 +89,18 @@
 
 (local CANCEL-MARKER {:type :handoff-cancel-marker})
 
-(fn make-yield [state]
-  "Yield to the presenter loop while the handoff completion is in flight."
+(fn make-yield [state hid]
+  "Yield to the presenter loop while the handoff completion is in flight;
+   cancel is fenced on this job's own holder id."
   (fn []
     (coroutine.yield)
-    (when state.cancel-requested?
+    (when (tasks.cancel-requested? hid state)
       (error CANCEL-MARKER))))
 
-(fn finish-handoff! [api state args]
+(fn finish-handoff! [api state args hid]
   (api.emit {:type :llm-start})
   (let [(summary usage) (summarize-for-handoff state.agent args
-                                               (make-yield state))
+                                               (make-yield state hid))
         msg (handoff-message summary)]
     (api.emit {:type :llm-end :usage usage})
     (reset-agent-session! api state [msg] 1)
@@ -114,22 +115,25 @@
                          summary)})))
 
 (fn start-handoff! [api state args]
-  "Run /handoff as cooperative background work so the TUI can redraw and cancel."
-  (set state.cancel-requested? false)
-  (set state.turn
-       (coroutines.create (fn []
-                            (let [(ok? err) (xpcall #(finish-handoff! api state
-                                                                      args)
-                                                    #(if (= $1 CANCEL-MARKER)
-                                                         $1
-                                                         (debug.traceback (tostring $1)
-                                                                          2)))]
-                              (when (not ok?)
-                                (api.emit {:type :llm-end})
-                                (if (= err CANCEL-MARKER)
-                                    (api.emit {:type :cancelled})
-                                    (error err)))))))
-  (set state.busy? true))
+  "Run /handoff as an exclusive job of the one scheduler (cooperative, so the
+   TUI can redraw and cancel)."
+  (tasks.run-exclusive! {:label :handoff
+                         :on-spawn (tasks.adopter state)
+                         :run (fn [hid]
+                                (let [(ok? err) (xpcall #(finish-handoff! api
+                                                                          state
+                                                                          args
+                                                                          hid)
+                                                        #(if (= $1
+                                                                CANCEL-MARKER)
+                                                             $1
+                                                             (debug.traceback (tostring $1)
+                                                                              2)))]
+                                  (when (not ok?)
+                                    (api.emit {:type :llm-end})
+                                    (if (= err CANCEL-MARKER)
+                                        (api.emit {:type :cancelled})
+                                        (error err)))))}))
 
 ;; @doc fen.extensions.handoff.register!
 ;; kind: function

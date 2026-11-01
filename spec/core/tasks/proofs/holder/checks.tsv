@@ -1,0 +1,16 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+holderSpec	sessionInvHolds	holds
+holderSpec	holderHasBodyInv	holds
+holderSpec	eachSeqOnceInv	holds
+holderSpec	steerForHolderInv	holds
+holderSpec	startedOpensItsTurnInv	holds
+holderSpec	localOfferNeverRefusedInv	holds
+holderSpec	followUpOrderInv	holds
+holderSpec	cancelFencedInv	holds
+holderSpec	releasedInTimeInv	holds
+holderSpec	startedInTimeInv	holds
+holderSpec	takeByModeInv	holds
+holderSpec	modesPersistInv	holds
+holderSpec	refinesLease	holds
+holderSpec	refinesLine	holds
+holderSpec	inductiveInv	holds

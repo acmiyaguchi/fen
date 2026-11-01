@@ -197,7 +197,7 @@ if ! command -v "$QUINT" >/dev/null 2>&1; then
 fi
 
 if [ $# -eq 0 ]; then
-  set -- spec/core/*/ spec/*/ spec/*/proofs/*/
+  set -- spec/core/*/ spec/core/*/proofs/*/ spec/*/ spec/*/proofs/*/
 fi
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/fen-spec-check.XXXXXX")

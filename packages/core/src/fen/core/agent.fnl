@@ -56,7 +56,6 @@
         convert-to-llm (. opts :convert-to-llm)
         provider-options (. opts :provider-options)
         get-steering (. opts :get-steering)
-        clear-steering (. opts :clear-steering)
         get-follow-up (. opts :get-follow-up)
         tool-context (. opts :tool-context)
         thinking-status (. opts :thinking-status)
@@ -77,7 +76,6 @@
      :convert-to-llm (or convert-to-llm (fn [msgs] msgs))
      ;; Queue callbacks return raw user lines; wrapped as UserMessages at safe injection boundaries.
      :get-steering (or get-steering (fn [] []))
-     :clear-steering clear-steering
      :get-follow-up (or get-follow-up (fn [] []))
      :tool-context (or tool-context (fn [_agent] {}))
      ;; Passed verbatim into provider complete options; :api-key/:max-tokens injected automatically.
@@ -154,14 +152,17 @@
 
 (fn inject-user-lines! [agent lines event-type]
   "Append queued raw user lines as canonical messages and emit an event for
-   the live UI. Empty/nil callback returns are fine. Returns the number of
-   lines injected."
+   the live UI. A line is a string or a mailbox item {:text :tag}; the tag
+   rides on the event. Empty/nil callback returns are fine. Returns the
+   number of lines injected."
   (var n 0)
-  (each [_ line (ipairs (or lines []))]
-    (when (and line (not= line ""))
-      (append-message! agent (types.user-message line))
-      (emit agent {:type event-type :text line})
-      (set n (+ n 1))))
+  (each [_ entry (ipairs (or lines []))]
+    (let [line (if (= (type entry) :table) entry.text entry)
+          tag (when (= (type entry) :table) entry.tag)]
+      (when (and line (not= line ""))
+        (append-message! agent (types.user-message line))
+        (emit agent {:type event-type :text line : tag})
+        (set n (+ n 1)))))
   n)
 
 (fn inject-after-natural-stop! [agent]
@@ -721,13 +722,7 @@
    `agent.outcome`. Returns the Outcome; a crash re-raises after closing."
   (let [cancelled? (and (not ok?) (= result CANCEL-MARKER))
         crash-text (when (and (not ok?) (not cancelled?))
-                     (text-util.first-line (tostring result)))
-        failed? (or cancelled? crash-text (= status :error)
-                    (= status :cancelled))]
-    (when failed?
-      (if agent.clear-steering (agent.clear-steering)
-          agent.get-steering (while (> (length (agent.get-steering)) 0)
-                               nil)))
+                     (text-util.first-line (tostring result)))]
     (close-open-calls! agent
                        (if cancelled? CANCELLED-RESULT crash-text
                            (.. "error: tool call interrupted: " crash-text)

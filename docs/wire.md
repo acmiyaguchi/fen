@@ -19,11 +19,13 @@ A line may not exceed `MAX-LINE-BYTES`, so a bounded drain can always consume it
 The normalized display events are forwarded as-is: `agent-started`, `user`, `llm-start`, `llm-end`, `assistant-text`, `assistant-text-delta`, `assistant-thinking`, `assistant-thinking-delta`, `assistant-stream-end`, `tool-call`, `tool-result`, `steering-injected`, `follow-up-injected`, `agent-turn-complete`, `error`, and `info`.
 `fen.util.wire.normalize` produces them with transport bounds applied and fields coerced to their schema types; truncated payloads carry `transport-truncated?`.
 `steering-injected` and `follow-up-injected` may carry `ref`, the `seq` of the `steer` or `follow-up` control whose queued text was injected.
+The child passes each control's `seq` to the mailbox as the line's tag, and the mailbox hands it back on injection, refusal, release, and clear, so refs stay exact even when texts repeat.
+A `steer` names the child's running turn, so it is refused (with an `info` naming its `ref`) rather than applied to a later turn.
 
 The live-child lifecycle adds these events:
 
 - `ready` — the child is initialized and waiting for input.
-- `turn-started {turn}` and `turn-complete {turn, stop-reason, usage}` bracket each turn.
+- `turn-started {turn, ref?}` and `turn-complete {turn, stop-reason, usage}` bracket each turn; `ref` is the `seq` of the `prompt` (or queued `follow-up`) control whose line started the turn.
 - `control-ack {ref, status, reason}` answers the control message whose `seq` is `ref`, with status `accepted`, `rejected`, or `applied`; `ref` is omitted only on a rejection for a line with no usable `seq`, including an out-of-order line whose `seq` was already consumed.
 - `result {final-text, stop-reason, usage, truncated?, final-text-path}` carries the run's answer; `truncated?` marks a `final-text` cut to fit one line, and `final-text-path` names a file holding the uncut text.
 - `exit {status, error}` is the last line, with status `done`, `cancelled`, `failed`, or `timed-out`.
@@ -79,6 +81,7 @@ Every control line gets exactly one `control-ack`, sent before any event the con
 - `accepted` — the control is legal in the current state and the child acted on it; its effect shows up in later events (`turn-started`, `steering-injected`, `follow-up-injected`, `result`, `exit`).
   A queued `steer` or `follow-up` is applied when the agent injects it; the injected event's `ref` names it.
   Queued lines not yet injected are dropped when `finalize` is accepted or the run exits, and one `info` event lists the dropped controls' `seq` values in its `refs` array.
+  Steering accepted for a turn that ends before reading it is handed back the same way: one `info` event ("returned N unread steering line(s)") lists those controls' `refs`, and a steer the child cannot queue is reported in an `info` with its `ref`.
 - `applied` — the control asks for what the run is already doing (a repeated `finalize`, or `close` while closing or finalizing), so nothing changes.
 - `rejected` — the control is illegal in the current state, is for another `run`, or failed validation; `reason` says why.
   Invalid lines are answered with `fen.util.wire.rejection-ack`.
@@ -89,7 +92,8 @@ A `version-mismatch` gets no ack: the child exits `failed`.
 
 A turn is one agent step; `turn-started` and `turn-complete` bracket it, and `turn` counts from 1 per run.
 `turn-complete` carries the last assistant stop reason (`aborted` for an interrupted turn) and the turn's summed usage.
-`finalize` interrupts a running turn at its next cooperative yield, pairs any unexecuted tool calls with cancelled results, then runs one turn with `{:tool-choice :none}` using the `note` (or a default instruction) as the user message.
+A `prompt` or the finalize turn that arrives while an exclusive job (a deferred reload) holds the child waits and starts when that job ends, before any other queued job; its `turn-started` follows then.
+`finalize` (and `cancel`) interrupts the child's current holder (read when the control is applied, so it never reaches a later turn) at its next cooperative yield, pairs any unexecuted tool calls with cancelled results, then runs one turn with `{:tool-choice :none}` using the `note` (or a default instruction) as the user message.
 `close` in `running` lets the current turn finish.
 `result` is emitted exactly once, immediately before `exit done`, from the run's last assistant message; its `usage` sums the whole run.
 A `final-text` too long for one line is written whole to a new private temp file named by `final-text-path`, then cut at a UTF-8 boundary with `truncated? true`.

@@ -6,15 +6,12 @@
 ;; register (first load, /reload, re-enable) finishes leftovers with nil, so
 ;; a task never outlives the instance that started it.
 ;;
-;; The input consumers keep two small records here so they survive /reload:
-;; the identity token of the prompt whose topic-shift answer may still
-;; surface a hint, and the last busy line moved to follow-up for /decide undo.
+;; The input consumers keep small records here so they survive /reload: the
+;; identity tokens of the prompts whose idle answers may still surface a hint.
 
 {:api nil
  ;; [{:co coroutine :on-done fn}] resumed once per :runtime-tick.
  :tasks []
  ;; Replaced on each prompt; cleared by any later user line or reset.
  :topic-pending nil
- :preference-pending nil
- ;; string|nil; cleared once the follow-up queue is empty.
- :reclassified nil}
+ :preference-pending nil}

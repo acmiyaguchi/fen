@@ -50,6 +50,8 @@
 
 (fn fresh [complete-messages ?decide-compaction ?settings]
   (test-api.reset!)
+  ;; /compact holds the session; a test that leaves it unfinished must not leak it.
+  ((. (require :fen.core.tasks) :reset!))
   (tset package.loaded :fen.extensions.compact nil)
   (tset package.loaded :fen.core.agent {:complete-messages complete-messages})
   (when ?decide-compaction
@@ -606,6 +608,33 @@
                     (assert.is_nil state.turn)
                     (assert.are.equal 0 (length asks))
                     (assert.are.equal 0 (event-count seen :error)))))
+            (it "auto-compaction waits behind a pending turn start without an error, then runs after it"
+                (fn []
+                  (let [tasks (require :fen.core.tasks)
+                        (decide _rates _asks) (mock-decide-compaction)
+                        state (make-state)
+                        (_ compact) (fresh (fn [] (make-assistant "unused"))
+                                           decide {})
+                        threshold (context-tokens compact state)
+                        seen (fresh (fn [_a _m _mo _o _e yield-fn]
+                                      (yield-fn)
+                                      (make-assistant "auto summary"))
+                                    decide {:autoCompactTokens threshold})]
+                    (tasks.offer! "queued prompt")
+                    (complete-turn! state)
+                    ;; requested, not started: the queued turn goes first
+                    (assert.is_nil state.turn)
+                    (assert.are.equal 0 (event-count seen :error))
+                    (assert.are.equal 1 (. (tasks.snapshot) :jobs))
+                    (let [r (tasks.next-job! {:make-turn (fn [] (fn [] nil))})]
+                      (assert.are.equal :turn r.kind)
+                      (assert.are.equal "queued prompt" r.item.text)
+                      (coroutine.resume r.co))
+                    ;; then the scheduler runs the waiting compaction
+                    (assert.are.equal :exclusive (. (tasks.next-job!) :kind))
+                    (assert.is_not_nil state.turn)
+                    (assert.is_true (drain! state))
+                    (assert.are.equal 1 (length state._test.entries)))))
             (it "compacts at the threshold with trigger :auto and does not repeat"
                 (fn []
                   (let [(decide _rates asks) (mock-decide-compaction)
@@ -621,9 +650,10 @@
                     (assert.is_not_nil state.turn)
                     (assert.is_true state.busy?)
                     (assert.are.equal 0 (length asks))
+                    (assert.is_true (drain! state))
+                    ;; the notice is shown when the job actually runs
                     (assert.is_true (has? (. (last-event seen :info) :text)
                                           "autoCompactTokens"))
-                    (assert.is_true (drain! state))
                     (assert.are.equal 1 (length state._test.entries))
                     (assert.are.equal :auto (. state._test.entries 1 :trigger))
                     (assert.are.equal :auto
@@ -736,9 +766,9 @@
                       (assert.are.equal state.agent.messages ask.messages)
                       (ask.on-good))
                     (assert.is_not_nil state.turn)
+                    (assert.is_true (drain! state))
                     (assert.is_true (has? (. (last-event seen :info) :text)
                                           "compacting early"))
-                    (assert.is_true (drain! state))
                     (assert.are.equal :auto (. state._test.entries 1 :trigger))
                     (assert.are.equal "early summary"
                                       (. (last-event seen :compaction-summary)

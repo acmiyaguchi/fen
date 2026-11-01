@@ -14,6 +14,7 @@
 (local mock (require :fen.extensions.provider_mock.mock_provider))
 (local steering (require :fen.extensions.steering.service))
 (local turn-submit (require :fen.turn_submit))
+(local tasks (require :fen.core.tasks))
 (local rpc (require :fen.extensions.rpc))
 
 (local RUN "run-1")
@@ -44,26 +45,31 @@
                                      :api-key :test
                                      :tools tools
                                      :on-event (fn [ev] (events.emit ev))
+                                     ;; As the interactive runtime: tagged items.
                                      :get-steering (fn []
-                                                     (steering.get-steering))
+                                                     (let [(_ items) (tasks.take! :steering)]
+                                                       items))
                                      :get-follow-up (fn []
-                                                      (steering.get-follow-up))
+                                                      (let [(_ items) (tasks.take! :follow-up)]
+                                                        items))
                                      :provider-options {:mock-script script
                                                         :mock-record record}})]
-    {:agent agent :opts {}}))
+    {:agent agent :opts {} :mailbox? true}))
 
 (fn make-on-tick [state]
-  "Mirror of the interactive runtime tick: one resume per tick, then the
-   usual completion bookkeeping."
+  "Mirror of the interactive runtime tick: one resume per tick, the usual
+   completion bookkeeping, and the scheduler on a tick that began idle."
   (fn []
-    (when state.turn
-      (let [(ok? value) (coroutine.resume state.turn)]
-        (when (or (not ok?) (= (coroutine.status state.turn) :dead))
-          (if ok? (set state.turn-result value) (set state.turn-error value))
-          (set state.busy? false)
-          (set state.turn nil)
-          (set state.cancel-requested? false)
-          (turn-lifecycle.emit-complete! state ok? value))))))
+    (let [idle-at-start? (not state.turn)]
+      (when state.turn
+        (let [co state.turn
+              (ok? value done?) (tasks.resume-current! co)]
+          (when done?
+            (if ok? (set state.turn-result value) (set state.turn-error value))
+            (turn-submit.drop! state)
+            (turn-lifecycle.emit-complete! state ok? value))))
+      (when (and idle-at-start? (not state.turn))
+        (turn-submit.start-queued! state agent-mod.step)))))
 
 (fn make-parent [control-path event-path]
   "Scripted fake parent. `seen` holds every validated wire event so far."
@@ -149,6 +155,8 @@
                                (let [(ok? err) (coroutine.resume script)]
                                  (assert ok? err))))}}
         code (rpc.run ctx)]
+    ;; As interactive shutdown: a turn the run abandoned releases its holder.
+    (turn-submit.drop! state)
     (parent.pump!)
     (wire.close-reader! parent.reader)
     (os.remove control-path)
@@ -212,7 +220,7 @@
             (before_each (fn []
                            (test-api.reset!)
                            (register-mock!)
-                           (steering.clear-queues!)))
+                           (tasks.reset!)))
             (it "runs prompt -> turn -> close with ready first and result before exit"
                 (fn []
                   (let [r (run-child {:mock ["hello there"]
@@ -363,6 +371,42 @@
                         (assert.is_false (and (= m.role :assistant)
                                               (= m.stop-reason :aborted)))))
                     (assert-closed-run! r))))
+            (it "a finalize is never refused behind a deferred reload: the final turn runs first (c)"
+                (fn []
+                  (let [order []
+                        requested {:done? false}
+                        script (fn [req]
+                                 (if (= req.options.tool-choice :none)
+                                     (do
+                                       (table.insert order :final-turn)
+                                       "final summary")
+                                     {:tool-call {:id "c1" :name :slow}}))
+                        r (run-child {:mock script
+                                      :tools [(slow-tool :slow 3 [])]
+                                      :wrap-tick (fn [state base]
+                                                   (fn []
+                                                     ;; the agent asks for a reload mid-turn
+                                                     (when (and state.turn
+                                                                (not requested.done?))
+                                                       (set requested.done?
+                                                            true)
+                                                       (tasks.request-job! {:run (fn []
+                                                                                   (table.insert order
+                                                                                                 :reload))
+                                                                            :on-spawn (tasks.adopter state)}))
+                                                     (base)))
+                                      :script (fn [p]
+                                                (p.wait-type :ready)
+                                                (p.send! :prompt {:text "work"})
+                                                (p.wait-type :llm-end)
+                                                (p.send! :finalize
+                                                         {:note "wrap up"}))})
+                        exit (last-event r.parent)]
+                    (assert.are.equal :done exit.status)
+                    (assert.are.equal "final summary"
+                                      (. (r.parent.find #(= $1.type :result))
+                                         :final-text))
+                    (assert.are.equal :final-turn (. order 1)))))
             (it "finalizes from ready by finishing with the answer already produced (#665)"
                 (fn []
                   (let [r (run-child {:mock ["answer" "final"]
@@ -618,15 +662,12 @@
                                       :wrap-tick (fn [state base]
                                                    (fn []
                                                      (if (and state.turn
-                                                              state.cancel-requested?)
+                                                              (. (tasks.holder)
+                                                                 :cancel?))
                                                          (do
                                                            (set state.turn-error
                                                                 "tool blew up")
-                                                           (set state.turn nil)
-                                                           (set state.busy?
-                                                                false)
-                                                           (set state.cancel-requested?
-                                                                false))
+                                                           (turn-submit.drop! state))
                                                          (base))))
                                       :script (fn [p]
                                                 (p.wait-type :ready)
@@ -696,4 +737,68 @@
                     (assert.are.equal "from the idle follow-up"
                                       (. (p.find #(= $1.type :result))
                                          :final-text))
-                    (assert-closed-run! r))))))
+                    (assert-closed-run! r))))
+            (it "turn-started names the prompt control that started the turn"
+                (fn []
+                  (let [r (run-child {:mock ["hi"]
+                                      :tools []
+                                      :script (fn [p]
+                                                (p.wait-type :ready)
+                                                (p.send! :prompt {:text "go"})
+                                                (p.wait-type :turn-complete)
+                                                (p.send! :close {}))})
+                        started (r.parent.find #(= $1.type :turn-started))]
+                    (assert.are.equal 1 started.ref)
+                    (assert-closed-run! r))))
+            (it "a turn the idle tick starts reports the started line's ref"
+                (fn []
+                  (let [started {:done? false}
+                        r (run-child {:mock ["from the queued line"]
+                                      :tools []
+                                      :wrap-tick (fn [state base]
+                                                   (fn []
+                                                     (base)
+                                                     (when (and (not started.done?)
+                                                                (not state.turn))
+                                                       (set started.done? true)
+                                                       (tasks.offer! "queued"
+                                                                     {:turn 0
+                                                                      :tag 5})
+                                                       (turn-submit.start-queued! state
+                                                                                  agent-mod.step))))
+                                      :script (fn [p]
+                                                (p.wait-type :turn-complete)
+                                                (p.send! :close {}))})
+                        ev (r.parent.find #(= $1.type :turn-started))]
+                    (assert.are.equal 5 ev.ref)
+                    (assert-closed-run! r))))
+            (it "refuses a steer while an adopted exclusive job (not a turn) holds"
+                (fn []
+                  (let [started {:done? false}
+                        r (run-child {:mock ["unused"]
+                                      :tools []
+                                      :wrap-tick (fn [state base]
+                                                   (fn []
+                                                     (base)
+                                                     (when (and (not started.done?)
+                                                                (not state.turn))
+                                                       (set started.done? true)
+                                                       (let [co ((. (require :fen.testing.tasks)
+                                                                    :hold-exclusive!) (fn []
+                                                                                        (for [_ 1 6]
+                                                                                          (coroutine.yield))))]
+                                                         (set state.turn co)
+                                                         (set state.busy? true)))))
+                                      :script (fn [p]
+                                                (p.wait-type :turn-started)
+                                                (p.send! :steer {:text "nudge"})
+                                                (p.wait-type :turn-complete)
+                                                (p.send! :close {}))})
+                        info (r.parent.find #(and (= $1.type :info)
+                                                  (string.find (or $1.summary
+                                                                   "")
+                                                               "no turn is running"
+                                                               1 true)))]
+                    (assert.is_not_nil info)
+                    (assert.are.same [1] info.refs)
+                    (assert.are.same [] (. (tasks.snapshot) :follow-up)))))))

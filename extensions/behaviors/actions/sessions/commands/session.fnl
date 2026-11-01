@@ -5,7 +5,7 @@
 ;; path so scripts and muscle memory still work.
 
 (local path-util (require :fen.util.path))
-(local coroutines (require :fen.util.coroutines))
+(local tasks (require :fen.core.tasks))
 (local types (require :fen.core.types))
 (local steering (require :fen.extensions.steering.service))
 (local log (require :fen.util.log))
@@ -484,19 +484,46 @@
                       (> (or (?. core-summary :failed) 0) 0)
                       (> (or (?. ext-summary :failed) 0) 0))))))))
 
+(local RELOAD-CANCEL {:type :reload-cancel-marker})
+
+;; Cancel is honored only between reload phases, never in the middle of one
+;; (a half-swapped module set); later phases are then skipped.
+(local CANCEL-POINTS {:reload-start true
+                      :after-core true
+                      :after-extensions true})
+
+(fn reload-body [api state opts]
+  (fn [hid]
+    (api.log :info {:event :reload-executing :scope (or opts.recovery :reload)})
+    (api.emit {:type :assistant-text
+               :text "reload> reloading core modules and extensions…"})
+    (let [yield! (fn [progress]
+                   (coroutine.yield)
+                   (when (and (. CANCEL-POINTS (?. progress :phase))
+                              (tasks.cancel-requested? hid state))
+                     (error RELOAD-CANCEL)))
+          (ok? text) (xpcall #(perform-reload! api state yield! opts)
+                             #(if (= $1 RELOAD-CANCEL) $1
+                                  (debug.traceback (tostring $1) 2)))]
+      (if ok?
+          (api.emit {:type :assistant-text : text})
+          (= text RELOAD-CANCEL)
+          (do
+            (api.emit {:type :assistant-text
+                       :text "reload> cancelled between phases"})
+            (api.emit {:type :cancelled}))
+          (error text 0)))))
+
 (fn start-reload! [api state opts]
-  (api.log :info {:event :reload-executing :scope (or opts.recovery :reload)})
-  (api.emit {:type :assistant-text
-             :text "reload> reloading core modules and extensions…"})
-  (set state.cancel-requested? false)
-  (set state.busy? true)
-  (set state.turn
-       (coroutines.create (fn []
-                            (let [(text _error?) (perform-reload! api state
-                                                                  (fn [_progress]
-                                                                    (coroutine.yield))
-                                                                  opts)]
-                              (api.emit {:type :assistant-text :text text}))))))
+  "/reload is an exclusive job of the one scheduler: it runs now when idle,
+   inline when a deferred reload request's own job dispatched it, and after
+   a pending turn start otherwise."
+  (let [r (tasks.run-exclusive! {:run (reload-body api state opts)
+                                 :label :reload
+                                 :on-spawn (tasks.adopter state)})]
+    (when (and (not r.inline?) (not r.started?))
+      (api.emit {:type :info
+                 :text "reload> queued: it runs when the queued turn finishes"}))))
 
 (fn register-reload [api]
   (api.register :command

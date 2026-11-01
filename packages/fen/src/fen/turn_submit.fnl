@@ -1,6 +1,7 @@
 ;; Small helper for submitting normal user turns from presenters/extensions.
 
 (local coroutines (require :fen.util.coroutines))
+(local tasks (require :fen.core.tasks))
 (local M {})
 
 (fn maybe-emit-user! [emit text opts]
@@ -15,27 +16,85 @@
       (let [(ok2? frame) (pcall runs.take-completion-frame!)]
         (when (and ok2? frame) frame)))))
 
-(fn start-turn! [state text agent-step]
+(fn reset-turn-fields! [state]
   (set state.turn-id (+ (or state.turn-id 0) 1))
-  (set state.cancel-requested? false)
   (set state.turn-result nil)
-  (set state.turn-error nil)
-  (set state.turn
-       (coroutines.create (fn []
-                            (agent-step state.agent text
-                                        (fn [] state.cancel-requested?)))))
-  (set state.busy? true)
-  {:ok true :started true :turn-id state.turn-id})
+  (set state.turn-error nil))
 
-(fn start! [state line agent-step]
-  (let [frame (subagent-output-frame)
-        text (if frame (.. frame "\n\n" line) line)]
-    (start-turn! state text agent-step)))
+(fn framed [text]
+  (let [frame (subagent-output-frame)]
+    (if frame (.. frame "\n\n" text) text)))
 
-(fn queue! [text queue]
-  ;; Required at call time: queueing only happens on the interactive path, after extensions are loadable.
-  (let [steering (require :fen.extensions.steering.service)]
-    (steering.queue! queue text)))
+(fn mailbox-turn [state agent-step]
+  "Options for a mailbox turn start: the body builder (called inside the held
+   coroutine, so a builder error releases like any body error) and the
+   adopter that points the run-state at the registered coroutine."
+  {:make-turn (fn [item _n hid]
+                (let [text (framed item.text)]
+                  (fn []
+                    ;; Fenced on this turn's holder id: a Ctrl-C meant for an
+                    ;; earlier holder can never cancel this turn. Passing state
+                    ;; maps a flag set by a pre-holder closure (a session
+                    ;; /reloaded from older code).
+                    (agent-step state.agent text
+                                #(tasks.cancel-requested? hid state)))))
+   :on-turn (fn [co _hid _n _item]
+              (reset-turn-fields! state)
+              (set state.turn co)
+              (set state.busy? true))})
+
+(fn spawn-plain! [state text agent-step]
+  "Side chat and headless session states: no mailbox and no holder."
+  (let [text (framed text)]
+    (reset-turn-fields! state)
+    ;; No holder here: these states keep their own cancel flag.
+    (set state.cancel-requested? false)
+    (set state.turn
+         (coroutines.create (fn []
+                              (agent-step state.agent text
+                                          (fn [] state.cancel-requested?)))))
+    (set state.busy? true)
+    {:ok true :started true :turn-id state.turn-id}))
+
+(fn started [state r]
+  {:ok true :started true :turn-id state.turn-id :turn r.turn :tag r.item.tag})
+
+(fn start-queued! [state agent-step]
+  "The driver's idle tick: the scheduler starts the pending turn, else the
+   oldest requested exclusive job (which adopts itself)."
+  (let [r (tasks.next-job! (mailbox-turn state agent-step))]
+    (when (and r (= r.kind :turn))
+      (started state r))))
+
+(fn start! [state line agent-step ?opts]
+  "Start LINE as a turn. For the main run-state this is one mailbox step
+   (`tasks.offer-start!`): the line is offered and, being the first line to
+   ask for a start, starts at once; follow-ups left from an earlier turn
+   follow at its natural stops. Behind an exclusive job the line waits with
+   a start request (`:start-pending? true`). opts.tag is carried."
+  (let [opts (or ?opts {})]
+    (if (not state.mailbox?)
+        (spawn-plain! state line agent-step)
+        (= :turn (. (tasks.holder) :kind))
+        {:ok false :error "agent is busy"}
+        (let [o (mailbox-turn state agent-step)
+              ;; The body rides on the line too, so if it waits behind an
+              ;; exclusive job it still runs with this agent-step.
+              r (tasks.offer-start! line
+                                    {:tag opts.tag
+                                     :make-turn o.make-turn
+                                     :line-turn o.make-turn
+                                     :on-turn o.on-turn})]
+          (if (not r.ok) r r.started? (started state r)
+              {:ok true :started false :queued true :start-pending? true})))))
+
+(fn drop! [state]
+  "Forget the session's coroutine: the job table releases its holder (a
+   no-op when the body already did). The path for every coroutine that is
+   abandoned rather than resumed to completion."
+  (when state.turn (tasks.drop-current! state.turn))
+  (set state.turn nil)
+  (set state.busy? false))
 
 (fn valid-when-busy? [v]
   (or (= v :reject) (= v :steering) (= v :follow-up)))
@@ -49,20 +108,26 @@
         {:ok false :error "cannot submit an empty user turn"}
         (not (valid-when-busy? when-busy))
         {:ok false :error (.. "invalid when-busy mode: " (tostring when-busy))}
+        (and state.busy? (not= when-busy :reject) (not state.mailbox?))
+        ;; Only the main run-state owns the turn mailbox; queueing for a side
+        ;; chat or headless state would steer the main turn instead.
+        {:ok false :error "agent is busy and has no input queue"}
         state.busy?
         (if (= when-busy :steering)
             (do
               (maybe-emit-user! emit text opts)
-              (queue! text :steering))
+              (tasks.offer! text))
             (= when-busy :follow-up)
             (do
               (maybe-emit-user! emit text opts)
-              (queue! text :follow-up))
+              (tasks.offer! text {:follow-up? true}))
             {:ok false :error "agent is busy"})
         (do
           (maybe-emit-user! emit text opts)
           (start! state text agent-step)))))
 
 (tset M :start! start!)
+(tset M :start-queued! start-queued!)
+(tset M :drop! drop!)
 
 M

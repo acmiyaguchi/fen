@@ -1,6 +1,6 @@
 ;; Busy-time input classification as the TUI user sees it: the line queues as
-;; steering at once, a confident decide answer surfaces a transcript notice,
-;; and /decide undo moves a reclassified line back to steering.
+;; steering at once, and a confident decide answer surfaces a transcript
+;; notice; the line itself is never moved.
 
 (local tui-test (require :fen.testing.tui))
 (local tb (tui-test.install-termbox-stub! {:capture? true :cols 80 :rows 12}))
@@ -15,7 +15,7 @@
 (local paint (require :fen.extensions.tui.paint))
 (local input (require :fen.extensions.tui.input))
 (local steering (require :fen.extensions.steering.service))
-(local steering-state (require :fen.extensions.steering.state))
+(local tasks (require :fen.core.tasks))
 (local steering-ext (require :fen.extensions.steering))
 (local queue-ext (require :fen.extensions.queue))
 
@@ -38,7 +38,8 @@
 
 (fn reset! []
   (test-api.reset!)
-  (steering.clear-queues!)
+  (tasks.reset!)
+  ((. (require :fen.testing.tasks) :hold-turn!))
   (set asks [])
   (tset package.loaded :fen.extensions.decide.service
         {:enabled? (fn []
@@ -102,31 +103,21 @@
                                 original-decide-input)
                           (steering.clear-queues!)
                           (test-api.reset!)))
-            (it "moves a follow-up out of steering, shows how to undo, and /decide undo restores it"
+            (it "hints at > for a follow-up and leaves the line in steering"
                 (fn []
                   (type-and-submit! "then add a changelog entry")
                   ;; Accepted immediately as steering, before any decision arrives.
                   (assert.are.same ["then add a changelog entry"]
-                                   steering-state.steering-queue)
+                                   (. (tasks.snapshot) :steering))
                   (assert.is_true (has? (frame)
                                         "queued> steering: then add a changelog entry"))
                   ((. asks 1) (answer :follow-up 0.9))
                   (let [screen (frame)]
-                    (assert.is_true (has? screen
-                                          "queued> follow-up: then add a changelog entry"))
-                    (assert.is_true (has? screen "/decide undo to steer now")))
+                    (assert.is_true (has? screen "reads as a follow-up"))
+                    (assert.is_false (has? screen "queued> follow-up")))
                   (assert.are.same ["then add a changelog entry"]
-                                   steering-state.follow-up-queue)
-                  (run-subcommand! "/decide undo")
-                  (assert.are.same ["then add a changelog entry"]
-                                   steering-state.steering-queue)
-                  (assert.are.same [] steering-state.follow-up-queue)
-                  (assert.are.equal "" state.input-buf)
-                  ;; A second undo has nothing left to move and says so.
-                  (run-subcommand! "/decide undo")
-                  (assert.is_true (has? (frame) "decide undo: nothing to undo"))
-                  (assert.are.same ["then add a changelog entry"]
-                                   steering-state.steering-queue)))
+                                   (. (tasks.snapshot) :steering))
+                  (assert.are.same [] (. (tasks.snapshot) :follow-up))))
             (it "suggests ctrl-c for a cancel request without cancelling or moving the line"
                 (fn []
                   (type-and-submit! "stop, never mind")
@@ -138,7 +129,7 @@
                   (assert.is_nil run.cancel-requested?)
                   (assert.is_false state.cancel-pressed?)
                   (assert.are.same ["stop, never mind"]
-                                   steering-state.steering-queue)))
+                                   (. (tasks.snapshot) :steering))))
             (it "keeps the steering route with no notice on a correction, low confidence, or no answer"
                 (fn []
                   (type-and-submit! "use the other parser")
@@ -153,11 +144,11 @@
                   (assert.are.same ["use the other parser"
                                     "maybe docs too"
                                     "and tests"]
-                                   steering-state.steering-queue)))
+                                   (. (tasks.snapshot) :steering))))
             (it "never classifies > follow-ups or slash commands"
                 (fn []
                   (type-and-submit! "> after this turn")
                   (type-and-submit! "/queue")
                   (assert.are.equal 0 (length asks))
                   (assert.are.same ["after this turn"]
-                                   steering-state.follow-up-queue)))))
+                                   (. (tasks.snapshot) :follow-up))))))

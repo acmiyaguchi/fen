@@ -1,0 +1,7 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+leaseSpec	movesAreAbsSteps	holds
+leaseSpec	leaseInvHolds	holds
+leaseSpec	cancelFencedInv	holds
+leaseSpec	releasedInTimeInv	holds
+leaseSpec	startedInTimeInv	holds
+leaseSpec	inductiveInv	holds

@@ -67,6 +67,24 @@
       (set state.input-hint {: text : key})
       (redraw.invalidate!))))
 
+;; @doc fen.extensions.tui.input.restore-returned!
+;; kind: function
+;; signature: (restore-returned! ev) -> nil
+;; summary: Put a `{:type :steering-returned :texts}` event's lines back at the front of the current draft, so steering a turn ended before reading is edited and resent rather than lost.
+;; tags: tui input steering draft events
+(fn M.restore-returned! [ev]
+  (let [lines (icollect [_ t (ipairs (or (?. ev :texts) []))]
+                (when (and (= (type t) :string) (not= t ""))
+                  t))]
+    (when (> (length lines) 0)
+      (let [returned (table.concat lines "\n")
+            draft (or state.input-buf "")]
+        (set state.input-buf
+             (if (= draft "") returned (.. returned "\n" draft)))
+        (set state.input-cursor (length returned))
+        (set state.input-hint nil)
+        (redraw.invalidate!)))))
+
 ;; @doc fen.extensions.tui.input.clear-hint!
 ;; kind: function
 ;; signature: (clear-hint!) -> nil

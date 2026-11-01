@@ -22,6 +22,8 @@ digraph fen_modules_clustered {
     "fen.core.storage" [fillcolor="lightyellow", label="fen.core.storage", style="filled", tooltip="packages/core/src/fen/core/storage/init.fnl persistent"];
     "fen.core.storage.backend" [fillcolor="lightyellow", label="fen.core.storage.backend", style="filled", tooltip="packages/core/src/fen/core/storage/backend.fnl persistent"];
     "fen.core.storage.backends.default" [fillcolor="lightyellow", label="fen.core.storage.backends.default", style="filled", tooltip="packages/core/src/fen/core/storage/backends/default.fnl persistent"];
+    "fen.core.tasks" [fillcolor="lightyellow", label="fen.core.tasks", style="filled", tooltip="packages/core/src/fen/core/tasks.fnl persistent"];
+    "fen.core.tasks.state" [fillcolor="lightyellow", label="fen.core.tasks.state", style="filled", tooltip="packages/core/src/fen/core/tasks/state.fnl persistent"];
     "fen.core.thinking" [fillcolor="lightyellow", label="fen.core.thinking", style="filled", tooltip="packages/core/src/fen/core/thinking.fnl persistent"];
     "fen.core.tool_policy" [fillcolor="lightyellow", label="fen.core.tool_policy", style="filled", tooltip="packages/core/src/fen/core/tool_policy.fnl persistent"];
     "fen.core.tools" [fillcolor="lightyellow", label="fen.core.tools", style="filled", tooltip="packages/core/src/fen/core/tools.fnl persistent"];
@@ -352,7 +354,6 @@ digraph fen_modules_clustered {
     color=gray70;
     "fen.extensions.steering" [fillcolor="lightyellow", label="fen.extensions.steering", style="filled", tooltip="extensions/behaviors/kernel/steering/init.fnl persistent"];
     "fen.extensions.steering.service" [fillcolor="lightyellow", label="fen.extensions.steering.service", style="filled", tooltip="extensions/behaviors/kernel/steering/service.fnl persistent"];
-    "fen.extensions.steering.state" [fillcolor="lightyellow", label="fen.extensions.steering.state", style="filled", tooltip="extensions/behaviors/kernel/steering/state.fnl persistent"];
   }
   subgraph cluster_extension_subagent {
     label="extension: subagent";
@@ -451,6 +452,7 @@ digraph fen_modules_clustered {
     "fen.testing" [fillcolor="lightyellow", label="fen.testing", style="filled", tooltip="packages/testing/src/fen/testing/init.fnl persistent"];
     "fen.testing.macros" [fillcolor="lightyellow", label="fen.testing.macros", style="filled", tooltip="packages/testing/src/fen/testing/macros.fnl persistent"];
     "fen.testing.pty" [fillcolor="lightyellow", label="fen.testing.pty", style="filled", tooltip="packages/testing/src/fen/testing/pty.fnl persistent"];
+    "fen.testing.tasks" [fillcolor="lightyellow", label="fen.testing.tasks", style="filled", tooltip="packages/testing/src/fen/testing/tasks.fnl persistent"];
     "fen.testing.tools" [fillcolor="lightyellow", label="fen.testing.tools", style="filled", tooltip="packages/testing/src/fen/testing/tools.fnl persistent"];
     "fen.testing.tui" [fillcolor="lightyellow", label="fen.testing.tui", style="filled", tooltip="packages/testing/src/fen/testing/tui.fnl persistent"];
     "fen.testing.tui_latency" [fillcolor="lightyellow", label="fen.testing.tui_latency", style="filled", tooltip="packages/testing/src/fen/testing/tui_latency.fnl persistent"];
@@ -579,6 +581,8 @@ digraph fen_modules_clustered {
   "fen.core.extensions.loader.api" -> "fen.core.extensions.state";
   "fen.core.extensions.loader.api" -> "fen.core.llm.models";
   "fen.core.extensions.loader.api" -> "fen.core.settings";
+  "fen.core.extensions.loader.api" -> "fen.core.tasks";
+  "fen.core.extensions.loader.api" -> "fen.core.tasks.state";
   "fen.core.extensions.loader.compiler" -> "fen.util.clock";
   "fen.core.extensions.loader.compiler" -> "fen.util.process";
   "fen.core.extensions.loader.compiler" -> "fen.util.runtime";
@@ -633,6 +637,7 @@ digraph fen_modules_clustered {
   "fen.core.extensions.register.command" -> "fen.core.extensions.events";
   "fen.core.extensions.register.command" -> "fen.core.extensions.state";
   "fen.core.extensions.register.command" -> "fen.core.extensions.util";
+  "fen.core.extensions.register.command" -> "fen.core.tasks";
   "fen.core.extensions.register.command" -> "fen.util.text";
   "fen.core.extensions.register.contribution" -> "fen.core.extensions.contrib";
   "fen.core.extensions.register.contribution" -> "fen.core.extensions.util";
@@ -690,6 +695,9 @@ digraph fen_modules_clustered {
   "fen.core.llm.models" -> "fen.util.log";
   "fen.core.llm.models" -> "fen.util.path";
   "fen.core.prompt" -> "fen.core.extensions.register.prompt";
+  "fen.core.reload_request" -> "fen.core.extensions.events";
+  "fen.core.reload_request" -> "fen.core.extensions.register.command";
+  "fen.core.reload_request" -> "fen.core.tasks";
   "fen.core.runtime_recovery" -> "fen.core.extensions.state";
   "fen.core.runtime_recovery" -> "fen.core.extensions.util";
   "fen.core.settings" -> "fen.core.storage";
@@ -699,6 +707,10 @@ digraph fen_modules_clustered {
   "fen.core.storage" -> "fen.core.storage.backend";
   "fen.core.storage.backend" -> "fen.core.storage.backends.default";
   "fen.core.storage.backends.default" -> "fen.util.path";
+  "fen.core.tasks" -> "fen.core.extensions.events";
+  "fen.core.tasks" -> "fen.core.tasks";
+  "fen.core.tasks" -> "fen.core.tasks.state";
+  "fen.core.tasks" -> "fen.util.coroutines";
   "fen.core.tools" -> "fen.core.extensions.register.hook";
   "fen.core.tools" -> "fen.core.types";
   "fen.core.tools" -> "fen.util.json_schema";
@@ -709,6 +721,7 @@ digraph fen_modules_clustered {
   "fen.extensions.agent_state" -> "fen.util.json";
   "fen.extensions.agent_state.tool" -> "fen.core.agent";
   "fen.extensions.agent_state.tool" -> "fen.core.settings";
+  "fen.extensions.agent_state.tool" -> "fen.core.tasks";
   "fen.extensions.agent_state.tool" -> "fen.core.types";
   "fen.extensions.agent_state.tool" -> "fen.extensions.status.util";
   "fen.extensions.agent_state.tool" -> "fen.extensions.steering.service";
@@ -751,22 +764,20 @@ digraph fen_modules_clustered {
   "fen.extensions.compact" -> "fen.core.agent";
   "fen.extensions.compact" -> "fen.core.extensions.state";
   "fen.extensions.compact" -> "fen.core.extensions.usage_ledger";
+  "fen.extensions.compact" -> "fen.core.tasks";
   "fen.extensions.compact" -> "fen.core.types";
   "fen.extensions.compact" -> "fen.extensions.decide.compaction";
-  "fen.extensions.compact" -> "fen.util.coroutines";
   "fen.extensions.compact" -> "fen.util.text";
   "fen.extensions.compact" -> "fen.util.tokens";
   "fen.extensions.decide" -> "fen.extensions.decide.input";
   "fen.extensions.decide" -> "fen.extensions.decide.service";
   "fen.extensions.decide" -> "fen.extensions.decide.state";
-  "fen.extensions.decide" -> "fen.util.subcommands";
   "fen.extensions.decide.compaction" -> "fen.core.types";
   "fen.extensions.decide.compaction" -> "fen.extensions.decide.service";
   "fen.extensions.decide.compaction" -> "fen.util.json";
   "fen.extensions.decide.compaction" -> "fen.util.text";
   "fen.extensions.decide.input" -> "fen.extensions.decide.service";
   "fen.extensions.decide.input" -> "fen.extensions.decide.state";
-  "fen.extensions.decide.input" -> "fen.extensions.steering.service";
   "fen.extensions.decide.input" -> "fen.util.text";
   "fen.extensions.decide.jev" -> "fen.util.http";
   "fen.extensions.decide.jev" -> "fen.util.json";
@@ -811,6 +822,7 @@ digraph fen_modules_clustered {
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.util.args";
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.util.panel";
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.util.tokens";
+  "fen.extensions.goal" -> "fen.core.tasks";
   "fen.extensions.goal" -> "fen.core.types";
   "fen.extensions.goal" -> "fen.extensions.goal.state";
   "fen.extensions.goal" -> "fen.util.args";
@@ -821,9 +833,9 @@ digraph fen_modules_clustered {
   "fen.extensions.goal_headless" -> "fen.util.json";
   "fen.extensions.goal_headless" -> "fen.util.turn_result";
   "fen.extensions.handoff" -> "fen.core.agent";
+  "fen.extensions.handoff" -> "fen.core.tasks";
   "fen.extensions.handoff" -> "fen.core.types";
   "fen.extensions.handoff" -> "fen.extensions.steering.service";
-  "fen.extensions.handoff" -> "fen.util.coroutines";
   "fen.extensions.handoff" -> "fen.util.text";
   "fen.extensions.json" -> "fen.core.agent";
   "fen.extensions.json" -> "fen.core.extensions.usage_ledger";
@@ -951,6 +963,7 @@ digraph fen_modules_clustered {
   "fen.extensions.provider_shared.streaming" -> "fen.util.log";
   "fen.extensions.provider_shared.streaming" -> "fen.util.sse";
   "fen.extensions.queue" -> "fen.extensions.queue.commands.queue";
+  "fen.extensions.queue.commands.queue" -> "fen.core.tasks";
   "fen.extensions.queue.commands.queue" -> "fen.core.types";
   "fen.extensions.queue.commands.queue" -> "fen.extensions.queue.state.queue";
   "fen.extensions.queue.commands.queue" -> "fen.extensions.steering.service";
@@ -961,8 +974,8 @@ digraph fen_modules_clustered {
   "fen.extensions.rpc" -> "fen.core.agent";
   "fen.extensions.rpc" -> "fen.core.extensions.events";
   "fen.extensions.rpc" -> "fen.core.extensions.usage_ledger";
+  "fen.extensions.rpc" -> "fen.core.tasks";
   "fen.extensions.rpc" -> "fen.core.types";
-  "fen.extensions.rpc" -> "fen.extensions.steering.service";
   "fen.extensions.rpc" -> "fen.turn_submit";
   "fen.extensions.rpc" -> "fen.util.clock";
   "fen.extensions.rpc" -> "fen.util.text";
@@ -980,11 +993,11 @@ digraph fen_modules_clustered {
   "fen.extensions.sessions" -> "fen.extensions.sessions.commands.session";
   "fen.extensions.sessions.commands.session" -> "fen.core.reload_request";
   "fen.extensions.sessions.commands.session" -> "fen.core.runtime_recovery";
+  "fen.extensions.sessions.commands.session" -> "fen.core.tasks";
   "fen.extensions.sessions.commands.session" -> "fen.core.types";
   "fen.extensions.sessions.commands.session" -> "fen.extensions.profiler.activity";
   "fen.extensions.sessions.commands.session" -> "fen.extensions.steering.service";
   "fen.extensions.sessions.commands.session" -> "fen.util.clock";
-  "fen.extensions.sessions.commands.session" -> "fen.util.coroutines";
   "fen.extensions.sessions.commands.session" -> "fen.util.log";
   "fen.extensions.sessions.commands.session" -> "fen.util.path";
   "fen.extensions.sessions.commands.session" -> "fen.util.text";
@@ -1017,9 +1030,7 @@ digraph fen_modules_clustered {
   "fen.extensions.status.util" -> "fen.version";
   "fen.extensions.stdio" -> "fen.util.tokens";
   "fen.extensions.steering" -> "fen.extensions.steering.service";
-  "fen.extensions.steering.service" -> "fen.core.extensions.events";
-  "fen.extensions.steering.service" -> "fen.core.extensions.state";
-  "fen.extensions.steering.service" -> "fen.extensions.steering.state";
+  "fen.extensions.steering.service" -> "fen.core.tasks";
   "fen.extensions.subagent" -> "fen.core.extensions.register.presenter";
   "fen.extensions.subagent" -> "fen.core.extensions.register.provider";
   "fen.extensions.subagent" -> "fen.core.llm.models";
@@ -1170,10 +1181,9 @@ digraph fen_modules_clustered {
   "fen.interactive" -> "fen.core.extensions.register.tool";
   "fen.interactive" -> "fen.core.llm.models";
   "fen.interactive" -> "fen.core.prompt";
-  "fen.interactive" -> "fen.core.reload_request";
+  "fen.interactive" -> "fen.core.tasks";
   "fen.interactive" -> "fen.core.thinking";
   "fen.interactive" -> "fen.core.tool_policy";
-  "fen.interactive" -> "fen.extensions.steering.service";
   "fen.interactive" -> "fen.extensions.tui.state";
   "fen.interactive" -> "fen.run_state";
   "fen.interactive" -> "fen.session_lifecycle";
@@ -1227,6 +1237,7 @@ digraph fen_modules_clustered {
   "fen.testing" -> "fen.util.log_sink";
   "fen.testing.macros" -> "fen.testing";
   "fen.testing.pty" -> "fen.testing";
+  "fen.testing.tasks" -> "fen.core.tasks";
   "fen.testing.tools" -> "fen.core.tools";
   "fen.testing.tools" -> "fen.core.types";
   "fen.testing.tools" -> "fen.extensions.builtin_tools.registry";
@@ -1242,7 +1253,7 @@ digraph fen_modules_clustered {
   "fen.testing.tui_latency" -> "fen.util.clock";
   "fen.turn_lifecycle" -> "fen.core.extensions.events";
   "fen.turn_lifecycle" -> "fen.util.text";
-  "fen.turn_submit" -> "fen.extensions.steering.service";
+  "fen.turn_submit" -> "fen.core.tasks";
   "fen.turn_submit" -> "fen.extensions.subagent.runs";
   "fen.turn_submit" -> "fen.util.coroutines";
   "fen.update" -> "fen.util.http";

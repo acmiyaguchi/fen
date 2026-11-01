@@ -82,6 +82,9 @@ module requests {
     gen: gen,
     hasResolver: LOCAL or conn,
     queue: Set(),
+    sLen: 0,
+    fLen: 0,
+    idleStart: false,
     rScope: rTurn,
     rGen: rGen,
     rVer: rVer,
@@ -94,7 +97,7 @@ module requests {
                  tu: int -> int, ge: int -> int, ve: int -> int,
                  st: int -> str, re: int -> int, rm: int -> int): ReqAbs = {
     running: r, turnNo: t, parkedOn: p, gen: g, hasResolver: LOCAL or c,
-    queue: Set(), rScope: tu, rGen: ge, rVer: ve, rStatus: st, rRes: re, rRem: rm,
+    queue: Set(), sLen: 0, fLen: 0, idleStart: false, rScope: tu, rGen: ge, rVer: ve, rStatus: st, rRes: re, rRem: rm,
   }
 
   action commit(r: bool, t: int, p: int, g: int, n: int, c: bool,

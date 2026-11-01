@@ -17,7 +17,7 @@
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
 (local tokens (require :fen.util.tokens))
-(local coroutines (require :fen.util.coroutines))
+(local tasks (require :fen.core.tasks))
 (local decide-compaction (require :fen.extensions.decide.compaction))
 (local ext-state (require :fen.core.extensions.state))
 
@@ -194,10 +194,11 @@
         (error "compaction model returned an empty summary"))
       (values summary asst.usage))))
 
-(fn make-yield [state]
+(fn make-yield [state hid]
+  ;; Cancel is fenced on this job's own holder id.
   (fn []
     (coroutine.yield)
-    (when state.cancel-requested?
+    (when (tasks.cancel-requested? hid state)
       (error CANCEL-MARKER))))
 
 (fn replace-agent-messages! [agent msgs]
@@ -283,26 +284,33 @@
                                              "failed to write compaction entry"
                                              ?emit-error?))))))))))))
 
-(fn start-compact! [api run-state args trigger]
-  (set run-state.cancel-requested? false)
-  (set run-state.turn
-       (coroutines.create (fn []
-                            (let [(ok? err) (xpcall #(finish-compact! api
-                                                                      run-state
-                                                                      (trim args)
-                                                                      trigger
-                                                                      (make-yield run-state)
-                                                                      true)
-                                                    #(if (= $1 CANCEL-MARKER)
-                                                         $1
-                                                         (debug.traceback (tostring $1)
-                                                                          2)))]
-                              (when (not ok?)
-                                (api.emit {:type :llm-end :usage nil})
-                                (if (= err CANCEL-MARKER)
-                                    (api.emit {:type :cancelled})
-                                    (error err)))))))
-  (set run-state.busy? true))
+(fn start-compact! [api run-state args trigger ?notice]
+  "Compaction is an exclusive job of the one scheduler: now when idle, else
+   after the running work and any pending turn start. ?notice is shown when
+   it actually starts."
+  (tasks.run-exclusive! {:label :compact
+                         :key (when (= trigger :auto) :compact-auto)
+                         :on-spawn (tasks.adopter run-state)
+                         :run (fn [hid]
+                                (when ?notice
+                                  (api.emit {:type :info :text ?notice}))
+                                (let [(ok? err) (xpcall #(finish-compact! api
+                                                                          run-state
+                                                                          (trim args)
+                                                                          trigger
+                                                                          (make-yield run-state
+                                                                                      hid)
+                                                                          true)
+                                                        #(if (= $1
+                                                                CANCEL-MARKER)
+                                                             $1
+                                                             (debug.traceback (tostring $1)
+                                                                              2)))]
+                                  (when (not ok?)
+                                    (api.emit {:type :llm-end :usage nil})
+                                    (if (= err CANCEL-MARKER)
+                                        (api.emit {:type :cancelled})
+                                        (error err)))))}))
 
 ;; Per-instance auto-compaction bookkeeping; a reload starts fresh.
 ;; pending: the last completed turn awaiting evaluation on the next tick.
@@ -339,8 +347,7 @@
           (values n threshold))))))
 
 (fn start-auto! [api st notice]
-  (api.emit {:type :info :text notice})
-  (start-compact! api st "" :auto))
+  (start-compact! api st "" :auto notice))
 
 (fn on-good-moment [api st key]
   ;; The answer arrives on a later tick: compact only if still loaded, idle on
