@@ -34,7 +34,7 @@ Every claim in a `FINDINGS.md` or README says which kind of evidence backs it:
 | inductive | holds initially and every step preserves it: any depth | an `inductive` obligation in `verify.tsv` |
 | refinement | every concrete step is a step (or stutter) of the abstract spec | a `refines...` invariant on a monitor (see `core/README.md`) |
 | liveness | something eventually happens | none yet: no model states fairness assumptions, so no invariant may claim it |
-| confirmed | the real code does it | a line trace in `FINDINGS.md`, or a conformance check |
+| confirmed | the real code does it | a throwaway probe or REPL run, a line trace, or a conformance check, recorded in `FINDINGS.md` |
 
 Invariant names must not claim more than their kind: a per-iteration bound is not "no starvation".
 
@@ -58,7 +58,7 @@ When the code is fixed, update the model, flip the row to `holds`, drop its issu
 Candidate fixes are named: a model takes `const FIXES: Set[str]` and guards each fix with `FIXES.contains("<issue>")`.
 The `fixed` instance enables every fix and must satisfy every invariant the fixes claim; a `violated` row on `fixed` records what even the fixed design does not provide, and names its issue (tools: an outside writer between the check and the rename, #657, and a crash between two renames, #656). A `fix<issue>` instance enables one fix, so a row can say which fix it needs and fixes can be checked one at a time.
 
-A confirmed bug needs no standing test against the real code: the witness carries the counterexample, and the `FINDINGS.md` line trace says where the code does it.
+A confirmed bug needs no standing test against the real code: the witness carries the counterexample, and the `FINDINGS.md` confirmation says where the code does it.
 The fix PR adds a regular test of the correct behaviour in the same change that flips the rows.
 `fen.testing`'s `known-bug` stays available for a bug worth pinning before its fix, but it is optional.
 
