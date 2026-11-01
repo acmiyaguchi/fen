@@ -174,6 +174,12 @@
 ;; summary: Persistent presenter UI slot wrapper whose identity survives reload while active presenter behavior changes underneath.
 ;; tags: extensions state ui reload
 
+;; @doc fen.core.extensions.state.loaded-specs
+;; kind: data
+;; signature: {name ExtensionSpec}
+;; summary: Specs of successfully loaded extensions keyed by name, kept here so reload-extension! still finds them after the loader module reloads.
+;; tags: extensions state loader reload
+
 ;; @doc fen.core.extensions.state.registry-version
 ;; kind: data
 ;; signature: number
@@ -200,6 +206,7 @@
  :prompt-fragments []
  :prompt-next-seq 0
  :extensions {}
+ :loaded-specs {}
  :reload-core-failures {}
  :reload-fingerprints {}
  :dev-overlay nil

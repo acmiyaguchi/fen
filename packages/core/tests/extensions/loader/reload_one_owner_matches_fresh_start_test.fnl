@@ -104,6 +104,26 @@
                     (assert.are.equal :alpha (first-dup-tool-owner))
                     (assert.are.equal "frag-alpha\n\nfrag-beta"
                                       (prompt-registry.render)))))
+            (it "reload-extension still finds a loaded extension after the loader module itself reloads"
+                (fn []
+                  ;; The loaded-spec table lives in fen.core.extensions.state, not the reloadable loader.
+                  (fresh-start!)
+                  (set loader (h.reload-module :fen.core.extensions.loader))
+                  (let [(reload-ok? reload-err) (loader.reload-extension! :alpha)]
+                    (assert.is_true reload-ok? (tostring reload-err)))))
+            (it "loads into a state table from before loaded-specs existed (live /reload onto new code)"
+                (fn []
+                  ;; fen.core.extensions.state never reloads, so a running process keeps its old table.
+                  (fresh-start!)
+                  (let [saved ext-state.loaded-specs]
+                    (set ext-state.loaded-specs nil)
+                    (let [(load-ok? load-err) (pcall #(loader.load! {:extension-paths []}
+                                                                    {:interactive? false}))
+                          (reload-ok? reload-err) (loader.reload-extension! :alpha)]
+                      (set ext-state.loaded-specs
+                           (or ext-state.loaded-specs saved))
+                      (assert.is_true load-ok? (tostring load-err))
+                      (assert.is_true reload-ok? (tostring reload-err))))))
             (it "a failing reload of the /dup winner keeps its previous version (stale) so the name does not vanish"
                 (fn []
                   (fresh-start!)

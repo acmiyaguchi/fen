@@ -84,6 +84,7 @@ digraph fen_modules {
   "fen.extensions.default_prompt" [fillcolor="lightyellow", label="fen.extensions.default_prompt", style="filled", tooltip="extensions/behaviors/kernel/default-prompt/init.fnl persistent"];
   "fen.extensions.default_prompt.prefer" [fillcolor="lightyellow", label="fen.extensions.default_prompt.prefer", style="filled", tooltip="extensions/behaviors/kernel/default-prompt/prefer.fnl persistent"];
   "fen.extensions.default_prompt.resources" [fillcolor="lightyellow", label="fen.extensions.default_prompt.resources", style="filled", tooltip="extensions/behaviors/kernel/default-prompt/resources.fnl persistent"];
+  "fen.extensions.default_prompt.state" [fillcolor="lightyellow", label="fen.extensions.default_prompt.state", style="filled", tooltip="extensions/behaviors/kernel/default-prompt/state.fnl persistent"];
   "fen.extensions.docs" [fillcolor="lightyellow", label="fen.extensions.docs", style="filled", tooltip="extensions/behaviors/kernel/docs/init.fnl persistent"];
   "fen.extensions.docs.contracts" [fillcolor="lightyellow", label="fen.extensions.docs.contracts", style="filled", tooltip="extensions/behaviors/kernel/docs/contracts.fnl persistent"];
   "fen.extensions.docs.state" [fillcolor="lightyellow", label="fen.extensions.docs.state", style="filled", tooltip="extensions/behaviors/kernel/docs/state.fnl persistent"];
@@ -543,6 +544,7 @@ digraph fen_modules {
   "fen.extensions.default_prompt" -> "fen.extensions.default_prompt.prefer" [label="require"];
   "fen.extensions.default_prompt" -> "fen.extensions.default_prompt.resources" [label="require"];
   "fen.extensions.default_prompt" -> "fen.util.path" [label="require"];
+  "fen.extensions.default_prompt.prefer" -> "fen.extensions.default_prompt.state" [label="require"];
   "fen.extensions.default_prompt.prefer" -> "fen.util.path" [label="require"];
   "fen.extensions.default_prompt.prefer" -> "fen.util.subcommands" [label="require"];
   "fen.extensions.default_prompt.prefer" -> "fen.util.text" [label="require"];

@@ -92,6 +92,7 @@
 
 (fn user-agent []
   (when (= USER-AGENT nil)
+    ;; lint-allow reload/state: lazy probe; re-detected after /reload
     (set USER-AGENT (detect-user-agent)))
   USER-AGENT)
 

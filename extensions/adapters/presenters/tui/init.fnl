@@ -281,15 +281,19 @@
 
 (fn cached-profile-state []
   (when (not profile-state-resolved?)
+    ;; lint-allow reload/state: memoized lookup; recomputed after /reload
     (set profile-state-resolved? true)
     (let [(ok? profiler) (pcall require :fen.extensions.profiler.state)]
+      ;; lint-allow reload/state: memoized lookup; recomputed after /reload
       (when ok? (set profile-state profiler))))
   profile-state)
 
 (fn cached-profile-activity []
   (when (not profile-activity-resolved?)
+    ;; lint-allow reload/state: memoized lookup; recomputed after /reload
     (set profile-activity-resolved? true)
     (let [(ok? activity) (pcall require :fen.extensions.profiler.activity)]
+      ;; lint-allow reload/state: memoized lookup; recomputed after /reload
       (when ok? (set profile-activity activity))))
   profile-activity)
 
@@ -418,6 +422,7 @@
    Modal loops pump this too; a modal opened from inside a background turn
    must not re-resume that running coroutine, so nested pumps are skipped."
   (when (not background-ticking?)
+    ;; lint-allow reload/state: reentrancy guard; false outside the guarded call, which /reload never interrupts
     (set background-ticking? true)
     (M.guard-tick! "side-chat.tick!" side-chat.tick!)
     (M.guard-tick! "workspaces.sync-subagents!" workspaces.sync-subagents!)

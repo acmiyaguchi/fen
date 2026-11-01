@@ -26,6 +26,7 @@
           (when (= (string.sub seg -4) ".lua")
             (table.insert parts (.. (string.sub seg 1 -5) ".fnl"))))
         (let [fnl-path (table.concat parts ";")]
+          ;; lint-allow reload/state: derived cache; refilled on demand after /reload
           (set fnl-path-cache {:lua-path lua-path :fnl-path fnl-path})
           fnl-path))))
 
@@ -52,6 +53,7 @@
               cached (and flat-map-cache (= flat-map-cache.env env)
                           (flat.resolve-fnl flat-map-cache.map name))]
           (or cached (let [map (flat.build-map roots)]
+                       ;; lint-allow reload/state: derived cache; refilled on demand after /reload
                        (set flat-map-cache {:env env :map map})
                        (flat.resolve-fnl map name))))))))
 

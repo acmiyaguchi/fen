@@ -52,6 +52,7 @@
   (when (= nil (. manifest-name-cache pkg-dir))
     (let [path (.. pkg-dir "/manifest.fnl")]
       (if (file-exists? path)
+          ;; lint-allow reload/state: derived cache; refilled on demand after /reload
           (tset manifest-name-cache pkg-dir
                 (or (parse-manifest-name (read-all path)) false))
           (tset manifest-name-cache pkg-dir false))))

@@ -92,8 +92,11 @@
 
 (fn ensure-discovery! [api opts]
   (when (not= discovery-api api)
+    ;; lint-allow reload/state: catalog discovery memo; /reload just forces a fresh discovery
     (set discovery-api api)
+    ;; lint-allow reload/state: catalog discovery memo; /reload just forces a fresh discovery
     (set discovery nil)
+    ;; lint-allow reload/state: catalog discovery memo; /reload just forces a fresh discovery
     (set catalog-ready? false))
   (when (and (not catalog-ready?) (not discovery))
     (set discovery
@@ -110,6 +113,7 @@
           (do
             (set discovery nil)
             (set catalog-ready? true)
+            ;; lint-allow reload/state: progress counter read within one wait; /reload runs between commands, not inside a wait
             (set catalog-version (+ catalog-version 1))
             (when (= (type api.emit) :function)
               (api.emit {:type :model-catalog-updated :error (tostring value)})))

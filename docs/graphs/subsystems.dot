@@ -11,7 +11,7 @@ digraph fen_subsystems {
   "extension.claude_memory" [fillcolor="lightyellow", label="extension: claude_memory\n1 modules", style="filled"];
   "extension.compact" [fillcolor="lightyellow", label="extension: compact\n1 modules", style="filled"];
   "extension.decide" [fillcolor="lightyellow", label="extension: decide\n7 modules", style="filled"];
-  "extension.default_prompt" [fillcolor="lightyellow", label="extension: default_prompt\n3 modules", style="filled"];
+  "extension.default_prompt" [fillcolor="lightyellow", label="extension: default_prompt\n4 modules", style="filled"];
   "extension.docs" [fillcolor="lightyellow", label="extension: docs\n3 modules", style="filled"];
   "extension.essentials" [fillcolor="lightyellow", label="extension: essentials\n4 modules", style="filled"];
   "extension.extensions_inspector" [fillcolor="lightyellow", label="extension: extensions_inspector\n3 modules", style="filled"];

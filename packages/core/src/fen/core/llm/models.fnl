@@ -58,7 +58,9 @@
 ;; summary: Clear the models.json and dynamic provider catalog caches at the explicit reload boundary.
 ;; tags: models config reload
 (fn invalidate-caches! []
+  ;; lint-allow reload/state: config cache; reload-core! invalidates it on every /reload anyway
   (set cache nil)
+  ;; lint-allow reload/state: config cache; reload-core! invalidates it on every /reload anyway
   (set dynamic-model-cache {}))
 
 (fn parse [raw path]

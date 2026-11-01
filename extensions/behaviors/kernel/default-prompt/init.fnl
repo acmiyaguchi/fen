@@ -18,6 +18,7 @@
 
 (fn current-loader []
   (when (= loader nil)
+    ;; lint-allow reload/state: lazy resource loader; rebuilt after /reload
     (set loader (resources.make {})))
   loader)
 

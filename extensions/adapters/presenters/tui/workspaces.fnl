@@ -199,6 +199,7 @@
   (when (not (find-workspace state.active-workspace-id))
     (set state.active-workspace-id :main-session))
   (when (not (rawequal ensured-workspaces state.workspaces))
+    ;; lint-allow reload/state: identity memo; a reset re-runs the idempotent ensure once
     (set ensured-workspaces state.workspaces)
     (each [_ ws (ipairs state.workspaces)]
       (ensure-metadata! ws)
@@ -233,6 +234,7 @@
   "Run F with WS projected into state, then restore the displayed workspace."
   (let [shown (M.ensure!)]
     (assert (= view-depth 0) "workspace view swap is not reentrant")
+    ;; lint-allow reload/state: reentrancy guard; 0 outside the view swap
     (set view-depth 1)
     ;; Guard stays live for the whole swap so a malformed workspace cannot
     ;; permanently poison future view swaps.

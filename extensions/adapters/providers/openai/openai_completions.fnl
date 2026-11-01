@@ -383,6 +383,7 @@
 (fn warn-unknown-thinking-format! [fmt base-url]
   (let [key (tostring fmt)]
     (when (not (. warned-thinking-formats key))
+      ;; lint-allow reload/state: warn-once flag; repeating the warning after /reload is harmless
       (tset warned-thinking-formats key true)
       (log.warn (.. "openai-completions: ignoring unknown compat.thinkingFormat \""
                     key "\" for provider at "

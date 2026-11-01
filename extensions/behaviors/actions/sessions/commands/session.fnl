@@ -366,8 +366,10 @@
 
 (fn cached-profile-activity []
   (when (not profile-activity-resolved?)
+    ;; lint-allow reload/state: memoized lookup; recomputed after /reload
     (set profile-activity-resolved? true)
     (let [(ok? activity) (pcall require :fen.extensions.profiler.activity)]
+      ;; lint-allow reload/state: memoized lookup; recomputed after /reload
       (when ok? (set profile-activity activity))))
   profile-activity)
 

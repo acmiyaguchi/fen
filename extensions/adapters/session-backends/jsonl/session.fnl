@@ -69,6 +69,7 @@
 (fn lfs []
   (when (= lfs-mod :unknown)
     (let [(ok? mod) (pcall require :lfs)]
+      ;; lint-allow reload/state: lazy optional require; re-resolved after /reload
       (set lfs-mod (if ok? mod false))))
   (if lfs-mod lfs-mod nil))
 
@@ -311,6 +312,7 @@
               (do
                 ;; Without lfs only writers in this process are excluded.
                 (when (not warned-no-kernel-lock?)
+                  ;; lint-allow reload/state: warn-once flag; repeating the warning after /reload is harmless
                   (set warned-no-kernel-lock? true)
                   (log.warn "session: lfs.lock unavailable; the session lock excludes only this process"))
                 (hold-lock locks lock-path f nil))

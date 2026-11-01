@@ -3,4 +3,5 @@
  :entry-module :fen.extensions.status
  :reload-modules [:fen.extensions.status.util
                   :fen.extensions.status.commands.status
-                  :fen.extensions.status]}
+                  :fen.extensions.status]
+ :reload-exclude [:fen.extensions.status.state.status]}

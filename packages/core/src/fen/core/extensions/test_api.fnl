@@ -26,6 +26,8 @@
   (contrib.reset!)
   ((. (require :fen.core.extensions.usage_ledger) :reset!))
   (util.clear-table state.handlers)
+  (when (= state.loaded-specs nil) (set state.loaded-specs {}))
+  (util.clear-table state.loaded-specs)
   (util.clear-table state.tools-extra)
   (util.clear-table state.commands-extra)
   (util.clear-table state.controls-extra)

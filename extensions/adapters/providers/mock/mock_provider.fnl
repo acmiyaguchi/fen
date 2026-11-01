@@ -44,6 +44,7 @@
                               (when (= loaded nil)
                                 (error (.. "mock provider: script returned nil: "
                                            path)))
+                              ;; lint-allow reload/state: derived cache; refilled on demand after /reload
                               (tset script-cache path loaded)
                               loaded)))
 

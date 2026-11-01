@@ -14,7 +14,12 @@
 
 (local M {})
 
-(local loaded {})
+(fn loaded-specs []
+  "Loaded specs by name. state never reloads, so a process that /reloads onto
+   this code keeps a table from before the field existed: create it lazily."
+  (when (= nil state.loaded-specs)
+    (set state.loaded-specs {}))
+  state.loaded-specs)
 
 (fn record-spec-status! [spec status extra]
   (let [rec {:manifest spec.manifest
@@ -112,7 +117,7 @@
                         (contrib.commit! token)
                         (reload.commit-summary! changes)
                         (record-spec-status! spec :loaded {})
-                        (tset loaded spec.name spec)
+                        (tset (loaded-specs) spec.name spec)
                         (events.emit {:type :extension-loaded :name spec.name})
                         (values true nil changes))
                       (do
@@ -154,7 +159,7 @@
                         (contrib.commit! token)
                         (reload.commit-summary! changes)
                         (record-spec-status! spec :loaded {})
-                        (tset loaded spec.name spec)
+                        (tset (loaded-specs) spec.name spec)
                         (events.emit {:type :extension-loaded :name spec.name})
                         (values true nil changes))
                       (do
@@ -190,7 +195,7 @@
     (if (not enabled?)
         (do
           (register-registry.unregister-by-owner spec.name)
-          (tset loaded spec.name nil)
+          (tset (loaded-specs) spec.name nil)
           (record-spec-status! spec :disabled {})
           {:name spec.name
            :status :disabled
@@ -316,7 +321,7 @@
 ;; summary: Reload a previously loaded extension by name using its retained spec and interactive TUI reload mode.
 ;; tags: extensions loader reload
 (fn M.reload-extension! [name]
-  (let [spec (. loaded name)]
+  (let [spec (. (loaded-specs) name)]
     (if spec
         (let [opts {:interactive? true :presenter :tui :reload? true}]
           (let [(ok? err _changes) (load-spec! spec opts)]

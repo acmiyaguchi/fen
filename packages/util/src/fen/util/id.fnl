@@ -26,8 +26,10 @@
    in a platform-specific clock."
   (let [sec (os.time)]
     (if (= sec last-sec)
+        ;; lint-allow reload/state: sort counter; ids keep their random bits, a reset only unorders ids minted in the /reload's second
         (set per-sec-counter (% (+ per-sec-counter 1) 1000))
         (do
+          ;; lint-allow reload/state: sort counter; ids keep their random bits, a reset only unorders ids minted in the /reload's second
           (set last-sec sec)
           (set per-sec-counter 0)))
     (+ (* sec 1000) per-sec-counter)))
