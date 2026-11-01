@@ -15,6 +15,7 @@ description = {
 dependencies = {
    "lua >= 5.4",
    "fen-core >= 1-1",
+   "fen-ext-steering >= 1-1",
 }
 
 test_dependencies = {

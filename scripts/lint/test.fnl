@@ -24,7 +24,7 @@
 (local RS (.. DIR "reload_state/bad.fnl"))
 
 ;; rule -> sorted "rule path:line" strings expected from bad.fnl
-(local EXPECT {:layer ["layer/deps core.fnl:3"]
+(local EXPECT {:layer ["layer/deps app.fnl:7" "layer/deps core.fnl:3"]
                :reload_list ["lint/manifest c/manifest.fnl:1"
                              "reload/list a/manifest.fnl:1"
                              "reload/list a/util.fnl:1"

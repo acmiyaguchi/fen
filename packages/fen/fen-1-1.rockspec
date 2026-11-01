@@ -37,6 +37,8 @@ dependencies = {
    "fen-ext-agent-state >= 1-1",
    "fen-ext-compact >= 1-1",
    "fen-ext-handoff >= 1-1",
+   "fen-ext-steering >= 1-1",
+   "fen-ext-subagent >= 1-1",
 }
 
 test_dependencies = {

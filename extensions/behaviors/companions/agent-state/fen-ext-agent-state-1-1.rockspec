@@ -17,6 +17,7 @@ dependencies = {
    "fen-core >= 1-1",
    "fen-util >= 1-1",
    "fen-ext-status >= 1-1",
+   "fen-ext-steering >= 1-1",
 }
 
 test_dependencies = {
