@@ -8,8 +8,11 @@
 ;;   reload/list   extension module missing from, or phantom in, reload-modules
 ;;   reload/state  module-level var/table mutated at call time in a reloadable module
 ;;   lint/waiver   a waiver without a reason
+;;   lint/parse    a reloadable file that does not parse (reload/state cannot run)
+;;   lint/manifest an extension manifest that does not evaluate
 ;;
-;; Waive a finding on its line or the line above:
+;; Waive a finding with a trailing comment on its line, or a comment-only line
+;; directly above it:
 ;;   ;; lint-allow <rule>: <reason>
 ;; Every waiver is reported. Report-only by default; --strict exits 1 on
 ;; unwaived findings.
@@ -20,6 +23,7 @@
          ";./packages/core/src/?.fnl;./packages/core/src/?/init.fnl"))
 
 (local scanner (require :docs.scanner))
+(local waiver (require :lint.waiver))
 (local {: core-reloadable?} (require :fen.core.extensions.loader.reloadable))
 
 (local RULES (icollect [_ name (ipairs [:layer :reload_list :reload_state])]
@@ -53,9 +57,12 @@
   (if (= modinfo.scope :package) (.. "packages/" modinfo.pkg) modinfo.pkg))
 
 (fn read-manifest [path]
+  "(manifest nil) or ({} err) when the manifest does not evaluate to a table."
   (let [text (read-file path)
-        (ok? v) (pcall fennel.eval text {:env {} :filename path})]
-    (if (and ok? (= :table (type v))) v {})))
+        (ok? v) (pcall fennel.eval (or text "") {:env {} :filename path})]
+    (if (and ok? (= :table (type v))) (values v nil)
+        (values {}
+                (if ok? "manifest does not evaluate to a table" (tostring v))))))
 
 (fn gather []
   (let [tree (scanner.scan-tree)
@@ -76,11 +83,13 @@
           (when (and mi rock) (tset owners mi.module rock))
           (when (and mi (= mi.scope :extension) (= nil (. extensions dir)))
             (let [mpath (.. dir "/manifest.fnl")]
-              (tset extensions dir
-                    {:root dir
-                     :manifest-path mpath
-                     :manifest (read-manifest mpath)
-                     :modules []})))
+              (let [(manifest err) (read-manifest mpath)]
+                (tset extensions dir
+                      {:root dir
+                       :manifest-path mpath
+                       : manifest
+                       :manifest-error err
+                       :modules []}))))
           (when (and mi (= mi.scope :extension))
             (table.insert (. extensions dir :modules)
                           {:module mi.module :path f.path}))
@@ -113,24 +122,17 @@
 
 (local line-cache {})
 
-(fn line-at [path n]
+(fn lines-of [path]
   (when (= nil (. line-cache path))
     (tset line-cache path (icollect [l (string.gmatch (.. (or (read-file path)
                                                               "")
                                                           "\n")
                                                       "([^\n]*)\n")]
                             l)))
-  (. line-cache path n))
+  (. line-cache path))
 
 (fn waiver-for [finding]
-  "Reason string if `finding` is waived on its line or the line above, else
-   nil; :no-reason when the waiver names the rule but gives no reason."
-  (accumulate [hit nil _ n (ipairs [finding.line (- finding.line 1)]) &until hit]
-    (let [l (or (line-at finding.path n) "")
-          (rule reason) (string.match l
-                                      ";+%s*lint%-allow%s+([%w/_%-]+):?%s*(.-)%s*$")]
-      (when (= rule finding.rule)
-        (if (= reason "") :no-reason reason)))))
+  (waiver.for-line (lines-of finding.path) finding.line finding.rule))
 
 ;; ----- Output -------------------------------------------------------------
 
@@ -143,7 +145,7 @@
 
 (fn json-finding [f]
   (.. "{\"rule\":" (json-str f.rule) ",\"severity\":" (json-str f.severity)
-      ",\"path\":" (json-str f.path) ",\"line\":" f.line ",\"message\":"
+      ",\"path\":" (json-str f.path) ",\"line\":" (or f.line 1) ",\"message\":"
       (json-str f.message) (if f.waived (.. ",\"waived\":" (json-str f.waived))
                               "") "}"))
 

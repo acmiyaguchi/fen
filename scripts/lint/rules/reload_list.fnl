@@ -16,7 +16,14 @@
             listed (set-of m.reload-modules)
             excluded (set-of m.reload-exclude)
             shipped (collect [_ x (ipairs ext.modules)] (values x.module true))]
-        (if (= nil m.reload-modules)
+        (if ext.manifest-error
+            (table.insert findings
+                          {:rule :lint/manifest
+                           :path ext.manifest-path
+                           :line 1
+                           :message (.. "cannot evaluate manifest: "
+                                        ext.manifest-error)})
+            (= nil m.reload-modules)
             (when (< 1 (length ext.modules))
               (table.insert findings
                             {:rule :reload/list
