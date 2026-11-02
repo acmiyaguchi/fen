@@ -12,7 +12,8 @@
 //
 // Liveness, two ways:
 //   - temporal: `releaseEventually`, `requestedStartEventually` under weak
-//     fairness (quint verify --temporal; TLC only, not run by verify.tsv);
+//     fairness (quint verify --temporal; TLC only, not run by verify.tsv;
+//     the finite mirror ../liveness is checked by `make check-liveness`);
 //   - bounded, as safety: the same forced-step encoding L2 uses, so the
 //     bound invariants are inductive.
 
