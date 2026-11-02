@@ -463,6 +463,7 @@ digraph fen_modules_clustered {
     color=gray70;
     "fen.util.args" [fillcolor="lightyellow", label="fen.util.args", style="filled", tooltip="packages/util/src/fen/util/args.fnl persistent"];
     "fen.util.base64" [fillcolor="lightyellow", label="fen.util.base64", style="filled", tooltip="packages/util/src/fen/util/base64.fnl persistent"];
+    "fen.util.cancel_fence" [fillcolor="lightyellow", label="fen.util.cancel_fence", style="filled", tooltip="packages/util/src/fen/util/cancel_fence.fnl persistent"];
     "fen.util.checksum" [fillcolor="lightyellow", label="fen.util.checksum", style="filled", tooltip="packages/util/src/fen/util/checksum/init.fnl persistent"];
     "fen.util.checksum.backend" [fillcolor="lightyellow", label="fen.util.checksum.backend", style="filled", tooltip="packages/util/src/fen/util/checksum/backend.fnl persistent"];
     "fen.util.checksum.backends.default" [fillcolor="lightyellow", label="fen.util.checksum.backends.default", style="filled", tooltip="packages/util/src/fen/util/checksum/backends/default.fnl persistent"];
@@ -1034,6 +1035,7 @@ digraph fen_modules_clustered {
   "fen.extensions.subagent" -> "fen.core.extensions.register.presenter";
   "fen.extensions.subagent" -> "fen.core.extensions.register.provider";
   "fen.extensions.subagent" -> "fen.core.llm.models";
+  "fen.extensions.subagent" -> "fen.core.tasks";
   "fen.extensions.subagent" -> "fen.core.thinking";
   "fen.extensions.subagent" -> "fen.core.types";
   "fen.extensions.subagent" -> "fen.extensions.subagent.channel";
@@ -1148,6 +1150,7 @@ digraph fen_modules_clustered {
   "fen.extensions.tui.side_chat" -> "fen.extensions.tui.state";
   "fen.extensions.tui.side_chat" -> "fen.extensions.tui.workspaces";
   "fen.extensions.tui.side_chat" -> "fen.interactive";
+  "fen.extensions.tui.side_chat" -> "fen.util.cancel_fence";
   "fen.extensions.tui.side_chat" -> "fen.util.text";
   "fen.extensions.tui.side_chat" -> "fen.util.usage";
   "fen.extensions.tui.stories" -> "fen.extensions.tui.state";
@@ -1255,6 +1258,7 @@ digraph fen_modules_clustered {
   "fen.turn_lifecycle" -> "fen.util.text";
   "fen.turn_submit" -> "fen.core.tasks";
   "fen.turn_submit" -> "fen.extensions.subagent.runs";
+  "fen.turn_submit" -> "fen.util.cancel_fence";
   "fen.turn_submit" -> "fen.util.coroutines";
   "fen.update" -> "fen.util.http";
   "fen.update" -> "fen.util.id";

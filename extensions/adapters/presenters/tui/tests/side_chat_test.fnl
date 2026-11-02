@@ -339,11 +339,32 @@
                                                                  1)))
                                                        (fn []
                                                          false)))
-                    (assert.is_true ws.side.cancel-requested?)
+                    (assert.is_true (side-chat.cancel-requested? ws))
                     (assert.is_true ws.side.busy?)
                     (assert.are.equal 0 main-cancellations)
                     (assert.is_false state.pending-quit?)
                     (assert.is_false state.cancel-pressed?))))
+            (it "a late cancel for side turn 1 never cancels side turn 2"
+                (fn []
+                  (let [checks []]
+                    (set agent-mod.step
+                         (fn [agent prompt cancelled?]
+                           (table.insert checks cancelled?)
+                           (fake-step agent prompt cancelled?)))
+                    (let [ws (side-chat.open! runtime "first")]
+                      (side-chat.tick!)
+                      (finish-side-turn!)
+                      (assert.is_false ws.side.busy?)
+                      ;; Ctrl-C after turn 1 ended: nothing to cancel.
+                      (assert.is_nil (side-chat.request-cancel! ws))
+                      (assert.is_true (. (side-chat.submit! ws "second") :ok))
+                      (side-chat.tick!)
+                      (assert.is_false ((. checks 2)))
+                      (assert.is_false (side-chat.cancel-requested? ws))
+                      (assert.is_true (side-chat.request-cancel! ws))
+                      (assert.is_true ((. checks 2)))
+                      (assert.is_false ((. checks 1))
+                                       "turn 1's stale check sees turn 2's cancel")))))
             (it "does not exit on double ctrl-c during a busy side turn"
                 (fn []
                   (let [ws (side-chat.open! runtime "question")]
@@ -360,7 +381,7 @@
                                                        nil nil
                                                        (fn []
                                                          false)))
-                    (assert.is_true ws.side.cancel-requested?)
+                    (assert.is_true (side-chat.cancel-requested? ws))
                     (assert.is_false state.pending-quit?)
                     (assert.are.equal :btw state.active-workspace-id))))
             (it "ctrl-w cancels and discards all side state"

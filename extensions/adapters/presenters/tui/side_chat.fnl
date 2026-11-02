@@ -3,6 +3,7 @@
 ;; pins a provider closure in persistent state.
 
 (local text (require :fen.util.text))
+(local fence (require :fen.util.cancel_fence))
 (local usage-util (require :fen.util.usage))
 (local tool-policy (require :fen.core.tool_policy))
 (local workspaces (require :fen.extensions.tui.workspaces))
@@ -83,6 +84,16 @@
 (fn live-entry [ws]
   (. volatile.live ws.id))
 
+(fn cancel-entry! [entry]
+  "Cancel ENTRY's running turn. The entry is the turn's fence
+   (fen.util.cancel_fence, acquired by turn_submit): the cancel names the
+   turn running now, so it can never reach a later turn on this entry. A
+   turn spawned before the fence existed (a pre-/reload instance) still
+   polls the legacy flag."
+  (if (fence.current entry)
+      (fence.cancel-current! entry)
+      (set entry.cancel-requested? true)))
+
 (fn runtime-handle [runtime]
   (when runtime
     (if runtime.factory
@@ -105,8 +116,7 @@
         (and existing existing.busy?)
         ;; Old module owns a live turn: mark for cooperative cancellation.
         (do
-          (set existing.cancel-requested? true)
-          (when ws.side (set ws.side.cancel-requested? true))
+          (cancel-entry! existing)
           existing)
         (let [entry {:owner OWNER
                      :runtime runtime
@@ -116,7 +126,6 @@
                      :turn-id 0
                      :turn-result nil
                      :turn-error nil
-                     :cancel-requested? false
                      :discard? false}]
           (tset volatile.live ws.id entry)
           entry))))
@@ -237,7 +246,6 @@
    :turn-id 0
    :turn-result nil
    :turn-error nil
-   :cancel-requested? false
    :pending []})
 
 (fn make-side! [runtime]
@@ -290,10 +298,9 @@
                                                               (tostring value))}))))
   (set entry.busy? false)
   (set entry.turn nil)
-  (set entry.cancel-requested? false)
+  (fence.release! entry)
   (when ws.side
     (set ws.side.busy? false)
-    (set ws.side.cancel-requested? false)
     (set ws.status (if entry.discard? :closed :idle))
     (when entry.discard?
       (set ws.side nil)
@@ -352,8 +359,7 @@
           (finish-turn! ws entry item.ok? item.value))))
     ;; Ask an old instance's in-flight turn to unwind via the reap path.
     (when (and entry (not= entry.owner OWNER) entry.busy?)
-      (set entry.cancel-requested? true)
-      (when ws.side (set ws.side.cancel-requested? true))
+      (cancel-entry! entry)
       (park-for-reap! ws entry))
     (when (and ws.side (not ws.side.busy?) (> (length ws.side.pending) 0))
       (let [line (table.remove ws.side.pending 1)
@@ -377,7 +383,7 @@
 (fn M.reset! []
   "Clear volatile side-chat resources between isolated presenter tests."
   (each [id entry (pairs volatile.live)]
-    (set entry.cancel-requested? true)
+    (cancel-entry! entry)
     (when entry.turn
       (var attempts 0)
       (while (and (< attempts 64) (not= (coroutine.status entry.turn) :dead))
@@ -430,23 +436,28 @@
 (fn M.request-cancel! [ws]
   "Request cooperative cancellation without discarding the side conversation."
   (when (and ws ws.side ws.side.busy?)
-    (set ws.side.cancel-requested? true)
     (let [entry (live-entry ws)]
-      (when entry (set entry.cancel-requested? true)))
+      (when entry (cancel-entry! entry)))
     (workspaces.refresh! ws)
     true))
+
+(fn M.cancel-requested? [ws]
+  "Whether WS's running side turn has a cancel armed."
+  (let [entry (and ws (live-entry ws))]
+    (not (not (and entry (or (fence.cancel-requested? entry
+                                                      (fence.current entry))
+                             entry.cancel-requested?))))))
 
 (fn M.cancel! [ws]
   "Cancel one side conversation, reaping its coroutine before tab removal."
   (when (and ws ws.side)
     (M.request-cancel! ws)
     (set ws.side.pending [])
-    (set ws.side.cancel-requested? true)
     (let [entry (live-entry ws)]
       (if (and entry entry.turn)
           (do
             (set entry.discard? true)
-            (set entry.cancel-requested? true)
+            (cancel-entry! entry)
             ;; Bounded drain now; park on the reap list if cleanup needs more.
             (let [item {:ws ws :entry entry :done? false :ok? true :value nil}]
               (if (resume-entry! item CANCEL-RESUME-LIMIT)

@@ -2,6 +2,7 @@
 
 (local coroutines (require :fen.util.coroutines))
 (local tasks (require :fen.core.tasks))
+(local fence (require :fen.util.cancel_fence))
 (local M {})
 
 (fn maybe-emit-user! [emit text opts]
@@ -45,14 +46,17 @@
 
 (fn spawn-plain! [state text agent-step]
   "Side chat and headless session states: no mailbox and no holder."
-  (let [text (framed text)]
+  (let [text (framed text)
+        ;; No session holder here: the state is its own fence, with a fresh
+        ;; id per turn, so a cancel captured for an earlier turn on this
+        ;; state never cancels this one (spec/core/tasks/proofs/fence).
+        hid (fence.acquire! state)]
     (reset-turn-fields! state)
-    ;; No holder here: these states keep their own cancel flag.
-    (set state.cancel-requested? false)
+    (set state.cancel-requested? nil)
     (set state.turn
          (coroutines.create (fn []
                               (agent-step state.agent text
-                                          (fn [] state.cancel-requested?)))))
+                                          #(fence.cancel-requested? state hid)))))
     (set state.busy? true)
     {:ok true :started true :turn-id state.turn-id}))
 
