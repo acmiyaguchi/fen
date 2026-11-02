@@ -23,20 +23,20 @@ module witnesses {
   // the answer runs the command's continuation while the turn runs (breaking
   // `resolutionInScope` and `refinesTasks`).
   run w638IdleCommandActsInTurnTest =
-    I::init.then(I::cmdRequest).then(I::startTurn).then(I::answer(1, 0))
+    I::init.then(I::cmdRequest).then(I::beginTurn).then(I::answer(1, 0))
       .expect(not(I::resolutionInScope) and not(I::refinesTasks)
               and I::lastAction == "answerCmdWhileBusy" and I::running)
 
   // #398 (V2): a turn's request outlives the cancelled turn ...
   run w398TurnRequestOutlivesTurnTest =
-    I::init.then(I::startTurn).then(I::toolRequest).then(I::cancel)
+    I::init.then(I::beginTurn).then(I::toolRequest).then(I::cancel)
       .expect(not(I::noPendingForEndedTurn) and not(I::refinesTasks)
               and not(I::inheritsTasksInvariants)
               and I::rStatus.get(1) == "pending" and not(I::running))
 
   // ... and an answer to it is accepted for a turn that no longer exists.
   run w398AnswerForEndedTurnTest =
-    I::init.then(I::startTurn).then(I::toolRequest).then(I::cancel).then(I::answer(1, 0))
+    I::init.then(I::beginTurn).then(I::toolRequest).then(I::cancel).then(I::answer(1, 0))
       .expect(not(I::resolutionInScope) and I::lastAction == "answerForEndedTurn")
 
   // #398 (V5): a picker survives /reload and its pre-reload continuation runs.
@@ -55,11 +55,14 @@ module witnesses {
     I::init.then(I::cmdRequest).then(I::answer(1, 0)).then(I::cmdRequest).then(I::answer(1, 0))
       .expect(not(I::answersAcked) and I::lastAction == "answerLate")
 
-  // #398 (V4): headless, the only remote disconnects while the turn is
-  // parked on a request with no deadline.
+  // #398 (V4): headless, a request is issued with no countdown budget (not
+  // an abstract open, which arms one), and the only remote then disconnects
+  // while the turn is parked on it.
   run w398HeadlessRequestNoResolverTest =
-    H::init.then(H::connect).then(H::startTurn).then(H::toolRequest).then(H::disconnect)
-      .expect(not(H::pendingHasPossibleResolver) and not(H::refinesTasks)
+    H::init.then(H::connect).then(H::beginTurn).then(H::toolRequest)
+      .expect(not(H::refinesTasks))
+      .then(H::disconnect)
+      .expect(not(H::pendingHasPossibleResolver)
               and not(H::inheritsTasksInvariants) and H::parkedOn == 1)
 
   // #396 (V9): the reused web /select applies a stale answer to the active select.
@@ -70,22 +73,22 @@ module witnesses {
   // ---- reachability of the proposed protocol ----
 
   run reachTurnRequestAnsweredTest =
-    P::init.then(P::connect).then(P::startTurn).then(P::toolRequest).then(P::answer(1, 0))
+    P::init.then(P::connect).then(P::beginTurn).then(P::toolRequest).then(P::answer(1, 0))
       .expect(P::lastAction == "answerResumesTurn" and P::parkedOn == -1 and P::running
               and P::inductiveInv)
 
   run reachCancelResolvesRequestTest =
-    T::init.then(T::startTurn).then(T::toolRequest).then(T::cancel)
+    T::init.then(T::beginTurn).then(T::toolRequest).then(T::cancel)
       .expect(T::rStatus.get(1) == "ended" and not(T::running) and T::inductiveInv)
 
   run reachTimeoutUnparksTest =
-    P::init.then(P::connect).then(P::startTurn).then(P::toolRequest).then(P::disconnect)
+    P::init.then(P::connect).then(P::beginTurn).then(P::toolRequest).then(P::disconnect)
       .then(P::tick(1)).then(P::timeout(1))
       .expect(P::rStatus.get(1) == "timeout" and P::parkedOn == -1 and P::rRem.get(1) == 0
               and P::inductiveInv)
 
   run reachNoResolverImmediateFallbackTest =
-    P::init.then(P::startTurn).then(P::toolRequest)
+    P::init.then(P::beginTurn).then(P::toolRequest)
       .expect(P::lastAction == "toolRequestFallback" and P::rStatus.get(1) == "timeout"
               and P::parkedOn == -1 and P::inductiveInv)
 
@@ -99,7 +102,7 @@ module witnesses {
               and T::inductiveInv)
 
   run reachPickerAbortedByTurnTest =
-    T::init.then(T::cmdRequest).then(T::startTurn).then(T::answer(1, 0))
+    T::init.then(T::cmdRequest).then(T::beginTurn).then(T::answer(1, 0))
       .expect(T::lastAction == "answerAbortedBusy" and T::rStatus.get(1) == "aborted"
               and T::inductiveInv)
 
