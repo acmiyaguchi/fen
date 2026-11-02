@@ -120,6 +120,18 @@ Dispositions (`why`, `whyN` per seq) are part of the abstract `Session`, so a re
 
 **Liveness, bounded and encoded as safety.** Unbounded temporal checking needs TLC (Apalache does not handle fairness); `quint verify --backend tlc` works (`yes | nix shell nixpkgs#tlaplus nixpkgs#jdk --command quint verify --backend tlc ...`) and catches a leaked holder in about a minute, but only on a model with bounded counters and few nondets: the full holder model is too large. So the fairness assumptions are explicit in the step relation: every `with-holder` body exits within `MAX_BODY` steps, and the driver's idle tick runs at least every `MAX_IDLE` steps. The forced steps are total: the deadline tick is `if (startGuard) doStartTurn else doStarved`, with every start condition in `startGuard`, so a guard bug is recorded as starvation instead of deadlocking the forced step. A pending turn start has priority over an exclusive holder (otherwise alternating exclusive holds starve it forever under weak fairness, and the bounded check, which resets on each hold, would miss it). `releasedInTimeInv` and `startedInTimeInv` are then ordinary inductive invariants. Release is stated on the holder `kind`, not on `body`: a crashed exit can clear `body` and still leak the holder.
 
+**Liveness, temporal, under TLC (`make check-liveness`).** `proofs/liveness/model.qnt` mirrors the L0 lease step relation with `n` and `hid` dropped (they feed only cancel fencing and turn numbering, safety properties proved on `proofs/lease`; no start or release guard reads them), so the state space is finite (about 20 states) and TLC explores it exhaustively. There are no forced steps: fairness is a temporal hypothesis in each property, and a ghost `last` (the last action taken) states "withdrawn" and "finitely many offers". `scripts/spec/liveness.sh` checks each row of `temporal.tsv` and each mutant in `temporal-mutants.tsv` (never starting an exclusive job, consuming a start request without a turn, leaking the holder on exit; each must be violated) in about 25 seconds. It is not part of `make check` or `check-spec` (it needs TLC and a JDK via nix).
+
+| Property | Fairness assumed | Result |
+| --- | --- | --- |
+| `turnStartLive`: a requested start leads to a turn or a withdrawal | WF(body exit), WF(start turn), WF(start exclusive) | holds |
+| `releaseLive`: every holder is released | WF(body exit) | holds |
+| `exclusiveLiveWeak`: a requested exclusive job eventually runs | the same WF | **violated**: offer and withdraw forever, or offer, turn, release, offer, ... (`exclusiveLiveWeakNoDrop`) |
+| `exclusiveLiveFiniteOffers` | WF + finitely many new offers | holds |
+| `exclusiveLiveStrong` | WF + SF(start exclusive) | holds |
+
+So exclusive jobs can be starved by turns, as designed (a pending turn start beats a requested exclusive job): the exclusive start is enabled only between a release and the next offer, which weak fairness does not cover. The job runs if new offers stop eventually, or if the scheduler is strongly fair to it (every release leaves a moment with no pending start, so it is enabled infinitely often).
+
 **One scheduler.** Exclusive jobs (`/reload`, `/handoff`, compaction) do not acquire on their own: they raise an exclusive request (`exReq`) and the scheduler (`next-job!`) starts them only when no turn start is pending, so every holder (turn or exclusive) is started from one place. A plain local offer behind an exclusive job raises the start request, so it starts when the job ends (`behindExclusiveStartsInv`); an explicit follow-up (`>`) still waits for a natural stop. Failures while starting a holder's body are body exits, so they release like any other.
 
 **Refinement layers.**

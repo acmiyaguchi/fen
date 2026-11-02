@@ -1,0 +1,7 @@
+# property	expect (holds|violated)	why
+turnStartLive	holds	WF(body exit, scheduler): a requested turn start runs (doStartTurn) unless withdrawn (doDropStart)
+releaseLive	holds	WF(body exit): every holder is released
+exclusiveLiveWeak	violated	WF only: new offers keep a turn start pending, so the exclusive job can starve
+exclusiveLiveWeakNoDrop	violated	WF, no withdrawals: repeated turns (offer, turn, release, offer...) starve the exclusive job
+exclusiveLiveFiniteOffers	holds	WF + finitely many new offers: the exclusive job runs
+exclusiveLiveStrong	holds	WF + SF(exclusive start): the exclusive job runs

@@ -1,4 +1,4 @@
-.PHONY: help fmt fmt-check test-fmt install-hooks dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-fast test-all test-list test-shuffle test-compile-cache-clear test-pty profile-tui-scroll check-tui-scroll-perf stall-check smoke smoke-mock check check-static check-fennel check-lint lint bench-tui bench-tui-latency docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-spec check-spec-full verify-spec check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean release-prepare release-tag
+.PHONY: help fmt fmt-check test-fmt install-hooks dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-fast test-all test-list test-shuffle test-compile-cache-clear test-pty profile-tui-scroll check-tui-scroll-perf stall-check smoke smoke-mock check check-static check-fennel check-lint lint bench-tui bench-tui-latency docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-spec check-spec-full verify-spec check-liveness check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean release-prepare release-tag
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -215,6 +215,10 @@ check-spec-full:
 
 verify-spec:
 	sh scripts/spec/verify.sh $(SPECS)
+
+# TLC liveness for the session lease (needs nix for TLC + JDK). Not part of `check`.
+check-liveness:
+	sh scripts/spec/liveness.sh
 
 check-docs:
 	@fennel scripts/docs/check-docs.fnl

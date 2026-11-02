@@ -1,0 +1,4 @@
+# sed edit	property	description
+s|    kind == "none", exReq, not(startReq),|    kind == "none", exReq, not(startReq), false,|	exclusiveLiveStrong	the scheduler never starts an exclusive job
+s|    kind' = "turn", body' = true, cancel' = false, startReq' = false,|    kind' = kind, body' = body, cancel' = cancel, startReq' = false,|	turnStartLive	the start request is consumed but no turn starts (dropped request)
+/action doBodyExit/,/^  }/s|    kind' = "none", body' = false, cancel' = false,|    kind' = kind, body' = false, cancel' = false,|	releaseLive	the body exits but the holder leaks
