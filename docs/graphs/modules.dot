@@ -219,6 +219,7 @@ digraph fen_modules {
   "fen.update" [fillcolor="lightyellow", label="fen.update", style="filled", tooltip="packages/fen/src/fen/update.fnl persistent"];
   "fen.util.args" [fillcolor="lightyellow", label="fen.util.args", style="filled", tooltip="packages/util/src/fen/util/args.fnl persistent"];
   "fen.util.base64" [fillcolor="lightyellow", label="fen.util.base64", style="filled", tooltip="packages/util/src/fen/util/base64.fnl persistent"];
+  "fen.util.cancel_fence" [fillcolor="lightyellow", label="fen.util.cancel_fence", style="filled", tooltip="packages/util/src/fen/util/cancel_fence.fnl persistent"];
   "fen.util.checksum" [fillcolor="lightyellow", label="fen.util.checksum", style="filled", tooltip="packages/util/src/fen/util/checksum/init.fnl persistent"];
   "fen.util.checksum.backend" [fillcolor="lightyellow", label="fen.util.checksum.backend", style="filled", tooltip="packages/util/src/fen/util/checksum/backend.fnl persistent"];
   "fen.util.checksum.backends.default" [fillcolor="lightyellow", label="fen.util.checksum.backends.default", style="filled", tooltip="packages/util/src/fen/util/checksum/backends/default.fnl persistent"];
@@ -799,6 +800,7 @@ digraph fen_modules {
   "fen.extensions.subagent" -> "fen.core.extensions.register.presenter" [label="require"];
   "fen.extensions.subagent" -> "fen.core.extensions.register.provider" [label="require"];
   "fen.extensions.subagent" -> "fen.core.llm.models" [label="require"];
+  "fen.extensions.subagent" -> "fen.core.tasks" [label="require"];
   "fen.extensions.subagent" -> "fen.core.thinking" [label="require"];
   "fen.extensions.subagent" -> "fen.core.types" [label="require"];
   "fen.extensions.subagent" -> "fen.extensions.subagent.channel" [label="require"];
@@ -913,6 +915,7 @@ digraph fen_modules {
   "fen.extensions.tui.side_chat" -> "fen.extensions.tui.state" [color="gray50", label="optional", style="dotted"];
   "fen.extensions.tui.side_chat" -> "fen.extensions.tui.workspaces" [label="require"];
   "fen.extensions.tui.side_chat" -> "fen.interactive" [color="gray50", label="optional", style="dotted"];
+  "fen.extensions.tui.side_chat" -> "fen.util.cancel_fence" [label="require"];
   "fen.extensions.tui.side_chat" -> "fen.util.text" [label="require"];
   "fen.extensions.tui.side_chat" -> "fen.util.usage" [label="require"];
   "fen.extensions.tui.stories" -> "fen.extensions.tui.state" [label="require"];
@@ -1020,6 +1023,7 @@ digraph fen_modules {
   "fen.turn_lifecycle" -> "fen.util.text" [label="require"];
   "fen.turn_submit" -> "fen.core.tasks" [label="require"];
   "fen.turn_submit" -> "fen.extensions.subagent.runs" [color="gray50", label="optional", style="dotted"];
+  "fen.turn_submit" -> "fen.util.cancel_fence" [label="require"];
   "fen.turn_submit" -> "fen.util.coroutines" [label="require"];
   "fen.update" -> "fen.util.http" [label="require"];
   "fen.update" -> "fen.util.id" [label="require"];

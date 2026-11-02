@@ -68,12 +68,34 @@
                     (assert.is_not_nil st.turn)
                     (assert.is_nil st.turn-result)
                     (assert.is_nil st.turn-error)
-                    (assert.is_false st.cancel-requested?)
+                    (assert.is_nil st.cancel-requested?
+                                   "a cancel set while idle arms nothing")
                     (let [(ok? err) (coroutine.resume st.turn)]
                       (assert.is_true ok? err))
                     (assert.are.equal "work" (. st.agent.seen 1 :text))
                     (assert.is_false (. st.agent.seen 1 :cancelled?))
                     (assert.are.equal 0 (length events)))))
+            (it "plain state: a cancel captured for turn 1 never cancels turn 2"
+                (fn []
+                  (let [fence (require :fen.util.cancel_fence)
+                        st (make-state)
+                        checks []
+                        step (fn [_agent _text cancelled?]
+                               (table.insert checks cancelled?)
+                               (coroutine.yield))]
+                    (turn-submit.start! st "one" step)
+                    (coroutine.resume st.turn)
+                    (let [pressed-for (fence.current st)]
+                      (set st.busy? false)
+                      (turn-submit.start! st "two" step)
+                      (coroutine.resume st.turn)
+                      ;; Late Ctrl-C for turn 1, then a live one for turn 2.
+                      (assert.is_false (fence.cancel! st pressed-for))
+                      (assert.is_false ((. checks 2)))
+                      (assert.is_true (fence.cancel-current! st))
+                      (assert.is_true ((. checks 2)))
+                      (assert.is_false ((. checks 1))
+                                       "turn 1's stale check sees turn 2's cancel")))))
             (it "can echo extension-submitted text before starting"
                 (fn []
                   (let [events []

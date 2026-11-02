@@ -130,6 +130,8 @@ Dispositions (`why`, `whyN` per seq) are part of the abstract `Session`, so a re
 | L2 holder | `proofs/holder` | the full mailbox | `inductiveInv` (~25 s); refines L0 (`refinesLeaseInv`, ~25 s) and L1 for every seq (`refinesInv`, ~40 s) |
 | L3 code | `fen.core.tasks` | the pure `step` | trace replay of `holderSpec` (`conform.sh`: state, dispositions, forbidden-transition probes) |
 
+`proofs/fence` carries the L0 cancel fence to the holders outside the session lease (side chat turns, headless states, the turn owning a blocking subagent run): per-owner id spaces, a cancel carrying (owner, id) captured earlier, and two invariants, `cancelFencedInv` (never arms a later or another owner's holder) and `cancelNotLostInv` (a cancel for the current holder stays armed until release); inductive, ~3 s. Its mutants are the flag designs it replaced: a per-run flag reset at start, a sticky run-state flag, a reset at body start, and an id without its owner. Code: `fen.util.cancel_fence`.
+
 Refinement is a state predicate over a copy of the previous state (`p*` variables), not a ghost updated in the step: putting `lineNext` in the step relation made every holder proof time out. The L1 proof covers the whole `lineNext` relation, so invariants L2 inherits through `refinesLine` hold for every step the monitor accepts. `verify.sh` takes `main@action` to pick the step action.
 
 Quint 0.32 flattener notes: qualified imports (`import M as X`) lose imported helpers, and selective imports flatten helpers unqualified, so the L0/L1 helpers have unique names (`leaseStartTurn`, `lineDone`, ...) and L2 imports single names.
