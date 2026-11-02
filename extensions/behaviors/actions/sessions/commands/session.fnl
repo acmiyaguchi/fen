@@ -394,11 +394,13 @@
         reload-span (profile-span-begin! :reload {})
         log-cursor (log.cursor)]
     (var recovery-result nil)
+    ;; The only cancel point (see CANCEL-POINTS): before recovery clears the
+    ;; registry buckets and before any module swaps.
+    (yield! {:phase :reload-start})
     (when (?. ?opts :recovery)
       (let [(result err) (runtime-recovery.recover! ?opts.recovery)]
         (when err (error (.. "recovery: " err)))
         (set recovery-result result)))
-    (yield! {:phase :reload-start})
     (var failures [])
     (var core-summary nil)
     (let [start-ms (clock.monotonic-ms)
@@ -486,11 +488,12 @@
 
 (local RELOAD-CANCEL {:type :reload-cancel-marker})
 
-;; Cancel is honored only between reload phases, never in the middle of one
-;; (a half-swapped module set); later phases are then skipped.
-(local CANCEL-POINTS {:reload-start true
-                      :after-core true
-                      :after-extensions true})
+;; Cancel is honored only before the first change: registry recovery and the
+;; core/extension swaps are not undoable, so a cancel at :after-core or
+;; :after-extensions would leave new core under old extensions, or new modules
+;; under the old agent. Once swapping begins the reload runs to its end
+;; (spec/core/reload: cancelLeavesOld, registriesNotLost).
+(local CANCEL-POINTS {:reload-start true})
 
 (fn reload-body [api state opts]
   (fn [hid]
@@ -506,11 +509,15 @@
                              #(if (= $1 RELOAD-CANCEL) $1
                                   (debug.traceback (tostring $1) 2)))]
       (if ok?
-          (api.emit {:type :assistant-text : text})
+          (do
+            (api.emit {:type :assistant-text : text})
+            (when (tasks.cancel-requested? hid state)
+              (api.emit {:type :info
+                         :text "reload> cancel arrived after modules began swapping; finished the reload instead of leaving it half-applied"})))
           (= text RELOAD-CANCEL)
           (do
             (api.emit {:type :assistant-text
-                       :text "reload> cancelled between phases"})
+                       :text "reload> cancelled before any module was reloaded"})
             (api.emit {:type :cancelled}))
           (error text 0)))))
 

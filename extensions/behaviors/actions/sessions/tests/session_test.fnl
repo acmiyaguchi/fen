@@ -84,7 +84,8 @@
                   (table.insert extension-state.tools-extra {:name :stale})
                   (command-registry.dispatch "/reload --recover registries"
                                              state)
-                  (assert.is_true (coroutine.resume state.turn))
+                  (while (not= :dead (coroutine.status state.turn))
+                    (assert.is_true (coroutine.resume state.turn)))
                   (assert.are.equal 0 (length extension-state.tools-extra))))
               (it "rejects unrecognized /reload text instead of reloading"
                   (fn []
@@ -149,4 +150,71 @@
                       (assert.are.equal 0 reloads
                                         "no phase ran after the cancel")
                       (assert.are.equal 1 (length seen))
+                      (assert.are.equal :none (. (tasks.holder) :kind)))))
+              (it "/reload --recover registries cancelled at its start keeps the registries (spec/core/reload)"
+                  (fn []
+                    ((. (require :fen.core.tasks) :reset!))
+                    (let [tasks (require :fen.core.tasks)
+                          api (test-api.make-runtime-api :sessions)
+                          mod (require :fen.extensions.sessions.commands.session)
+                          state {:busy? false
+                                 :reload-modules (fn []
+                                                   (error "no swap after cancel"))}]
+                      (mod.register api)
+                      (table.insert extension-state.tools-extra {:name :kept})
+                      (local before (length extension-state.tools-extra))
+                      (command-registry.dispatch "/reload --recover registries"
+                                                 state)
+                      (coroutine.resume state.turn)
+                      (assert.is_true (tasks.cancel-current!))
+                      (while (not= :dead (coroutine.status state.turn))
+                        (coroutine.resume state.turn))
+                      (assert.are.equal before
+                                        (length extension-state.tools-extra)
+                                        "recovery did not clear the buckets of a cancelled reload")
+                      (assert.are.equal :none (. (tasks.holder) :kind)))))
+              (it "/reload finishes when Ctrl-C arrives after modules began swapping (spec/core/reload)"
+                  (fn []
+                    ((. (require :fen.core.tasks) :reset!))
+                    (let [tasks (require :fen.core.tasks)
+                          events (require :fen.core.extensions.events)
+                          cancelled []
+                          load-calls []
+                          replacement {:messages []}
+                          api (test-api.make-runtime-api :sessions)
+                          mod (require :fen.extensions.sessions.commands.session)
+                          state {:busy? false
+                                 :agent {:messages []}
+                                 :opts {}
+                                 :reload-modules (fn [yield! _opts]
+                                                   (yield! {:phase :core
+                                                            :module :fen.a})
+                                                   (values 1 []
+                                                           {:checked 1
+                                                            :reloaded 1
+                                                            :changed 1
+                                                            :failed 0
+                                                            :changed-modules [:fen.a]}))
+                                 :load-extensions (fn [_opts mode]
+                                                    (table.insert load-calls
+                                                                  mode)
+                                                    {:loaded 0
+                                                     :changed 0
+                                                     :failed 0
+                                                     :extensions []})
+                                 :make-agent-from-opts (fn [] replacement)}]
+                      (events.on :cancelled #(table.insert cancelled $1)
+                                 :reload-swap-cancel-test)
+                      (mod.register api)
+                      (command-registry.dispatch "/reload" state)
+                      (coroutine.resume state.turn) ; at :reload-start
+                      (coroutine.resume state.turn) ; inside the core pass
+                      (assert.is_true (tasks.cancel-current!))
+                      (while (not= :dead (coroutine.status state.turn))
+                        (coroutine.resume state.turn))
+                      (events.unregister-by-owner :reload-swap-cancel-test)
+                      (assert.are.equal 0 (length cancelled))
+                      (assert.are.equal 2 (length load-calls)
+                                        "extensions and tui reloaded after the core swap")
+                      (assert.are.equal replacement state.agent)
                       (assert.are.equal :none (. (tasks.holder) :kind)))))))
