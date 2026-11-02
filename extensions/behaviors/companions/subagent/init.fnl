@@ -31,6 +31,7 @@
 (local provider-registry (require :fen.core.extensions.register.provider))
 (local models (require :fen.core.llm.models))
 (local thinking-mod (require :fen.core.thinking))
+(local tasks (require :fen.core.tasks))
 
 (local M {})
 
@@ -1088,6 +1089,14 @@
   (when run.job
     (set run.job.cancel-requested? true)))
 
+(fn cancel-owning-turns! []
+  "Cancel the turns that own active blocking runs, each fenced on the holder
+   id captured at launch: a turn that already ended is not replaced by the
+   turn running now (spec/core/tasks/proofs/fence)."
+  (each [_ r (ipairs (runs.active-records))]
+    (when (and (not r.background?) r.owner-hid)
+      (tasks.cancel! r.owner-hid))))
+
 (fn start-child! [run bin sys-path routing child-policy ?web-search]
   "Create the private control and event files, queue the task as the first
    `prompt`, and spawn the child once."
@@ -1155,6 +1164,12 @@
                                 :max-tool-calls cfg.max-tool-calls
                                 :background? opts.background?
                                 :collect opts.collect})]
+          ;; A blocking run belongs to the turn that launched it: capture that
+          ;; turn's holder id now, so a later cancel of "the owning turn"
+          ;; names this turn and never whichever turn runs then.
+          (when (not opts.background?)
+            (let [h (tasks.holder)]
+              (when (= h.kind :turn) (set run.owner-hid h.hid))))
           (append-local-event! run
                                {:type :subagent-start
                                 :task task
@@ -1731,8 +1746,8 @@
                                :text "No active subagent runs to cancel."})
                     (do
                       (each [_ r (ipairs active)] (request-cancel! r))
-                      ;; Preserve blocking/current-turn cancellation behavior.
-                      (when ctx (set ctx.cancel-requested? true))
+                      ;; A blocking run is also cancelled through its owning turn.
+                      (cancel-owning-turns!)
                       (api.emit {:type :assistant-text
                                  :text (.. "Requested cancellation for " n
                                            " active subagent run(s).")}))))))
@@ -2084,8 +2099,7 @@
               n (length jobs)]
           (when (> n 0) (shutdown-background-jobs! true))
           ;; A blocking subagent is cancelled through its owning turn.
-          (when (and ctx (> (runs.active-count) 0))
-            (set ctx.cancel-requested? true))
+          (cancel-owning-turns!)
           (result (if (> n 0)
                       (.. "Cancelled " n " background subagent run(s).")
                       "No active background subagent runs to cancel.")
@@ -2137,7 +2151,7 @@
           (when (> cancelled 0) (shutdown-background-jobs! true))
           (if (> (runs.active-count) 0)
               (do
-                (when ctx (set ctx.cancel-requested? true))
+                (cancel-owning-turns!)
                 (result "blocking subagent cancellation requested; reset again after it exits"
                         true
                         {:cancelled cancelled

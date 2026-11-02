@@ -1322,23 +1322,51 @@
                       (assert.are.equal 0 (. (snapshot) :active-count))))))
             (it "lets /subagents cancel request current-turn and run cancellation"
                 (fn []
-                  (var turn-state nil)
-                  (install-mocks (fn [child]
-                                   (start! child)
-                                   (prompt! child)
-                                   (set turn-state
-                                        {:busy? true :cancel-requested? false})
-                                   (command-registry.dispatch "/subagents cancel"
-                                                              turn-state)
-                                   (child.expect! :cancel)
-                                   (child.exit! :cancelled))
-                                 scout)
-                  (let [api (fresh-captured)
-                        r (execute-tool {:agent :scout :task "cancel me"})]
-                    (assert.is_true r.is-error?)
-                    (assert.is_true turn-state.cancel-requested?)
-                    (assert.is_truthy (contains? (last-assistant-text api)
-                                                 "Requested cancellation")))))
+                  (let [tasks (require :fen.core.tasks)
+                        hold (require :fen.testing.tasks)]
+                    (tasks.reset!)
+                    (let [(_co hid) (hold.hold-turn!)]
+                      (install-mocks (fn [child]
+                                       (start! child)
+                                       (prompt! child)
+                                       (command-registry.dispatch "/subagents cancel"
+                                                                  {:busy? true})
+                                       (child.expect! :cancel)
+                                       (child.exit! :cancelled))
+                                     scout)
+                      (let [api (fresh-captured)
+                            r (execute-tool {:agent :scout :task "cancel me"})]
+                        (assert.is_true r.is-error?)
+                        (assert.is_true (tasks.cancel-requested? hid)
+                                        "the owning turn is cancelled")
+                        (assert.is_truthy (contains? (last-assistant-text api)
+                                                     "Requested cancellation"))))
+                    (tasks.reset!))))
+            (it "/subagents cancel while idle does not cancel the next turn"
+                (fn []
+                  (let [tasks (require :fen.core.tasks)
+                        hold (require :fen.testing.tasks)
+                        run-state {:busy? false}]
+                    (tasks.reset!)
+                    (install-mocks (fn [child]
+                                     (start! child)
+                                     (prompt! child)
+                                     (child.expect! :cancel)
+                                     (child.exit! :cancelled))
+                                   scout)
+                    (fresh-captured)
+                    (let [tool (registered-tool :subagent)
+                          r (tool.execute {:agent :scout
+                                           :task "background"
+                                           :background true}
+                                          {})]
+                      (assert.is_false r.is-error?)
+                      (command-registry.dispatch "/subagents cancel" run-state)
+                      (pump-until-done! "subagent-1")
+                      (let [(_co hid) (hold.hold-turn!)]
+                        (assert.is_false (tasks.cancel-requested? hid run-state)
+                                         "the idle-time cancel hit the next turn")))
+                    (tasks.reset!))))
             ;; ---- background runs ----
             (it "pumps a background run on runtime ticks and queues its completion"
                 (fn []
