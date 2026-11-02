@@ -228,6 +228,13 @@
                    {:turn ch.turn :ref (math.tointeger started.tag)}))
           (do
             (set ch.active nil)
+            (set ch.started-ref nil)
+            ;; The control was accepted but its line never ran: account for
+            ;; its ref before the run fails.
+            (when ?ref
+              (send! ch :info {:summary (.. "dropped prompt: "
+                                            (tostring started.error))
+                               :refs [?ref]}))
             (late.fatal! ch (.. "cannot start turn: " (tostring started.error))))))))
 
 (fn interrupt-turn! [ch]
@@ -259,6 +266,17 @@
       (set ch.deferred f)
       (f)))
 
+(fn finalize-turn! [ch]
+  "finalize's interrupt. A start line still waiting behind an exclusive job
+   was just dropped with the other queued input, so its turn will never
+   start: the run is as in ready, and finishes with the answer it has."
+  (if (and ch.active ch.active.pending? (not ((. (tasks) :start-pending?))))
+      (do
+        (set ch.active nil)
+        (set ch.status :done)
+        (defer-exit! ch #(finish! ch)))
+      (interrupt-turn! ch)))
+
 (fn perform! [ch action ?msg]
   (if (= action :finish) (defer-exit! ch #(finish! ch)) (= action :start-turn)
       (start-turn! ch ?msg.text nil (math.tointeger ?msg.seq))
@@ -267,7 +285,7 @@
       (= action :start-finalize-turn)
       (start-turn! ch (or (text.blank->nil ch.finalize-note)
                           DEFAULT-FINALIZE-NOTE) true)
-      (= action :interrupt-turn) (interrupt-turn! ch) (= action :abort)
+      (= action :interrupt-turn) (finalize-turn! ch) (= action :abort)
       (if ch.active
           (interrupt-turn! ch)
           (defer-exit! ch #(exit! ch ch.status ch.error)))

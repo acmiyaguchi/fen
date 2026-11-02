@@ -1,0 +1,8 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|    turnEndedW(noteSeqs({ ...w, h: release(w.h) }, w.h.steer))|    turnEndedW({ ...w, h: release(w.h) })|	refs	settledAccounted	dropped terminal notice: a released turn's unread steering is handed back without an info naming its refs
+model.qnt	s|    else { ...w0, h: b0, st: "running", active: "pending" }|    else noteRef({ ...w0, h: b0, st: "running", active: "pending" }, r)|	refs	atMostOneNotice	double notice: a start line waiting behind an exclusive job is reported as started, and again when its turn really starts
+model.qnt	s|    if (w.active == "pending") noteSeqs({ ...w, h: b, active: "turn", cn: b.n }, started)|    if (w.active == "pending") { ...w, h: b, active: "turn", cn: b.n }|	refs	noticeIffDisposed	a started line with no ref tag: the adopted pending turn's turn-started omits the line's ref
+model.qnt	s|    else noteRef(w0, r)|    else { ...w0, h: offer(w.h, r, NONE, false) }|	refs	steerNeverStarts	a steer accepted under an exclusive job: offered without a turn number, it waits behind the job and starts a turn of its own
+model.qnt	s|    val w1 = { ...dropQueued(w), st: "finalizing" }|    val w1 = { ...w, h: clearFollowUp(clearSteer(w.h)), st: "finalizing" }|	refs	noticeIffDisposed	finalize loses a queued ref: the queues are cleared without an info naming the dropped lines
+model.qnt	s|    val failed = Set(r)|    val failed = Set()|	refs	settledAccounted	a prompt whose start fails (empty text) fails the run without reporting its ref (pre-fix code)
+model.qnt	s|    if (w.active == "pending") exitW(|    if (false) exitW(|	refs	pendingWillStart	finalize clears a waiting start line and the child keeps waiting for its turn forever (pre-fix code)
