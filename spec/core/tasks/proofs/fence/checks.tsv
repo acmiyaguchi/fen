@@ -1,0 +1,5 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+fence	cancelFencedInv	holds
+fence	cancelNotLostInv	holds
+fence	armedHeldInv	holds
+fence	inductiveInv	holds

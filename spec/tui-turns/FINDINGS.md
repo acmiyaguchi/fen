@@ -154,6 +154,12 @@ The counterexample witnesses became `reach...Test` traces on the fixed design.
 - Steering handed back at turn end (#662): steering lives in the core turn mailbox (`fen.core.tasks`), tagged with its turn; `turn_submit` closes the turn inside its coroutine and every turn end (ok, error, or cancel) returns the unread lines as `:steering-returned`, which the TUI puts back in the main draft (spec/core/tasks `requestsSpec`).
 - Reopened `/btw` isolated from reaped turn (#663): `side_chat.fnl` removes parked entries from `live` into `reap`, captures `ws` in event callbacks and drops events for closed tabs, and reflects `reap` in `busy?`.
 
+Side turn cancel is fenced like the main holder (`spec/core/tasks/proofs/fence`).
+The live entry is the turn's fence (`fen.util.cancel_fence`): `turn_submit`'s `spawn-plain!` acquires a fresh id per turn and the turn polls `cancel-requested? entry hid`; `request-cancel!`, `cancel!`, the reload takeover, and `reset!` cancel the id holding at that moment, and `finish-turn!` releases it.
+The workspace-level `ws.side.cancel-requested?` flag is gone; `side-chat.cancel-requested? ws` reads the live entry.
+The side-ownership model's entry `cancel` bit is that fence's armed bit for the entry's generation.
+Regression test: `side_chat_test.fnl` ("a late cancel for side turn 1 never cancels side turn 2").
+
 ## Candidate fixes (named: `FIXES`)
 
 The model takes `const FIXES: Set[str]`; `current` enables none, `fixed` all four, and `fix660` … `fix663` one each, with `checks.tsv` rows showing each fix makes its own issue's invariants hold (sampled).

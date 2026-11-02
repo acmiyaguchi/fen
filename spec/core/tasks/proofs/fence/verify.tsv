@@ -1,0 +1,2 @@
+# main	invariants	mode	steps	seconds	why
+fence	inductiveInv	inductive	1	120	Induction over two independent fences: a cancel arms only the (owner, id) it names, and stays armed until that holder releases.

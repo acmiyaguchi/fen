@@ -6,6 +6,9 @@ A run's lifecycle is launch → running → finalizing → done/failed/timed-out
 The child does tool calls, final answers, and steers, and exits on its own.
 The parent's driver pass (`pump!` → `drive!` → `maybe-finalize!`) applies a `max-tool-calls` budget.
 On the parent side the model covers natural stop, turn cancel, `action=wait`, `/cancel-all`, `/reload`, and quit.
+Cancel of the owning turn is fenced: a blocking run records its owning turn's holder id at launch (`run.owner-hid`), and `/subagents cancel`, `action=cancel-all`, and `action=reset` cancel through `tasks.cancel!` of that id (`spec/core/tasks/proofs/fence`).
+They used to set `ctx.cancel-requested?`: on the run-state that flag outlived an idle-time command and cancelled the next turn; on the tool context nothing read it.
+Regression test: `subagent/tests/init_test.fnl` ("/subagents cancel while idle does not cancel the next turn").
 How an outcome reaches the parent model is modelled too: a blocking tool result, a background follow-up, or a wait result.
 Inheritance is modelled for three inputs: thinking level, hosted web search, and the background "read-only" promise.
 The wire protocol (acks, seq, the child state table, result-once) belongs to [wire](../wire/); here the channel is a black box.
