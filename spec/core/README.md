@@ -33,6 +33,7 @@ That is why the replay rule also has its own laws (`replay/`), checked independe
 | [contrib](contrib/abstract.qnt): per-owner extension contribution map | #673 | abstract spec proved inductively (~6 s) and to 10 steps | extensions (`proofs/contrib`, `proofs/turn-identity`), context |
 | [runs](runs/abstract.qnt): subagent run table and mailbox | #674 | abstract spec proved inductively (~2 s) and to 10 steps | subagents (`proofs/lifecycle`), wire (`proofs/acks`) |
 | [policy](policy/abstract.qnt): child policy derived from the parent | #675 | abstract spec proved inductively (~9 s) and to 10 steps | subagents (`proofs/inheritance`), auth (`proofs/pinning`), extensions (`proofs/validation`) |
+| [reload](reload/model.qnt): /reload phases atomic under cancel and failure | — | `fixed` proved inductively (~5 s) and to 14 steps; `before` (cancel at `:after-core`/`:after-extensions`, cancel after `recover!`) is witnessed violating `cancelLeavesOld`/`registriesNotLost`/`mixTracked` | uses tasks (`proofs/holder`, holder release) and contrib (per-owner rollback); code: `sessions/commands/session.fnl` `CANCEL-POINTS` |
 
 ## turn
 

@@ -1,0 +1,3 @@
+# main	invariants	mode	steps	seconds	why
+fixed	reloadInductive	inductive	1	300	finite program counter over two-valued versions: each pc fixes which swaps can have happened and whether a mix is recorded, so induction covers any number of reloads, cancels and failures
+fixed	reloadAtomic	bounded	14	300	cross-check at one full reload: request, a cancel, and the 11 phase steps PRE..DONE plus finish

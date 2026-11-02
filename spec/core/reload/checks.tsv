@@ -1,0 +1,9 @@
+# main	invariant	expect (holds|violated)	issues (violated rows)
+before	cancelLeavesOld	violated
+before	registriesNotLost	violated
+before	okAllNew	holds
+before	mixTracked	violated
+before	regMatchesModule	holds
+before	holderReleased	holds
+current	reloadAtomic	holds
+fixed	reloadInductive	holds
