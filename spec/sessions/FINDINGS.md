@@ -8,10 +8,20 @@ It also covers `--continue` replay, a second process running `fen session send` 
 The JSONL backend's stale-lock reclaim with two `send` processes is the [`lock` proof model](proofs/lock/model.qnt); the `lockCurrent`/`lockFixed` rows here run its instances.
 `currentSolo` is the current code with only one process allowed to touch the session, so each violation can be traced to the bug that causes it.
 
-Code: `packages/fen/src/fen/session_lifecycle.fnl` (`start!`, `make-flush`, `install!`), `extensions/adapters/session-backends/jsonl/session.fnl` (`append-entry`, `open-existing`, `read-entries`, `load`, `latest-valid-compaction`, `acquire-lock`, `doctor`), `extensions/behaviors/companions/compact/init.fnl` (`find-cut-point`, `finish-compact!`), `packages/fen/src/fen/session_control.fnl` (`run-turn!`), `packages/core/src/fen/core/agent.fnl` (`append-message!`, `build-context`, cancel pairing), `extensions/adapters/providers/anthropic/anthropic_messages.fnl` (`convert-messages`).
+Code: `packages/fen/src/fen/session_lifecycle.fnl` (`start!`, `make-flush`, `install!`), `extensions/adapters/session-backends/jsonl/session.fnl` (`append-entry`, `open-existing`, `read-entries`, `load`, `latest-valid-compaction`, `acquire-lock`, `doctor`), `extensions/behaviors/companions/compact/init.fnl` (`find-cut-point`, `finish-compact!`; `/compact` and auto run as exclusive jobs via `start-compact!` -> `tasks.run-exclusive!`, the `compact` tool inline via `execute-tool`), `extensions/behaviors/companions/handoff/init.fnl` (`start-handoff!` -> `tasks.run-exclusive!`, `finish-handoff!`), `packages/core/src/fen/core/tasks.fnl` (`request-job!`, `schedule!`, `cancel-requested?`), `packages/fen/src/fen/session_control.fnl` (`run-turn!`), `packages/core/src/fen/core/agent.fnl` (`append-message!`, `build-context`, cancel pairing), `extensions/adapters/providers/anthropic/anthropic_messages.fnl` (`convert-messages`).
 
 The bugs were first confirmed by a throwaway probe (`zz_probe_sessions_jsonl_test.fnl`, `6 successes / 0 failures`, lines quoted below).
 Each had a `known-bug` probe against the real code; the probes are now regression tests (see "Evidence per bug").
+
+## Audit after #686 (session holder)
+
+The model still matches, now as an over-approximation for the idle paths:
+
+- `/compact` and auto-compaction are exclusive jobs (`start-compact!`, `extensions/behaviors/companions/compact/init.fnl:287`). They start only when no holder exists, i.e. after the turn's `close-turn!` has paired every call, so in code they never run mid-tool; `compact(cut)` still allows that and the invariants hold anyway.
+- The only mid-turn compaction is the `compact` tool (`execute-tool`, `compact/init.fnl:391`), which calls `finish-compact!` inline in the turn coroutine, unchanged by #686: the cut is at a user message, so the open assistant call stays in `kept` and its result is appended afterwards. A cancel unwinds through the turn's yield to the agent's cancelled result.
+- A cancelled `/compact` or `/handoff` job raises CANCEL-MARKER from `make-yield` (fenced on the job's hid, `compact/init.fnl:197`, `handoff/init.fnl:92`) during the summary call, before `append-entry` or `reset-agent-session!`, so no compaction entry is written and the messages stay as they were: a no-op, as modelled (`compact` is atomic).
+- `/handoff` replaces the session with one summary message, so it has no tool pairs; it runs from a paired idle history.
+- Quitting with a suspended turn (`turn-submit.drop!` at presenter exit) is the `crash` action (#639).
 
 ## Input assumptions
 

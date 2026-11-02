@@ -37,7 +37,8 @@
 // type-tolerant); the "badArgs" outcome stays as the model's stand-in for any
 // crash after the assistant is appended (e.g. a raising tool-context).
 //
-// Queues mirror extensions/behaviors/kernel/steering/service.fnl: steering
+// Queues mirror packages/core/src/fen/core/tasks.fnl (take!, via the steering
+// service shell): steering
 // and follow-up lines are appended while the agent is busy and drained
 // one-at-a-time; a line may be "" (`>` alone strips to "").
 //

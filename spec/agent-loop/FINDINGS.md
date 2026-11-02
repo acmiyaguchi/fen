@@ -8,11 +8,22 @@ Steering and follow-up queues are drained one at a time while the agent is busy,
 The `:agent-turn-complete` status comes from `turn_lifecycle`.
 Each provider call is one nondeterministic outcome; retries belong to the network domain.
 
-Code: `packages/core/src/fen/core/agent.fnl` (`step`, `step-loop`, `run-tool-calls`, `run-serial-tool-call`, `run-parallel-tool-batch`, `append-cancelled-tool-results!`, `refuse-tool-calls!`, `inject-user-lines!`, `inject-after-natural-stop!`, `same-turn-edit-conflicts`, `context-message?`), `packages/core/src/fen/core/tools.fnl`, `extensions/behaviors/kernel/steering/service.fnl`, `packages/fen/src/fen/{interactive,turn_submit,turn_lifecycle}.fnl`, `extensions/adapters/providers/shared/streaming.fnl` (`finalize-stream-state`), `extensions/adapters/providers/anthropic/anthropic_messages.fnl`.
+Code: `packages/core/src/fen/core/agent.fnl` (`step`, `step-loop`, `run-tool-calls`, `run-serial-tool-call`, `run-parallel-tool-batch`, `append-cancelled-tool-results!`, `refuse-tool-calls!`, `inject-user-lines!`, `inject-after-natural-stop!`, `same-turn-edit-conflicts`, `context-message?`), `packages/core/src/fen/core/tools.fnl`, `extensions/behaviors/kernel/steering/service.fnl` (`get-steering`/`get-follow-up`, thin shells over `tasks.take!`), `packages/core/src/fen/core/tasks.fnl` (`take!`, `cancel-requested?` fenced on the holder id, `release!`), `packages/fen/src/fen/{interactive,turn_submit,turn_lifecycle}.fnl` (`mailbox-turn` passes `#(tasks.cancel-requested? hid state)` as the step's cancel-fn), `extensions/adapters/providers/shared/streaming.fnl` (`finalize-stream-state`), `extensions/adapters/providers/anthropic/anthropic_messages.fnl`.
 
 Today's code carries the #606-#610 fixes (the close-turn boundary, #668), so `current`, `wellFormed`, `lengthOnly`, `badArgsOnly` and `fixed` all model it; the bugs live on in the `fix<issue>` instances and `mutants.tsv`.
 
 Main modules: `current` (every outcome), `wellFormed` (tool calls only ever arrive with `:tool-use` and parseable arguments), `lengthOnly` / `badArgsOnly` (each isolates one malformed-reply bug), and `fixed`.
+
+## Audit after #686 (session holder)
+
+#686 moved turns, `/compact`, auto-compaction and `/handoff` onto one session holder (`packages/core/src/fen/core/tasks.fnl`).
+The loop model still matches; nothing in the pairing path changed:
+
+- `close-turn!` (`packages/core/src/fen/core/agent.fnl:717`) still calls `close-open-calls!` on every unwind (cancel, crash, error) before the step returns; #686 only removed its steering clear.
+- A turn's cancel reaches the synthetic-result path through the same CANCEL-MARKER: the step's cancel-fn is `tasks.cancel-requested?` fenced on the turn's own hid (`packages/fen/src/fen/turn_submit.fnl:40`, `tasks.fnl:738`), so a stale Ctrl-C can only fail to cancel, never cancel a different holder.
+- The holder is released only once the turn coroutine is dead (`tasks.resume-current!`, `tasks.fnl:609`), i.e. after `close-turn!`; a requested exclusive job (compaction, handoff, reload) is started only by the scheduler when no holder exists (`schedule!`, `tasks.fnl:198`). `run-exclusive!` runs inline only inside an exclusive job's own coroutine, so from a turn it always queues. No exclusive job can run between a tool call and its result.
+- Unread steering is now handed back on release instead of left queued or cleared; the model keeps it pending, an over-approximation (it is only ever injected at loop top or a natural stop, both paired points).
+- `drop!` of a suspended turn happens only at presenter exit (`interactive.fnl:302`); that is the process-kill case covered by `spec/sessions` (#639).
 
 ## Input assumptions
 
