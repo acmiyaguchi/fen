@@ -1,0 +1,8 @@
+# file	sed edit	main	invariant	description
+model.qnt	s|      or (not(fixes.contains("atomic")) and (p == AFTERCORE or p == AFTEREXT))|      or p == CORE2 or (not(fixes.contains("atomic")) and (p == AFTERCORE or p == AFTEREXT))|	fixed	cancelLeavesOld	cancel honored after a partial core swap leaves new and old modules mixed
+model.qnt	s|        ext' = 0,|        ext' = 1,|	fixed	regMatchesModule	an error during re-register keeps the new module with stale (rolled-back) registrations
+model.qnt	s|^    holder' = false,$|    holder' = (o == "failed" or o == "raised"),|	fixed	holderReleased	a failed or raising reload keeps the holder: the session wedges
+model.qnt	s|    (if (fixes.contains("early")) p == PRE else p == START)|    (if (fixes.contains("early")) p == START else p == START)|	fixed	registriesNotLost	cancel point after recover!: a cancelled recovery leaves the registry buckets cleared
+model.qnt	s|      or (not(fixes.contains("atomic")) and (p == AFTERCORE or p == AFTEREXT))|      or (p == AFTERCORE or p == AFTEREXT)|	fixed	cancelLeavesOld	cancel honored at :after-core / :after-extensions leaves new core with old extensions
+model.qnt	s|        dirty' = true,|        dirty' = false,|	fixed	mixTracked	a failed compiler batch (no core module ran) is not recorded, so old core under new extensions goes unretried
+model.qnt	s|finish(if (dirty) "failed" else "ok")|finish("ok")|	fixed	okAllNew	a reload with recorded failures reports success
